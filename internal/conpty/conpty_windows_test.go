@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -227,5 +228,32 @@ func TestTheEnvironmentBlock(t *testing.T) {
 	}
 	if block[len(block)-1] != 0 || block[len(block)-2] != 0 {
 		t.Fatal("the block does not end with two NULs")
+	}
+}
+
+// Two names of one file are the same path, whatever their spelling, as
+// a folder's short 8.3 name and its long one are; two files are not.
+func TestTwoNamesOfOneFileAreTheSamePath(t *testing.T) {
+	dir := t.TempDir()
+	file, other := filepath.Join(dir, "OpenConsole.exe"), filepath.Join(dir, "Other.exe")
+	for _, f := range []string{file, other} {
+		if err := os.WriteFile(f, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A second name for the same file, as a short name is.
+	link := filepath.Join(dir, "OPENCO~1.EXE")
+	if err := os.Link(file, link); err != nil {
+		t.Fatal(err)
+	}
+	switch {
+	case !samePath(file, strings.ToUpper(file)):
+		t.Error("one name in two cases is not the same path")
+	case !samePath(file, link):
+		t.Error("two names of one file are not the same path")
+	case samePath(file, other):
+		t.Error("two files are the same path")
+	case samePath(file, filepath.Join(dir, "missing.exe")):
+		t.Error("a file is the same path as one that is not there")
 	}
 }

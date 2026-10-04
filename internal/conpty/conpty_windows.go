@@ -187,10 +187,19 @@ func holdProcess(job, proc windows.Handle, exe string) error {
 	return windows.AssignProcessToJobObject(job, proc)
 }
 
-// samePath reports whether a and b name the same file, as Windows
-// compares names: without regard to case.
+// samePath reports whether a and b name the same file: the same names,
+// as Windows compares them, without regard to case, or two names of one
+// file, as a folder's short 8.3 name and its long one are.
 func samePath(a, b string) bool {
-	return strings.EqualFold(filepath.Clean(a), filepath.Clean(b))
+	if strings.EqualFold(filepath.Clean(a), filepath.Clean(b)) {
+		return true
+	}
+	ia, err := os.Stat(a)
+	if err != nil {
+		return false
+	}
+	ib, err := os.Stat(b)
+	return err == nil && os.SameFile(ia, ib)
 }
 
 // coord packs a size as a COORD, which a ConPTY takes by value.

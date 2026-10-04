@@ -2100,6 +2100,8 @@ func (a *app) remove(id string) {
 	delete(a.reads, id)
 	delete(a.restarts, id)
 	delete(a.endings, id)
+	delete(a.endCounted, id)
+	delete(a.restarting, id)
 	// A scrollback of it has nothing left to read again, and says so.
 	for rid, r := range a.st.Readers {
 		if r.Of == id && rid != id {
