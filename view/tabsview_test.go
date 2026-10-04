@@ -60,21 +60,42 @@ func click(p geom.Point, b gi.Button) {
 }
 
 // The bar shows with two tabs and names the panes in place of the title
-// bar; with one it goes, and the pane's title comes back.
+// bar; with one it goes, and the pane's title comes back. Each way, what
+// shows fades out before the title bar changes, and what comes fades in.
 func TestTheTabBarShowsWithTwoTabs(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(twoTabs())
-	if !win.tabs.shown() || win.bar.Subtitle != "" || win.bar.Title != "" {
-		t.Fatalf("with two tabs the bar shows %v, the title bar says %q, %q", win.tabs.shown(), win.bar.Title, win.bar.Subtitle)
+	b := win.tabs
+	frames := func(n int) {
+		for range n {
+			lastWindow.Frame(time.Second / 60)
+		}
 	}
-	if win.tabs.front != 1 {
-		t.Fatalf("the tab in front is %d, want 1", win.tabs.front)
+	publish(twoTabs())
+	frames(2)
+	if b.shown() || b.titleFade.Value() >= 1 {
+		t.Fatalf("a frame after the second tab came, the bar shows %v and the title is %v there", b.shown(), b.titleFade.Value())
+	}
+	settle()
+	if !b.shown() || win.bar.Subtitle != "" || win.bar.Title != "" || b.fade.Value() != 1 {
+		t.Fatalf("with two tabs the bar shows %v, %v faded in, and the title bar says %q, %q", b.shown(), b.fade.Value(), win.bar.Title, win.bar.Subtitle)
+	}
+	if b.front != 1 {
+		t.Fatalf("the tab in front is %d, want 1", b.front)
 	}
 	st := twoTabs()
 	st.Panes, st.Tabs = st.Panes[:1], st.Tabs[:1]
 	publish(st)
-	if win.tabs.shown() || win.bar.Subtitle != "Jobs" || win.bar.Title != app.ProgramName {
-		t.Fatalf("with one tab the bar shows %v, the title bar says %q, %q", win.tabs.shown(), win.bar.Title, win.bar.Subtitle)
+	frames(2)
+	if !b.shown() || b.fade.Value() >= 1 || b.fade.Value() <= 0 || len(b.gone) != 1 {
+		t.Fatalf("a frame after the second tab closed, the bar shows %v, %v faded, with %d tabs going", b.shown(), b.fade.Value(), len(b.gone))
+	}
+	frames(10)
+	if b.shown() || win.bar.Title != app.ProgramName || b.titleFade.Value() >= 1 {
+		t.Fatalf("once the bar has faded, it shows %v, and the title %q is %v there, want coming", b.shown(), win.bar.Title, b.titleFade.Value())
+	}
+	settle()
+	if b.shown() || win.bar.Subtitle != "Jobs" || win.bar.Title != app.ProgramName || b.titleFade.Value() != 1 {
+		t.Fatalf("with one tab the bar shows %v, the title bar says %q, %q, %v there", b.shown(), win.bar.Title, win.bar.Subtitle, b.titleFade.Value())
 	}
 }
 

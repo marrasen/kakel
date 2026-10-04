@@ -74,6 +74,13 @@ type tabBar struct {
 	arriving map[int]bool
 	gone     []tabGone
 	plusAt   *anim.Rect
+	// laid says the title row is laid out for the tabs, which it is
+	// from the second tab on, and stays while the last tab but one
+	// fades away. fade is how far the tabs show, and titleFade how far
+	// the window's title after the menu button does: the one fades out
+	// before the row changes, and the other in after.
+	laid            bool
+	fade, titleFade *anim.Float
 }
 
 // tabMove is how a tab moves on the bar: its box, sliding to where the
@@ -102,8 +109,19 @@ type tabGone struct {
 var tabSlide = anim.Spring{Response: 0.28, Damping: 1}
 
 func newTabBar(w *Window) *tabBar {
-	return &tabBar{w: w, hot: -1, pressed: -1, landing: -1, moves: map[int]*tabMove{}, arriving: map[int]bool{}}
+	b := &tabBar{w: w, hot: -1, pressed: -1, landing: -1, moves: map[int]*tabMove{}, arriving: map[int]bool{},
+		fade: anim.NewFloat(1), titleFade: anim.NewFloat(1)}
+	b.Add(b.fade, b.titleFade)
+	return b
 }
+
+// rowFadeOut and rowFadeIn are how the tabs and the window's title fade
+// as the title row changes between them: the one going quickly, the
+// other coming a little slower.
+var (
+	rowFadeOut = anim.Tween{Duration: 110 * time.Millisecond, Ease: anim.EaseInOut}
+	rowFadeIn  = anim.Tween{Duration: 180 * time.Millisecond, Ease: anim.EaseInOut}
+)
 
 // The tabs' measures: the room each side of a title, the widest and
 // narrowest tab, the room a tab's icon and × take, and the gap between
@@ -121,8 +139,12 @@ const (
 	captionLeast = 64
 )
 
-// shown reports whether the bar shows: with two tabs or more.
-func (b *tabBar) shown() bool { return len(b.tabs) > 1 }
+// shown reports whether the bar has the title row's room and shows,
+// which it does with two tabs or more, and as the last but one fades.
+func (b *tabBar) shown() bool { return b.laid }
+
+// wanted reports whether the window has tabs to show: two or more.
+func (b *tabBar) wanted() bool { return len(b.tabs) > 1 }
 
 // show puts the window's tabs on the bar.
 func (b *tabBar) show(tabs []app.Tab, focus string, u *gunim.UI) {
@@ -162,8 +184,8 @@ func (b *tabBar) show(tabs []app.Tab, focus string, u *gunim.UI) {
 			b.more = append(b.more, text.Default().Shape(titles[i+1], size-1))
 		}
 	}
-	if !b.shown() {
-		// Hidden, nothing on it is pressed or lit; a tab carried away
+	if !b.wanted() {
+		// Going, nothing on it is pressed or lit; a tab carried away
 		// still hears how its drag ends.
 		b.hot, b.pressed, b.landing, b.crossHot, b.plusPressed = -1, -1, -1, false, false
 	}
@@ -178,8 +200,9 @@ func (b *tabBar) tabsMoved(tabs []app.Tab) {
 	in := func(tabs []app.Tab, g int) bool {
 		return slices.ContainsFunc(tabs, func(t app.Tab) bool { return t.Group == g })
 	}
-	if len(tabs) < 2 {
-		// Hidden, it shows nothing moving.
+	if len(tabs) < 2 && len(b.tabs) < 2 {
+		// Hidden, it shows nothing moving. The last tab but one closing
+		// shrinks away as any tab does, as the bar fades.
 		clear(b.moves)
 		clear(b.arriving)
 		b.gone, b.plusAt = nil, nil
@@ -339,6 +362,9 @@ func (b *tabBar) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, _ gunim.C
 		return
 	}
 	th := f.Theme
+	if fade := min(max(b.fade.Value(), 0), 1); fade < 1 {
+		defer p.Layer(paint.LayerOpts{Bounds: geom.Rect{Max: box.Point()}, Opacity: fade})()
+	}
 	p.RRect(geom.Rect{Max: box.Point()}, 0, paint.Solid(widget.MenubarFill.Get(th)))
 	for _, g := range b.gone {
 		b.paintTab(p, th, g.tab, g.title, g.more, g.kind, g.box.Value(), g.open.Value(), tabLook{})
@@ -670,26 +696,105 @@ func (g *tabGhost) Handle(e input.Event, u *gunim.UI) bool {
 
 // showTabs shows the window's tabs, and gives the bar the title bar's
 // room while it shows: the menu button keeps its own, and "kakel" makes
-// way.
+// way. The change fades: what goes first, then the row changes, then
+// what comes; see settleTitleRow.
 func (w *Window) showTabs(st app.State, u *gunim.UI) {
-	was := w.tabs.shown()
 	w.tabs.show(st.Tabs, st.Focus, u)
-	if w.tabs.shown() {
+	w.settleTitleRow(u.Theme())
+	u.Invalidate()
+}
+
+// settleTitleRow moves the title row toward showing the tabs, when the
+// window has two or more, or else the window's title: it fades out
+// what shows, changes the row once that has gone, and fades in what it
+// changed to. Called as the tabs change and as the window lays out,
+// each step happens once the one before has finished.
+func (w *Window) settleTitleRow(th *theme.Live) {
+	b := w.tabs
+	if b.laid {
 		// As wide as the menu button, in the theme on now.
-		w.barBox.Width = widget.MenubarHeight.Get(u.Theme()) + 12
+		w.barBox.Width = widget.MenubarHeight.Get(th) + 12
 	}
-	if w.tabs.shown() == was {
+	switch want := b.wanted(); {
+	case want == b.laid:
+		// Staying, or coming back before it went: what shows comes in.
+		if b.laid {
+			b.fade.Animate(1, rowFadeIn)
+		} else {
+			b.titleFade.Animate(1, rowFadeIn)
+		}
+	case b.laid:
+		b.fade.Animate(0, rowFadeOut)
+		if !b.fade.Active() {
+			w.layTitleRow(false, th)
+		}
+	default:
+		b.titleFade.Animate(0, rowFadeOut)
+		if !b.titleFade.Active() {
+			w.layTitleRow(true, th)
+		}
+	}
+}
+
+// layTitleRow lays the title row out for the tabs, or for the window's
+// title, and fades in what it was laid out for.
+func (w *Window) layTitleRow(tabs bool, th *theme.Live) {
+	b := w.tabs
+	b.laid = tabs
+	if tabs {
+		w.barBox.Width = widget.MenubarHeight.Get(th) + 12
+		w.bar.Title, w.bar.Subtitle = "", ""
+		w.titleRow.Grow(w.barFade, 0).Grow(w.tabs, 1)
+		b.fade.Jump(0)
+		b.fade.Animate(1, rowFadeIn)
 		return
 	}
-	if w.tabs.shown() {
-		w.bar.Title = ""
-		w.titleRow.Grow(w.barBox, 0).Grow(w.tabs, 1)
-	} else {
-		w.barBox.Width = 0
-		w.bar.Title = app.ProgramName
-		w.titleRow.Grow(w.tabs, 0).Grow(w.barBox, 1)
+	w.barBox.Width = 0
+	w.bar.Title, w.bar.Subtitle = app.ProgramName, w.paneTitle
+	w.titleRow.Grow(w.tabs, 0).Grow(w.barFade, 1)
+	clear(b.moves)
+	clear(b.arriving)
+	b.gone, b.plusAt = nil, nil
+	b.titleFade.Jump(0)
+	b.titleFade.Animate(1, rowFadeIn)
+}
+
+// titleFader draws the menu bar it holds with its button as it is, and
+// the window's title after the button faded by the tab bar's
+// titleFade, so the title can fade without the button.
+type titleFader struct {
+	child gunim.Node
+	tabs  *tabBar
+}
+
+// Children implements [gunim.Composite].
+func (t *titleFader) Children() []gunim.Node { return []gunim.Node{t.child} }
+
+// Layout implements [gunim.Node].
+func (t *titleFader) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children) geom.Size {
+	k := kids.At(0)
+	s := k.Layout(c)
+	k.Place(geom.Point{})
+	return s
+}
+
+// Paint implements [gunim.Node].
+func (t *titleFader) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gunim.Children) {
+	fade := min(max(t.tabs.titleFade.Value(), 0), 1)
+	if fade >= 1 {
+		kids.At(0).Paint(p)
+		return
 	}
-	u.Invalidate()
+	// The compact menu's button is the bar's height and a little more.
+	button := widget.MenubarHeight.Get(f.Theme) + 4
+	func() {
+		defer p.Layer(paint.LayerOpts{Bounds: geom.Rc(0, 0, button, box.H), Opacity: 1, Clip: true})()
+		kids.At(0).Paint(p)
+	}()
+	if fade > 0 && box.W > button {
+		defer p.Layer(paint.LayerOpts{Bounds: geom.Rc(button, 0, box.W-button, box.H), Opacity: fade, Clip: true})()
+		kids.At(0).Paint(p)
+	}
 }
 
 // tabDock is where a tab dragged over the stage would go: beside pane,

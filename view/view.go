@@ -80,6 +80,11 @@ type Window struct {
 	tabs     *tabBar
 	titleRow *widget.Flex
 	barBox   *widget.Sized
+	// barFade holds barBox, fading the window's title in and out as the
+	// tabs come and go; paneTitle is the title of the pane in front, for
+	// the bar's subtitle while no tabs show.
+	barFade   *titleFader
+	paneTitle string
 	// dock is where a tab dragged over the stage would join a split.
 	dock tabDock
 	// cards are the Servers pane's machines, a card each.
@@ -350,7 +355,8 @@ func NewWindow(sh *screen.Shells, keys *ui.Keymap, all []look.Themed) *Window {
 	controls.Pin = true
 	w.tabs = newTabBar(w)
 	w.barBox = widget.NewSized(w.bar, 0, 0)
-	bar := widget.Row(newAppMark(), w.barBox, w.tabs, w.chips, controls).Grow(w.barBox, 1)
+	w.barFade = &titleFader{child: w.barBox, tabs: w.tabs}
+	bar := widget.Row(newAppMark(), w.barFade, w.tabs, w.chips, controls).Grow(w.barFade, 1)
 	bar.Cross, bar.Gap = widget.CrossStretch, noGap
 	w.titleRow = bar
 	w.barShade = newShade(bar)
@@ -681,8 +687,10 @@ func (w *Window) Children() []gunim.Node { return []gunim.Node{w.top, w.toasts} 
 
 // Layout implements [gunim.Node]. The switcher, while open, covers the
 // window.
-func (w *Window) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children) geom.Size {
+func (w *Window) Layout(c gunim.Constraints, f gunim.Frame, kids gunim.Children) geom.Size {
 	w.size = c.Max
+	// The next step of the title row's change, once the last is done.
+	w.settleTitleRow(f.Theme)
 	if u := w.wrote; u != nil {
 		w.wrote = nil
 		late := false
@@ -833,6 +841,7 @@ func (w *Window) showTitle(st app.State, u *gunim.UI) {
 		u.Invalidate()
 	}
 	// The tab bar names the panes while it shows.
+	w.paneTitle = pane
 	if w.tabs.shown() {
 		pane = ""
 	}
