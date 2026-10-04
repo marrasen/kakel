@@ -107,11 +107,11 @@ func TestAPromptFitsItsQuestion(t *testing.T) {
 			if !drawn || ok.Max.Y > size.H || size.H-ok.Max.Y > 48 {
 				t.Errorf("%s in %s: OK is at %v in a window %v tall", q.Title, th.Name, ok, size.H)
 			}
-			sf := p.dialog.Body.(*scrollingForm)
-			view, _ := ui.Bounds(sf.Scroll)
-			form, _ := ui.Bounds(sf.form)
-			if form.Size().H > view.Size().H+0.5 {
-				t.Errorf("%s in %s: the form is %v tall in %v of room", q.Title, th.Name, form.Size().H, view.Size().H)
+			// The whole form shows above the buttons, with no need to
+			// scroll it: one taller than its room runs on under them.
+			form, _ := ui.Bounds(formOf(p.dialog.Body))
+			if form.Max.Y > ok.Min.Y+0.5 {
+				t.Errorf("%s in %s: the form runs to %v, under the buttons at %v", q.Title, th.Name, form.Max.Y, ok.Min.Y)
 			}
 		}
 	}

@@ -57,7 +57,6 @@ func (p *Prompt) Update(q app.Ask, u *gunim.UI) {
 	p.dialog = askDialog(q, p)
 	// The window's title bar is its title.
 	p.dialog.NoTitleBar = true
-	scrollBody(p.dialog)
 	// The dialog takes the keyboard as it arrives, to its first field.
 	u.Insert(p, p.dialog)
 }

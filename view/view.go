@@ -745,7 +745,6 @@ func (w *Window) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids guni
 // openDialog shows d over the window, with the keyboard, until it
 // closes.
 func (w *Window) openDialog(d *widget.Dialog, u *gunim.UI) {
-	scrollBody(d)
 	// The dialog takes the keyboard itself as it arrives, to its first
 	// field, and holds it until it closes.
 	u.Insert(w, d)
@@ -754,35 +753,11 @@ func (w *Window) openDialog(d *widget.Dialog, u *gunim.UI) {
 	w.focused = ""
 }
 
-// scrollBody puts d's form in a scroll: a form taller than the window
-// scrolls in the room the dialog can spare, rather than running off
-// both ends of the screen with the buttons.
-func scrollBody(d *widget.Dialog) {
-	if f, ok := d.Body.(*widget.Form); ok {
-		d.Body = &scrollingForm{Scroll: widget.NewScroll(f), form: f}
-	}
-}
-
-// scrollingForm is a dialog's form in a scroll, which hands the dialog
-// the form's fields, for Tab to go through them and the first to take
-// the keyboard as the dialog opens.
-type scrollingForm struct {
-	*widget.Scroll
-	form *widget.Form
-}
-
-// Focusables are the form's fields.
-func (s *scrollingForm) Focusables() []gunim.Node { return s.form.Focusables() }
-
-// formOf is the form a dialog's body shows, or nil.
+// formOf is the form a dialog's body is, or nil. A dialog scrolls a
+// body taller than the window itself.
 func formOf(body gunim.Node) *widget.Form {
-	switch b := body.(type) {
-	case *widget.Form:
-		return b
-	case *scrollingForm:
-		return b.form
-	}
-	return nil
+	f, _ := body.(*widget.Form)
+	return f
 }
 
 // zoom makes the font a point larger for each notch the wheel turns

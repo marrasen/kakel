@@ -392,14 +392,15 @@ func TestATallDialogFitsTheWindowAndScrolls(t *testing.T) {
 	for range 30 {
 		lastWindow.Frame(time.Second / 60)
 	}
-	s, ok := d.Body.(*scrollingForm)
-	if !ok {
+	s := formOf(d.Body)
+	if s == nil {
 		t.Fatalf("the form is shown as %T", d.Body)
 	}
-	at, ok := lastUI.Bounds(s)
+	// The dialog stays in the window, and the form scrolls in it.
+	at, ok := lastUI.Bounds(d)
 	size := lastWindow.Offscreen().Size()
 	if !ok || at.Min.Y < 0 || at.Max.Y > size.H {
-		t.Fatalf("the form stands at %v in a window %v high", at, size.H)
+		t.Fatalf("the dialog stands at %v in a window %v high", at, size.H)
 	}
 	if len(s.Focusables()) != 40 {
 		t.Fatalf("Tab reaches %d of the 40 fields", len(s.Focusables()))
