@@ -42,3 +42,50 @@ func TestADropGoesToTheTerminalUnderItOrTheFocusedOne(t *testing.T) {
 		t.Fatalf("dropped on the Servers pane, it went to %q, want the focused pane", in.Pane)
 	}
 }
+
+// Files from another program light the terminal under them while they
+// are dragged over it, and the light goes as they leave or are dropped.
+func TestFilesDraggedOverATerminalLightIt(t *testing.T) {
+	win, sh, publish := windowStage(t)
+	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
+	sh.Set("p1", screen.Open(sessiontest.New(), vt.DefaultPalette(), quiet))
+	t.Cleanup(func() { _ = sh.Get("p1").T.Close() })
+	publish(withServers(app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"}))
+	for len(lastWindow.Client().Intents()) > 0 {
+		<-lastWindow.Client().Intents()
+	}
+	term := win.terms["p1"]
+	box, _ := lastUI.Bounds(term)
+	files := gi.Files{Paths: []string{"/tmp/x.png"}}
+	lit := func() float32 { return term.dropLit.Value() }
+
+	lastWindow.Input(gi.DragOver{Pos: box.Center(), Data: files})
+	settle()
+	if lit() < 0.99 {
+		t.Fatalf("under files from another program the pane is lit %v", lit())
+	}
+	lastWindow.Input(gi.DragLeave{})
+	settle()
+	if lit() > 0.01 {
+		t.Fatalf("once they left, the pane is lit %v", lit())
+	}
+
+	lastWindow.Input(gi.DragOver{Pos: box.Center(), Data: files})
+	settle()
+	lastWindow.Input(gi.Drop{Pos: box.Center(), Paths: files.Paths, Data: files})
+	settle()
+	if lit() > 0.01 {
+		t.Fatalf("once they were dropped, the pane is lit %v", lit())
+	}
+	if in, ok := nextIntent(t).(app.DropFiles); !ok || in.Pane != "p1" || len(in.Paths) != 1 {
+		t.Fatalf("the drop sent %#v", in)
+	}
+
+	// A drag of something else, as a pane from another window, lights
+	// the pane nothing: the window rings itself for that.
+	lastWindow.Input(gi.DragOver{Pos: box.Center(), Data: app.PaneDrag{Pane: "p9", Window: 9}})
+	settle()
+	if lit() > 0.01 {
+		t.Fatalf("under a pane dragged from another window the terminal is lit %v", lit())
+	}
+}

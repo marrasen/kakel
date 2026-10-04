@@ -82,6 +82,9 @@ type term struct {
 	small      [2]int
 	smallSince time.Time
 	settle     *anim.Float
+	// dropLit is how lit the pane is for files from another program
+	// dragged over it, which a drop types or copies there.
+	dropLit *anim.Float
 	// pics are the inline images on screen as the painter holds
 	// them, by the image each was made from.
 	pics map[image.Image]*paint.Image
@@ -195,7 +198,8 @@ func newTerm(id string, sh *screen.Shell, keys *ui.Keymap) *term {
 	g.Size = 15
 	g.Background = look.TermBackground
 	t := &term{id: id, keys: keys, sh: sh, cells: g, settle: anim.NewFloat(0)}
-	t.Add(t.settle)
+	t.dropLit = anim.NewFloat(0)
+	t.Add(t.settle, t.dropLit)
 	// The whole screen, not just the rows changed since the last pane
 	// drew it: this one may be in a window the pane has just moved to.
 	sh.Drawn(func(g *grid.Grid) { g.MarkAllDirty() })
@@ -258,6 +262,7 @@ func (t *term) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gunim.
 		t.paintImages(p)
 	}()
 	t.paintRings(p, f, box)
+	t.paintDropLit(p, f, box)
 }
 
 // paintImages draws the inline images on screen, each over the
@@ -373,7 +378,20 @@ func cellOf(g *grid.Grid, x, y int) widget.Cell {
 // and the wheel scrolls back through what has scrolled off.
 func (t *term) Handle(e gi.Event, u *gunim.UI) bool {
 	switch e := e.(type) {
+	case gi.DragOver:
+		// Files from another program, as they are dragged over.
+		if _, ok := e.Data.(gi.Files); !ok {
+			return false
+		}
+		t.dropLit.Animate(1, widget.Quick.Get(u.Theme()))
+		u.Invalidate()
+		return true
+	case gi.DragLeave:
+		t.dropLit.Animate(0, widget.Quick.Get(u.Theme()))
+		u.Invalidate()
+		return false
 	case gi.Drop:
+		t.dropLit.Animate(0, widget.Settle.Get(u.Theme()))
 		if len(e.Paths) == 0 {
 			return false
 		}

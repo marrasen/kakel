@@ -87,3 +87,20 @@ func (w *Window) glow(u *gunim.UI) {
 
 // glowStep is how often a glowing ring is drawn again.
 const glowStep = 50 * time.Millisecond
+
+// paintDropLit rings the pane, and tints it, while files from another
+// program are dragged over it, as the window is rung for a pane from
+// another window.
+func (t *term) paintDropLit(p *paint.Painter, f gunim.Frame, box geom.Size) {
+	on := min(max(t.dropLit.Value(), 0), 1)
+	if on < 0.01 {
+		return
+	}
+	c := switcherRing.Get(f.Theme)
+	tint := c
+	tint.A = uint8(0x22 * on)
+	c.A = uint8(float32(c.A) * on)
+	r := geom.Rect{Max: box.Point()}
+	p.RRect(r, 0, paint.Solid(tint))
+	p.RRectStroke(r.Inset(geom.Uniform(2)), 6, paint.Fill{}, paint.Stroke{Width: 3, Color: c})
+}
