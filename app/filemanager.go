@@ -112,6 +112,7 @@ func (a *app) openFileWindow(fsys filemanager.FS, path string) error {
 		Places: a.fileManagerPlaces, Visit: a.visitPlace, Favourites: a.favStore(),
 		Transfer: a.transferFiles, FSName: a.fsName,
 		PlaceMenu: placeMenu, PlaceCommand: a.placeCommand,
+		SystemFrame: a.st.SystemTitleBar,
 	})
 	if err != nil {
 		return err

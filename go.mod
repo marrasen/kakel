@@ -14,7 +14,7 @@ require (
 	// upstream's own test expected. And AdvanceBytes parses a whole write,
 	// taking text and CSI parameters without the state table.
 	github.com/marrasen/go-vte v1.0.11-gt.3
-	github.com/marrasen/gunim v0.0.0-20261004123729-1738ceb751c2
+	github.com/marrasen/gunim v0.0.0-20261004134104-c5bd59b6cb46
 	github.com/pkg/sftp v1.13.11
 	github.com/rivo/uniseg v0.4.7
 	golang.design/x/clipboard v0.9.0
@@ -26,10 +26,19 @@ require (
 require (
 	github.com/creack/pty v1.1.24 // indirect
 	github.com/danielgatis/go-utf8 v1.0.1 // indirect
+	github.com/ebitengine/oto/v3 v3.5.1 // indirect
 	github.com/ebitengine/purego v0.11.0 // indirect
 	github.com/go-text/typesetting v0.3.5 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
+	github.com/hajimehoshi/go-mp3 v0.3.4 // indirect
+	github.com/icza/bitio v1.1.0 // indirect
+	github.com/jfreymuth/oggvorbis v1.0.5 // indirect
+	github.com/jfreymuth/pulse v0.1.3 // indirect
+	github.com/jfreymuth/vorbis v1.0.2 // indirect
 	github.com/kr/fs v0.1.0 // indirect
+	github.com/mewkiz/flac v1.0.14 // indirect
+	github.com/mewkiz/pkg v0.0.0-20250417130911-3f050ff8c56d // indirect
+	github.com/mewpkg/term v0.0.0-20241026122259-37a80af23985 // indirect
 	github.com/u-root/u-root v0.16.0 // indirect
 	golang.design/x/x11 v0.2.0 // indirect
 	golang.org/x/exp/shiny v0.0.0-20250606033433-dcc06ee1d476 // indirect

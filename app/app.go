@@ -85,6 +85,11 @@ type State struct {
 	LauncherKey string
 	// Update is where kakel stands on installing and updating.
 	Update Update
+	// Sounds and Rings are the events kakel tells of by a sound and by
+	// rings around the window, and SystemTitleBar says windows opened
+	// from now on take the system's title bar.
+	Sounds, Rings  Alerts
+	SystemTitleBar bool
 	// FontSize is the terminals' font size in logical pixels.
 	FontSize float32
 	// Fonts are the families to draw the terminals in, and Font the one
@@ -183,19 +188,21 @@ type State struct {
 	Notices []Notice
 }
 
-// Pings counts the echoes the window sends out past its edges, one
-// count for each tone: Problems for failures, such as a connection
-// dropped; Dones for work finished, such as a copy; and Calls for bells
-// rung in panes out of sight. The window sends one each time a count
-// goes up.
+// Pings counts what the window tells of, by rings out past its edges
+// and by sounds, as the settings say, each time a count goes up.
+// Connected and Lost are connections made and lost by themselves;
+// Finished and Failed long commands and programs ending well or not;
+// Calls bells rung in panes out of sight; and Problems and Dones every
+// other failure, and other work finished, such as a copy.
 //
-// FrontProblems and FrontDones count long commands that finished in the
-// pane in front, failing or not. The window sends those only while
-// another program has the keyboard, since otherwise the user is
-// watching.
+// FrontFailed and FrontFinished count long commands that finished in
+// the pane in front. The window tells of those only while another
+// program has the keyboard, since otherwise the user is watching.
 type Pings struct {
-	Problems, Dones, Calls    uint64
-	FrontProblems, FrontDones uint64
+	Problems, Dones, Calls     uint64
+	Connected, Lost            uint64
+	Finished, Failed           uint64
+	FrontFinished, FrontFailed uint64
 }
 
 // commandLong is how long a command runs before its finish is worth an
@@ -208,15 +215,21 @@ func (a *app) commandDone(id string, status int) {
 	w := a.ownerOf(id)
 	p := a.pingsIn(w)
 	front := w != nil && a.focusIn(w) == id
+	countEnd(p, front, status)
+}
+
+// countEnd counts a long command or a program ending with status, in
+// the pane in front of its window or not.
+func countEnd(p *Pings, front bool, status int) {
 	switch {
 	case front && status == 0:
-		p.FrontDones++
+		p.FrontFinished++
 	case front:
-		p.FrontProblems++
+		p.FrontFailed++
 	case status == 0:
-		p.Dones++
+		p.Finished++
 	default:
-		p.Problems++
+		p.Failed++
 	}
 }
 
@@ -732,6 +745,8 @@ type app struct {
 	// wake hears that a shell wrote, and events carries changes from
 	// the shells' goroutines to this one. wrote holds the panes whose
 	// shells wrote since the windows were last told, under wroteMu.
+	// sound is told which sounds play.
+	sound   SoundSetter
 	wake    chan struct{}
 	events  chan func()
 	wroteMu sync.Mutex
@@ -862,6 +877,7 @@ func (a *app) run(ctx context.Context) error {
 	a.showFavourites()
 	a.moveFolders()
 	a.seedFavourites()
+	a.showLook()
 	if a.themeTrouble != nil {
 		a.failed("Couldn't read all the themes", a.themeTrouble.Error())
 	}
@@ -1068,6 +1084,8 @@ func failedTitle(in gunim.Intent) string {
 		return "Couldn't install kakel"
 	case SetUpdates:
 		return "Couldn't keep the update setting"
+	case SaveLook:
+		return "Couldn't keep the settings"
 	case ToggleAutostart:
 		return "Couldn't change whether kakel starts with the computer"
 	case PasteImageAsFile, PasteImage:
@@ -1550,6 +1568,8 @@ func (a *app) handle(in gunim.Intent) {
 			err = a.settings.PutUpdates(in.What)
 		}
 		a.showUpdate()
+	case SaveLook:
+		err = a.saveLook(in)
 	case ToggleAutostart:
 		err = install.SetAutostart(!install.Autostart())
 		a.showUpdate()
@@ -2251,6 +2271,8 @@ type Config struct {
 	// OpenPrompt opens a window of its own for a question that wants
 	// something typed; unset, it is asked in a dialog.
 	OpenPrompt PromptOpener
+	// Sound is told which sounds play; unset, none do.
+	Sound SoundSetter
 }
 
 // Start runs the program side until its last window closes.
@@ -2268,6 +2290,7 @@ func Start(ctx context.Context, cfg Config) error {
 	a.files = cfg.Files
 	a.openPrompt = cfg.OpenPrompt
 	a.hotKeys = cfg.HotKeys
+	a.sound = cfg.Sound
 	defer closeToaster()
 	return errors.Join(a.run(ctx), a.shotErr)
 }

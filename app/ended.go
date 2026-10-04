@@ -75,16 +75,7 @@ func (a *app) paneEnded(id string) {
 		// as for a long command.
 		front := w != nil && a.focusIn(w) == id
 		p := a.pingsIn(w)
-		switch {
-		case front && status == 0:
-			p.FrontDones++
-		case front:
-			p.FrontProblems++
-		case status == 0:
-			p.Dones++
-		default:
-			p.Problems++
-		}
+		countEnd(p, front, status)
 	}
 	// The choices are made on the window's goroutine, where the pane
 	// takes its keys, and carried out on the program's.

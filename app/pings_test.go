@@ -15,13 +15,13 @@ func TestALongCommandFinishingCountsForAnEcho(t *testing.T) {
 	a.commandDone("p2", 0)
 	a.commandDone("p2", 1)
 	a.commandDone("p2", 1)
-	want := Pings{Dones: 1, Problems: 1, FrontDones: 1, FrontProblems: 2}
+	want := Pings{Finished: 1, Failed: 1, FrontFinished: 1, FrontFailed: 2}
 	if one.pings != want {
 		t.Fatalf("the first window's counts are %+v, want %+v", one.pings, want)
 	}
 	// p3 is in front of the second window, which is behind: its own.
 	a.commandDone("p3", 0)
-	if two.pings != (Pings{FrontDones: 1}) || one.pings != want {
+	if two.pings != (Pings{FrontFinished: 1}) || one.pings != want {
 		t.Fatalf("a command in the window behind counted %+v there and %+v in front", two.pings, one.pings)
 	}
 	if st := a.stateFor(two, a.st); st.Pings != two.pings {

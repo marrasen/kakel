@@ -122,6 +122,12 @@ type stored struct {
 	// again, when it was served as it last closed: ask, as when empty,
 	// ServeAlways or ServeNever.
 	ServeAtStart string `json:"serveAtStart,omitempty"`
+	// Sounds and Rings are the events kakel tells of by a sound, and by
+	// rings around the window; left out, DefaultSounds and DefaultRings.
+	// SystemTitleBar gives windows the system's title bar and frame.
+	Sounds         *Alerts `json:"sounds,omitempty"`
+	Rings          *Alerts `json:"rings,omitempty"`
+	SystemTitleBar bool    `json:"systemTitleBar,omitempty"`
 
 	// ShellSetup turns on teaching a shell on this machine to say where
 	// it is and where each command starts. A field left out is on: it

@@ -22,6 +22,7 @@ import (
 	"github.com/marrasen/kakel/view"
 
 	"github.com/marrasen/kakel/app"
+	"github.com/marrasen/kakel/internal/sound"
 
 	"github.com/marrasen/kakel/look"
 
@@ -108,7 +109,11 @@ func run() error {
 	err = gunim.Main(ctx, func(a *gunim.App) error {
 		sh := screen.NewShells()
 		all, trouble := look.LoadSaying()
-		ws := &ownWindows{app: a, sh: sh, all: all, place: opts.WindowPlace}
+		ws := &ownWindows{app: a, sh: sh, all: all, place: opts.WindowPlace, systemFrame: opts.SystemTitleBar}
+		// Sounds play through the app, as its settings say; the speakers
+		// open only once one is wanted.
+		sounds := sound.New()
+		a.SetCues(sounds)
 		// Where it was as it last closed, or else sized for the font.
 		w, c, err := ws.open(gunim.WindowOptions{Size: opts.WindowSize(), Place: opts.WindowPlace(), Hidden: opts.StartsInTray()})
 		if err != nil {
@@ -121,7 +126,7 @@ func run() error {
 			Client: c, Window: w, Shells: sh, OpenWindow: ws.openFrom, Options: opts,
 			Themes: all, ThemeTrouble: trouble, RegisterThemes: ws.registerThemes,
 			Tray: app.Tray{Set: a.SetTray, StayOpen: a.StayOpen, Notify: a.TrayNotify}, Handovers: handovers,
-			OpenLauncher: ws.openLauncher, HotKeys: a.RegisterHotKey, OpenPrompt: ws.openPrompt,
+			OpenLauncher: ws.openLauncher, HotKeys: a.RegisterHotKey, OpenPrompt: ws.openPrompt, Sound: sounds.Set,
 			// The file manager's windows, gunim's own, outside kakel's
 			// tabs; they end with the program.
 			Files: filemanager.NewHub(ctx, a),
@@ -137,11 +142,14 @@ func run() error {
 // ownWindows opens kakel's windows, each with the window's view
 // mounted, and names the themes to every one of them.
 type ownWindows struct {
-	app *gunim.App
-	sh  *screen.Shells
-	mu  sync.Mutex
-	all []look.Themed
-	win []*gunim.Window
+	// systemFrame says whether a window opens with the system's title
+	// bar and frame.
+	systemFrame func() bool
+	app         *gunim.App
+	sh          *screen.Shells
+	mu          sync.Mutex
+	all         []look.Themed
+	win         []*gunim.Window
 	// place is where the last window was as it closed, for one opened
 	// with none open.
 	place func() *driver.Placement
@@ -150,6 +158,11 @@ type ownWindows struct {
 // open opens a window with o's size and place.
 func (ws *ownWindows) open(o gunim.WindowOptions) (*gunim.Window, gunim.Client, error) {
 	o.Title = app.ProgramName
+	// The system's title bar and frame, where the settings ask for
+	// them, as they say as the window opens.
+	if ws.systemFrame != nil {
+		o.SystemFrame = ws.systemFrame()
+	}
 	o.Icons = appicon.Images()
 	// The close button asks first, as Exit does for the last window.
 	o.AskToClose = app.CloseWindow{}

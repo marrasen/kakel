@@ -232,7 +232,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 			a.keepSignIns(kept)
 			log.Printf("connected to %s", oneLine(a.machines.Name(name)))
 			if !in.Quiet {
-				a.done()
+				a.pingsIn(a.cur).Connected++
 			}
 			go func() {
 				err := conn.Wait()
@@ -262,7 +262,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 						// Gone by itself: its row stays, greyed, until it
 						// is cleared.
 						a.machines.At(name).Dropped = true
-						a.problem()
+						a.pingsIn(a.cur).Lost++
 					}
 					a.notify("Disconnected from "+a.machines.Name(name), "", "")
 				}

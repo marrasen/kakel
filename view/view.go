@@ -4,6 +4,7 @@ package view
 
 import (
 	"fmt"
+	"image/color"
 	"log"
 	"path/filepath"
 	"reflect"
@@ -147,6 +148,11 @@ type Window struct {
 	launcherKey string
 	// update is where kakel stands on installing and updating.
 	update app.Update
+	// sounds and rings are the events the window tells of by a sound and
+	// by rings, and systemTitleBar says windows open with the system's
+	// title bar, for the Settings dialog to show.
+	sounds, rings  app.Alerts
+	systemTitleBar bool
 	// thisComputer is this computer's settings, as the program keeps
 	// them.
 	thisComputer app.ThisComputer
@@ -493,6 +499,9 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 		return true
 	case "app.updates":
 		w.updatesDialog(u)
+		return true
+	case "app.settings":
+		w.settingsDialog(u)
 		return true
 	case "tab.newWindow", "servers.window", "secrets.window":
 		// A little down and to the right of this window, as large.
@@ -1991,6 +2000,7 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 	w.termProgram = st.TermProgram
 	w.launcherKey = st.LauncherKey
 	w.update = st.Update
+	w.sounds, w.rings, w.systemTitleBar = st.Sounds, st.Rings, st.SystemTitleBar
 	w.secretsExist = st.Secrets.Exists
 	if st.ShortcutsRead != w.shortcutsRead {
 		w.shortcutsRead = st.ShortcutsRead
@@ -3581,31 +3591,52 @@ func (w *Window) failed(title, why string, u *gunim.UI) {
 	w.echo.Ping(u, widget.EchoProblem)
 }
 
-// echoFor sends an echo out past the window's edges for each count in
-// st.Pings that went up: a failure, work finished, or a bell out of
-// sight. While another program has the keyboard, everything is out of
-// sight: a bell in any pane, and a long command finishing in the pane in
-// front. A bell in sight lights the window's edges softly instead. A
-// faint one goes out again and again while a connection is being made.
+// echoFor tells of each count in st.Pings that went up, by rings out
+// past the window's edges and by a sound, each as the settings say: a
+// connection made or lost, a long command or a program ending, a bell
+// out of sight, and any other failure or work finished. While another
+// program has the keyboard, everything is out of sight: a bell in any
+// pane, and a long command finishing in the pane in front. A bell in
+// sight lights the window's edges softly instead. A faint ring goes out
+// again and again while a connection is being made.
 func (w *Window) echoFor(st app.State, u *gunim.UI) {
 	// Each window counts its own: a pane's from the window it is in.
-	was := w.pings
-	w.pings = st.Pings
-	if st.Pings.Problems > was.Problems || st.Pings.FrontProblems > was.FrontProblems && w.away {
-		w.echo.Ping(u, widget.EchoProblem)
+	was, now := w.pings, st.Pings
+	w.pings = now
+	tell := func(happened, ring, sound bool, tone theme.Token[color.NRGBA], cue gunim.Cue) {
+		if !happened {
+			return
+		}
+		if ring {
+			w.echo.Ping(u, tone)
+		}
+		if sound {
+			u.Cue(cue, w)
+		}
 	}
-	if st.Pings.Dones > was.Dones || st.Pings.FrontDones > was.FrontDones && w.away {
-		w.echo.Ping(u, widget.EchoDone)
-	}
-	switch {
-	case st.Pings.Calls > was.Calls || st.Bells > w.bells && w.away:
-		w.echo.Ping(u, widget.EchoCall)
-	case st.Bells > w.bells:
+	sounds, rings := st.Sounds, st.Rings
+	tell(now.Connected > was.Connected, rings.Connected, sounds.Connected, widget.EchoDone, gunim.CueConnected)
+	tell(now.Lost > was.Lost, rings.Lost, sounds.Lost, widget.EchoProblem, gunim.CueDisconnected)
+	tell(now.Failed > was.Failed || now.FrontFailed > was.FrontFailed && w.away,
+		rings.Finished, sounds.Finished, widget.EchoProblem, gunim.CueFailed)
+	tell(now.Finished > was.Finished || now.FrontFinished > was.FrontFinished && w.away,
+		rings.Finished, sounds.Finished, widget.EchoDone, gunim.CueDone)
+	tell(now.Problems > was.Problems, rings.Other, sounds.Other, widget.EchoProblem, gunim.CueFailed)
+	tell(now.Dones > was.Dones, rings.Other, sounds.Other, widget.EchoDone, gunim.CueDone)
+	switch rang := st.Bells > w.bells; {
+	case now.Calls > was.Calls || rang && w.away:
+		tell(true, rings.Bell, sounds.Bell, widget.EchoCall, gunim.CueBell)
+	case rang:
 		// A bell in the pane in front, in the window with the keyboard:
-		// with no sound, a soft glow says it rang.
-		w.echo.Glow(u, widget.EchoCall)
+		// a soft glow, and its sound, say it rang.
+		if rings.Bell {
+			w.echo.Glow(u, widget.EchoCall)
+		}
+		if sounds.Bell {
+			u.Cue(gunim.CueBell, w)
+		}
 	}
-	w.echo.Wait(u, widget.EchoWait, len(st.Dialing) > 0)
+	w.echo.Wait(u, widget.EchoWait, len(st.Dialing) > 0 && rings.Connected)
 }
 
 // present fills the screen with the stage, the pane or split in front,

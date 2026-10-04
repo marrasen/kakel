@@ -325,6 +325,21 @@ func (o Options) WindowPlace() *driver.Placement {
 	return &driver.Placement{Bounds: geom.Rc(w.X, w.Y, w.W, w.H), Maximized: w.Maximized}
 }
 
+// SystemTitleBar reports whether the settings give windows the system's
+// title bar and frame, as they say now: read again for each window,
+// so a change takes for the windows opened after it.
+func (o Options) SystemTitleBar() bool {
+	path, err := settings.Path()
+	if err != nil {
+		return false
+	}
+	s, err := settings.Load(path)
+	if err != nil {
+		return false
+	}
+	return s.SystemTitleBar()
+}
+
 // WindowSize is the first window's size: room for a terminal of the
 // usual size, at the font size given or kept from last time.
 func (o Options) WindowSize() geom.Size {

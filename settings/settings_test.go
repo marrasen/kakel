@@ -1088,3 +1088,29 @@ func TestDefaultFavouritesGoInOnce(t *testing.T) {
 		t.Fatalf("seeded again, the removed came back: %+v", favs)
 	}
 }
+
+// The alerts and the title bar are kept, and read back; a user who has
+// not chosen gets the defaults.
+func TestTheAlertsAndTheTitleBarAreKept(t *testing.T) {
+	s, err := Load(filepath.Join(t.TempDir(), File))
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	if s.Sounds() != DefaultSounds || s.Rings() != DefaultRings || s.SystemTitleBar() {
+		t.Fatalf("unchosen, sounds %+v, rings %+v, system title bar %v", s.Sounds(), s.Rings(), s.SystemTitleBar())
+	}
+	sounds := Alerts{Interface: true, Lost: true}
+	rings := Alerts{Interface: true, Finished: true}
+	if err := s.PutLook(sounds, rings, true); err != nil {
+		t.Fatal(err)
+	}
+	again, err := Load(s.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := rings
+	want.Interface = false
+	if again.Sounds() != sounds || again.Rings() != want || !again.SystemTitleBar() {
+		t.Fatalf("read back, sounds %+v, rings %+v, system title bar %v", again.Sounds(), again.Rings(), again.SystemTitleBar())
+	}
+}
