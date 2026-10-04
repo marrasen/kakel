@@ -7,6 +7,111 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
+## v0.5.0
+
+### Added
+
+**Settings, with sounds.** Options › Settings… is a table of what
+kakel tells you of: a connection made, one lost, a long command or a
+program ending, the bell, and other errors and finished work. Each can
+play a sound and send rings out around the window, and buttons, menus
+and switches can make quiet sounds of their own. Unless you choose
+otherwise, the rings stay as they were and the bell makes a sound,
+which otherwise says nothing in the pane you are looking at. The
+speakers open only once a sound is turned on, and rest while kakel is
+quiet.
+
+**Use the system's title bar.** A box in Settings gives the windows
+opened from then on the window manager's own title bar and frame, and
+takes kakel's minimize, maximize, close and pin buttons away. File
+manager windows follow it too.
+
+**A bell you can see in the pane in front.** A bell rung where you are
+looking lights the window's edges amber and lets them fade, and the
+window flashes in the taskbar only when it lacks the keyboard.
+
+**Open a server's files with this computer's programs.** Open and Open
+With… on a server's file fetch it, and open it here. Edit it and save,
+and kakel offers to send it back, in a notice that waits rather than
+interrupts, with "Don't ask again".
+
+**Drag a server's files anywhere.** Drag them onto this computer's
+places in the sidebar, or out of the window into another program, as
+a mail or a chat: kakel fetches them as the drag starts, and the hint
+under the pointer says how far it has got, on a bar.
+
+**Saved kakel windows are like servers.** Connect to one from the tray,
+the launcher and the file manager, signing in with your secrets, with
+no terminal opened you did not ask for.
+
+**A Windows machine reached through kakel is written its own way.**
+Paths read C:\Users\…, typed Windows paths are understood and their
+letters' case is found, its drives are listed at the top, and its free
+space shows.
+
+**The sidebar can be arranged.** Its sections fold and move, and
+favourites start with your Desktop, Documents, Downloads and the like,
+each with a colour and an icon you can change with Edit Favourite.
+
+**A terminal lights up under files dragged from another program,** and
+a file manager folder lights under them before you let go.
+
+### Changed
+
+**Terminals draw far faster.** A full-screen animation, as termflix
+draws, sent the graphics card tens of megabytes a frame; it now sends
+about half a megabyte, as the cells, their colours and their letters
+are drawn in one pass on the GPU. Output is parsed about twice as fast,
+and kakel's own animations stay smooth while a terminal floods.
+
+**Local panes on Windows run through OpenConsole.** It is the console
+host Windows Terminal ships, and kakel carries it. Windows' own redrew
+a full-screen animation on a timer and tore it across; now each frame
+comes through whole. kakel uses Windows' own where OpenConsole cannot
+be placed.
+
+**Tabs come and go smoothly.** Closing the second tab fades the tab bar
+out and the window's title in, and opening one does the reverse.
+
+**One tray icon,** and a file manager window connects to a server
+quietly, without opening the Servers pane.
+
+**Serving at start can be decided once.** The question asks whether to
+serve the window again, with a box to remember the answer.
+
+**Chips in the title bar** are drawn as pills, in the middle of the bar.
+
+**`go install github.com/marrasen/kakel@latest` works,** with no
+replace directive left in kakel's modules.
+
+### Fixed
+
+**A folder copied from Windows to Linux can be emptied again.** Its
+copy kept the Windows read-only attribute as mode 0555, so nothing in
+it could be deleted without sudo, and other copies came out writable
+by every user. Copies from Windows now get 0755 folders and 0644 files.
+
+**Dropping files from Explorer onto a file pane works again** with the
+newer gunim, which says what a drop of files carries.
+
+**A program asked something answered once.** A pane shown in another
+window answered a second time, late, as if typed: cmd.exe saw ^[[?6c
+in front of the next command.
+
+**Starting a pane again is no longer reported as failed** when it
+worked.
+
+**A file dropped into a pane says so once,** and a path typed into a
+pane on a Windows window reads C:\Users\…
+
+**A dragged file leaves kakel** for a program whose window is in front
+of a kakel window.
+
+**A setting written by a newer kakel is kept,** rather than the whole
+file being refused.
+
+**Check for Updates in About** closes the dialog first.
+
 ## v0.4.0
 
 ### Changed
