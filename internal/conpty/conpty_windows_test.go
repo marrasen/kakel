@@ -231,8 +231,9 @@ func TestTheEnvironmentBlock(t *testing.T) {
 	}
 }
 
-// Two names of one file are the same path, whatever their spelling, as
-// a folder's short 8.3 name and its long one are; two files are not.
+// Two names of one file are the same path, whatever their spelling: a
+// second link, and a short 8.3 name, as a runner's own temporary folder
+// has. Two files are not.
 func TestTwoNamesOfOneFileAreTheSamePath(t *testing.T) {
 	dir := t.TempDir()
 	file, other := filepath.Join(dir, "OpenConsole.exe"), filepath.Join(dir, "Other.exe")
@@ -241,16 +242,26 @@ func TestTwoNamesOfOneFileAreTheSamePath(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// A second name for the same file, as a short name is.
-	link := filepath.Join(dir, "OPENCO~1.EXE")
+	// A second name for the same file.
+	link := filepath.Join(dir, "second name.exe")
 	if err := os.Link(file, link); err != nil {
 		t.Fatal(err)
+	}
+	// And its short 8.3 name, where the volume keeps them.
+	short := file
+	if n, err := windows.GetShortPathName(windows.StringToUTF16Ptr(file), nil, 0); err == nil && n > 0 {
+		buf := make([]uint16, n)
+		if _, err := windows.GetShortPathName(windows.StringToUTF16Ptr(file), &buf[0], n); err == nil {
+			short = windows.UTF16ToString(buf)
+		}
 	}
 	switch {
 	case !samePath(file, strings.ToUpper(file)):
 		t.Error("one name in two cases is not the same path")
 	case !samePath(file, link):
 		t.Error("two names of one file are not the same path")
+	case !samePath(file, short):
+		t.Errorf("a file and its short name %s are not the same path", short)
 	case samePath(file, other):
 		t.Error("two files are the same path")
 	case samePath(file, filepath.Join(dir, "missing.exe")):
