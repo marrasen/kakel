@@ -87,7 +87,10 @@ const dropKey = widget.Key("\x00here")
 // shown. It keeps the drop that would be made in b.plan.
 func (b *browser) dropSpot(d gi.Drop, u *gunim.UI) (widget.DropSpot, bool) {
 	drag, rows := d.Data.(app.FileDrag)
-	if !rows && (d.Data != nil || len(d.Paths) == 0) {
+	// Files from another program come as Paths, with gunim's Files as
+	// the Data, or with none from an older driver.
+	_, outside := d.Data.(gi.Files)
+	if !rows && (d.Data != nil && !outside || len(d.Paths) == 0) {
 		return widget.DropSpot{}, false
 	}
 	box, ok := u.Bounds(b.drop)

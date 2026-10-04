@@ -74,9 +74,16 @@ func TestAFilePaneSaysWhatADropWouldDo(t *testing.T) {
 	if !b.plan.Copy {
 		t.Fatal("from another machine, the drop moves")
 	}
-	b.dropSpot(gi.Drop{Pos: rowPoint(t, b, "a.txt"), Paths: []string{"/tmp/y"}}, lastUI)
-	if !b.plan.Copy || len(b.plan.Paths) != 1 {
-		t.Fatalf("files from another program plan %+v", b.plan)
+	// Files from another program, as an older driver and as gunim says
+	// them now, with Files as the Data.
+	for _, d := range []gi.Drop{
+		{Pos: rowPoint(t, b, "a.txt"), Paths: []string{"/tmp/y"}},
+		{Pos: rowPoint(t, b, "a.txt"), Paths: []string{"/tmp/y"}, Data: gi.Files{Paths: []string{"/tmp/y"}}},
+	} {
+		b.plan = app.DropOnFiles{}
+		if _, ok := b.dropSpot(d, lastUI); !ok || !b.plan.Copy || len(b.plan.Paths) != 1 {
+			t.Fatalf("files from another program, with %T as the data, plan %+v", d.Data, b.plan)
+		}
 	}
 }
 
