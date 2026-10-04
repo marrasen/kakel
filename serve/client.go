@@ -600,6 +600,10 @@ type remoteSession struct {
 	closeErr  error
 }
 
+// Mirrors implements session.Mirrors: the other window runs the program
+// in a terminal of its own, which answers what the program asks.
+func (s *remoteSession) Mirrors() bool { return true }
+
 // Read gives what the program said, and what the other end said about
 // it.
 func (s *remoteSession) Read(p []byte) (int, error) {

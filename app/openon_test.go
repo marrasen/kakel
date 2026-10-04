@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -413,7 +414,18 @@ func TestAnAgentWorksInPanesThroughAWindow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pumpBoth(t, a, b, "the command's output", func() bool { return strings.Contains(b.terminal(onWin).AllText(), "out-42") })
+	// What the pane held, should the output not come: a watchdog may end
+	// the test before a failure is reported.
+	var seen atomic.Value
+	late := time.AfterFunc(9*time.Second, func() {
+		fmt.Fprintf(os.Stderr, "the window's pane holds %q\n", seen.Load())
+	})
+	pumpBoth(t, a, b, "the command's output", func() bool {
+		text := b.terminal(onWin).AllText()
+		seen.Store(text)
+		return strings.Contains(text, "out-42")
+	})
+	late.Stop()
 	asAgentBoth(t, a, b, func() { look, err = c.Output(own.ID, 0) })
 	if err != nil || !strings.Contains(look.Screen, "out-42") {
 		t.Fatalf("its output read %q, %v", look.Screen, err)

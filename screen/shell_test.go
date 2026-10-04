@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/marrasen/kakel/meter"
+	"github.com/marrasen/kakel/session"
 )
 
 // fakeSession reads what it holds and takes what is written.
@@ -42,5 +43,21 @@ func TestASessionIsCountedAndStillReportsLate(t *testing.T) {
 	f.late(errors.New("resize failed"))
 	if got == nil {
 		t.Fatal("the late failure was lost")
+	}
+}
+
+// mirrored is a session that mirrors another terminal.
+type mirrored struct{ session.Session }
+
+func (mirrored) Mirrors() bool { return true }
+
+// Counting what a session moves keeps whether it mirrors another
+// terminal, which its terminal must know to answer nothing.
+func TestCountingKeepsAMirror(t *testing.T) {
+	if !session.Mirrors(counted(mirrored{}, meter.New())) {
+		t.Error("a counted mirror is no mirror")
+	}
+	if session.Mirrors(counted(nil, meter.New())) {
+		t.Error("a counted session is a mirror")
 	}
 }

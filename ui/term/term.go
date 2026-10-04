@@ -206,6 +206,9 @@ type Terminal struct {
 	// zero size from never having been laid out.
 	size     ui.Size
 	haveSize bool
+	// mirror says the session mirrors another terminal, which answers
+	// what the program asks; see session.Mirrors.
+	mirror atomic.Bool
 	// cells is how many cells the screen has, for the reader, which
 	// holds a synchronized update to a frame of that many.
 	cells atomic.Int64
@@ -366,7 +369,14 @@ func New(cfg Config) (*Terminal, error) {
 		// they must not touch the session directly: a program that has
 		// stopped reading would block the write and deadlock the reader
 		// against every other user of the lock.
-		Reply: t.send,
+		// A pane mirroring another window's terminal answers nothing:
+		// that terminal has answered, and a second answer would reach
+		// the program late, as typing.
+		Reply: func(b []byte) {
+			if !t.mirror.Load() {
+				t.send(b)
+			}
+		},
 		ClipboardSet: func(text string) {
 			if cfg.OnClipboard != nil {
 				t.later(func() { cfg.OnClipboard(text) })
@@ -391,6 +401,7 @@ func New(cfg Config) (*Terminal, error) {
 // before anything reads it.
 func (t *Terminal) adopt(sess session.Session) *run {
 	r := &run{sess: sess, stop: make(chan struct{})}
+	t.mirror.Store(session.Mirrors(sess))
 	// A resize that fails does so after the drag that asked for it, so
 	// the session hands it here rather than to a caller that has gone.
 	if late, ok := sess.(lateFailures); ok {

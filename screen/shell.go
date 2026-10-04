@@ -123,6 +123,10 @@ func counted(sess session.Session, m *meter.Meter) session.Session {
 	return countedSession{Session: sess, m: m}
 }
 
+// Mirrors passes on whether the session it counts mirrors another
+// terminal; see session.Mirrors.
+func (c countedSession) Mirrors() bool { return session.Mirrors(c.Session) }
+
 func (c countedSession) Read(b []byte) (int, error) {
 	n, err := c.Session.Read(b)
 	if n > 0 {
