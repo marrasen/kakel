@@ -303,6 +303,34 @@ func (j *Job) copy(ctx context.Context, items []item) (err error) {
 	return nil
 }
 
+// modeFor is the mode a copy of e is made with: e's own, except from a
+// Windows machine to one that is not. Windows has no such permissions:
+// Go reads a folder as 0777, or 0555 where its read-only attribute is
+// set, which Windows itself ignores on a folder, and a file as 0666, or
+// 0444. Copied as they are, a Linux machine gives every user write to
+// them, or nobody may delete inside a folder. So a folder gets 0755, and
+// a file 0644, or 0444 where it was read-only.
+func (j *Job) modeFor(e vfs.Entry) fs.FileMode {
+	if !j.fromWindows() {
+		return e.Mode
+	}
+	kind := e.Mode &^ fs.ModePerm
+	switch {
+	case e.IsDir():
+		return kind | 0o755
+	case e.Mode&0o200 == 0:
+		return kind | 0o444
+	default:
+		return kind | 0o644
+	}
+}
+
+// fromWindows reports whether the job copies from a Windows machine to
+// one that is not.
+func (j *Job) fromWindows() bool {
+	return vfs.OnWindows(j.op.From, j.op.At) && !vfs.OnWindows(j.op.To, j.op.Into)
+}
+
 // narrow gives the directories this job made the mode they were asked
 // for.
 //
@@ -317,10 +345,11 @@ func (j *Job) narrow() error {
 	var errs []error
 	for _, made := range slices.Backward(j.made) {
 
-		if made.e.Mode.Perm() == made.e.Mode.Perm()|0o700 {
+		mode := j.modeFor(made.e)
+		if mode.Perm() == mode.Perm()|0o700 {
 			continue
 		}
-		if err := j.op.To.Chmod(made.to, made.e.Mode); err != nil {
+		if err := j.op.To.Chmod(made.to, mode); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -418,7 +447,7 @@ func (j *Job) put(ctx context.Context, it item) (wrote string, err error) {
 		// Made wide enough to write inside whatever the source says:
 		// a directory copied as 0555 would lock the job out of its own
 		// copy. The mode it was asked for is set once it is full.
-		if err := j.op.To.Mkdir(to, it.e.Mode|0o700); err != nil {
+		if err := j.op.To.Mkdir(to, j.modeFor(it.e)|0o700); err != nil {
 			return "", err
 		}
 		j.made = append(j.made, item{to: to, e: it.e})
@@ -513,7 +542,7 @@ func (j *Job) file(ctx context.Context, it item, to string, have vfs.Entry, over
 
 	// The mode a file already there keeps is its own: a copy over it
 	// changes what is in it, not who may read it.
-	mode := it.e.Mode
+	mode := j.modeFor(it.e)
 	if over && !have.IsDir() {
 		mode = have.Mode
 	}

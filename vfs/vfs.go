@@ -243,6 +243,17 @@ func trimTail(path, sep string) string {
 	return trimmed
 }
 
+// OnWindows reports whether path on f is on a Windows machine: f is
+// this computer's file system on Windows, or the path is on a drive, as
+// a Windows machine's SFTP server writes it, /C:/Users.
+func OnWindows(f FS, path string) bool {
+	if f.Sep() == '\\' {
+		return true
+	}
+	p := strings.TrimPrefix(path, "/")
+	return len(p) >= 2 && isDrive(p[:2]) && (len(p) == 2 || p[2] == '/' || p[2] == '\\')
+}
+
 // isDrive reports whether a path is a bare Windows drive letter.
 func isDrive(path string) bool {
 	if len(path) != 2 || path[1] != ':' {
