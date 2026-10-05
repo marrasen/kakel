@@ -7,6 +7,15 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
+## Unreleased
+
+### Changed
+
+**The installer waits for kakel to close.** Updating or uninstalling
+while kakel runs goes on by itself once it has closed. Close kakel
+there asks the running kakel to end, with a ring turning while it
+does, and says so if it didn't.
+
 ## v0.6.0
 
 ### Changed
