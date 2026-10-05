@@ -7,6 +7,29 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
+## Unreleased
+
+### Changed
+
+**An installer of its own.** A kakel started from the zip or the
+tarball opens an installer before anything else: kakel's icon on a glow
+in its colours, the offers of a desktop shortcut, a start with the
+computer and automatic updates, and a ring that goes round as it
+installs. It can also run kakel as it is, without installing.
+Installing an older or the same version says so, and offers to open the
+one installed. `kakel -uninstall` and Installed apps open it to ask, and
+it can take your settings and saved servers too.
+
+**Installed on Linux in `~/.local/share/kakel`.** The program and its
+files go there, with a link at `~/.local/bin/kakel`, so typing `kakel`
+in a shell still starts it. A kakel installed in `~/.local/bin` by an
+older release moves itself the first time it starts, keeping its start
+with the computer and its shortcut on the desktop.
+
+Both come from gunim, whose installer kakel's grew into. Updates are as
+they were: Options › Updates… still tells you of a new release, installs
+it by itself, or does nothing.
+
 ## v0.5.0
 
 ### Added

@@ -1,23 +1,26 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"log"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
 
-	"github.com/marrasen/kakel/install"
-	"github.com/marrasen/kakel/internal/update"
+	"github.com/marrasen/gunim/install"
+
 	"github.com/marrasen/kakel/settings"
 )
 
-// Installing kakel, and keeping it up to date. A copy that is not the
-// installed one offers to install itself; the installed one, a release
-// build, looks for a newer release a minute after it starts and once a
-// day, and says so, or with Updates set to install, fetches it and puts
-// it in place for the next start. A restart into the new copy is a
+// Installing kakel, and keeping it up to date. gunim's installer does
+// the installing; see Installer. A copy run without installing offers
+// to install itself from its menu. The installed one, a release build,
+// looks for a newer release a minute after it starts and once a day,
+// and says so, or with Updates set to install, fetches it and puts it
+// in place for the next start. A restart into the new copy is a
 // question away.
 
 // Intents for installing and updating.
@@ -60,11 +63,21 @@ func RestartInto() string { return restartInto }
 // executable is this program, as its path; a test sets it.
 var executable = os.Executable
 
+// installer is the description of kakel the installer works from; a
+// test sets it.
+var installer = Installer
+
 // showUpdate tells the windows where kakel stands.
 func (a *app) showUpdate() {
 	exe, _ := executable()
-	_, err := install.Exe()
-	u := Update{Installed: exe != "" && install.Installed(exe), Installable: err == nil, Autostart: install.Autostart(), Updates: settings.UpdatesNotify}
+	u := Update{Updates: settings.UpdatesNotify}
+	if _, to, err := install.Where(installer()); err == nil {
+		u.Installable = true
+		u.Installed = exe != "" && samePath(exe, to)
+	}
+	if in, err := install.Find(installer()); err == nil {
+		u.Autostart = in.Chose(install.PickAutostart)
+	}
 	if a.settings != nil {
 		u.Updates = a.settings.Updates()
 	}
@@ -102,10 +115,43 @@ func (a *app) startUpdates() {
 	look(updateFirst)
 }
 
-// isRelease reports whether version names a release, not a build from a
-// working tree.
+// isRelease reports whether version names a release, vX.Y.Z, not a
+// build from a working tree.
 func isRelease(version string) bool {
-	return strings.HasPrefix(version, "v") && update.Against(version, version) == update.Current
+	if !strings.HasPrefix(version, "v") || strings.Count(version, ".") != 2 || strings.ContainsAny(version, "-+") {
+		return false
+	}
+	return install.IsRelease(version)
+}
+
+// standing is how this build compares to a release.
+type standing int
+
+const (
+	// unknown is the two having no order between them, because one of
+	// them is not a plain vX.Y.Z: a build from a working tree calls
+	// itself dev-<commit>. Such a build may hold work that is in no
+	// release and lack work that every release has.
+	unknown standing = iota
+	// behind is the release being the later version, current the build
+	// being that release, and ahead the build being the later version,
+	// as one from main between releases is.
+	behind
+	current
+	ahead
+)
+
+// against says how the build calling itself have compares to release.
+func against(have, release string) standing {
+	switch {
+	case !isRelease(have) || !isRelease(release):
+		return unknown
+	case install.Newer(release, have):
+		return behind
+	case install.Newer(have, release):
+		return ahead
+	}
+	return current
 }
 
 // lookForUpdate asks for the newest release, and acts on one newer.
@@ -122,7 +168,7 @@ func (a *app) lookForUpdate() {
 		newest, err := latestRelease(a.ctx)
 		a.events <- func() {
 			a.updating = false
-			if err != nil || update.Against(thisVersion(), newest.Version) != update.Behind || newest.Version == a.staged {
+			if err != nil || against(thisVersion(), newest.Version) != behind || newest.Version == a.staged {
 				// Said nothing: the next look may reach GitHub, and an
 				// update put in place waits for the next start.
 				return
@@ -153,7 +199,7 @@ func (a *app) writable() bool {
 
 // offerUpdate says a newer release is out, and fetches it if asked, or
 // offers the restart into it when it is in place already.
-func (a *app) offerUpdate(newest update.Release) {
+func (a *app) offerUpdate(newest install.Release) {
 	have := thisVersion()
 	if newest.Version == a.staged {
 		if exe, err := executable(); err == nil {
@@ -178,24 +224,26 @@ func (a *app) offerUpdate(newest update.Release) {
 	}()
 }
 
+// stageRelease fetches a release, checks it against its SHA256SUMS, and
+// puts it in place of the program at exe; a test sets it.
+var stageRelease = func(ctx context.Context, r install.Release, exe string) error {
+	return install.StageTo(ctx, installer(), r, exe)
+}
+
 // fetchUpdate fetches newest and puts it in place of this program, for
 // the next start, and offers a restart into it. asked says the user
 // asked, and hears a failure; one by itself fails quietly into the log.
-func (a *app) fetchUpdate(newest update.Release, asked bool) {
+func (a *app) fetchUpdate(newest install.Release, asked bool) {
 	exe, err := executable()
 	if err != nil {
 		return
 	}
 	a.say("update", "Fetching kakel "+newest.Version+"…")
 	go func() {
-		part, err := update.Fetch(a.ctx, newest, runtime.GOOS, runtime.GOARCH, exe)
-		if err == nil {
-			err = install.Replace(part, exe)
-		}
+		err := stageRelease(a.ctx, newest, exe)
 		a.events <- func() {
 			a.say("update", "")
 			if err != nil {
-				_ = os.Remove(exe + ".new")
 				if asked {
 					a.failed("Couldn't update kakel", err.Error())
 				} else {
@@ -234,14 +282,21 @@ func (a *app) installKakel(in InstallKakel) error {
 	if err != nil {
 		return err
 	}
-	to, err := install.Install(exe, install.Options{Desktop: in.Desktop, Autostart: in.Autostart, Version: thisVersion()})
+	s, err := install.NewSessionFor(installer(), exe, false)
 	if err != nil {
 		if errors.Is(err, install.ErrUnsupported) {
 			return errors.New("installing is not done on this system yet")
 		}
 		return err
 	}
+	picks := map[string]bool{install.PickDesktop: in.Desktop, install.PickAutostart: in.Autostart, autoUpdate: in.AutoUpdate}
+	got, err := s.Install(a.ctx, picks, nil)
+	if err != nil {
+		return err
+	}
 	if a.settings != nil {
+		// The installer kept it in the settings file, as these settings
+		// keep it too, so a save of theirs does not undo it.
 		what := settings.UpdatesNotify
 		if in.AutoUpdate {
 			what = settings.UpdatesInstall
@@ -251,8 +306,36 @@ func (a *app) installKakel(in InstallKakel) error {
 		}
 	}
 	a.showUpdate()
-	if !install.Installed(exe) {
-		a.offerRestart(to, "kakel is installed", "In "+to+". Restart into the installed kakel now?")
+	if !samePath(exe, got.Exe) {
+		a.offerRestart(got.Exe, "kakel is installed", "In "+got.Dir+". Restart into the installed kakel now?")
 	}
 	return nil
+}
+
+// toggleAutostart starts the installed kakel with the computer, into
+// the tray, or no longer.
+func (a *app) toggleAutostart() error {
+	in, err := install.Find(installer())
+	if err != nil {
+		return err
+	}
+	return install.Change(installer(), map[string]bool{install.PickAutostart: !in.Chose(install.PickAutostart)})
+}
+
+// samePath reports whether two paths name one file or folder, letter
+// case aside where the system ignores it, and through links.
+func samePath(a, b string) bool {
+	a, b = resolvePath(a), resolvePath(b)
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(a, b)
+	}
+	return a == b
+}
+
+// resolvePath is path cleaned, with its links resolved where it exists.
+func resolvePath(path string) string {
+	if real, err := filepath.EvalSymlinks(path); err == nil {
+		return real
+	}
+	return filepath.Clean(path)
 }

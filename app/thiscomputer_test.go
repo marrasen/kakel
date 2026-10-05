@@ -17,12 +17,14 @@ func TestAShellStartsInTheStartFolder(t *testing.T) {
 	a := updatesApp(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
 	bin := filepath.Join(home, ".local", "bin")
+	installed := filepath.Join(home, ".local", "share", "kakel")
 	work, elsewhere := t.TempDir(), t.TempDir()
 	if err := os.MkdirAll(bin, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for _, from := range []string{"", home, bin} {
+	for _, from := range []string{"", home, bin, installed} {
 		if got := a.startDir(from); got != home {
 			t.Fatalf("from %q with no start folder, a shell starts in %s, want home", from, got)
 		}

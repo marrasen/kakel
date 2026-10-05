@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/marrasen/kakel/install"
+	"github.com/marrasen/gunim/install"
 )
 
 // This computer's own settings, as a saved server has its: the folder a
@@ -81,22 +81,26 @@ func FolderHere(path string) (string, error) {
 // startDir is the folder a local shell starts in when nothing names
 // another: cwd, where kakel was started, unless that is a folder nobody
 // starts kakel in to work there. Those are the home folder, the
-// installed program's own folder and Windows's system folder, which a
-// shortcut, a desktop's menu or a start with the computer gives it.
+// installed program's own folder, where it was installed before, and
+// Windows's system folder, which a shortcut, a desktop's menu or a start
+// with the computer gives it.
 // From one of those it starts in the start folder This Computer sets,
 // or else at home.
 func (a *app) startDir(cwd string) string {
 	home, _ := os.UserHomeDir()
 	defaults := []string{home}
-	if to, err := install.Exe(); err == nil {
-		defaults = append(defaults, filepath.Dir(to))
+	if dir, _, err := install.Where(installer()); err == nil {
+		defaults = append(defaults, dir)
+	}
+	for _, f := range formerly() {
+		defaults = append(defaults, filepath.Dir(f))
 	}
 	if root := os.Getenv("SystemRoot"); root != "" {
 		defaults = append(defaults, root, filepath.Join(root, "System32"), filepath.Join(root, "SysWOW64"))
 	}
 	byDefault := cwd == ""
 	for _, d := range defaults {
-		if d != "" && cwd != "" && install.SamePath(cwd, d) {
+		if d != "" && cwd != "" && samePath(cwd, d) {
 			byDefault = true
 		}
 	}

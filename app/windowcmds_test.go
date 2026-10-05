@@ -14,9 +14,9 @@ import (
 	"github.com/marrasen/kakel/look"
 	"github.com/marrasen/kakel/screen"
 
+	"github.com/marrasen/gunim/install"
 	"github.com/marrasen/kakel/conf"
 	"github.com/marrasen/kakel/internal/testhome"
-	"github.com/marrasen/kakel/internal/update"
 	"github.com/marrasen/kakel/keys"
 	"github.com/marrasen/kakel/remote"
 	"github.com/marrasen/kakel/settings"
@@ -44,8 +44,8 @@ func TestTheThemeFileIsWrittenAndReadAgain(t *testing.T) {
 func TestANewerReleaseIsOffered(t *testing.T) {
 	a, _ := agentApp(t)
 	was, wasVersion := latestRelease, thisVersion
-	latestRelease = func(context.Context) (update.Release, error) {
-		return update.Release{Version: "v99.0.0", Page: "https://example.com/release"}, nil
+	latestRelease = func(context.Context) (install.Release, error) {
+		return install.Release{Version: "v99.0.0", Page: "https://example.com/release"}, nil
 	}
 	t.Cleanup(func() { latestRelease, thisVersion = was, wasVersion })
 	// A release behind is offered the update itself; a build from a
@@ -71,10 +71,10 @@ func TestASecondUpdateCheckWaitsForTheFirst(t *testing.T) {
 	was := latestRelease
 	var asked atomic.Int32
 	answer := make(chan struct{})
-	latestRelease = func(context.Context) (update.Release, error) {
+	latestRelease = func(context.Context) (install.Release, error) {
 		asked.Add(1)
 		<-answer
-		return update.Release{Version: "v0.0.1"}, nil
+		return install.Release{Version: "v0.0.1"}, nil
 	}
 	t.Cleanup(func() { latestRelease = was })
 	a.handle(CheckUpdates{})

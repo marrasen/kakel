@@ -13,9 +13,9 @@ import (
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/gunimtest"
 
+	"github.com/marrasen/gunim/install"
 	"github.com/marrasen/kakel/internal/sshtest"
 	"github.com/marrasen/kakel/internal/testhome"
-	"github.com/marrasen/kakel/internal/update"
 	"github.com/marrasen/kakel/remote"
 )
 
@@ -337,7 +337,7 @@ func TestTheStatusNamesEveryDial(t *testing.T) {
 func TestAnUpdateCheckLeavesADialSaid(t *testing.T) {
 	a, _ := agentApp(t)
 	was := latestRelease
-	latestRelease = func(context.Context) (update.Release, error) { return update.Release{Version: "v0.0.1"}, nil }
+	latestRelease = func(context.Context) (install.Release, error) { return install.Release{Version: "v0.0.1"}, nil }
 	t.Cleanup(func() { latestRelease = was })
 	one := a.machines.NewQuick("one.example", false)
 	a.machines.At(one).Dialing = func() {}

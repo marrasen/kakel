@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -9,11 +10,11 @@ import (
 
 	"github.com/marrasen/kakel/look"
 
+	"github.com/marrasen/gunim/install"
 	"github.com/marrasen/gunim/theme"
 
 	"github.com/marrasen/kakel/conf"
 	"github.com/marrasen/kakel/internal/build"
-	"github.com/marrasen/kakel/internal/update"
 	"github.com/marrasen/kakel/keys"
 	"github.com/marrasen/kakel/remote"
 	"github.com/marrasen/kakel/serve"
@@ -51,7 +52,10 @@ const KindHelp = "help"
 
 // latestRelease asks for the newest release. A variable, so a test
 // reaches no network.
-var latestRelease = update.Latest
+var latestRelease = func(ctx context.Context) (install.Release, error) {
+	r, _, err := install.Check(ctx, installer())
+	return r, err
+}
 
 // thisVersion is what this build calls itself. A variable, so a test
 // can be a release: the tests run from a working tree, where every
@@ -154,14 +158,14 @@ func (a *app) checkUpdates() {
 				return
 			}
 			have := thisVersion()
-			switch update.Against(have, newest.Version) {
-			case update.Behind:
+			switch against(have, newest.Version) {
+			case behind:
 				// Fetched and put in place, or the page where this copy
 				// can't be written.
 				a.offerUpdate(newest)
-			case update.Current:
+			case current:
 				a.notify(newest.Version+" is the newest release", "", "")
-			case update.Ahead:
+			case ahead:
 				a.notify("This build is later than the newest release, "+newest.Version, "", "")
 			default:
 				// A build from a working tree, which has no order against
@@ -175,7 +179,7 @@ func (a *app) checkUpdates() {
 
 // offerRelease names both versions and the page the newer one is on.
 // Enter closes it: opening a browser is a thing to choose.
-func (a *app) offerRelease(title, have string, newest update.Release) {
+func (a *app) offerRelease(title, have string, newest install.Release) {
 	page := newest.Page
 	go func() {
 		ans, err := a.ask(a.ctx, Ask{Title: title, Text: newest.Version + " is the newest release; this build is " + have + ".\n\n" + page,

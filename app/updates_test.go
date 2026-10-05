@@ -8,19 +8,21 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/marrasen/kakel/internal/update"
+	"github.com/marrasen/gunim/install"
 	"github.com/marrasen/kakel/settings"
 )
 
 func TestIsRelease(t *testing.T) {
 	for v, want := range map[string]bool{
-		"v1.2.3":                 true,
-		"v0.1.0":                 true,
-		"v1.2.3-4-gabcdef":       false,
-		"v1.2.3-4-gabcdef-dirty": false,
-		"dev-abcdef":             false,
-		"abcdef":                 false,
-		"":                       false,
+		"v1.2.3":                               true,
+		"v0.1.0":                               true,
+		"v1.2.3-4-gabcdef":                     false,
+		"v1.2.3-4-gabcdef-dirty":               false,
+		"v1.2.3-beta.1":                        false,
+		"v0.5.1-0.20261005120000-0123456789ab": false,
+		"dev-abcdef":                           false,
+		"abcdef":                               false,
+		"":                                     false,
 	} {
 		if got := isRelease(v); got != want {
 			t.Errorf("isRelease(%q) = %v, want %v", v, got, want)
@@ -44,9 +46,9 @@ func updatesApp(t *testing.T) *app {
 func stubRelease(t *testing.T, v string) *atomic.Int32 {
 	was, wasVersion := latestRelease, thisVersion
 	var looks atomic.Int32
-	latestRelease = func(context.Context) (update.Release, error) {
+	latestRelease = func(context.Context) (install.Release, error) {
 		looks.Add(1)
-		return update.Release{Version: v, Page: "https://example.com/release"}, nil
+		return install.Release{Version: v, Page: "https://example.com/release"}, nil
 	}
 	thisVersion = func() string { return "v1.0.0" }
 	t.Cleanup(func() { latestRelease, thisVersion = was, wasVersion })
@@ -106,7 +108,7 @@ func TestInstallingCopiesAndOffersARestart(t *testing.T) {
 		t.Fatalf("before, the state says %+v", a.st.Update)
 	}
 	a.handle(InstallKakel{Autostart: true, AutoUpdate: true})
-	to := filepath.Join(home, ".local", "bin", "kakel")
+	to := filepath.Join(home, "data", "kakel", "kakel")
 	if got, err := os.ReadFile(to); err != nil || string(got) != "the program" {
 		t.Fatalf("installed, %s reads %q, %v", to, got, err)
 	}

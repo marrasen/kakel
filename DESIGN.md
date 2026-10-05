@@ -261,7 +261,7 @@ Windows Terminal runs), and local panes run through it; Windows' own is
 what is left if OpenConsole cannot be put in place or loaded, which the
 log says. It is put in `%LOCALAPPDATA%\kakel\conpty\<version>`, the
 user's cache rather than kakel's own folder, which a portable copy
-keeps beside itself, and `kakel -uninstall` takes it away.
+keeps beside itself, and uninstalling kakel takes it away.
 
 Windows' own, measured on 2026-09-20 on this machine, twice: once from
 PowerShell and once with raw bytes through `cmd /c type`, which agreed.
