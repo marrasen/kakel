@@ -43,9 +43,9 @@ type Options struct {
 	// one, for a key the desktop binds where kakel can take none.
 	launcher bool
 	// tray starts kakel in the tray, with no window, as it does with
-	// the computer; quit ends the kakel running; install and uninstall
-	// install this copy for the user, or take the installed one away.
-	tray, quit, install, uninstall bool
+	// the computer; quit ends the kakel running. Installing is
+	// gunim's: see Installer.
+	tray, quit bool
 	// sizeSet says -font-size was given, which the size kept from last
 	// time does not overrule.
 	sizeSet bool
@@ -77,8 +77,6 @@ func ParseOptions(args []string) (Options, error) {
 		"say each second how many frames were drawn, on standard error")
 	fs.BoolVar(&o.tray, "tray", false, "start in the tray, with no window, as kakel does with the computer")
 	fs.BoolVar(&o.quit, "quit", false, "end the kakel running, asking first as Exit does while anything is open")
-	fs.BoolVar(&o.install, "install", false, "install this copy of kakel for you, with a Start menu or desktop file entry, and exit")
-	fs.BoolVar(&o.uninstall, "uninstall", false, "end the kakel running, take the installed kakel away, and exit; the settings stay")
 	fs.BoolVar(&o.launcher, "launcher", false,
 		"open the launcher, in the kakel already running if there is one;"+
 			" bind this to a key where kakel cannot take one itself, as under Wayland")
@@ -258,7 +256,7 @@ func (o Options) StartsInTray() bool { return o.tray || o.bare() }
 // command, no server, no launcher, no screenshots.
 func (o Options) bare() bool {
 	return o.command == "" && o.ssh == "" && !o.launcher && o.shot == "" &&
-		!o.quit && !o.install && !o.uninstall && !o.asMCP && !o.listFonts && !o.mcpSkill
+		!o.quit && !o.asMCP && !o.listFonts && !o.mcpSkill
 }
 
 // Trays reports whether this kakel shows itself in the tray: one of
@@ -291,10 +289,6 @@ func RunAlone(ctx context.Context, opts Options) (bool, error) {
 	case opts.listFonts:
 		quiet.ToParentConsole()
 		return true, printFonts(os.Stdout)
-	case opts.install:
-		return true, installHere()
-	case opts.uninstall:
-		return true, uninstallHere()
 	}
 	return false, nil
 }

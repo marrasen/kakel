@@ -32,6 +32,7 @@ import (
 	"github.com/marrasen/gunim/driver"
 	"github.com/marrasen/gunim/filemanager"
 	"github.com/marrasen/gunim/geom"
+	"github.com/marrasen/gunim/install"
 	"github.com/marrasen/gunim/theme"
 	"github.com/marrasen/gunim/widget"
 
@@ -41,6 +42,10 @@ import (
 )
 
 func main() {
+	// A kakel started from anywhere but its own folder opens gunim's
+	// installer, and `kakel -install` and `kakel -uninstall` are done
+	// there; the installed one goes on.
+	install.Run(app.Installer())
 	err := run()
 	// A restart into a new copy, as after an update: started once this
 	// one has stopped listening, so it runs as the one.

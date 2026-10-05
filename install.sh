@@ -4,7 +4,8 @@
 #   curl -fsSL https://raw.githubusercontent.com/marrasen/kakel/main/install.sh | sh
 #
 # It fetches the newest release, checks it against SHA256SUMS, and has
-# kakel install itself into ~/.local/bin, with a desktop file.
+# kakel install itself into ~/.local/share/kakel, with a desktop file
+# and a link at ~/.local/bin/kakel.
 set -eu
 
 case "$(uname -s)/$(uname -m)" in

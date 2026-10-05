@@ -30,7 +30,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/marrasen/kakel/glyph"
-	"github.com/marrasen/kakel/install"
 	"github.com/marrasen/kakel/jobs"
 	"github.com/marrasen/kakel/keys"
 	"github.com/marrasen/kakel/remote"
@@ -1571,7 +1570,7 @@ func (a *app) handle(in gunim.Intent) {
 	case SaveLook:
 		err = a.saveLook(in)
 	case ToggleAutostart:
-		err = install.SetAutostart(!install.Autostart())
+		err = a.toggleAutostart()
 		a.showUpdate()
 
 	case SetLauncherKey:

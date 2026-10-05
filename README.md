@@ -38,14 +38,18 @@ curl -fsSL https://raw.githubusercontent.com/marrasen/kakel/main/install.sh | sh
 
 On Windows kakel goes to `%LOCALAPPDATA%\Programs\kakel`, with a Start
 menu shortcut and an entry under Installed apps, which removes it again.
-On Linux it goes to `~/.local/bin/kakel`, with a desktop file.
+On Linux it goes to `~/.local/share/kakel`, with a desktop file and a
+link at `~/.local/bin/kakel`. A kakel installed in `~/.local/bin` by an
+older release moves itself there the first time it starts.
 
 **Or download a build.** The [releases page](https://github.com/marrasen/kakel/releases)
 has a zip for Windows and a tarball for Linux, both amd64, with
-`SHA256SUMS` beside them. Unpack it and run it as it is, or install it
-from Options › Install kakel…, which also offers a desktop shortcut, a
-start with the computer, and automatic updates. `kakel -install` and
-`kakel -uninstall` do the same from a shell.
+`SHA256SUMS` beside them. Unpack it and run it: it opens kakel's
+installer, which also offers a desktop shortcut, a start with the
+computer, and automatic updates, or runs it as it is. Options › Install
+kakel… installs a copy run that way later. `kakel -install` and
+`kakel -uninstall` do the same from a shell, and `kakel -uninstall`
+offers to take your settings and saved servers too.
 
 **Updates.** An installed release looks for a newer one a minute after it
 starts and once a day after. Options › Updates… says what it does then:

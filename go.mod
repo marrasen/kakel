@@ -14,7 +14,7 @@ require (
 	// upstream's own test expected. And AdvanceBytes parses a whole write,
 	// taking text and CSI parameters without the state table.
 	github.com/marrasen/go-vte v1.0.11-gt.3
-	github.com/marrasen/gunim v0.0.0-20261004205524-ce6e95bb57be
+	github.com/marrasen/gunim v0.0.0-20261005202704-163c6b304edb
 	github.com/pkg/sftp v1.13.11
 	github.com/rivo/uniseg v0.4.7
 	golang.design/x/clipboard v0.9.0
@@ -35,7 +35,7 @@ require (
 	github.com/jfreymuth/pulse v0.1.3 // indirect
 	github.com/jfreymuth/vorbis v1.0.2 // indirect
 	github.com/kr/fs v0.1.0 // indirect
-	github.com/marrasen/oto/v3 v3.5.1-gunim.3 // indirect
+	github.com/marrasen/oto/v3 v3.5.1-gunim.4 // indirect
 	github.com/mewkiz/flac v1.0.14 // indirect
 	github.com/mewkiz/pkg v0.0.0-20250417130911-3f050ff8c56d // indirect
 	github.com/mewpkg/term v0.0.0-20241026122259-37a80af23985 // indirect
