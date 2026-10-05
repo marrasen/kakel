@@ -26,9 +26,11 @@ in a shell still starts it. A kakel installed in `~/.local/bin` by an
 older release moves itself the first time it starts, keeping its start
 with the computer and its shortcut on the desktop.
 
-Both come from gunim, whose installer kakel's grew into. Updates are as
-they were: Options › Updates… still tells you of a new release, installs
-it by itself, or does nothing.
+Both come from gunim, whose installer kakel's grew into, and so do the
+updates now. They work as they did: Options › Updates… tells you of a
+new release, installs it by itself, or does nothing, and what you had
+chosen carries over. The installer's Keep kakel up to date sets it:
+ticked, new releases install by themselves; unticked, kakel asks first.
 
 ## v0.5.0
 

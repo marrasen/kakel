@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"time"
+	"sync/atomic"
 
 	"github.com/marrasen/gunim/install"
 
@@ -16,12 +16,12 @@ import (
 )
 
 // Installing kakel, and keeping it up to date. gunim's installer does
-// the installing; see Installer. A copy run without installing offers
-// to install itself from its menu. The installed one, a release build,
-// looks for a newer release a minute after it starts and once a day,
-// and says so, or with Updates set to install, fetches it and puts it
-// in place for the next start. A restart into the new copy is a
-// question away.
+// the installing, and gunim's updates the looking; see Installer. A
+// copy run without installing offers to install itself from its menu.
+// The installed one, a release build, is told of a newer release a
+// minute after it starts and once a day, and asks, or with Updates set
+// to install, finds it in place for the next start. A restart into the
+// new copy is a question away.
 
 // Intents for installing and updating.
 type (
@@ -46,12 +46,26 @@ type Update struct {
 	Updates                           string
 }
 
-// updateEvery is how often the installed kakel looks for a newer
-// release, and updateFirst how long after it starts it first looks.
-var (
-	updateEvery = 24 * time.Hour
-	updateFirst = time.Minute
-)
+// live is the kakel running, for gunim's updates to reach: they look on
+// a goroutine of their own, from before the app is made.
+var live atomic.Pointer[app]
+
+// toLive runs fn on the running kakel's own goroutine, or drops it when
+// none is running yet, or it is ending: the next look asks again.
+func toLive(fn func(a *app)) {
+	a := live.Load()
+	if a == nil {
+		return
+	}
+	select {
+	case a.events <- func() {
+		if !a.gone {
+			fn(a)
+		}
+	}:
+	case <-a.ctx.Done():
+	}
+}
 
 // restartInto is the program kakel starts as it ends, for a restart into
 // a new copy; empty for none.
@@ -64,8 +78,10 @@ func RestartInto() string { return restartInto }
 var executable = os.Executable
 
 // installer is the description of kakel the installer works from; a
-// test sets it.
-var installer = Installer
+// test sets it. Set in init, as Installer's hooks reach back here.
+var installer func() install.App
+
+func init() { installer = Installer }
 
 // showUpdate tells the windows where kakel stands.
 func (a *app) showUpdate() {
@@ -77,42 +93,55 @@ func (a *app) showUpdate() {
 	}
 	if in, err := install.Find(installer()); err == nil {
 		u.Autostart = in.Chose(install.PickAutostart)
-	}
-	if a.settings != nil {
+		u.Updates = string(in.Updates)
+	} else if a.settings != nil {
 		u.Updates = a.settings.Updates()
 	}
 	a.st.Update = u
 }
 
 // startUpdates takes away the copy the last update moved aside, and
-// looks for newer releases from now on, while the settings want it.
+// lets gunim's updates reach this kakel: they look for newer releases
+// as the mode Options › Updates… sets says.
 func (a *app) startUpdates() {
+	if exe, err := executable(); err == nil {
+		install.CleanOld(exe)
+	}
+	a.showUpdate()
+	if a.opts.OneOfMany() {
+		// A kakel of its own leaves the questions to the one running.
+		live.Store(a)
+		go func() {
+			<-a.ctx.Done()
+			live.CompareAndSwap(a, nil)
+		}()
+	}
+}
+
+// setUpdates keeps what the installed kakel does with a newer release:
+// in gunim's install, which its updates follow, and in the settings.
+func (a *app) setUpdates(what string) error {
+	if err := install.SetUpdates(installer(), install.UpdateMode(what)); err != nil {
+		if errors.Is(err, install.ErrNotInstalled) {
+			return errors.New("updates are for the installed kakel: install it first")
+		}
+		return err
+	}
+	if a.settings != nil {
+		return a.settings.PutUpdates(what)
+	}
+	return nil
+}
+
+// updated offers the restart into a release gunim's updates put in place
+// by themselves.
+func (a *app) updated(r install.Release) {
 	exe, err := executable()
 	if err != nil {
 		return
 	}
-	install.CleanOld(exe)
-	a.showUpdate()
-	if !isRelease(thisVersion()) || !a.opts.OneOfMany() || !a.st.Update.Installed {
-		// A build from a working tree has no order against releases, a
-		// kakel of its own leaves it to the one running, and a copy not
-		// installed is the user's to keep as it is: Check for Updates
-		// still offers it the newest.
-		return
-	}
-	var look func(time.Duration)
-	look = func(after time.Duration) {
-		time.AfterFunc(after, func() {
-			a.events <- func() {
-				if a.gone {
-					return
-				}
-				a.lookForUpdate()
-				look(updateEvery)
-			}
-		})
-	}
-	look(updateFirst)
+	a.staged = r.Version
+	a.offerRestart(exe, "kakel "+r.Version+" is ready", "It starts the next time kakel does.")
 }
 
 // isRelease reports whether version names a release, vX.Y.Z, not a
@@ -152,34 +181,6 @@ func against(have, release string) standing {
 		return ahead
 	}
 	return current
-}
-
-// lookForUpdate asks for the newest release, and acts on one newer.
-func (a *app) lookForUpdate() {
-	what := settings.UpdatesNotify
-	if a.settings != nil {
-		what = a.settings.Updates()
-	}
-	if what == settings.UpdatesOff || a.updating {
-		return
-	}
-	a.updating = true
-	go func() {
-		newest, err := latestRelease(a.ctx)
-		a.events <- func() {
-			a.updating = false
-			if err != nil || against(thisVersion(), newest.Version) != behind || newest.Version == a.staged {
-				// Said nothing: the next look may reach GitHub, and an
-				// update put in place waits for the next start.
-				return
-			}
-			if what == settings.UpdatesInstall && a.writable() {
-				a.fetchUpdate(newest, false)
-				return
-			}
-			a.offerUpdate(newest)
-		}
-	}()
 }
 
 // writable reports whether this program's own copy can be replaced.
@@ -289,21 +290,13 @@ func (a *app) installKakel(in InstallKakel) error {
 		}
 		return err
 	}
-	picks := map[string]bool{install.PickDesktop: in.Desktop, install.PickAutostart: in.Autostart, autoUpdate: in.AutoUpdate}
+	picks := map[string]bool{install.PickDesktop: in.Desktop, install.PickAutostart: in.Autostart, install.PickUpdates: in.AutoUpdate}
 	got, err := s.Install(a.ctx, picks, nil)
 	if err != nil {
 		return err
 	}
 	if a.settings != nil {
-		// The installer kept it in the settings file, as these settings
-		// keep it too, so a save of theirs does not undo it.
-		what := settings.UpdatesNotify
-		if in.AutoUpdate {
-			what = settings.UpdatesInstall
-		}
-		if err := a.settings.PutUpdates(what); err != nil {
-			a.failed("Couldn't keep the update setting", err.Error())
-		}
+		_ = a.settings.PutUpdates(string(got.Updates))
 	}
 	a.showUpdate()
 	if !samePath(exe, got.Exe) {
