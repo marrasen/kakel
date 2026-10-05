@@ -55,33 +55,24 @@ func stubRelease(t *testing.T, v string) *atomic.Int32 {
 	return &looks
 }
 
-// With updates off, kakel doesn't even look.
-func TestUpdatesOffLooksForNothing(t *testing.T) {
+// gunim's updates, told of a newer release, have kakel ask; one put in
+// place by itself has kakel offer the restart into it.
+func TestGunimsUpdatesAreAskedAbout(t *testing.T) {
 	a := updatesApp(t)
-	looks := stubRelease(t, "v99.0.0")
-	if err := a.settings.PutUpdates(settings.UpdatesOff); err != nil {
-		t.Fatal(err)
-	}
-	a.lookForUpdate()
-	if a.updating || looks.Load() != 0 {
-		t.Fatalf("off, it looked %d times", looks.Load())
-	}
-}
-
-// Told to tell, a newer release is offered; one no newer says nothing.
-func TestANewerReleaseIsToldOf(t *testing.T) {
-	a := updatesApp(t)
-	stubRelease(t, "v1.0.0")
-	a.lookForUpdate()
-	waitFor(t, a, "the look", func() bool { return !a.updating })
-	if len(a.st.Asks) != 0 {
-		t.Fatalf("up to date, it asked %+v", a.st.Asks)
-	}
 	stubRelease(t, "v99.0.0")
-	a.lookForUpdate()
+	live.Store(a)
+	t.Cleanup(func() { live.Store(nil) })
+	go toLive(func(a *app) { a.offerUpdate(install.Release{Version: "v99.0.0"}) })
 	waitFor(t, a, "the offer", func() bool { return len(a.st.Asks) == 1 })
 	if q := a.st.Asks[0]; q.Title != "kakel v99.0.0 is out" || q.Yes != "Update" {
 		t.Fatalf("the offer is %+v", q)
+	}
+	a.handle(AskAnswered{ID: a.st.Asks[0].ID})
+	waitFor(t, a, "the no", func() bool { return len(a.st.Asks) == 0 })
+	go toLive(func(a *app) { a.updated(install.Release{Version: "v99.0.0"}) })
+	waitFor(t, a, "the restart offer", func() bool { return len(a.st.Asks) == 1 })
+	if q := a.st.Asks[0]; q.Title != "kakel v99.0.0 is ready" || q.Yes != "Restart Now" || a.staged != "v99.0.0" {
+		t.Fatalf("the restart offer is %+v, staged %q", q, a.staged)
 	}
 }
 
@@ -112,8 +103,11 @@ func TestInstallingCopiesAndOffersARestart(t *testing.T) {
 	if got, err := os.ReadFile(to); err != nil || string(got) != "the program" {
 		t.Fatalf("installed, %s reads %q, %v", to, got, err)
 	}
-	if a.settings.Updates() != settings.UpdatesInstall || !a.st.Update.Autostart {
-		t.Fatalf("installed, updates are %q and the state %+v", a.settings.Updates(), a.st.Update)
+	if in, err := install.Find(installer()); err != nil || in.Updates != install.UpdatesInstall || !a.st.Update.Autostart {
+		t.Fatalf("installed, the install says %+v, %v, and the state %+v", in, err, a.st.Update)
+	}
+	if a.settings.Updates() != settings.UpdatesInstall || a.st.Update.Updates != settings.UpdatesInstall {
+		t.Fatalf("installed, the setting is %q and the state %+v", a.settings.Updates(), a.st.Update)
 	}
 	waitFor(t, a, "the restart offer", func() bool { return len(a.st.Asks) == 1 })
 	if q := a.st.Asks[0]; q.Title != "kakel is installed" || q.Yes != "Restart Now" {
@@ -150,13 +144,8 @@ func TestADeclinedRestartIsForgotten(t *testing.T) {
 // restart into it.
 func TestAStagedUpdateIsNotFetchedAgain(t *testing.T) {
 	a := updatesApp(t)
-	looks := stubRelease(t, "v99.0.0")
+	stubRelease(t, "v99.0.0")
 	a.staged = "v99.0.0"
-	a.lookForUpdate()
-	waitFor(t, a, "the look", func() bool { return !a.updating })
-	if looks.Load() != 1 || len(a.st.Asks) != 0 {
-		t.Fatalf("staged, the look asked %+v", a.st.Asks)
-	}
 	a.handle(CheckUpdates{})
 	waitFor(t, a, "the offer", func() bool { return len(a.st.Asks) == 1 })
 	if q := a.st.Asks[0]; q.Title != "kakel v99.0.0 is ready" || q.Yes != "Restart Now" {

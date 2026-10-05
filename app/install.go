@@ -25,12 +25,10 @@ import (
 // with a Start menu entry or a desktop file, an entry the system lists
 // to take it away again, and, when asked, a shortcut on the desktop and
 // a start with the computer, into the tray. `kakel -install` and
-// `kakel -uninstall` do the same from a shell. kakel keeps its own
-// updates: they are its Updates setting's to tell of, fetch, or leave.
-
-// autoUpdate is the installer's offer to update kakel by itself, which
-// sets the Updates setting.
-const autoUpdate = "kakel.autoupdate"
+// `kakel -uninstall` do the same from a shell. The installed kakel's
+// updates are gunim's too: Options › Updates… sets whether a new release
+// is put in place by itself, asked about first, or left; the questions
+// and the restart are kakel's own, in updates.go.
 
 // Installer is how kakel installs itself, for gunim's installer.
 func Installer() install.App {
@@ -44,15 +42,14 @@ func Installer() install.App {
 		IconFunc:    func() image.Image { return appicon.Draw(256) },
 		Categories:  "System;TerminalEmulator;",
 		Autostart:   &install.Autostart{Args: []string{"-tray"}, Label: "Start kakel with the computer, in the tray"},
-		Choices: []install.Choice{{
-			Key: autoUpdate, Label: "Update automatically", Detail: "A new release is put in place for the next start.",
-			On: updatesSetting() == settings.UpdatesInstall, Current: true,
-		}},
-		Updates:      install.GitHub{Repo: "marrasen/kakel", Asset: releaseAsset},
-		NoAutoUpdate: true,
+		Updates:     install.GitHub{Repo: "marrasen/kakel", Asset: releaseAsset},
+		// kakel kept its own Updates setting before gunim kept the mode:
+		// an install taken on goes on as its user had it.
+		UpdateMode:   install.UpdateMode(updatesSetting()),
+		Available:    func(r install.Release) { toLive(func(a *app) { a.offerUpdate(r) }) },
+		Updated:      func(r install.Release) { toLive(func(a *app) { a.updated(r) }) },
 		Formerly:     formerly(),
 		Data:         dataDirs(),
-		Installed:    installed,
 		Uninstalling: func(context.Context, install.Installation) error { removeConPTY(); return nil },
 		Quit:         quitRunning,
 	}
@@ -105,8 +102,8 @@ func dataDirs() []string {
 	return out
 }
 
-// updatesSetting is the Updates setting as it stands, for the installer
-// to start its offer from.
+// updatesSetting is kakel's own Updates setting, as it stood before
+// gunim kept the mode, and as Options › Updates… keeps it beside gunim's.
 func updatesSetting() string {
 	path, err := settings.Path()
 	if err != nil {
@@ -117,31 +114,6 @@ func updatesSetting() string {
 		return settings.UpdatesNotify
 	}
 	return s.Updates()
-}
-
-// installed keeps what the installer's offer to update by itself says
-// in the Updates setting. Unticked, updates are told of, unless they
-// were off.
-func installed(_ context.Context, in install.Installation) error {
-	path, err := settings.Path()
-	if err != nil {
-		return err
-	}
-	s, err := settings.Load(path)
-	if err != nil {
-		return err
-	}
-	want := s.Updates()
-	switch {
-	case in.Chose(autoUpdate):
-		want = settings.UpdatesInstall
-	case want == settings.UpdatesInstall:
-		want = settings.UpdatesNotify
-	}
-	if want == s.Updates() {
-		return nil
-	}
-	return s.PutUpdates(want)
 }
 
 // quitRunning ends the kakel running, as before an uninstall, asking

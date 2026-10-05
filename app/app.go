@@ -577,8 +577,6 @@ type app struct {
 	thumbQueue   []thumbJob
 	thumbWanted  map[files.ThumbKey]bool
 	thumbWorking int
-	// updating says a look for a newer release is out.
-	updating bool
 	// staged is the release put in place of this program, which starts
 	// the next time kakel does.
 	staged string
@@ -1563,9 +1561,7 @@ func (a *app) handle(in gunim.Intent) {
 	case InstallKakel:
 		err = a.installKakel(in)
 	case SetUpdates:
-		if a.settings != nil {
-			err = a.settings.PutUpdates(in.What)
-		}
+		err = a.setUpdates(in.What)
 		a.showUpdate()
 	case SaveLook:
 		err = a.saveLook(in)
