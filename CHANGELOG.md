@@ -7,7 +7,7 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
-## Unreleased
+## v0.6.0
 
 ### Changed
 
@@ -31,6 +31,12 @@ updates now. They work as they did: Options › Updates… tells you of a
 new release, installs it by itself, or does nothing, and what you had
 chosen carries over. The installer's Keep kakel up to date sets it:
 ticked, new releases install by themselves; unticked, kakel asks first.
+
+### Fixed
+
+**A new window opens in front on Windows.** A kakel started from
+Explorer, the Start menu or a shortcut could open behind the window it
+was started from, and had to be found on the taskbar.
 
 ## v0.5.0
 
