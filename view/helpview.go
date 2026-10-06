@@ -16,7 +16,6 @@ import (
 	"github.com/marrasen/gunim/widget"
 
 	"github.com/marrasen/kakel/conf"
-	"github.com/marrasen/kakel/internal/build"
 	"github.com/marrasen/kakel/keys"
 	"github.com/marrasen/kakel/remote"
 	"github.com/marrasen/kakel/serve"
@@ -269,21 +268,6 @@ func (w *Window) applyShortcuts(changes []keys.Change, u *gunim.UI) bool {
 		w.help.show(w, u)
 	}
 	return true
-}
-
-// aboutDialog says what this build is.
-func (w *Window) aboutDialog(u *gunim.UI) {
-	d := widget.NewDialog("About kakel")
-	d.Body = widget.NewForm().
-		Add("", widget.NewLabel("A GPU-drawn terminal emulator, on gunim.")).
-		Add("Version", widget.NewLabel(build.Version()))
-	d.SetButtons("Close", "")
-	// The check says how it went on its own: About makes way for it, as
-	// a dialog over it would wait until About closed.
-	d.AddAction("Check for Updates", func(u *gunim.UI) { d.Close(u); u.Send(w, app.CheckUpdates{}) })
-	d.AddAction("What's New", func(u *gunim.UI) { d.Close(u); u.Send(w, app.ShowWhatsNew{}) })
-	d.Accept, d.Dismiss = app.DialogClosed{}, app.DialogClosed{}
-	w.openDialog(d, u)
 }
 
 // fileLocationsDialog says where the window keeps its files.

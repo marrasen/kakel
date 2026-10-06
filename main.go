@@ -161,6 +161,10 @@ func (u updateWindows) ShowWhatsNew(from string) error {
 	return install.ShowWhatsNew(u.ctx, u.app, app.Installer(), from)
 }
 
+func (u updateWindows) ShowAbout(o install.About) error {
+	return install.ShowAbout(u.ctx, u.app, app.Installer(), o)
+}
+
 // ownWindows opens kakel's windows, each with the window's view
 // mounted, and names the themes to every one of them.
 type ownWindows struct {

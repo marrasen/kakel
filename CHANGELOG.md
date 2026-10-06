@@ -7,6 +7,23 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
+## Unreleased
+
+### Changed
+
+**About kakel is a window of its own.** It shows the version, what each
+release changed, and Check for Updates. The check runs with the window
+open and says how it went there; a newer release turns the window to
+it, to update now.
+
+### Fixed
+
+**Opening What's New froze kakel on Windows.** kakel's update, What's
+New and About windows now open off kakel's own goroutine. And should
+kakel's windows ever stop answering again, it writes where each part
+of it was to `gunim-hang-kakel-<pid>-<time>.txt` in the temporary
+folder, to find out why.
+
 ## v0.9.0
 
 ### Changed

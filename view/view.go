@@ -564,7 +564,7 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 		u.Send(w, app.WriteShortcuts{Bindings: w.keys.Bindings()})
 		return true
 	case "app.about":
-		w.aboutDialog(u)
+		u.Send(w, app.ShowAbout{})
 		return true
 	case "help.files":
 		w.fileLocationsDialog(u)

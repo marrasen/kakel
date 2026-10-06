@@ -160,66 +160,6 @@ func TestEditingAServerKeepsItsKeysAndRefusesATakenName(t *testing.T) {
 	}
 }
 
-// Enter on About closes it, rather than asking the network anything.
-func TestEnterClosesAbout(t *testing.T) {
-	win, _, publish := windowStage(t)
-	publish(app.State{})
-	for len(lastWindow.Client().Intents()) > 0 {
-		<-lastWindow.Client().Intents()
-	}
-	win.aboutDialog(lastUI)
-	for range 3 {
-		lastWindow.Frame(time.Second / 60)
-	}
-	lastWindow.Input(gi.KeyPress{Key: gi.KeyEnter})
-	lastWindow.Frame(time.Second / 60)
-	if got := nextIntent(t); got != (app.DialogClosed{}) {
-		t.Fatalf("Enter on About sent %#v", got)
-	}
-}
-
-// Check for Updates on About closes About, so how the check went shows
-// with nothing in its way.
-func TestCheckingForUpdatesClosesAbout(t *testing.T) {
-	win, _, publish := windowStage(t)
-	publish(app.State{})
-	for len(lastWindow.Client().Intents()) > 0 {
-		<-lastWindow.Client().Intents()
-	}
-	win.aboutDialog(lastUI)
-	for range 30 {
-		lastWindow.Frame(time.Second / 60)
-	}
-	var check *widget.Button
-	for _, b := range win.dialog.Buttons() {
-		if b, ok := b.(*widget.Button); ok && b.Label == "Check for Updates" {
-			check = b
-		}
-	}
-	if check == nil {
-		t.Fatal("About has no Check for Updates")
-	}
-	r, ok := lastUI.Bounds(check)
-	if !ok {
-		t.Fatal("Check for Updates isn't drawn")
-	}
-	at := r.Center()
-	lastWindow.Input(gi.PointerDown{Pos: at, Button: gi.ButtonPrimary, Clicks: 1})
-	lastWindow.Input(gi.PointerUp{Pos: at, Button: gi.ButtonPrimary})
-	for range 30 {
-		lastWindow.Frame(time.Second / 60)
-	}
-	sawCheck := false
-	for len(lastWindow.Client().Intents()) > 0 {
-		if env := <-lastWindow.Client().Intents(); env.Intent == (app.CheckUpdates{}) {
-			sawCheck = true
-		}
-	}
-	if !sawCheck || (win.dialog != nil && lastUI.Presence(win.dialog) == gunim.Present) {
-		t.Fatalf("the check was asked for %v, and About is still up", sawCheck)
-	}
-}
-
 // A window's form greys out what a window has none of, calls a window
 // what the message about one does, and keeps a server's key to offer
 // next time.

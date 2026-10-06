@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -153,20 +154,41 @@ func TestAStagedUpdateIsNotFetchedAgain(t *testing.T) {
 	}
 }
 
-// fakeUpdateWindows notes the update windows kakel opens.
+// fakeUpdateWindows notes the update windows kakel opens, which it opens
+// off the program's goroutine.
 type fakeUpdateWindows struct {
+	mu      sync.Mutex
 	updates []install.Update
 	from    []string
+	abouts  []install.About
 }
 
 func (f *fakeUpdateWindows) ShowUpdate(u install.Update) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.updates = append(f.updates, u)
 	return nil
 }
 
 func (f *fakeUpdateWindows) ShowWhatsNew(from string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.from = append(f.from, from)
 	return nil
+}
+
+func (f *fakeUpdateWindows) ShowAbout(o install.About) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.abouts = append(f.abouts, o)
+	return nil
+}
+
+// seen runs fn on what f noted, under its lock.
+func (f *fakeUpdateWindows) seen(fn func() bool) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return fn()
 }
 
 // With gunim's update window, a newer release opens it, a copy that is
@@ -179,7 +201,8 @@ func TestUpdatesOpenGunimsWindow(t *testing.T) {
 	wins := &fakeUpdateWindows{}
 	a.updateWins = wins
 	a.offerUpdate(install.Release{Version: "v99.0.0"})
-	if len(wins.updates) != 1 || len(a.st.Asks) != 0 {
+	waitFor(t, a, "the update window", func() bool { return wins.seen(func() bool { return len(wins.updates) == 1 }) })
+	if len(a.st.Asks) != 0 {
 		t.Fatalf("opened %+v, and asked %+v", wins.updates, a.st.Asks)
 	}
 	exe, _ := executable()
@@ -194,7 +217,8 @@ func TestUpdatesOpenGunimsWindow(t *testing.T) {
 		t.Fatalf("ready, the notice is %+v", n)
 	}
 	a.handle(ready)
-	if len(wins.updates) != 2 || !wins.updates[1].Ready {
+	waitFor(t, a, "the ready window", func() bool { return wins.seen(func() bool { return len(wins.updates) == 2 }) })
+	if !wins.updates[1].Ready {
 		t.Fatalf("the notice opened %+v", wins.updates)
 	}
 }
@@ -214,7 +238,21 @@ func TestAnUpdateSaysWhatsNew(t *testing.T) {
 		t.Fatalf("the notice is %+v", n)
 	}
 	a.handle(n.On)
-	if len(wins.from) != 1 || wins.from[0] != "v0.6.0" {
+	waitFor(t, a, "what's new", func() bool { return wins.seen(func() bool { return len(wins.from) == 1 }) })
+	if wins.from[0] != "v0.6.0" {
 		t.Fatalf("what's new opened from %q", wins.from)
+	}
+}
+
+// About opens gunim's window about kakel, off the program's goroutine,
+// ready to take a newer release as the update window does.
+func TestAboutOpensGunimsWindow(t *testing.T) {
+	a := updatesApp(t)
+	wins := &fakeUpdateWindows{}
+	a.updateWins = wins
+	a.handle(ShowAbout{})
+	waitFor(t, a, "the window about kakel", func() bool { return wins.seen(func() bool { return len(wins.abouts) == 1 }) })
+	if wins.abouts[0].Quit == nil {
+		t.Fatal("About can't restart kakel into a newer release")
 	}
 }
