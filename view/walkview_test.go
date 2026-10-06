@@ -10,6 +10,7 @@ import (
 	"github.com/marrasen/kakel/screen"
 
 	"github.com/marrasen/gunim/driver"
+	"github.com/marrasen/gunim/geom"
 	gi "github.com/marrasen/gunim/input"
 
 	"github.com/marrasen/kakel/vt"
@@ -139,5 +140,26 @@ func TestCtrlTabRingsAPaneInASplit(t *testing.T) {
 	lastWindow.Frame(time.Second / 60)
 	if win.walkMark != nil {
 		t.Fatal("letting go of Ctrl left the ring")
+	}
+}
+
+// Ctrl+Tab in a window of one pane, as the Settings window is, starts no
+// walk and leaves nothing over the window: a ring left there took every
+// click, the title bar's too.
+func TestCtrlTabInAWindowOfOnePaneLeavesNothing(t *testing.T) {
+	win, _, publish := windowStage(t)
+	publish(app.State{Panes: []app.Pane{{ID: "s", Title: "Settings", Kind: app.KindSettings}}, Stage: &app.Box{Pane: "s"}, Focus: "s"})
+	for range 3 {
+		lastWindow.Input(gi.KeyPress{Key: gi.KeyTab, Mods: gi.ModControl})
+		lastWindow.Frame(time.Second / 60)
+	}
+	lastWindow.Input(gi.KeyRelease{Key: gi.KeyLeftControl})
+	lastWindow.Frame(time.Second / 60)
+	if win.walk != nil || win.walkMark != nil || win.walkList != nil {
+		t.Fatalf("one pane, the walk left %v, a ring %v and a list %v", win.walk, win.walkMark != nil, win.walkList != nil)
+	}
+	// And a ring, however it came to be, takes no clicks.
+	if (&walkMark{}).Covers(geom.Pt(10, 10)) {
+		t.Fatal("the ring takes the pointer")
 	}
 }
