@@ -19,7 +19,7 @@ STAMP    = -X github.com/marrasen/kakel/internal/build.version=$(VERSION)
 BUILD = go build -trimpath -ldflags "$(STAMP)"
 DIST  = dist
 
-.PHONY: all test vet fmt icon windows linux release clean
+.PHONY: all test vet fmt icon windows linux release sign clean
 all: test windows
 
 # The whole suite runs without a display: the window's tests draw into
@@ -64,6 +64,12 @@ release: clean
 	rm $(DIST)/kakel
 	cd $(DIST) && sha256sum * > SHA256SUMS
 	cat $(DIST)/SHA256SUMS
+
+# The signature of a release's SHA256SUMS, which installed copies check
+# before they run an update. It takes the private key from
+# GUNIM_SIGN_KEY, and fails without it. See RELEASING.md.
+sign:
+	go run github.com/marrasen/gunim/tools/gunimsign $(DIST)/SHA256SUMS
 
 clean:
 	rm -rf $(DIST)

@@ -58,6 +58,13 @@ jobs:
       - name: Build the release
         run: make release VERSION=${{ github.ref_name }}
 
+      # Installed copies run an update only with this signature. Without
+      # the secret this fails, before anything is published.
+      - name: Sign the release
+        env:
+          GUNIM_SIGN_KEY: ${{ secrets.GUNIM_SIGN_KEY }}
+        run: make sign
+
       # Only a tag publishes. A manual run builds, so the build can be
       # checked without a release appearing named after a branch.
       - name: Take the notes for this version out of the changelog
