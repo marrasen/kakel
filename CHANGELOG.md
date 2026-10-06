@@ -15,7 +15,9 @@ change how something behaves.
 cloud mark went after the name, so a long name hid it, and only files
 kept online had one. Now a mark before the name says each state, as
 Explorer does: a cloud for a file kept online only, a green tick for
-one on this device, and a green pin for one always kept there. Files
+one on this device, and a green pin for one always kept there. The
+icon view shows the same mark over each tile's bottom right corner, the
+same size at every zoom. Files
 through a kakel window on Windows show them too, once that kakel is
 this version.
 
