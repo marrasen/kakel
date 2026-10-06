@@ -43,6 +43,8 @@ func Installer() install.App {
 		Categories:  "System;TerminalEmulator;",
 		Autostart:   &install.Autostart{Args: []string{"-tray"}, Label: "Start kakel with the computer, in the tray"},
 		Updates:     install.GitHub{Repo: "marrasen/kakel", Asset: releaseAsset},
+		// The public key the releases are signed with: see RELEASING.md.
+		UpdateKey: "j2nZwJ7kHSNj2JxWTwQs/GrWL1n+Zqg8F4tAybrtwIY=",
 		// kakel kept its own Updates setting before gunim kept the mode:
 		// an install taken on goes on as its user had it.
 		UpdateMode:   install.UpdateMode(updatesSetting()),

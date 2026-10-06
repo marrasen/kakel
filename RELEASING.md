@@ -35,9 +35,12 @@ true.
 - `kakel_vX.Y.Z_windows_amd64.zip`
 - `kakel_vX.Y.Z_linux_amd64.tar.gz`
 - `SHA256SUMS`
+- `SHA256SUMS.sig`, the signature of `SHA256SUMS`
 
 Keep those names. `install.ps1`, `install.sh` and kakel's own updates
 find the archive by them, and check it against `SHA256SUMS`. An
+installed kakel runs an update only when `SHA256SUMS.sig` matches the
+public key in `app/install.go`. An
 installed kakel updates only from a release: a build that calls itself
 `dev-…` or `v…-N-g…` never looks.
 
@@ -50,9 +53,28 @@ over MCP. A build from a working tree calls itself `dev-<commit>`, and
 `make release` does the same thing by hand -- see
 [BUILDING.md](BUILDING.md).
 
+## The signing key
+
+CI signs `SHA256SUMS` with `make sign`, which takes the private key
+from the repository's `GUNIM_SIGN_KEY` secret. Its public key is
+`UpdateKey` in `app/install.go`. To sign by hand, after `make release`:
+
+```
+GUNIM_SIGN_KEY=$(cat kakel.key) make sign
+```
+
+Never commit the private key. Lose it, and installed copies can take no
+more updates: their users must download the next release by hand. To
+change it, make a new pair with
+`go run github.com/marrasen/gunim/tools/gunimsign -keygen new.key`,
+put the new public key in `app/install.go`, and sign that one release
+with the old key; every release after it is signed with the new one.
+Then replace the secret with `gh secret set GUNIM_SIGN_KEY < new.key`.
+
 ## What is not automated
 
 - **macOS.** There is no build and no runner.
 - **arm64.** Both releases are amd64.
-- **Signing.** Neither binary is signed, so Windows will warn about an
-  unknown publisher.
+- **Code signing.** Neither binary carries an Authenticode signature,
+  so Windows will warn about an unknown publisher. The signature above
+  is only for kakel's own updates.

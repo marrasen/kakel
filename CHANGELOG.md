@@ -16,6 +16,17 @@ while kakel runs goes on by itself once it has closed. Close kakel
 there asks the running kakel to end, with a ring turning while it
 does, and says so if it didn't.
 
+**Signed updates.** Each release now carries `SHA256SUMS.sig`, a
+signature of its checksums. An installed kakel puts an update in place
+only when the signature matches kakel's own key, so a release that
+anyone else put up never runs. Updates come over https only.
+
+**Leaves other programs' files alone.** Installing and uninstalling
+replace or take away a link in `~/.local/bin`, or a desktop file of
+kakel's name, only when it starts kakel. An older kakel started from an
+old shortcut hands over to a newer one installed, instead of copying
+itself over it.
+
 ## v0.6.0
 
 ### Changed
