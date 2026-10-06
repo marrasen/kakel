@@ -24,6 +24,12 @@ typed is kept with the Save beside it. Sharing also says what kakel
 does as it starts when the window was served as it last closed: ask,
 serve again, or not, which before only "Don't ask again" could set.
 
+**A stress test for the What's New freeze.** `KAKEL_STRESS_WINDOWS=15m`
+has kakel open the What's New window, close it a few seconds later, and
+go again, for that long. Should the windows freeze, the hang report says
+where. Release notes read once are kept 10 minutes, so the windows don't
+ask GitHub each time.
+
 **What's New and the installer's windows are smooth again.** Long notes
 draw only the lines in view, and the installer's icon comes to rest
 after a few seconds, so the window stops drawing when nothing moves.
