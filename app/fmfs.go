@@ -496,6 +496,19 @@ func (m *fmFS) OnlineOnly(info fs.FileInfo) bool {
 	return winattrs.OnlineOnly(attrs)
 }
 
+// Cloud implements [filemanager.CloudReporter]: how a cloud provider
+// keeps an item, as a kakel window on Windows says, beside its
+// attributes, whether it lies in the provider's folder.
+func (m *fmFS) Cloud(_ string, info fs.FileInfo) filemanager.CloudState {
+	attrs := uint32(0)
+	if i, ok := info.(fmInfo); ok {
+		attrs = i.e.Attrs
+	} else {
+		attrs = vfs.WinAttrs(info)
+	}
+	return filemanager.WindowsCloud(attrs&^winattrs.InCloud, info.IsDir(), attrs&winattrs.InCloud != 0)
+}
+
 // SystemThumb implements [filemanager.OnlineReporter]: the thumbnails
 // Windows keeps don't come over SFTP.
 func (m *fmFS) SystemThumb(string, int) (image.Image, error) { return nil, nil }

@@ -410,6 +410,23 @@ func TestOnlineOnlyFilesFromAWindowOnWindows(t *testing.T) {
 		}
 	}
 	var _ filemanager.OnlineReporter = m
+
+	// Every state, with the window's word that the item lies in a cloud
+	// provider's folder.
+	for _, c := range []struct {
+		e    vfs.Entry
+		want filemanager.CloudState
+	}{
+		{vfs.Entry{Name: "a", Attrs: winattrs.RecallOnDataAccess | winattrs.InCloud}, filemanager.CloudOnline},
+		{vfs.Entry{Name: "b", Attrs: winattrs.InCloud}, filemanager.CloudLocal},
+		{vfs.Entry{Name: "c", Attrs: winattrs.Pinned | winattrs.InCloud}, filemanager.CloudPinned},
+		{vfs.Entry{Name: "d", Mode: fs.ModeDir, Attrs: winattrs.InCloud}, filemanager.CloudFolder},
+		{vfs.Entry{Name: "e"}, filemanager.CloudNone},
+	} {
+		if got := m.Cloud("/", fmInfo{c.e}); got != c.want {
+			t.Errorf("%s with %#x is kept %v, want %v", c.e.Name, c.e.Attrs, got, c.want)
+		}
+	}
 }
 
 // An answer for all goes for the names after it, but a Replace for all

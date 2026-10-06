@@ -31,7 +31,11 @@ const (
 	Unpinned           = 0x100000
 	RecallOnOpen       = 0x40000
 	RecallOnDataAccess = 0x400000
-	cloud              = Offline | Pinned | Unpinned | RecallOnOpen | RecallOnDataAccess
+	// InCloud is no attribute of Windows' own, which leave the top bit
+	// alone: it says the item lies in a cloud provider's folder, as a
+	// file there kept on this device has no attribute that says so.
+	InCloud = 0x80000000
+	cloud   = Offline | Pinned | Unpinned | RecallOnOpen | RecallOnDataAccess | InCloud
 )
 
 // OnlineOnly reports whether attrs say the file's contents are kept
