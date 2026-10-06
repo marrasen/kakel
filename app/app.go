@@ -1084,6 +1084,10 @@ func failedTitle(in gunim.Intent) string {
 		return "Couldn't change the launcher's key"
 	case InstallKakel:
 		return "Couldn't install kakel"
+	case AllowKey:
+		return "Couldn't add the key"
+	case DisallowKey:
+		return "Couldn't remove the key"
 	case SetUpdates:
 		return "Couldn't keep the update setting"
 	case SaveLook:
@@ -1489,6 +1493,10 @@ func (a *app) handle(in gunim.Intent) {
 		err = a.writeThemeFile()
 	case CheckUpdates:
 		a.checkUpdates()
+	case AllowKey:
+		err = a.allowKey(in)
+	case DisallowKey:
+		err = a.disallowKey(in)
 	case ShowWhatsNew:
 		err = a.showWhatsNew(in.From)
 	case ShowReadyUpdate:

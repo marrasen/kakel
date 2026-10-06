@@ -1,12 +1,15 @@
 package view
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/marrasen/kakel/app"
 
 	"github.com/marrasen/gunim"
+	"github.com/marrasen/gunim/geom"
+	"github.com/marrasen/gunim/icon"
 	"github.com/marrasen/gunim/widget"
 
 	"github.com/marrasen/kakel/remote"
@@ -21,14 +24,7 @@ func (w *Window) servingDialog(s app.Serving, u *gunim.UI) {
 		return
 	}
 	form := widget.NewForm().Add("", widget.NewLabel("A connected window can open shells here, use the ones running, and read and write files as you."))
-	switch {
-	case s.Problem != "":
-		form.Add("", widget.NewLabel(words.UpperFirst(s.Problem)+"."))
-	case len(s.Allowed) == 0:
-		form.Add("", widget.NewLabel("No key may connect yet. Put the public key of the machine you will connect from in "+s.AllowedAt+"."))
-	default:
-		form.Add("Allowed", widget.NewLabel(strings.Join(s.Allowed, "\n")))
-	}
+	addAllowed(form, s)
 	port := widget.NewTextField()
 	port.SetText(strconv.Itoa(s.Port))
 	port.Placeholder = "0 picks a free port"
@@ -43,6 +39,7 @@ func (w *Window) servingDialog(s app.Serving, u *gunim.UI) {
 	d := widget.NewDialog("Serve This Window")
 	d.Body = form
 	d.SetButtons("Serve", "Cancel")
+	w.keyActions(d, s)
 	d.Check = func() string {
 		n, err := strconv.Atoi(strings.TrimSpace(port.Text()))
 		switch {
@@ -70,14 +67,115 @@ func (w *Window) servedDialog(s app.Serving, u *gunim.UI) {
 		Add("Host key", widget.NewLabel(s.Fingerprint))
 	who := widget.NewLabel(connectedSays(s))
 	form.Add("Connected", who)
+	addAllowed(form, s)
 	d := widget.NewDialog("Serving This Window")
 	d.Body = form
 	d.SetButtons("Done", "")
+	w.keyActions(d, s)
 	d.AddButton("Disconnect All", func() gunim.Intent { return app.DisconnectClients{} })
 	d.AddButton("Stop Serving", func() gunim.Intent { return app.StopServing{} })
 	d.Accept, d.Dismiss = app.DialogClosed{}, app.DialogClosed{}
 	w.served = &servedShown{d: d, who: who}
 	w.openDialog(d, u)
+}
+
+// addAllowed adds the keys that may connect to form, or why none can.
+func addAllowed(form *widget.Form, s app.Serving) {
+	switch {
+	case s.Problem != "":
+		form.Add("", widget.NewLabel(words.UpperFirst(s.Problem)+"."))
+	case len(s.Keys) == 0:
+		form.Add("Allowed", widget.NewLabel("No key may connect yet. Add the public key of the machine you will connect from."))
+	default:
+		lines := make([]string, len(s.Keys))
+		for i, k := range s.Keys {
+			lines[i] = k.Name
+			if k.Name != k.Fingerprint {
+				lines[i] += "  ·  " + shortPrint(k.Fingerprint)
+			}
+		}
+		form.Add("Allowed", widget.NewLabel(strings.Join(lines, "\n")))
+	}
+}
+
+// shortPrint is a key's fingerprint cut to what tells keys apart at a
+// glance.
+func shortPrint(fp string) string {
+	if r := []rune(fp); len(r) > 19 {
+		return string(r[:19]) + "…"
+	}
+	return fp
+}
+
+// keyActions adds Add Key… and Remove Key… to d, a dialog of serving,
+// which close it and open their own; the serving dialog opens again
+// once the change has been tried.
+func (w *Window) keyActions(d *widget.Dialog, s app.Serving) {
+	if s.Problem != "" {
+		return
+	}
+	d.AddAction("Add Key…", func(u *gunim.UI) {
+		d.Close(u)
+		w.addKeyDialog(s, u)
+	})
+	if len(s.Keys) > 0 {
+		d.AddAction("Remove Key…", func(u *gunim.UI) {
+			d.Close(u)
+			w.removeKeyPicker(s, u)
+		})
+	}
+}
+
+// addKeyDialog asks for a key that may connect: pasted, or one of this
+// machine's.
+func (w *Window) addKeyDialog(s app.Serving, u *gunim.UI) {
+	text := widget.NewTextArea()
+	text.Placeholder = "ssh-ed25519 AAAA… name@machine"
+	choices := []string{"Paste one below"}
+	for _, k := range s.Here {
+		choices = append(choices, k.Name)
+	}
+	pick := widget.NewDropdown(choices...)
+	pick.Label = "Key"
+	pick.Disabled = len(s.Here) == 0
+	here := slices.Clone(s.Here)
+	form := widget.NewForm().
+		Add("", widget.NewLabel("The public key of the machine you will connect from: the line in its ~/.ssh/id_ed25519.pub, or the like.")).
+		Add("Key", pick).
+		Add("", text)
+	d := widget.NewDialog("Add a Key That May Connect")
+	d.Body = form
+	d.SetButtons("Add", "Cancel")
+	d.Check = func() string {
+		if pick.Selected == 0 && strings.TrimSpace(text.Text()) == "" {
+			return "Paste a public key, or pick one on this machine."
+		}
+		return ""
+	}
+	d.OnAccept = func() gunim.Intent {
+		w.keysAsked, w.keysEdits = true, w.serving.Edits
+		if i := pick.Selected - 1; i >= 0 && i < len(here) {
+			return app.AllowKey{Path: here[i].Path}
+		}
+		return app.AllowKey{Text: text.Text()}
+	}
+	d.Dismiss = app.DialogClosed{}
+	w.openDialog(d, u)
+}
+
+// removeKeyPicker offers the keys that may connect, to take one off.
+func (w *Window) removeKeyPicker(s app.Serving, u *gunim.UI) {
+	p := &widget.Palette{Placeholder: "The key that may no longer connect"}
+	keys := slices.Clone(s.Keys)
+	for _, k := range keys {
+		p.Items = append(p.Items, widget.PaletteItem{Title: k.Name, Hint: k.Type + "  " + k.Fingerprint, Icon: icon.KeyRound})
+	}
+	p.Pick = func(i int, u *gunim.UI) {
+		w.keysAsked, w.keysEdits = true, w.serving.Edits
+		u.Send(w, app.DisallowKey{Fingerprint: keys[i].Fingerprint})
+	}
+	w.keyPicker = p
+	p.Open(w, geom.Rc(0, 48, w.size.W, 0), u)
 }
 
 // connectedSays is who is connected to the window served, one a line.
@@ -119,6 +217,12 @@ func (w *Window) showServed(s app.Serving, u *gunim.UI) {
 			sh.who.SetText(connectedSays(s))
 			u.Invalidate()
 		}
+	}
+	// A key added or taken off, once it has been tried: the serving
+	// dialog again, with the keys as they are now.
+	if w.keysAsked && s.Edits > w.keysEdits && (w.dialog == nil || u.Presence(w.dialog) == gunim.Exiting) {
+		w.keysAsked = false
+		w.servingDialog(s, u)
 	}
 	// The one asked for, once it has been tried: shown if it started,
 	// once the dialog that asked has gone.

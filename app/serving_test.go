@@ -603,3 +603,57 @@ func TestASavedWindowTypedIsDialledWithItsKey(t *testing.T) {
 		return b.machines.Get(machines.ID(desk.ID)).Window != nil
 	})
 }
+
+// A key pasted, or one on this machine, may connect once added, and the
+// keys this machine has that may not yet are offered; a key taken off
+// hangs up on the window it let in.
+func TestKeysAreAddedAndTakenOffFromTheWindow(t *testing.T) {
+	a, win := servedApp(t)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeKey(t, filepath.Join(home, ".ssh", "id_ed25519"))
+	a.showServing()
+	waitFor(t, a, "the list of what is open", func() bool { return len(win.Opens()) == 1 })
+	if here := a.st.Serving.Here; len(here) != 1 || !strings.HasSuffix(here[0].Path, "id_ed25519.pub") {
+		t.Fatalf("this machine's keys are %+v", here)
+	}
+
+	_, priv, _ := ed25519.GenerateKey(rand.Reader)
+	signer, _ := ssh.NewSignerFromKey(priv)
+	pasted := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(signer.PublicKey()))) + " desk"
+	edits := a.st.Serving.Edits
+	a.handle(AllowKey{Text: pasted})
+	a.handle(AllowKey{Path: a.st.Serving.Here[0].Path})
+	if s := a.st.Serving; len(s.Keys) != 3 || s.Keys[1].Name != "desk" || len(s.Here) != 0 || s.Edits != edits+2 {
+		t.Fatalf("after adding, the serving is %+v, notices %+v", s, a.st.Notices)
+	}
+	// Taken in by the server at once: the pasted key connects.
+	var desk *serve.Window
+	asAgent(t, a, func() {
+		desk, err = serve.Dial(t.Context(), serve.DialConfig{
+			Addr: a.st.Serving.Addr, Keys: []ssh.Signer{signer}, HostKey: ssh.InsecureIgnoreHostKey(),
+		})
+	})
+	if err != nil {
+		t.Fatalf("the key added could not connect: %v", err)
+	}
+	t.Cleanup(func() { _ = desk.Close() })
+	waitFor(t, a, "the desk to join", func() bool { return len(a.st.Serving.Clients) == 2 })
+
+	a.handle(DisallowKey{Fingerprint: a.st.Serving.Keys[0].Fingerprint})
+	gone := make(chan struct{})
+	go func() { _ = win.Wait(); close(gone) }()
+	waitFor(t, a, "the laptop to be hung up on", func() bool {
+		select {
+		case <-gone:
+			return len(a.st.Serving.Clients) == 1 && a.st.Serving.Clients[0].Name == "desk"
+		default:
+			return false
+		}
+	})
+	if len(a.st.Serving.Keys) != 2 || win.Going() != serve.GoingKicked {
+		t.Fatalf("after taking the laptop off, the keys are %+v, and it was told %q", a.st.Serving.Keys, win.Going())
+	}
+}

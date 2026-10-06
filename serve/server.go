@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/marrasen/kakel/session"
@@ -165,6 +166,45 @@ type Client struct {
 	At time.Time
 
 	conn *ssh.ServerConn
+	// key is the key they signed with, as its wire bytes.
+	key string
+}
+
+// AllowedBy reports whether the key the client signed with is among a.
+func (c *Client) AllowedBy(a *Allowed) bool {
+	if c == nil || a == nil {
+		return false
+	}
+	for _, k := range a.keys {
+		if string(k.Marshal()) == c.key {
+			return true
+		}
+	}
+	return false
+}
+
+// SetAllowed changes the keys that may connect, and hangs up on the
+// clients a key no longer among them let in, telling them why. It
+// returns those clients. An empty set lets nobody in, and hangs up on
+// everyone.
+func (s *Server) SetAllowed(a *Allowed) []*Client {
+	if a == nil {
+		a = &Allowed{}
+	}
+	s.mu.Lock()
+	s.allowed.Store(a)
+	var out []*Client
+	for _, c := range s.clients {
+		if !c.AllowedBy(a) {
+			out = append(out, c)
+		}
+	}
+	s.mu.Unlock()
+	for _, c := range out {
+		s.GoingTo(c, GoingKicked)
+		_ = c.Close()
+	}
+	return out
 }
 
 // Close hangs up on a client.
@@ -183,6 +223,9 @@ func (c *Client) Close() error {
 type Server struct {
 	cfg Config
 	ln  net.Listener
+	// allowed are the keys that may connect now: cfg's, until
+	// SetAllowed changes them.
+	allowed atomic.Pointer[Allowed]
 
 	mu      sync.Mutex
 	clients []*Client
@@ -223,6 +266,7 @@ func Listen(cfg Config) (*Server, error) {
 	}
 
 	s := &Server{cfg: cfg, arriving: map[net.Conn]struct{}{}}
+	s.allowed.Store(cfg.Allowed)
 	ln, err := net.Listen("tcp", cfg.Addr)
 	if err != nil {
 		return nil, fmt.Errorf("serve: listen on %s: %w", cfg.Addr, err)
@@ -361,7 +405,7 @@ func (s *Server) handshake(nc net.Conn) {
 				// checked here. The list holds keys, not authorities.
 				return nil, errors.New("serve: a certificate is not a key this window knows")
 			}
-			name, ok := s.cfg.Allowed.Who(key)
+			name, ok := s.allowed.Load().Who(key)
 			if !ok {
 				return nil, fmt.Errorf("serve: %s is not allowed to connect", Fingerprint(key))
 			}
@@ -370,7 +414,7 @@ func (s *Server) handshake(nc net.Conn) {
 			// including ones it only asks about and never signs with,
 			// so what it decides has to travel with the key it decided
 			// about.
-			return &ssh.Permissions{Extensions: map[string]string{whoExt: name}}, nil
+			return &ssh.Permissions{Extensions: map[string]string{whoExt: name, keyExt: string(key.Marshal())}}, nil
 		},
 		// Called only once the client has proved it holds the key, and
 		// handed the permissions that key was approved with. It is the
@@ -380,6 +424,12 @@ func (s *Server) handshake(nc net.Conn) {
 			perms *ssh.Permissions, algo string) (*ssh.Permissions, error) {
 			if perms == nil || perms.Extensions[whoExt] == "" {
 				return nil, errors.New("serve: the key that signed was never approved")
+			}
+			// Asked again: the approval above is kept for the
+			// connection from the first time the key was offered, and
+			// the key may have been taken off the list since.
+			if _, ok := s.allowed.Load().Who(key); !ok {
+				return nil, fmt.Errorf("serve: %s is no longer allowed to connect", Fingerprint(key))
 			}
 			return perms, nil
 		},
@@ -405,11 +455,13 @@ func (s *Server) handshake(nc net.Conn) {
 		s.onRefused(fmt.Errorf("serve: %s took too long to connect", nc.RemoteAddr()))
 		return
 	}
+	signed := ""
 	if conn.Permissions != nil {
 		who = conn.Permissions.Extensions[whoExt]
+		signed = conn.Permissions.Extensions[keyExt]
 	}
 
-	c := &Client{Name: who, Addr: conn.RemoteAddr().String(), At: time.Now(), conn: conn}
+	c := &Client{Name: who, Addr: conn.RemoteAddr().String(), At: time.Now(), conn: conn, key: signed}
 	if !s.add(c) {
 		// Closed while this one was authenticating.
 		_ = conn.Close()
@@ -445,6 +497,10 @@ func (s *Server) handshake(nc net.Conn) {
 // whoExt is where the name of the key that signed is kept between the
 // authentication callback and the connection it authenticated.
 const whoExt = "gridterm-who"
+
+// keyExt is where the key that signed is kept beside its name, for
+// telling which clients a key taken off the list let in.
+const keyExt = "kakel-key"
 
 // What arrived decides about a connection that has just been accepted.
 type arrival int
@@ -508,7 +564,10 @@ func (s *Server) departed(nc net.Conn) {
 func (s *Server) add(c *Client) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.closed {
+	// Checked under the lock SetAllowed takes, so a key taken off the
+	// list either finds this client among those to hang up on, or this
+	// finds it gone.
+	if s.closed || !c.AllowedBy(s.allowed.Load()) {
 		return false
 	}
 	s.clients = append(s.clients, c)
