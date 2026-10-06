@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"path/filepath"
 	"slices"
 	"testing"
 
@@ -71,9 +72,9 @@ func TestAFolderOpenedAnywhereOpensInTheFileManager(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"-files", "/home/me/."}, "/home/me"},
+		{[]string{"-files", "/home/me/."}, filepath.FromSlash("/home/me")},
 		{[]string{"-files", ""}, ""},
-		{[]string{"-files", `/mnt/"`}, "/mnt"},
+		{[]string{"-files", `/mnt/"`}, filepath.FromSlash("/mnt")},
 	} {
 		o, err := ParseOptions(c.args)
 		if err != nil {
@@ -94,7 +95,7 @@ func TestAFolderOpenedAnywhereOpensInTheFileManager(t *testing.T) {
 	a.files = files
 	panes := len(a.st.Panes)
 	a.handover(single.Handover{Args: []string{"-files", "/srv/data/."}})
-	if len(files.opened) != 1 || files.opened[0].Dir != "/srv/data" || len(a.st.Panes) != panes {
+	if len(files.opened) != 1 || files.opened[0].Dir != filepath.FromSlash("/srv/data") || len(a.st.Panes) != panes {
 		t.Fatalf("handed a folder, kakel opened %+v and %d panes", files.opened, len(a.st.Panes)-panes)
 	}
 }
