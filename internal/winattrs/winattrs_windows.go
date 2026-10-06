@@ -6,6 +6,8 @@ import (
 	"syscall"
 
 	"golang.org/x/sys/windows"
+
+	"github.com/marrasen/gunim/filemanager"
 )
 
 func init() { Lookup, Space = lookup, space }
@@ -27,7 +29,11 @@ func lookup(home, p string, follow bool) (uint32, bool) {
 	if !ok {
 		return 0, false
 	}
-	return d.FileAttributes, true
+	attrs := d.FileAttributes &^ InCloud
+	if filemanager.InCloudFolder(filepath.Dir(full)) {
+		attrs |= InCloud
+	}
+	return attrs, true
 }
 
 // space reads how much room the volume holding the SFTP path p has, as

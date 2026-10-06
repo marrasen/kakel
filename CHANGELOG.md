@@ -7,6 +7,18 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
+## Unreleased
+
+### Changed
+
+**Every OneDrive state in the file manager, before the name.** The
+cloud mark went after the name, so a long name hid it, and only files
+kept online had one. Now a mark before the name says each state, as
+Explorer does: a cloud for a file kept online only, a green tick for
+one on this device, and a green pin for one always kept there. Files
+through a kakel window on Windows show them too, once that kakel is
+this version.
+
 ## v0.8.0
 
 ### Changed

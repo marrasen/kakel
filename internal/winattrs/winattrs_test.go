@@ -22,7 +22,7 @@ func TestTheCloudAttributesComeWithTheReplies(t *testing.T) {
 		if err := os.MkdirAll(filepath.Join(dir, sub), 0o700); err != nil {
 			t.Fatal(err)
 		}
-		for _, name := range []string{"here.txt", "online.txt", "pinned.txt"} {
+		for _, name := range []string{"here.txt", "online.txt", "pinned.txt", "local.txt"} {
 			if err := os.WriteFile(filepath.Join(dir, sub, name), []byte(name), 0o600); err != nil {
 				t.Fatal(err)
 			}
@@ -42,6 +42,8 @@ func TestTheCloudAttributesComeWithTheReplies(t *testing.T) {
 			return winattrs.RecallOnDataAccess | 0x20, true
 		case slashed + "/pinned.txt", slashed + "/other/online.txt":
 			return winattrs.Pinned, true
+		case slashed + "/local.txt":
+			return winattrs.InCloud | 0x20, true
 		}
 		return 0x20, true
 	}
@@ -70,7 +72,8 @@ func TestTheCloudAttributesComeWithTheReplies(t *testing.T) {
 	for _, e := range entries {
 		got[e.Name] = e.Attrs
 	}
-	if got["here.txt"] != 0 || got["online.txt"] != winattrs.RecallOnDataAccess || got["pinned.txt"] != winattrs.Pinned {
+	if got["here.txt"] != 0 || got["online.txt"] != winattrs.RecallOnDataAccess || got["pinned.txt"] != winattrs.Pinned ||
+		got["local.txt"] != winattrs.InCloud {
 		t.Fatalf("the listing carries %v", got)
 	}
 	if !winattrs.OnlineOnly(got["online.txt"]) || winattrs.OnlineOnly(got["pinned.txt"]) {
