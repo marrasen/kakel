@@ -9,6 +9,7 @@ import (
 	"maps"
 	"net"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -50,14 +51,27 @@ type Serving struct {
 	Port     int
 	Anywhere bool
 	// Allowed are the keys that may connect, by name, from the file at
-	// AllowedAt, and Problem what stops that file being read.
+	// AllowedAt, Keys the same keys with their fingerprints, and
+	// Problem what stops that file being read.
 	Allowed   []string
+	Keys      []serve.AllowedKey
 	AllowedAt string
 	Problem   string
+	// Here are the public keys on this machine that may not connect
+	// yet, to pick one to add.
+	Here []LocalKey
+	// Edits counts the changes asked to the keys that may connect,
+	// which worked or did not, for the window that asked to hear how it
+	// went.
+	Edits uint64
 	// Tries counts the times serving was asked to start, which worked
 	// or did not, for the window that asked to hear how it went.
 	Tries uint64
 }
+
+// LocalKey is a public key on this machine: its name, its comment or
+// file's, and the .pub file it is in.
+type LocalKey struct{ Name, Path string }
 
 // ServedClient is a window connected to this one.
 type ServedClient struct{ Name, From string }
@@ -83,6 +97,12 @@ type (
 	StopServing struct{}
 	// DisconnectClients hangs up on the windows connected.
 	DisconnectClients struct{}
+	// AllowKey lets the key written as Text connect, as pasted, or the
+	// key in the .pub file at Path.
+	AllowKey struct{ Text, Path string }
+	// DisallowKey takes the key with Fingerprint off the keys that may
+	// connect, and hangs up on the windows it let in.
+	DisallowKey struct{ Fingerprint string }
 )
 
 // serving is the program's side.
@@ -113,18 +133,142 @@ func (a *app) servePaths() (hostKey, allowed string, err error) {
 	return hostKey, allowed, err
 }
 
-// servingAllowed is who may connect, for the dialog, and where that is
-// written.
-func (a *app) servingAllowed() (names []string, at string, err error) {
+// servingAllowed is who may connect, and where that is written.
+func (a *app) servingAllowed() (allowed *serve.Allowed, at string, err error) {
 	_, at, err = a.servePaths()
 	if err != nil {
 		return nil, "", err
 	}
-	allowed, err := serve.LoadAllowed(at)
+	allowed, err = serve.LoadAllowed(at)
 	if err != nil {
 		return nil, at, err
 	}
-	return allowed.Names(), at, nil
+	return allowed, at, nil
+}
+
+// pubKeyLimit is the largest .pub file read as a key.
+const pubKeyLimit = 16 << 10
+
+// localKeys are the public keys on this machine that allowed does not
+// let connect: those in ~/.ssh, and beside the saved keys.
+func (a *app) localKeys(allowed *serve.Allowed) []LocalKey {
+	var paths []string
+	if home, err := os.UserHomeDir(); err == nil {
+		found, _ := filepath.Glob(filepath.Join(home, ".ssh", "*.pub"))
+		paths = append(paths, found...)
+	}
+	if a.settings != nil {
+		for _, k := range a.settings.Keys() {
+			paths = append(paths, k+".pub")
+		}
+	}
+	var out []LocalKey
+	seen := map[string]bool{}
+	for _, p := range paths {
+		p = filepath.Clean(p)
+		if seen[p] {
+			continue
+		}
+		seen[p] = true
+		raw, err := readSmall(p, pubKeyLimit)
+		if err != nil {
+			continue
+		}
+		key, comment, err := serve.ParseKey(string(raw))
+		if err != nil {
+			continue
+		}
+		if _, ok := allowed.Who(key); ok {
+			continue
+		}
+		name := comment
+		if name == "" {
+			name = filepath.Base(p)
+		}
+		out = append(out, LocalKey{Name: name, Path: p})
+	}
+	return out
+}
+
+// readSmall reads the file at path, refusing one larger than limit.
+func readSmall(path string, limit int64) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	raw, err := io.ReadAll(io.LimitReader(f, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(raw)) > limit {
+		return nil, fmt.Errorf("%s is too large to be a public key", path)
+	}
+	return raw, nil
+}
+
+// allowKey lets a key connect: one pasted, or one in a .pub file.
+func (a *app) allowKey(in AllowKey) error {
+	a.st.Serving.Edits++
+	defer a.showServing()
+	_, at, err := a.servePaths()
+	if err != nil {
+		return err
+	}
+	text := in.Text
+	if in.Path != "" {
+		raw, err := readSmall(in.Path, pubKeyLimit)
+		if err != nil {
+			return err
+		}
+		text = string(raw)
+	}
+	name, err := serve.Allow(at, text)
+	if err != nil {
+		return err
+	}
+	a.applyAllowed()
+	a.worked(name+" may connect", "Its window can take this one over while it is served.", "")
+	return nil
+}
+
+// disallowKey takes a key off the keys that may connect, and hangs up
+// on the windows it let in.
+func (a *app) disallowKey(in DisallowKey) error {
+	a.st.Serving.Edits++
+	defer a.showServing()
+	_, at, err := a.servePaths()
+	if err != nil {
+		return err
+	}
+	name, err := serve.Disallow(at, in.Fingerprint)
+	if err != nil {
+		return err
+	}
+	gone := a.applyAllowed()
+	body := ""
+	if gone > 0 {
+		body = "Its window was disconnected."
+	}
+	a.worked(name+" may no longer connect", body, "")
+	return nil
+}
+
+// applyAllowed has the server, while the window is served, take the
+// keys that may connect as the file says now; it hangs up on the windows
+// a key no longer there let in. It returns how many.
+func (a *app) applyAllowed() int {
+	srv := a.serving.server
+	if srv == nil {
+		return 0
+	}
+	allowed, _, err := a.servingAllowed()
+	if err != nil {
+		// Unreadable as just written: nobody may connect, and everyone
+		// connected is hung up on, until the dialog's reason is fixed.
+		allowed = &serve.Allowed{}
+	}
+	return len(srv.SetAllowed(allowed))
 }
 
 // startServing serves the window.
@@ -329,10 +473,14 @@ func (a *app) showServing() {
 			s.Anywhere = reach == settings.ReachAnywhere
 		}
 	}
-	names, at, err := a.servingAllowed()
-	s.Allowed, s.AllowedAt = names, at
+	s.Edits = a.st.Serving.Edits
+	allowed, at, err := a.servingAllowed()
+	s.AllowedAt = at
 	if err != nil {
 		s.Problem = err.Error()
+	} else {
+		s.Allowed, s.Keys = allowed.Names(), allowed.Keys()
+		s.Here = a.localKeys(allowed)
 	}
 	if srv := a.serving.server; srv != nil {
 		s.On, s.Addr, s.Fingerprint = true, srv.Addr(), serve.Fingerprint(srv.HostKey())

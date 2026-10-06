@@ -22,7 +22,8 @@ The whole list. The [README](README.md) has the short version.
   it over: what it has open appears in the Servers pane under that
   window's name, and a pane
   opened there is drawn here. Key authentication only, from a list of
-  keys you write; there is no password and no way past an unknown host
+  keys you add in the Serve dialog, pasted or picked from this
+  machine's; there is no password and no way past an unknown host
   key but saying yes to its fingerprint, and a host key that changed is a
   hard failure. The window being served keeps drawing and says who is
   working in it. Closing the connection gives it its screen back.

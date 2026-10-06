@@ -19,6 +19,12 @@ An update installed by itself says so on kakel's next start, with
 What's New a click away. About kakel › What's New shows every
 release's notes.
 
+**Keys that may connect, from the Serve dialog.** The dialog lists the
+keys that may take the window over. Add Key… takes a public key pasted,
+or one from this machine's `~/.ssh`; Remove Key… takes one off, and
+hangs up on the window it let in. A served window takes the change at
+once, with no restart.
+
 ## v0.7.0
 
 ### Changed

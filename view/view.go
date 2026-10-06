@@ -240,6 +240,10 @@ type Window struct {
 	servingAsked bool
 	servingTries uint64
 	served       *servedShown
+	// keysAsked says a key was added or taken off, and the serving
+	// dialog opens again once that has been tried past keysEdits.
+	keysAsked bool
+	keysEdits uint64
 	// panes are the panes as last published, sideOrder them as the
 	// sidebar lists them, and sw the switcher while it is open.
 	panes     []app.Pane

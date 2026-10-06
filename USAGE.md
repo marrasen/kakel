@@ -133,7 +133,11 @@ on that heading opens a pane on it. The servers that window is
 connected to get headings of their own, and their plus opens things on
 them through it. Nothing listens until you ask it to,
 and the keys allowed in are the ones you list in an `authorized_keys`
-file in kakel's own directory, not the one in `~/.ssh`.
+file in kakel's own directory, not the one in `~/.ssh`. The Serve dialog
+lists them: Add Key… takes a public key pasted, or one of this
+machine's, and Remove Key… takes one off and hangs up on the window it
+let in. If you made that file a link to `~/.ssh/authorized_keys`, the
+keys added here may log in over ssh too.
 
 ## Where kakel keeps its files
 
