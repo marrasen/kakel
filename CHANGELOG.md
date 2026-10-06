@@ -16,13 +16,12 @@ release changed, and Check for Updates. The check runs with the window
 open and says how it went there; a newer release turns the window to
 it, to update now.
 
-### Fixed
+### Known problem
 
-**Opening What's New froze kakel on Windows.** kakel's update, What's
-New and About windows now open off kakel's own goroutine. And should
-kakel's windows ever stop answering again, it writes where each part
-of it was to `gunim-hang-kakel-<pid>-<time>.txt` in the temporary
-folder, to find out why.
+**Opening What's New froze kakel on Windows, and the cause isn't found
+yet.** Should kakel's windows stop answering for 10 seconds, kakel now
+writes where each part of it was to `gunim-hang-kakel-<pid>-<time>.txt`
+in the temporary folder, which says what held them.
 
 ## v0.9.0
 
