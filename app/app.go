@@ -1515,6 +1515,8 @@ func (a *app) handle(in gunim.Intent) {
 		err = a.showWhatsNew(in.From)
 	case ShowReadyUpdate:
 		a.offerUpdate(in.Release)
+	case ShowAbout:
+		err = a.showAbout()
 	case NoTextToPaste:
 		a.noTextToPaste()
 	case ClipboardUnreadable:

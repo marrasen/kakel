@@ -47,6 +47,9 @@ type (
 	// ShowReadyUpdate shows the update window on Release, put in place
 	// by itself, to restart into it.
 	ShowReadyUpdate struct{ Release install.Release }
+	// ShowAbout opens the window about kakel: its version, what each
+	// release changed, and Check for Updates.
+	ShowAbout struct{}
 )
 
 // UpdateWindows opens gunim's windows of an update, on the program's
@@ -54,6 +57,7 @@ type (
 type UpdateWindows interface {
 	ShowUpdate(u install.Update) error
 	ShowWhatsNew(from string) error
+	ShowAbout(o install.About) error
 }
 
 // updatedFrom is the version the update finished as this kakel started
@@ -204,7 +208,46 @@ func (a *app) showWhatsNew(from string) error {
 	if a.updateWins == nil {
 		return errors.New("what's new shows in a window of its own, which can't open here")
 	}
-	return a.updateWins.ShowWhatsNew(from)
+	a.inWindow(func() error { return a.updateWins.ShowWhatsNew(from) }, func(err error) {
+		a.failed("Couldn't show what's new", err.Error())
+	})
+	return nil
+}
+
+// showAbout opens the window about kakel, which checks for updates in
+// place, and takes a newer release as the update window does.
+func (a *app) showAbout() error {
+	if a.updateWins == nil {
+		a.notify("kakel "+thisVersion(), "", "")
+		return nil
+	}
+	o := install.About{Quit: a.quitForUpdate}
+	if exe, err := executable(); err == nil {
+		if _, to, err := install.Where(installer()); err != nil || !samePath(exe, to) {
+			o.Exe = exe
+		}
+	}
+	a.inWindow(func() error { return a.updateWins.ShowAbout(o) }, func(err error) {
+		a.failed("Couldn't open About kakel", err.Error())
+	})
+	return nil
+}
+
+// inWindow runs open, which opens one of gunim's windows, off the
+// program's goroutine: opening a window waits on the main thread, which
+// on Windows can wait on one of kakel's windows, which can wait on this
+// goroutine. failed hears an error, back on the program's goroutine.
+func (a *app) inWindow(open func() error, failed func(error)) {
+	go func() {
+		err := open()
+		if err == nil || failed == nil {
+			return
+		}
+		select {
+		case a.events <- func() { failed(err) }:
+		case <-a.ctx.Done():
+		}
+	}()
 }
 
 // showUpdateWindow opens gunim's update window on newest, put in place
@@ -222,10 +265,9 @@ func (a *app) showUpdateWindow(newest install.Release, ready bool) bool {
 		// A copy that is not installed updates itself where it is.
 		u.Exe = exe
 	}
-	if err := a.updateWins.ShowUpdate(u); err != nil {
+	a.inWindow(func() error { return a.updateWins.ShowUpdate(u) }, func(err error) {
 		log.Printf("couldn't open the update window: %v", err)
-		return false
-	}
+	})
 	return true
 }
 
