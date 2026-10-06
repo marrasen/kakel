@@ -127,6 +127,7 @@ func run() error {
 		if opts.ShowStats() {
 			go ws.logStats(ctx)
 		}
+		go stressWindows(ctx, a)
 		return app.Start(ctx, app.Config{
 			Client: c, Window: w, Shells: sh, OpenWindow: ws.openFrom, Options: opts,
 			Themes: all, ThemeTrouble: trouble, RegisterThemes: ws.registerThemes,
