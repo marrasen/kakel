@@ -154,8 +154,7 @@ func TestAStagedUpdateIsNotFetchedAgain(t *testing.T) {
 	}
 }
 
-// fakeUpdateWindows notes the update windows kakel opens, which it opens
-// off the program's goroutine.
+// fakeUpdateWindows notes the update windows kakel opens.
 type fakeUpdateWindows struct {
 	mu      sync.Mutex
 	updates []install.Update
@@ -244,8 +243,8 @@ func TestAnUpdateSaysWhatsNew(t *testing.T) {
 	}
 }
 
-// About opens gunim's window about kakel, off the program's goroutine,
-// ready to take a newer release as the update window does.
+// About opens gunim's window about kakel, ready to take a newer release
+// as the update window does.
 func TestAboutOpensGunimsWindow(t *testing.T) {
 	a := updatesApp(t)
 	wins := &fakeUpdateWindows{}

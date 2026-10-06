@@ -208,10 +208,7 @@ func (a *app) showWhatsNew(from string) error {
 	if a.updateWins == nil {
 		return errors.New("what's new shows in a window of its own, which can't open here")
 	}
-	a.inWindow(func() error { return a.updateWins.ShowWhatsNew(from) }, func(err error) {
-		a.failed("Couldn't show what's new", err.Error())
-	})
-	return nil
+	return a.updateWins.ShowWhatsNew(from)
 }
 
 // showAbout opens the window about kakel, which checks for updates in
@@ -227,27 +224,7 @@ func (a *app) showAbout() error {
 			o.Exe = exe
 		}
 	}
-	a.inWindow(func() error { return a.updateWins.ShowAbout(o) }, func(err error) {
-		a.failed("Couldn't open About kakel", err.Error())
-	})
-	return nil
-}
-
-// inWindow runs open, which opens one of gunim's windows, off the
-// program's goroutine: opening a window waits on the main thread, which
-// on Windows can wait on one of kakel's windows, which can wait on this
-// goroutine. failed hears an error, back on the program's goroutine.
-func (a *app) inWindow(open func() error, failed func(error)) {
-	go func() {
-		err := open()
-		if err == nil || failed == nil {
-			return
-		}
-		select {
-		case a.events <- func() { failed(err) }:
-		case <-a.ctx.Done():
-		}
-	}()
+	return a.updateWins.ShowAbout(o)
 }
 
 // showUpdateWindow opens gunim's update window on newest, put in place
@@ -265,9 +242,10 @@ func (a *app) showUpdateWindow(newest install.Release, ready bool) bool {
 		// A copy that is not installed updates itself where it is.
 		u.Exe = exe
 	}
-	a.inWindow(func() error { return a.updateWins.ShowUpdate(u) }, func(err error) {
+	if err := a.updateWins.ShowUpdate(u); err != nil {
 		log.Printf("couldn't open the update window: %v", err)
-	})
+		return false
+	}
 	return true
 }
 
