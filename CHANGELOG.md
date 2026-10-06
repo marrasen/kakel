@@ -21,6 +21,17 @@ same size at every zoom. Files
 through a kakel window on Windows show them too, once that kakel is
 this version.
 
+**Folders open in kakel, if you like, on Windows.** The installer offers
+"Open folders with kakel", and Options › Default File Manager turns it
+on and off later. On, a folder or a drive opened anywhere, and Win+E,
+open kakel's file manager in place of File Explorer. Off, or kakel
+uninstalled, File Explorer comes back. `kakel -files <folder>` opens a
+folder in the file manager from a shell.
+
+**Windows' own file icons in the file manager.** On Windows, the file
+manager shows the icons File Explorer does, in the details and on the
+tiles. View › Windows icons switches back to kakel's own.
+
 ## v0.8.0
 
 ### Changed

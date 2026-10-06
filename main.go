@@ -120,7 +120,7 @@ func run() error {
 		sounds := sound.New()
 		a.SetCues(sounds)
 		// Where it was as it last closed, or else sized for the font.
-		w, c, err := ws.open(gunim.WindowOptions{Size: opts.WindowSize(), Place: opts.WindowPlace(), Hidden: opts.StartsInTray()})
+		w, c, err := ws.open(gunim.WindowOptions{Size: opts.WindowSize(), Place: opts.WindowPlace(), Hidden: opts.StartsHidden()})
 		if err != nil {
 			return err
 		}

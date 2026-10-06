@@ -71,6 +71,15 @@ func (a *app) openFilesWhere(m machines.ID, path string) error {
 	return a.filesOn(m, path)
 }
 
+// openFolder opens a file manager window on this computer's folder dir,
+// or home for "", as a folder opened anywhere asks once kakel opens
+// them. The window is the file manager's whatever files open in last.
+func (a *app) openFolder(dir string) {
+	if err := a.openFileManager(machines.Local, dir); err != nil {
+		a.failed("Couldn't open the folder", err.Error())
+	}
+}
+
 // keepFilesIn keeps where files open, as the user just chose.
 func (a *app) keepFilesIn(window bool) {
 	if a.settings == nil || a.settings.FilesInWindow() == window {

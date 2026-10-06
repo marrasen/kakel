@@ -902,6 +902,18 @@ func (a *app) run(ctx context.Context) error {
 			a.sayInTray()
 		}
 		a.letWindowGo(first)
+	case a.opts.filesSet:
+		// Started for a folder, as Windows starts it for one opened
+		// anywhere: a file manager window there, and kakel in the tray,
+		// the first window let go unseen. With no tray, a window of its
+		// own too, or kakel would end with the file manager's.
+		a.showTray()
+		first := a.cur
+		a.openFolder(a.opts.files)
+		if !a.inTray() {
+			a.newWindow(func() { a.openFirstOrSay() })
+		}
+		a.letWindowGo(first)
 	case a.opts.launcher:
 		// Started for the launcher alone: no terminal with it.
 		a.openLauncher()
@@ -1094,6 +1106,8 @@ func failedTitle(in gunim.Intent) string {
 		return "Couldn't keep the settings"
 	case ToggleAutostart:
 		return "Couldn't change whether kakel starts with the computer"
+	case ToggleFolders:
+		return "Couldn't change whether folders open with kakel"
 	case PasteImageAsFile, PasteImage:
 		return "Couldn't paste the image"
 	case SaveServer:
@@ -1584,6 +1598,9 @@ func (a *app) handle(in gunim.Intent) {
 		err = a.saveLook(in)
 	case ToggleAutostart:
 		err = a.toggleAutostart()
+		a.showUpdate()
+	case ToggleFolders:
+		err = a.toggleFolders()
 		a.showUpdate()
 
 	case SetLauncherKey:

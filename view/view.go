@@ -2267,6 +2267,8 @@ func (w *Window) applies(id string) bool {
 		return w.update.Installable && !w.update.Installed
 	case "app.autostart":
 		return w.update.Installed
+	case "app.folders":
+		return w.update.Installed && w.update.FoldersHere
 	}
 	return true
 }
@@ -2312,6 +2314,8 @@ func (w *Window) switchOn(id string, st app.State, u *gunim.UI) (on, isSwitch bo
 		return st.InTray, true
 	case "app.autostart":
 		return st.Update.Autostart, true
+	case "app.folders":
+		return st.Update.Folders, true
 	}
 	return false, false
 }
