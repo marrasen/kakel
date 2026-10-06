@@ -20,8 +20,11 @@ import (
 // copy run without installing offers to install itself from its menu.
 // The installed one, a release build, is told of a newer release a
 // minute after it starts and once a day, and asks, or with Updates set
-// to install, finds it in place for the next start. A restart into the
-// new copy is a question away.
+// to install, finds it in place for the next start. gunim's update
+// window does the asking: what's new, then the download and the
+// restart, with their progress shown. An update put in place by itself
+// says so as it is ready, and again on the first start of the new
+// release, with what it brought a click away.
 
 // Intents for installing and updating.
 type (
@@ -35,7 +38,24 @@ type (
 	// ToggleAutostart starts the installed kakel with the computer, into
 	// the tray, or no longer.
 	ToggleAutostart struct{}
+	// ShowWhatsNew shows what the releases after From changed, up to
+	// this one: every release's notes for "".
+	ShowWhatsNew struct{ From string }
+	// ShowReadyUpdate shows the update window on Release, put in place
+	// by itself, to restart into it.
+	ShowReadyUpdate struct{ Release install.Release }
 )
+
+// UpdateWindows opens gunim's windows of an update, on the program's
+// gunim app: install.ShowUpdate and install.ShowWhatsNew.
+type UpdateWindows interface {
+	ShowUpdate(u install.Update) error
+	ShowWhatsNew(from string) error
+}
+
+// updatedFrom is the version the update finished as this kakel started
+// replaced, or ""; a test sets it.
+var updatedFrom = install.UpdatedFrom
 
 // Update is what the windows are told of installing and updating.
 type Update struct {
@@ -108,6 +128,9 @@ func (a *app) startUpdates() {
 		install.CleanOld(exe)
 	}
 	a.showUpdate()
+	if from := updatedFrom(); from != "" {
+		a.sayUpdated(from)
+	}
 	if a.opts.OneOfMany() {
 		// A kakel of its own leaves the questions to the one running.
 		live.Store(a)
@@ -133,15 +156,86 @@ func (a *app) setUpdates(what string) error {
 	return nil
 }
 
-// updated offers the restart into a release gunim's updates put in place
-// by themselves.
+// updated says a release gunim's updates put in place by themselves is
+// ready, with the update window, its notes and its restart, a click
+// away. Without that window, it offers the restart.
 func (a *app) updated(r install.Release) {
 	exe, err := executable()
 	if err != nil {
 		return
 	}
 	a.staged = r.Version
-	a.offerRestart(exe, "kakel "+r.Version+" is ready", "It starts the next time kakel does.")
+	if a.updateWins == nil {
+		a.offerRestart(exe, "kakel "+r.Version+" is ready", "It starts the next time kakel does.")
+		return
+	}
+	a.post(Notice{Title: "kakel " + r.Version + " is ready", Body: "It starts the next time kakel does.",
+		Action: "What's New", On: ShowReadyUpdate{Release: r}})
+}
+
+// sayUpdated says, on the first start of a release an update put in
+// place by itself, that kakel was updated from version from, with what
+// changed a click away.
+func (a *app) sayUpdated(from string) {
+	title := "kakel is updated to " + thisVersion()
+	if a.inTray() && a.traySet.Notify != nil {
+		// No window shows the notice: the tray tells, and About has
+		// what's new.
+		_ = a.traySet.Notify(title, "From "+from+". About kakel says what's new.")
+		return
+	}
+	n := Notice{Title: title, Body: "From " + from + ".", Kind: NoticeWorked}
+	if a.updateWins != nil {
+		n.Action, n.On = "What's New", ShowWhatsNew{From: from}
+	}
+	a.post(n)
+}
+
+// showWhatsNew opens the window with what the releases after from
+// changed, up to this one.
+func (a *app) showWhatsNew(from string) error {
+	if a.updateWins == nil {
+		return errors.New("what's new shows in a window of its own, which can't open here")
+	}
+	return a.updateWins.ShowWhatsNew(from)
+}
+
+// showUpdateWindow opens gunim's update window on newest, put in place
+// already with ready, and reports whether it opened.
+func (a *app) showUpdateWindow(newest install.Release, ready bool) bool {
+	if a.updateWins == nil {
+		return false
+	}
+	exe, err := executable()
+	if err != nil {
+		return false
+	}
+	u := install.Update{Release: newest, Ready: ready, Quit: a.quitForUpdate}
+	if _, to, err := install.Where(installer()); err != nil || !samePath(exe, to) {
+		// A copy that is not installed updates itself where it is.
+		u.Exe = exe
+	}
+	if err := a.updateWins.ShowUpdate(u); err != nil {
+		log.Printf("couldn't open the update window: %v", err)
+		return false
+	}
+	return true
+}
+
+// quitForUpdate ends kakel, asking first as Exit does, for the restart
+// into an update: the update's new copy waits for it, and starts once
+// it has ended. It runs off the program's goroutine.
+func (a *app) quitForUpdate() error {
+	select {
+	case a.events <- func() {
+		// The new copy starts kakel itself.
+		restartInto = ""
+		a.askToQuit()
+	}:
+		return nil
+	case <-a.ctx.Done():
+		return nil
+	}
 }
 
 // isRelease reports whether version names a release, vX.Y.Z, not a
@@ -202,7 +296,11 @@ func (a *app) writable() bool {
 // offers the restart into it when it is in place already.
 func (a *app) offerUpdate(newest install.Release) {
 	have := thisVersion()
-	if newest.Version == a.staged {
+	ready := newest.Version == a.staged
+	if (ready || a.writable()) && a.showUpdateWindow(newest, ready) {
+		return
+	}
+	if ready {
 		if exe, err := executable(); err == nil {
 			a.offerRestart(exe, "kakel "+newest.Version+" is ready", "It starts the next time kakel does.")
 		}

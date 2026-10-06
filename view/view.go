@@ -2203,7 +2203,7 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 				})
 			}
 		}
-		w.toasts.Show(widget.Toast{Title: n.Title, Body: n.Body, Kind: toastKinds[n.Kind]}, u)
+		w.toasts.Show(widget.Toast{Title: n.Title, Body: n.Body, Kind: toastKinds[n.Kind], Action: n.Action, On: n.On}, u)
 	}
 	// The menus and the palette tick a switch while it is on, such as
 	// the sidebar while it shows.

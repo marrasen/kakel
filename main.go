@@ -135,6 +135,8 @@ func run() error {
 			// The file manager's windows, gunim's own, outside kakel's
 			// tabs; they end with the program.
 			Files: filemanager.NewHub(ctx, a),
+			// gunim's update windows, in the installer's look.
+			Updates: updateWindows{ctx: ctx, app: a},
 		})
 	})
 	if errors.Is(err, driver.ErrNoDriver) {
@@ -142,6 +144,21 @@ func run() error {
 		return nil
 	}
 	return err
+}
+
+// updateWindows opens gunim's windows of an update on app, in kakel's
+// installer's look.
+type updateWindows struct {
+	ctx context.Context
+	app *gunim.App
+}
+
+func (u updateWindows) ShowUpdate(up install.Update) error {
+	return install.ShowUpdate(u.ctx, u.app, app.Installer(), up)
+}
+
+func (u updateWindows) ShowWhatsNew(from string) error {
+	return install.ShowWhatsNew(u.ctx, u.app, app.Installer(), from)
 }
 
 // ownWindows opens kakel's windows, each with the window's view

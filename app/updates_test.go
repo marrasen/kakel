@@ -152,3 +152,69 @@ func TestAStagedUpdateIsNotFetchedAgain(t *testing.T) {
 		t.Fatalf("staged, Check for Updates offers %+v", q)
 	}
 }
+
+// fakeUpdateWindows notes the update windows kakel opens.
+type fakeUpdateWindows struct {
+	updates []install.Update
+	from    []string
+}
+
+func (f *fakeUpdateWindows) ShowUpdate(u install.Update) error {
+	f.updates = append(f.updates, u)
+	return nil
+}
+
+func (f *fakeUpdateWindows) ShowWhatsNew(from string) error {
+	f.from = append(f.from, from)
+	return nil
+}
+
+// With gunim's update window, a newer release opens it, a copy that is
+// not installed naming itself to update where it is; a release put in
+// place by itself says so, and its notice opens the window ready to
+// restart.
+func TestUpdatesOpenGunimsWindow(t *testing.T) {
+	a := updatesApp(t)
+	stubRelease(t, "v99.0.0")
+	wins := &fakeUpdateWindows{}
+	a.updateWins = wins
+	a.offerUpdate(install.Release{Version: "v99.0.0"})
+	if len(wins.updates) != 1 || len(a.st.Asks) != 0 {
+		t.Fatalf("opened %+v, and asked %+v", wins.updates, a.st.Asks)
+	}
+	exe, _ := executable()
+	if u := wins.updates[0]; u.Ready || u.Quit == nil || u.Exe != exe {
+		t.Fatalf("the update is %+v", u)
+	}
+
+	a.updated(install.Release{Version: "v99.0.0"})
+	n := a.st.Notices[len(a.st.Notices)-1]
+	ready, ok := n.On.(ShowReadyUpdate)
+	if !ok || n.Action != "What's New" || a.staged != "v99.0.0" || len(a.st.Asks) != 0 {
+		t.Fatalf("ready, the notice is %+v", n)
+	}
+	a.handle(ready)
+	if len(wins.updates) != 2 || !wins.updates[1].Ready {
+		t.Fatalf("the notice opened %+v", wins.updates)
+	}
+}
+
+// The first start of a release put in place by itself says so, and its
+// notice shows what changed since the version it replaced.
+func TestAnUpdateSaysWhatsNew(t *testing.T) {
+	a := updatesApp(t)
+	wins := &fakeUpdateWindows{}
+	a.updateWins = wins
+	was := updatedFrom
+	updatedFrom = func() string { return "v0.6.0" }
+	t.Cleanup(func() { updatedFrom = was })
+	a.startUpdates()
+	n := a.st.Notices[len(a.st.Notices)-1]
+	if n.Body != "From v0.6.0." || n.On != (ShowWhatsNew{From: "v0.6.0"}) {
+		t.Fatalf("the notice is %+v", n)
+	}
+	a.handle(n.On)
+	if len(wins.from) != 1 || wins.from[0] != "v0.6.0" {
+		t.Fatalf("what's new opened from %q", wins.from)
+	}
+}

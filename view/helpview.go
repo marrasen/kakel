@@ -281,6 +281,7 @@ func (w *Window) aboutDialog(u *gunim.UI) {
 	// The check says how it went on its own: About makes way for it, as
 	// a dialog over it would wait until About closed.
 	d.AddAction("Check for Updates", func(u *gunim.UI) { d.Close(u); u.Send(w, app.CheckUpdates{}) })
+	d.AddAction("What's New", func(u *gunim.UI) { d.Close(u); u.Send(w, app.ShowWhatsNew{}) })
 	d.Accept, d.Dismiss = app.DialogClosed{}, app.DialogClosed{}
 	w.openDialog(d, u)
 }

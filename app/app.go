@@ -254,7 +254,11 @@ type Notice struct {
 	Title, Body string
 	// Kind says whether it tells of a failure, of work done, or of
 	// neither.
-	Kind      NoticeKind
+	Kind NoticeKind
+	// Action names a link on the toast, and On is the intent a click on
+	// it sends.
+	Action    string
+	On        gunim.Intent
 	Clipboard string
 	// Forget has the window take Clipboard back off the clipboard in
 	// half a minute, unless something else was copied since.
@@ -716,6 +720,7 @@ type app struct {
 	// off the program's goroutine, fmFiles the machines' files as it
 	// reads them, and fmFavs the favourites its windows share.
 	files        FileWindows
+	updateWins   UpdateWindows
 	fileWins     []*filemanager.Window
 	serverPlaces atomic.Pointer[[]filemanager.Place]
 	fmFiles      map[machines.ID]*fmFS
@@ -1484,6 +1489,10 @@ func (a *app) handle(in gunim.Intent) {
 		err = a.writeThemeFile()
 	case CheckUpdates:
 		a.checkUpdates()
+	case ShowWhatsNew:
+		err = a.showWhatsNew(in.From)
+	case ShowReadyUpdate:
+		a.offerUpdate(in.Release)
 	case NoTextToPaste:
 		a.noTextToPaste()
 	case ClipboardUnreadable:
@@ -2268,6 +2277,9 @@ type Config struct {
 	OpenPrompt PromptOpener
 	// Sound is told which sounds play; unset, none do.
 	Sound SoundSetter
+	// Updates opens gunim's windows of an update; unset, kakel asks
+	// about one in its own dialogs.
+	Updates UpdateWindows
 }
 
 // Start runs the program side until its last window closes.
@@ -2286,6 +2298,7 @@ func Start(ctx context.Context, cfg Config) error {
 	a.openPrompt = cfg.OpenPrompt
 	a.hotKeys = cfg.HotKeys
 	a.sound = cfg.Sound
+	a.updateWins = cfg.Updates
 	defer closeToaster()
 	return errors.Join(a.run(ctx), a.shotErr)
 }
