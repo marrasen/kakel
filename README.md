@@ -53,8 +53,11 @@ offers to take your settings and saved servers too.
 
 **Updates.** An installed release looks for a newer one a minute after it
 starts and once a day after. Options › Updates… says what it does then:
-tell you (the default), install it by itself, or nothing. An update is
-put in place for the next start, and kakel offers to restart into it.
+tell you (the default), install it by itself, or nothing. Told, a window
+shows what's new; Update Now downloads it, with its progress shown, and
+restarts kakel into it. Installed by itself, it starts the next time
+kakel does, and kakel then says what it brought. About kakel › What's
+New shows every release's notes.
 
 **Or with Go.** Every build is pure Go, with no C toolchain on either
 platform:

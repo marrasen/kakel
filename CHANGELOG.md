@@ -7,6 +7,18 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
+## Unreleased
+
+### Changed
+
+**Updates show what they do.** A newer release opens a window with
+what changed since your version, and Update Now. The download shows
+its progress, and kakel restarts into the new release: the window says
+so until the old kakel has closed, and then that kakel is up to date.
+An update installed by itself says so on kakel's next start, with
+What's New a click away. About kakel › What's New shows every
+release's notes.
+
 ## v0.7.0
 
 ### Changed
