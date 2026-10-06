@@ -11,6 +11,11 @@ change how something behaves.
 
 ### Changed
 
+**Back and Forward cross servers in the file manager.** Going from this
+computer's files to a server's, or from one server to another, no
+longer empties a window's history. Back returns to the folder you left,
+connecting to its server first when needed.
+
 **The installer waits for kakel to close.** Updating or uninstalling
 while kakel runs goes on by itself once it has closed. Close kakel
 there asks the running kakel to end, with a ring turning while it
