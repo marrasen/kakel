@@ -14,6 +14,11 @@ change how something behaves.
 **Show in system file manager opens File Explorer**, also when kakel
 opens folders. It opened kakel again, or failed with HRESULT 0x80004004.
 
+**Ctrl+Tab in a window of one pane, as Settings is, no longer stops
+every click there.** It left the ring it slides between panes over the
+window, which took the pointer, the title bar's included, while the
+keys went on working.
+
 **What the file manager shows going wrong is in the Window Log too**,
 past the banner it is dismissed from.
 

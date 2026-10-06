@@ -63,7 +63,13 @@ func (w *Window) recentPanes() []string {
 // way.
 func (w *Window) walkRecent(step int, u *gunim.UI) {
 	if w.walk == nil {
-		w.walk = &paneWalk{order: w.recentPanes()}
+		order := w.recentPanes()
+		if len(order) < 2 {
+			// One pane, or none: nowhere to walk, and nothing is shown,
+			// as nothing would take it away.
+			return
+		}
+		w.walk = &paneWalk{order: order}
 		// The ring starts round the pane the walk leaves, to slide from.
 		if r, ok := w.standsAt(w.focused, u); ok && w.walkMark == nil {
 			w.walkMark = newWalkMark(r)
@@ -72,7 +78,7 @@ func (w *Window) walkRecent(step int, u *gunim.UI) {
 	}
 	n := len(w.walk.order)
 	if n < 2 {
-		w.walk = nil
+		w.endWalk(u)
 		return
 	}
 	w.walk.at = ((w.walk.at+step)%n + n) % n
@@ -152,6 +158,11 @@ func newWalkMark(at geom.Rect) *walkMark {
 	return m
 }
 
+// Covers implements [gunim.Shaped]: the ring is drawn over the whole
+// window, and takes the pointer nowhere, so what it is drawn over takes
+// the clicks.
+func (m *walkMark) Covers(geom.Point) bool { return false }
+
 // Layout implements [gunim.Node]: the ring is drawn in the window's
 // space, over the whole of it.
 func (m *walkMark) Layout(c gunim.Constraints, _ gunim.Frame, _ gunim.Children) geom.Size {
@@ -225,6 +236,10 @@ func (l *walkList) Children() []gunim.Node {
 
 // Layout implements [gunim.Node]. The list takes the whole window, and
 // sits in its middle.
+// Covers implements [gunim.Shaped]: the list takes the pointer on its
+// card alone, though it is laid out over the whole window.
+func (l *walkList) Covers(p geom.Point) bool { return l.box.Contains(p) }
+
 func (l *walkList) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children) geom.Size {
 	width := min(walkWidth, c.Max.W)
 	height := min(float32(len(l.labels))*walkRow+2*walkPad, c.Max.H)
