@@ -7,7 +7,7 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
-## Unreleased
+## v0.11.0
 
 ### Fixed
 
@@ -21,6 +21,12 @@ keys went on working.
 
 **What the file manager shows going wrong is in the Window Log too**,
 past the banner it is dismissed from.
+
+**A freeze that could stop every window on Windows.** A window's
+OpenGL context was made, used and deleted partly on the thread every
+window waits on, while other windows drew; a graphics driver can wait
+there for the others. Each window's context is now made, used and
+deleted on its own drawing thread.
 
 ### Changed
 
