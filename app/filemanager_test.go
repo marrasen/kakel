@@ -5,6 +5,8 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/marrasen/kakel/single"
+
 	"github.com/marrasen/kakel/remote"
 
 	"github.com/marrasen/gunim/filemanager"
@@ -57,5 +59,42 @@ func TestFilesOpenWhereLastChosen(t *testing.T) {
 	a.handle(FilesInPane{})
 	if a.settings.FilesInWindow() {
 		t.Fatal("a pane chosen, files still open in windows")
+	}
+}
+
+// -files opens a folder in a file manager window, as Windows asks once
+// kakel opens folders: in the kakel running, handed over, whatever files
+// opened in last, and a drive's root read through the quote Windows'
+// "%V\." keeps whole.
+func TestAFolderOpenedAnywhereOpensInTheFileManager(t *testing.T) {
+	for _, c := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"-files", "/home/me/."}, "/home/me"},
+		{[]string{"-files", ""}, ""},
+		{[]string{"-files", `/mnt/"`}, "/mnt"},
+	} {
+		o, err := ParseOptions(c.args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		dir, set := o.OpensFolder()
+		if !set || dir != c.want || !o.StartsHidden() || o.StartsInTray() {
+			t.Errorf("%q opens %q (%v), hidden %v, in the tray %v", c.args, dir, set, o.StartsHidden(), o.StartsInTray())
+		}
+	}
+	if _, set := (Options{}).OpensFolder(); set {
+		t.Fatal("no -files opens a folder")
+	}
+
+	a, _ := agentApp(t)
+	a.settings = mustSettings(t)
+	files := &fakeFiles{}
+	a.files = files
+	panes := len(a.st.Panes)
+	a.handover(single.Handover{Args: []string{"-files", "/srv/data/."}})
+	if len(files.opened) != 1 || files.opened[0].Dir != "/srv/data" || len(a.st.Panes) != panes {
+		t.Fatalf("handed a folder, kakel opened %+v and %d panes", files.opened, len(a.st.Panes)-panes)
 	}
 }

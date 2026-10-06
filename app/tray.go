@@ -350,6 +350,9 @@ func (a *app) handover(h single.Handover) {
 	case err == nil && o.launcher:
 		a.openLauncher()
 		return
+	case err == nil && o.filesSet:
+		a.openFolder(o.files)
+		return
 	case err == nil && o.quit:
 		a.askToQuit()
 		return

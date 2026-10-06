@@ -38,6 +38,9 @@ type (
 	// ToggleAutostart starts the installed kakel with the computer, into
 	// the tray, or no longer.
 	ToggleAutostart struct{}
+	// ToggleFolders opens folders with the installed kakel's file
+	// manager, in place of File Explorer, or no longer.
+	ToggleFolders struct{}
 	// ShowWhatsNew shows what the releases after From changed, up to
 	// this one: every release's notes for "".
 	ShowWhatsNew struct{ From string }
@@ -61,8 +64,10 @@ var updatedFrom = install.UpdatedFrom
 type Update struct {
 	// Installed says this is the installed copy, Installable that this
 	// system can have one, and Autostart that it starts with the
-	// computer. Updates is the setting.
+	// computer. Folders says folders open with it, where FoldersHere
+	// says they can. Updates is the setting.
 	Installed, Installable, Autostart bool
+	Folders, FoldersHere              bool
 	Updates                           string
 }
 
@@ -106,13 +111,15 @@ func init() { installer = Installer }
 // showUpdate tells the windows where kakel stands.
 func (a *app) showUpdate() {
 	exe, _ := executable()
-	u := Update{Updates: settings.UpdatesNotify}
+	// Windows alone lets a program open folders in File Explorer's place.
+	u := Update{Updates: settings.UpdatesNotify, FoldersHere: runtime.GOOS == "windows"}
 	if _, to, err := install.Where(installer()); err == nil {
 		u.Installable = true
 		u.Installed = exe != "" && samePath(exe, to)
 	}
 	if in, err := install.Find(installer()); err == nil {
 		u.Autostart = in.Chose(install.PickAutostart)
+		u.Folders = in.Chose(install.PickFolders)
 		u.Updates = string(in.Updates)
 	} else if a.settings != nil {
 		u.Updates = a.settings.Updates()
@@ -411,6 +418,15 @@ func (a *app) toggleAutostart() error {
 		return err
 	}
 	return install.Change(installer(), map[string]bool{install.PickAutostart: !in.Chose(install.PickAutostart)})
+}
+
+// toggleFolders opens folders with the installed kakel, or no longer.
+func (a *app) toggleFolders() error {
+	in, err := install.Find(installer())
+	if err != nil {
+		return err
+	}
+	return install.Change(installer(), map[string]bool{install.PickFolders: !in.Chose(install.PickFolders)})
 }
 
 // samePath reports whether two paths name one file or folder, letter

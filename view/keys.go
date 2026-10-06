@@ -142,6 +142,7 @@ var commands = []struct{ id, title string }{
 	{"app.updates", "Updates"},
 	{"app.settings", "Settings"},
 	{"app.autostart", "Start with Computer"},
+	{"app.folders", "Default File Manager"},
 	{"sshkey.make", "New SSH Key"},
 	{"sshkey.lock", "Lock SSH Keys"},
 	{"sshkey.forget", "Remove Saved Key"},
@@ -280,6 +281,7 @@ var commandIcons = map[string]*icon.Icon{
 	"app.updates":            icon.RefreshCw,
 	"app.settings":           icon.Settings,
 	"app.autostart":          icon.Power,
+	"app.folders":            icon.FolderOpen,
 	"server.connect":         icon.Plug,
 	"server.add":             icon.Plus,
 	"server.import":          icon.FileInput,
@@ -394,6 +396,7 @@ var menus = []struct {
 		{id: "app.install", title: "Install kakel…", group: true},
 		{id: "app.updates", title: "Updates…"},
 		{id: "app.autostart", title: "Start with Computer"},
+		{id: "app.folders", title: "Default File Manager"},
 		{id: "help.files", title: "File Locations…", group: true},
 	}},
 	// The Font menu is made from the families found here.
@@ -453,6 +456,7 @@ var commandAlso = map[string][]string{
 	"app.updates":           {"update", "upgrade", "new version", "automatic"},
 	"app.settings":          {"preferences", "options", "sound", "audio", "bell", "rings", "animation", "title bar", "window manager", "decorations"},
 	"app.autostart":         {"start with windows", "login", "startup", "boot", "tray"},
+	"app.folders":           {"file explorer", "default file manager", "win+e", "browse"},
 	"shell.default":         {"pane"},
 	"server.connect":        {"ssh", "host", "machine"},
 	"server.add":            {"new", "save"},
@@ -544,6 +548,8 @@ func commandIntent(id string) (gunim.Intent, bool) {
 		return app.OpenLauncher{}, true
 	case "app.autostart":
 		return app.ToggleAutostart{}, true
+	case "app.folders":
+		return app.ToggleFolders{}, true
 	case "pane.nextInSidebar":
 		return app.NextPane{}, true
 	case "pane.previousInSidebar":

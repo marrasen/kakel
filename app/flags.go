@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/marrasen/gunim/driver"
@@ -46,6 +47,11 @@ type Options struct {
 	// the computer; quit ends the kakel running. Installing is
 	// gunim's: see Installer.
 	tray, quit bool
+	// files is the folder to open in a file manager window, with
+	// filesSet, as Windows asks for a folder opened anywhere once kakel
+	// opens them: "" for home.
+	files    string
+	filesSet bool
 	// sizeSet says -font-size was given, which the size kept from last
 	// time does not overrule.
 	sizeSet bool
@@ -76,6 +82,8 @@ func ParseOptions(args []string) (Options, error) {
 	fs.BoolVar(&o.stats, "stats", os.Getenv("KAKEL_STATS") == "1",
 		"say each second how many frames were drawn, on standard error")
 	fs.BoolVar(&o.tray, "tray", false, "start in the tray, with no window, as kakel does with the computer")
+	fs.StringVar(&o.files, "files", "",
+		"open this folder in a file manager window, in the kakel already running if there is one; empty for home")
 	fs.BoolVar(&o.quit, "quit", false, "end the kakel running, asking first as Exit does while anything is open")
 	fs.BoolVar(&o.launcher, "launcher", false,
 		"open the launcher, in the kakel already running if there is one;"+
@@ -88,10 +96,16 @@ func ParseOptions(args []string) (Options, error) {
 		return o, err
 	}
 	fs.Visit(func(f *flag.Flag) {
-		if f.Name == "font-size" {
+		switch f.Name {
+		case "font-size":
 			o.sizeSet = true
+		case "files":
+			o.filesSet = true
 		}
 	})
+	if o.filesSet {
+		o.files = folderArg(o.files)
+	}
 	o.fontSize = float64(fontSizeIn(float32(o.fontSize)))
 	if o.fontFiles != "" && o.fontFamily != "" {
 		return o, errors.New("-font and -font-family both name a typeface; use one")
@@ -255,9 +269,18 @@ func (o Options) StartsInTray() bool { return o.tray || o.bare() }
 // bare reports whether this kakel was started with nothing to do: no
 // command, no server, no launcher, no screenshots.
 func (o Options) bare() bool {
-	return o.command == "" && o.ssh == "" && !o.launcher && o.shot == "" &&
+	return o.command == "" && o.ssh == "" && !o.launcher && !o.filesSet && o.shot == "" &&
 		!o.quit && !o.asMCP && !o.listFonts && !o.mcpSkill
 }
+
+// StartsHidden reports whether this kakel's first window opens hidden:
+// one that starts in the tray, and one started for a folder, which opens
+// in a file manager window of its own.
+func (o Options) StartsHidden() bool { return o.StartsInTray() || o.filesSet }
+
+// OpensFolder reports whether this kakel was started for a folder, and
+// which: a file manager window there, and nothing else.
+func (o Options) OpensFolder() (string, bool) { return o.files, o.filesSet }
 
 // Trays reports whether this kakel shows itself in the tray: one of
 // many does, and one driving itself for screenshots does not.
@@ -364,4 +387,20 @@ func (p plainLog) Write(b []byte) (int, error) {
 		return 0, err
 	}
 	return len(b), nil
+}
+
+// folderArg is the folder a command line names, as Windows writes it for
+// a folder opened anywhere: "C:\Users\me\." for C:\Users\me, the dot
+// keeping a drive's backslash from escaping the closing quote. One
+// written without it, "C:\" read as C:", loses the stray quote.
+func folderArg(s string) string {
+	s = strings.TrimSpace(strings.TrimSuffix(s, `"`))
+	if s == "" {
+		return ""
+	}
+	if strings.HasSuffix(s, ":") {
+		// A drive: its root, not the folder it was last in.
+		s += string(filepath.Separator)
+	}
+	return filepath.Clean(s)
 }
