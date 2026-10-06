@@ -169,7 +169,7 @@ func typedInAPane(k input.Key) bool {
 		return true
 	}
 	switch k {
-	case input.Key0, input.KeyEquals, input.KeyMinus, input.KeySpace,
+	case input.Key0, input.KeyEquals, input.KeyMinus, input.KeyComma, input.KeySpace,
 		input.KeyBracketLeft, input.KeyBracketRight, input.KeyBackslash,
 		input.KeyEnter, input.KeyTab, input.KeyBackspace, input.KeyEscape:
 		return true

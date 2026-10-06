@@ -47,9 +47,12 @@ type Serving struct {
 	Clients []ServedClient
 	Tunnels []ServedTunnel
 	// Port and Anywhere are what serving starts with: the port asked
-	// for last, and whether it listened on every network.
+	// for last, and whether it listened on every network. AtStart is
+	// what kakel does as it starts, when the window was served as it
+	// last closed: settings.ServeAsk, ServeAlways or ServeNever.
 	Port     int
 	Anywhere bool
+	AtStart  string
 	// Allowed are the keys that may connect, by name, from the file at
 	// AllowedAt, Keys the same keys with their fingerprints, and
 	// Problem what stops that file being read.
@@ -103,6 +106,16 @@ type (
 	// DisallowKey takes the key with Fingerprint off the keys that may
 	// connect, and hangs up on the windows it let in.
 	DisallowKey struct{ Fingerprint string }
+	// SetServeAtStart sets what kakel does as it starts when the window
+	// was served as it last closed: settings.ServeAsk, ServeAlways or
+	// ServeNever.
+	SetServeAtStart struct{ When string }
+	// SetServeDefaults sets the port serving starts on, and whether it
+	// listens on every network, for the next time it starts.
+	SetServeDefaults struct {
+		Port     int
+		Anywhere bool
+	}
 )
 
 // serving is the program's side.
@@ -472,6 +485,7 @@ func (a *app) showServing() {
 		if reach, ok := a.settings.ServeReach(); ok {
 			s.Anywhere = reach == settings.ReachAnywhere
 		}
+		s.AtStart = a.settings.ServeAtStart()
 	}
 	s.Edits = a.st.Serving.Edits
 	allowed, at, err := a.servingAllowed()

@@ -86,6 +86,7 @@ const (
 	KeyPlus
 	KeyMinus
 	Key0
+	KeyComma
 
 	KeyUp
 	KeyDown
@@ -355,7 +356,7 @@ func (k Key) String() string {
 
 var keyNames = map[Key]string{
 	KeyNone: "-", KeyEnter: "Enter", KeyTab: "Tab", KeyBackspace: "Backspace",
-	KeyEquals: "=", KeyPlus: "Plus", KeyMinus: "-", Key0: "0",
+	KeyEquals: "=", KeyPlus: "Plus", KeyMinus: "-", Key0: "0", KeyComma: ",",
 	KeyEscape: "Escape", KeySpace: "Space", KeyBracketLeft: "[",
 	KeyBracketRight: "]", KeyBackslash: "\\", KeyUp: "Up", KeyDown: "Down",
 	KeyRight: "Right", KeyLeft: "Left", KeyHome: "Home", KeyEnd: "End",

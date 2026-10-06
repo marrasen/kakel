@@ -46,13 +46,13 @@ older release moves itself there the first time it starts.
 has a zip for Windows and a tarball for Linux, both amd64, with
 `SHA256SUMS` beside them. Unpack it and run it: it opens kakel's
 installer, which also offers a desktop shortcut, a start with the
-computer, and automatic updates, or runs it as it is. Options › Install
-kakel… installs a copy run that way later. `kakel -install` and
+computer, and automatic updates, or runs it as it is. Settings ›
+General › Install kakel… installs a copy run that way later. `kakel -install` and
 `kakel -uninstall` do the same from a shell, and `kakel -uninstall`
 offers to take your settings and saved servers too.
 
 **Updates.** An installed release looks for a newer one a minute after it
-starts and once a day after. Options › Updates… says what it does then:
+starts and once a day after. Settings › General › New releases says what it does then:
 tell you (the default), install it by itself, or nothing. Told, a window
 shows what's new; Update Now downloads it, with its progress shown, and
 restarts kakel into it. Installed by itself, it starts the next time
@@ -96,7 +96,7 @@ its heading in the Servers pane offers the rest: files, a command, a
 tunnel and the account.
 
 Text is drawn in Go Mono, compiled into the binary, until you pick an
-installed family with `-font-family` or from the Font menu, which
+installed family with `-font-family` or in Settings › Appearance, which
 remembers your pick for next time. `-font`
 takes font files instead, comma separated, in the order regular, bold,
 italic, bold italic. Only the regular font is required: a style you

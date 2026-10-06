@@ -32,6 +32,8 @@ type (
 		At   geom.Point
 		Size geom.Size
 	}
+	// OpenSettings opens the Settings pane, in a window of its own.
+	OpenSettings struct{}
 )
 
 // handleServers carries out an intent about the Servers pane, and
@@ -42,6 +44,8 @@ func (a *app) handleServers(in any) bool {
 		a.showServers()
 	case ToolWindow:
 		a.toolWindow(in)
+	case OpenSettings:
+		a.openSettings()
 	case ToggleServers:
 		// Closed only where it is what the user is looking at; out of
 		// sight, the toggle brings it.
@@ -103,7 +107,9 @@ func (a *app) allPanes() []Pane {
 // window.
 
 // isToolKind reports whether a pane of kind is a tool pane.
-func isToolKind(kind string) bool { return kind == KindServers || kind == KindSecrets }
+func isToolKind(kind string) bool {
+	return kind == KindServers || kind == KindSecrets || kind == KindSettings
+}
 
 // isTool reports whether w holds tool panes and nothing else.
 func (a *app) isTool(w *ownWin) bool {
@@ -200,5 +206,43 @@ func (a *app) toolWindow(in ToolWindow) {
 		}
 	case KindSecrets:
 		a.showSecretsPane(alone)
+	case KindSettings:
+		a.showSettings()
+		if id := a.paneOf(KindSettings); id != "" {
+			alone(id)
+		}
 	}
+}
+
+// KindSettings is the Settings pane.
+const KindSettings = "settings"
+
+// settingsSize is the size the Settings pane opens at, in a window of
+// its own.
+var settingsSize = geom.Sz(880, 680)
+
+// paneOf returns the pane of kind open, or "".
+func (a *app) paneOf(kind string) string {
+	for _, p := range a.st.Panes {
+		if p.Kind == kind && !a.closing[p.ID] {
+			return p.ID
+		}
+	}
+	return ""
+}
+
+// showSettings goes to the Settings pane, opening it in the window in
+// front when it is closed.
+func (a *app) showSettings() {
+	if id := a.paneOf(KindSettings); id != "" {
+		a.focusRaised(id)
+		return
+	}
+	a.next++
+	a.addPane(Pane{ID: "p" + itoa(a.next), Title: "Settings", Kind: KindSettings}, nil, Placement{})
+}
+
+// openSettings opens the Settings pane in a window of its own.
+func (a *app) openSettings() {
+	a.toolWindow(ToolWindow{Kind: KindSettings, At: geom.Pt(60, 60), Size: settingsSize})
 }

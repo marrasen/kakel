@@ -32,9 +32,9 @@ and the reader.
 
 ## Changing a shortcut
 
-To change a shortcut, choose Options → Start a File → Shortcuts. It
-writes `keys.json` holding every shortcut you have now. Edit it, then
-choose Options → Read Again → Shortcuts.
+To change a shortcut, choose Settings › Files › Shortcuts › Start the
+File. It writes `keys.json` holding every shortcut you have now. Edit
+it, then choose Read Again beside it.
 
 The file says what to change, not what the whole window does:
 
@@ -144,8 +144,8 @@ keys added here may log in over ssh too.
 Kakel keeps its files where the operating system puts a program's.
 Make a directory called `kakel-files` beside `kakel.exe` and it
 keeps them there instead, so one machine can hold several copies with
-files of their own. Options → File Locations… names every file and says
-how to move them.
+files of their own. Settings › Files names every file and says how to
+move them.
 
 Kakel used to be called gridterm. On its first start it renames
 gridterm's old directories: `gridterm` becomes `kakel`, and

@@ -170,7 +170,8 @@ kakel's tray icon is a StatusNotifierItem, over D-Bus. Cinnamon, KDE,
 XFCE with its status notifier plugin, and most other panels show it.
 Stock GNOME does not: it needs the AppIndicator extension. With no tray
 to show the icon in, kakel runs as it did before it had one, and
-closing its last window ends it. Options › Tray Icon turns it off.
+closing its last window ends it. Settings › General › Show kakel in
+the tray turns it off.
 
 It was tried on Cinnamon 6 over X11: the icon shows, its menu opens,
 and a pick reaches kakel.
@@ -182,7 +183,7 @@ with XGrabKey. That key then no longer reaches other programs, such as
 Emacs's C-M-k. Under Cinnamon and GNOME, keys with Super do not work:
 they take the keyboard while Super is held, so another program never
 sees the rest. Other window managers, such as XFCE's or i3, let them
-through. Options › Launcher Key… picks another.
+through. Settings › General › Launcher key picks another.
 
 Under Wayland no program may take a key from the others, so kakel takes
 none. Bind `kakel -launcher` to a key in the desktop's keyboard

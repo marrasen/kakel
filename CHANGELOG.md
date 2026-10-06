@@ -7,6 +7,27 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
+## Unreleased
+
+### Changed
+
+**Settings is a window of its own, in tabs.** File › Settings… (Ctrl+,),
+the gear on the Servers page, and the tray all open it. It holds what
+the Options and Font menus did, which are gone: General (start with the
+computer, the tray, the default file manager, the launcher key, the
+title bar, updates), Appearance (the theme, the font and its size),
+Terminal (where terminals start, the shell, TERM_PROGRAM),
+Notifications (sounds and rings), Sharing (serving, and the keys that
+may connect) and Files (where kakel keeps them, and the themes and
+shortcuts files). A switch or a choice takes effect at once; a line
+typed is kept with the Save beside it. Sharing also says what kakel
+does as it starts when the window was served as it last closed: ask,
+serve again, or not, which before only "Don't ask again" could set.
+
+**What's New and the installer's windows are smooth again.** Long notes
+draw only the lines in view, and the installer's icon comes to rest
+after a few seconds, so the window stops drawing when nothing moves.
+
 ## v0.9.1
 
 ### Changed

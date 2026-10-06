@@ -54,6 +54,7 @@ func Shortcuts() *ui.Keymap {
 		{Key: input.KeyMinus, Mods: input.ModCtrl}:                   "font.decrease",
 		{Key: input.Key0, Mods: input.ModCtrl}:                       "font.reset",
 		{Key: input.KeyA, Mods: input.ModCtrl | input.ModShift}:      "view.switcher",
+		{Key: input.KeyComma, Mods: input.ModCtrl}:                   "app.settings",
 	})
 	return keys
 }
@@ -307,6 +308,7 @@ var menus = []struct {
 	{"File", []menuItem{
 		{id: "conn.terminal", title: "New Terminal"},
 		{id: "files.manager", title: "Open File Manager"},
+		{id: "app.settings", title: "Settings…", group: true},
 		{title: "Close", caption: true}, {id: "pane.close", title: "Pane"},
 		{id: "app.exit", title: "Exit", group: true},
 	}},
@@ -381,26 +383,6 @@ var menus = []struct {
 		{id: "sshkey.make", title: "New SSH Key…"}, {id: "sshkey.lock", title: "Lock SSH Keys"},
 		{id: "sshkey.add", title: "Add Saved Key…"}, {id: "sshkey.forget", title: "Remove Saved Key…"},
 	}},
-	{"Options", []menuItem{
-		{id: "app.settings", title: "Settings…"},
-		{id: "view.theme", title: "Theme…", group: true},
-		{id: "shell.termProgram", title: "Terminal Identity…"},
-		{title: "Start a File", caption: true},
-		{id: "view.themesStart", title: "Themes"}, {id: "shortcuts.write", title: "Shortcuts"},
-		{title: "Read Again", caption: true},
-		{id: "view.themesReload", title: "Themes"}, {id: "shortcuts.reload", title: "Shortcuts"},
-		{id: "server.reload", title: "Server List"},
-		{id: "app.thisComputer", title: "This Computer…", group: true},
-		{id: "app.tray", title: "Tray Icon", group: true},
-		{id: "app.launcherKey", title: "Launcher Key…"},
-		{id: "app.install", title: "Install kakel…", group: true},
-		{id: "app.updates", title: "Updates…"},
-		{id: "app.autostart", title: "Start with Computer"},
-		{id: "app.folders", title: "Default File Manager"},
-		{id: "help.files", title: "File Locations…", group: true},
-	}},
-	// The Font menu is made from the families found here.
-	{"Font", nil},
 	{"Help", []menuItem{
 		{id: "palette.open", title: "All Commands…"},
 		{id: "help.shortcuts", title: "Shortcuts and Commands"},

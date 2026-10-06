@@ -44,7 +44,7 @@ func Event(e gi.KeyPress) (input.Event, bool) {
 // punctuation is the punctuation kakel binds, by the character the
 // key types rather than where it sits.
 var punctuation = map[rune]input.Key{
-	'=': input.KeyEquals, '+': input.KeyPlus, '-': input.KeyMinus,
+	'=': input.KeyEquals, '+': input.KeyPlus, '-': input.KeyMinus, ',': input.KeyComma,
 	'[': input.KeyBracketLeft, ']': input.KeyBracketRight, '\\': input.KeyBackslash,
 }
 
@@ -57,7 +57,7 @@ var keyMap = func() map[gi.Key]input.Key {
 		gi.KeyEscape: input.KeyEscape, gi.KeySpace: input.KeySpace,
 		gi.KeyLeftBracket: input.KeyBracketLeft, gi.KeyRightBracket: input.KeyBracketRight,
 		gi.KeyBackslash: input.KeyBackslash, gi.KeyEqual: input.KeyEquals,
-		gi.KeyMinus: input.KeyMinus, gi.Key0: input.Key0,
+		gi.KeyMinus: input.KeyMinus, gi.Key0: input.Key0, gi.KeyComma: input.KeyComma,
 		gi.KeyUp: input.KeyUp, gi.KeyDown: input.KeyDown,
 		gi.KeyLeft: input.KeyLeft, gi.KeyRight: input.KeyRight,
 		gi.KeyHome: input.KeyHome, gi.KeyEnd: input.KeyEnd,
