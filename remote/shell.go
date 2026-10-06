@@ -22,12 +22,12 @@ const drainGrace = 250 * time.Millisecond
 
 // WindowKind is what the server list calls an entry that is another
 // kakel serving, for the message that tells a user their machine is
-// really one of those. It keeps gridterm's name, which saved server
-// lists hold.
+// really one of those. Only the label: a saved server keeps whether it
+// is one as Window.
 //
 // A constant here rather than in the window, so the message and the
 // dialog cannot drift apart.
-const WindowKind = "gridterm window"
+const WindowKind = "Kakel"
 
 // isKakelWindow reports whether a refusal came from a kakel serving.
 //
@@ -58,7 +58,7 @@ func notAMachine(addr string, refused error) error {
 	}
 	return fmt.Errorf(
 		"remote: %s is a kakel window, not a machine to log in to."+
-			" Set its Kind to %q and take it over instead: %w",
+			" Set its Type to %q and take it over instead: %w",
 		addr, WindowKind, inner)
 }
 
