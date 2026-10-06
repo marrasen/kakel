@@ -84,8 +84,8 @@ The whole list. The [README](README.md) has the short version.
   last window leaves kakel running there; Exit, or Quit kakel, ends it.
   Starting kakel again, from a shortcut or a shell, hands its command
   line to the kakel running, which opens a window for it in the folder
-  it was started from. `KAKEL_ALONE=1` starts one of its own. Options ›
-  Tray Icon turns the tray off, and with it kakel ends with its last
+  it was started from. `KAKEL_ALONE=1` starts one of its own. Settings ›
+  General › Show kakel in the tray turns the tray off, and with it kakel ends with its last
   window, as before.
 - **A launcher from any program.** Shift+Win+K on Windows, and
   Ctrl+Alt+K on Linux under X11, opens a small window over everything
@@ -96,7 +96,7 @@ The whole list. The [README](README.md) has the short version.
   opened there last since kakel started, a terminal at first, in the
   window you last worked in; Tab lists the rest, as Files and, while
   connected, the Connection Log, and Escape goes back and then closes
-  it. Options › Launcher Key… sets another key with Ctrl, Alt or Win in
+  it. Settings › General › Launcher key sets another key with Ctrl, Alt or Win in
   it, or none; kakel says so if another program has it. Open Launcher,
   on the Servers menu and the tray's, opens it anywhere, and so does
   `kakel -launcher`, for a key bound in the desktop's own settings
@@ -329,7 +329,7 @@ says which it is in two ways:
   environment variable does not.
 
 Both say `kakel`, which is true and which no program has heard of
-yet. "Terminal Identity…" on the Options menu changes the
+yet. TERM_PROGRAM in Settings › Terminal changes the
 name to a terminal a program does know, which is how to make one show
 images before it has heard of this one. It may then send the rest of
 that terminal's sequences, and whatever kakel does not read lands on

@@ -89,7 +89,7 @@ func (a *app) writeShortcuts(have []ui.Binding) error {
 	if err := keys.WriteStart(at, have); err != nil {
 		return err
 	}
-	a.worked("Shortcuts file created", at+" holds every shortcut now. Edit it, then choose Options → Read Again → Shortcuts.", "")
+	a.worked("Shortcuts file created", at+" holds every shortcut now. Edit it, then choose Read Again beside Shortcuts in Settings › Files.", "")
 	return nil
 }
 
@@ -108,7 +108,7 @@ func (a *app) writeThemeFile() error {
 	if err := themes.WriteStart(at, a.themes[i].Source); err != nil {
 		return err
 	}
-	a.worked("Theme file created", at+" holds a copy of "+a.st.Theme+". Edit it, then choose Options → Read Again → Themes.", "")
+	a.worked("Theme file created", at+" holds a copy of "+a.st.Theme+". Edit it, then choose Read Again beside Themes in Settings › Files.", "")
 	return nil
 }
 

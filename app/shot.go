@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/marrasen/gunim"
 	gi "github.com/marrasen/gunim/input"
 
 	"github.com/marrasen/kakel/agent"
@@ -97,6 +98,20 @@ func (a *app) shoot(ctx context.Context, list []steps.Step) error {
 			return ctx.Err()
 		}
 	}
+	// front is the client of the newest window open, which a key, text
+	// or a shot goes to: one a step opened, as a pane in a window of its
+	// own does, takes the steps after it. The newest rather than the one
+	// with the keyboard, as a screen with no window manager gives none
+	// the keyboard.
+	front := func() gunim.Client {
+		c, _ := onApp(a, func() (gunim.Client, error) {
+			if live := a.liveWins(); len(live) > 0 {
+				return live[len(live)-1].c, nil
+			}
+			return a.c, nil
+		})
+		return c
+	}
 	for _, step := range list {
 		switch step.Kind {
 		case steps.Wait:
@@ -135,29 +150,30 @@ func (a *app) shoot(ctx context.Context, list []steps.Step) error {
 			if press.Key == gi.KeySpace && press.Mods&^gi.ModShift == 0 {
 				// A space comes from the keyboard as text, as the one
 				// thing type: cannot hold.
-				if err := a.c.Input(ctx, gi.TextInput{Text: " "}); err != nil {
+				if err := front().Input(ctx, gi.TextInput{Text: " "}); err != nil {
 					return err
 				}
 				typed = true
 				break
 			}
-			if err := a.c.Input(ctx, press); err != nil {
+			c := front()
+			if err := c.Input(ctx, press); err != nil {
 				return err
 			}
-			if err := a.c.Input(ctx, gi.KeyRelease{Key: press.Key, Mods: press.Mods}); err != nil {
+			if err := c.Input(ctx, gi.KeyRelease{Key: press.Key, Mods: press.Mods}); err != nil {
 				return err
 			}
 			typed = true
 		case steps.Type:
 			before = now()
 			for _, r := range step.Text {
-				if err := a.c.Input(ctx, gi.TextInput{Text: string(r)}); err != nil {
+				if err := front().Input(ctx, gi.TextInput{Text: string(r)}); err != nil {
 					return err
 				}
 			}
 			typed = true
 		case steps.Shot:
-			img, err := a.c.Shot(ctx)
+			img, err := front().Shot(ctx)
 			if err != nil {
 				return fmt.Errorf("shot:%s: %w", step.Text, err)
 			}

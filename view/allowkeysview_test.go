@@ -36,7 +36,7 @@ func TestTheServingDialogAddsAndRemovesKeys(t *testing.T) {
 
 	win.dialog.Close(lastUI)
 	lastWindow.Frame(time.Second)
-	win.addKeyDialog(s, lastUI)
+	win.addKeyDialogFrom(s, true, lastUI)
 	var pick *widget.Dropdown
 	for _, f := range formOf(win.dialog.Body).Children() {
 		if d, ok := f.(*widget.Dropdown); ok {

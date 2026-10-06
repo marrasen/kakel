@@ -169,7 +169,7 @@ func (a *app) takeKey(k gunim.HotKey) error {
 	case errors.Is(err, gunim.ErrNoHotKeys):
 		return nil
 	case errors.Is(err, gunim.ErrHotKeyTaken):
-		return errors.New("another program has it. Choose another key with Options › Launcher Key")
+		return errors.New("another program has it. Choose another key in Settings › General › Launcher key")
 	case err != nil:
 		return err
 	}

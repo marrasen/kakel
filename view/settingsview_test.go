@@ -3,6 +3,9 @@ package view
 import (
 	"sync"
 	"testing"
+	"time"
+
+	gi "github.com/marrasen/gunim/input"
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/widget"
@@ -10,58 +13,57 @@ import (
 	"github.com/marrasen/kakel/app"
 )
 
-// checkboxesIn are the checkboxes under n, in order.
-func checkboxesIn(n gunim.Node) []*widget.Checkbox {
-	var out []*widget.Checkbox
-	if c, ok := n.(*widget.Checkbox); ok {
-		out = append(out, c)
-	}
-	if c, ok := n.(gunim.Composite); ok {
-		for _, k := range c.Children() {
-			out = append(out, checkboxesIn(k)...)
-		}
-	}
-	return out
-}
-
-// The Settings dialog shows the sounds, the rings and the title bar as
-// they are, and saves what was ticked.
-func TestTheSettingsDialogSavesWhatIsTicked(t *testing.T) {
+// The Settings pane shows the sounds, the rings and the switches as
+// they are, a box ticked saves at once, and Settings… opens the pane.
+func TestTheSettingsPaneShowsAndSaves(t *testing.T) {
 	win, _, publish := windowStage(t)
-	st := twoPanes("p1", nil)
+	st := app.State{Panes: []app.Pane{{ID: "s", Title: "Settings", Kind: app.KindSettings}}, Stage: &app.Box{Pane: "s"}, Focus: "s"}
 	st.Sounds = app.Alerts{Bell: true}
 	st.Rings = app.Alerts{Connected: true, Lost: true, Finished: true, Bell: true, Other: true}
+	st.InTray, st.SystemTitleBar = true, true
+	st.Update = app.Update{Installed: true, Autostart: true, Updates: "install"}
+	st.Themes, st.Theme = []string{"Dark", "Light"}, "Light"
+	st.FontSize = 17
 	publish(st)
-	if !win.run("app.settings", lastUI) || win.dialog == nil {
-		t.Fatal("Settings… opened no dialog")
+	p := win.settings
+	if p == nil {
+		t.Fatal("no Settings pane")
 	}
-	boxes := checkboxesIn(win.dialog.Body)
-	// Row by row: the interface's sound, then each event's sound and
-	// rings, then the title bar.
-	if len(boxes) != 12 {
-		t.Fatalf("the dialog has %d checkboxes, want 12", len(boxes))
+	if !p.tray.On || !p.autostart.On || !p.titleBar.On || p.updates.Selected != 1 || p.theme.Selected != 1 || p.size.Value() != 17 {
+		t.Fatalf("the pane shows tray %v, autostart %v, title bar %v, updates %d, theme %d, size %v",
+			p.tray.On, p.autostart.On, p.titleBar.On, p.updates.Selected, p.theme.Selected, p.size.Value())
+	}
+	boxes := []*widget.Checkbox{p.iface}
+	for i := range p.sounds {
+		boxes = append(boxes, p.sounds[i], p.rings[i])
 	}
 	on := make([]bool, len(boxes))
 	for i, b := range boxes {
 		on[i] = b.On
 	}
-	want := []bool{false, false, true, false, true, false, true, true, true, false, true, false}
+	want := []bool{false, false, true, false, true, false, true, true, true, false, true}
 	for i := range want {
 		if on[i] != want[i] {
 			t.Fatalf("the checkboxes show %v, want %v", on, want)
 		}
 	}
-	boxes[0].On = true  // the interface's sounds
-	boxes[3].On = true  // a connection lost sounds
-	boxes[8].On = false // no rings for the bell
-	boxes[11].On = true // the system's title bar
-	in, ok := win.dialog.OnAccept().(app.SaveLook)
-	if !ok {
-		t.Fatalf("Save sent %#v", win.dialog.OnAccept())
+	for len(lastWindow.Client().Intents()) > 0 {
+		<-lastWindow.Client().Intents()
 	}
-	if in.Sounds != (app.Alerts{Interface: true, Lost: true, Bell: true}) ||
-		in.Rings != (app.Alerts{Connected: true, Lost: true, Finished: true, Other: true}) || !in.SystemTitleBar {
-		t.Fatalf("Save sent %+v", in)
+	p.tabs.Select(3, lastUI)
+	lastWindow.Frame(time.Second / 60)
+	lastUI.Focus(p.sounds[1])
+	lastWindow.Input(gi.KeyPress{Key: gi.KeySpace})
+	lastWindow.Frame(time.Second / 60)
+	in, ok := nextIntent(t).(app.SaveLook)
+	if !ok || in.Sounds != (app.Alerts{Lost: true, Bell: true}) || in.Rings != st.Rings || !in.SystemTitleBar {
+		t.Fatalf("ticking the sound of a lost connection sent %+v", in)
+	}
+	if !win.run("app.settings", lastUI) {
+		t.Fatal("Settings… was not taken")
+	}
+	if got := nextIntent(t); got != (app.OpenSettings{}) {
+		t.Fatalf("Settings… sent %#v", got)
 	}
 }
 

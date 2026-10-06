@@ -26,7 +26,7 @@ import (
 // to take it away again, and, when asked, a shortcut on the desktop and
 // a start with the computer, into the tray. `kakel -install` and
 // `kakel -uninstall` do the same from a shell. The installed kakel's
-// updates are gunim's too: Options › Updates… sets whether a new release
+// updates are gunim's too: Settings › General › New releases sets whether a new release
 // is put in place by itself, asked about first, or left; the questions
 // and the restart are kakel's own, in updates.go.
 
@@ -107,7 +107,7 @@ func dataDirs() []string {
 }
 
 // updatesSetting is kakel's own Updates setting, as it stood before
-// gunim kept the mode, and as Options › Updates… keeps it beside gunim's.
+// gunim kept the mode, and as Settings › General › New releases keeps it beside gunim's.
 func updatesSetting() string {
 	path, err := settings.Path()
 	if err != nil {

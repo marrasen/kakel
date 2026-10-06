@@ -116,19 +116,20 @@ func (w *Window) keyActions(d *widget.Dialog, s app.Serving) {
 	}
 	d.AddAction("Add Key…", func(u *gunim.UI) {
 		d.Close(u)
-		w.addKeyDialog(s, u)
+		w.addKeyDialogFrom(s, true, u)
 	})
 	if len(s.Keys) > 0 {
 		d.AddAction("Remove Key…", func(u *gunim.UI) {
 			d.Close(u)
-			w.removeKeyPicker(s, u)
+			w.removeKeyPickerFrom(s, true, u)
 		})
 	}
 }
 
-// addKeyDialog asks for a key that may connect: pasted, or one of this
-// machine's.
-func (w *Window) addKeyDialog(s app.Serving, u *gunim.UI) {
+// addKeyDialogFrom asks for a key that may connect: pasted, or one of
+// this machine's. With again, the serving dialog opens again once the
+// key has been tried, as for one asked from there.
+func (w *Window) addKeyDialogFrom(s app.Serving, again bool, u *gunim.UI) {
 	text := widget.NewTextArea()
 	text.Placeholder = "ssh-ed25519 AAAA… name@machine"
 	choices := []string{"Paste one below"}
@@ -153,7 +154,7 @@ func (w *Window) addKeyDialog(s app.Serving, u *gunim.UI) {
 		return ""
 	}
 	d.OnAccept = func() gunim.Intent {
-		w.keysAsked, w.keysEdits = true, w.serving.Edits
+		w.keysAsked, w.keysEdits = again, w.serving.Edits
 		if i := pick.Selected - 1; i >= 0 && i < len(here) {
 			return app.AllowKey{Path: here[i].Path}
 		}
@@ -163,15 +164,16 @@ func (w *Window) addKeyDialog(s app.Serving, u *gunim.UI) {
 	w.openDialog(d, u)
 }
 
-// removeKeyPicker offers the keys that may connect, to take one off.
-func (w *Window) removeKeyPicker(s app.Serving, u *gunim.UI) {
+// removeKeyPickerFrom offers the keys that may connect, to take one
+// off; with again, as addKeyDialogFrom.
+func (w *Window) removeKeyPickerFrom(s app.Serving, again bool, u *gunim.UI) {
 	p := &widget.Palette{Placeholder: "The key that may no longer connect"}
 	keys := slices.Clone(s.Keys)
 	for _, k := range keys {
 		p.Items = append(p.Items, widget.PaletteItem{Title: k.Name, Hint: k.Type + "  " + k.Fingerprint, Icon: icon.KeyRound})
 	}
 	p.Pick = func(i int, u *gunim.UI) {
-		w.keysAsked, w.keysEdits = true, w.serving.Edits
+		w.keysAsked, w.keysEdits = again, w.serving.Edits
 		u.Send(w, app.DisallowKey{Fingerprint: keys[i].Fingerprint})
 	}
 	w.keyPicker = p

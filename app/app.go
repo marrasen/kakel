@@ -469,6 +469,8 @@ type (
 	// FontSize makes the terminals' text a point larger, or smaller,
 	// or, with no Step, the size it started at.
 	FontSize struct{ Step int }
+	// SetFontSize sets the terminals' font size, in logical pixels.
+	SetFontSize struct{ Size float32 }
 	// PickTheme draws the window, terminals and all, in a theme.
 	PickTheme struct{ Name string }
 	// PreviewTheme shows a theme, as picking it would, and keeps nothing:
@@ -1322,6 +1324,27 @@ func (a *app) handle(in gunim.Intent) {
 				a.failed("Couldn't keep the theme for next time", err.Error())
 			}
 		}
+	case SetFontSize:
+		a.st.FontSize = fontSizeIn(in.Size)
+		if a.settings != nil {
+			if err := a.settings.PutFontSize(float64(a.st.FontSize)); err != nil {
+				a.failed("Couldn't keep the font size for next time", err.Error())
+			}
+		}
+	case SetServeAtStart:
+		if a.settings != nil {
+			err = a.settings.PutServeAtStart(in.When)
+		}
+		a.showServing()
+	case SetServeDefaults:
+		if a.settings != nil {
+			reach := settings.ReachHere
+			if in.Anywhere {
+				reach = settings.ReachAnywhere
+			}
+			err = a.settings.PutServe(in.Port, reach)
+		}
+		a.showServing()
 	case FontSize:
 		size := defaultFontSize
 		if in.Step != 0 {
@@ -2230,6 +2253,13 @@ const (
 
 // fontSizeIn is size kept between the smallest and largest font sizes.
 func fontSizeIn(size float32) float32 { return min(max(size, minFontSize), maxFontSize) }
+
+// MinFontSize and MaxFontSize are the smallest and largest font sizes,
+// in logical pixels, for a field to hold them to.
+const (
+	MinFontSize = minFontSize
+	MaxFontSize = maxFontSize
+)
 
 // WindowTopic is what the program publishes the window's state to.
 const WindowTopic = "window"

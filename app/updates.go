@@ -133,7 +133,7 @@ func (a *app) showUpdate() {
 
 // startUpdates takes away the copy the last update moved aside, and
 // lets gunim's updates reach this kakel: they look for newer releases
-// as the mode Options › Updates… sets says.
+// as the mode Settings › General › New releases sets says.
 func (a *app) startUpdates() {
 	if exe, err := executable(); err == nil {
 		install.CleanOld(exe)

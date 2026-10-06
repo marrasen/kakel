@@ -119,6 +119,7 @@ type Window struct {
 	// secrets is the secrets pane, once opened, and lastTerm the
 	// terminal pane that last had the keyboard.
 	secrets  *secretsPane
+	settings *settingsPane
 	lastTerm string
 	// share is the agent share as last published, and sharing says the
 	// user just asked for one, so its dialog opens once it has a code.
@@ -505,7 +506,7 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 		w.updatesDialog(u)
 		return true
 	case "app.settings":
-		w.settingsDialog(u)
+		u.Send(w, app.OpenSettings{})
 		return true
 	case "tab.newWindow", "servers.window", "secrets.window":
 		// A little down and to the right of this window, as large.
@@ -2048,6 +2049,10 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 
 	keep := map[string]bool{}
 	w.stage.show(w.build(st.Stage, keep), u)
+	// After the panes are built, so one made now shows the state too.
+	if w.settings != nil && u.Presence(w.settings) != gunim.Exiting {
+		w.settings.show(st, u)
+	}
 	for id := range w.splits {
 		if !keep[id] {
 			delete(w.splits, id)
@@ -2431,6 +2436,11 @@ func (w *Window) bareNode(id string) gunim.Node {
 			w.secrets = newSecretsPane(w)
 		}
 		return w.secrets
+	case app.KindSettings:
+		if w.settings == nil {
+			w.settings = newSettingsPane(w)
+		}
+		return w.settings
 	case app.KindJobs:
 		if w.jobs == nil {
 			w.jobs = newJobsPane()
@@ -3540,6 +3550,10 @@ func (w *Window) madeNode(id string) gunim.Node {
 	case app.KindSecrets:
 		if w.secrets != nil {
 			n = w.secrets
+		}
+	case app.KindSettings:
+		if w.settings != nil {
+			n = w.settings
 		}
 	case app.KindJobs:
 		if w.jobs != nil {

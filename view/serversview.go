@@ -30,6 +30,8 @@ type serversPane struct {
 	head   *widget.Label
 	search *widget.TextField
 	add    *widget.MenuButton
+	// gear opens the Settings pane.
+	gear *widget.IconButton
 	// headShown says the title has room beside the field.
 	headShown bool
 	body      *widget.Scroll
@@ -47,7 +49,9 @@ func newServersPane(w *Window) *serversPane {
 		head:   widget.NewLabel("Servers"),
 		search: widget.NewTextField(),
 		add:    widget.NewMenuButton("Add", addItems...),
+		gear:   widget.NewIconButton(icon.Settings, "Settings (Ctrl+,)"),
 	}
+	p.gear.OnActivate(func(u *gunim.UI) { w.run("app.settings", u) })
 	p.head.Size = widget.DialogTitleSize
 	p.search.Icon = icon.Search
 	p.search.Placeholder = "Find a machine, or user@host  ( / )"
@@ -112,16 +116,19 @@ func (p *serversPane) Handle(e gi.Event, u *gunim.UI) bool {
 
 // Children implements [gunim.Composite].
 func (p *serversPane) Children() []gunim.Node {
-	return []gunim.Node{p.head, p.search, p.add, p.body}
+	return []gunim.Node{p.head, p.search, p.add, p.gear, p.body}
 }
 
 // Layout implements [gunim.Node]: the title, the field and Add along
 // the top, the cards under them.
 func (p *serversPane) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children) geom.Size {
 	const pad, top, gap = 16, 60, 10
-	head, search, add, body := kids.At(0), kids.At(1), kids.At(2), kids.At(3)
+	head, search, add, gear, body := kids.At(0), kids.At(1), kids.At(2), kids.At(3), kids.At(4)
+	gs := gear.Layout(gunim.Constraints{Max: geom.Sz(c.Max.W, top)})
+	gx := c.Max.W - pad - gs.W
+	gear.Place(geom.Pt(gx, (top-gs.H)/2))
 	as := add.Layout(gunim.Constraints{Max: geom.Sz(c.Max.W, top)})
-	x := c.Max.W - pad - as.W
+	x := gx - gap/2 - as.W
 	add.Place(geom.Pt(x, (top-as.H)/2))
 	hs := head.Layout(gunim.Constraints{Max: geom.Sz(c.Max.W, top)})
 	// The field takes what is left, up to a comfortable width; the

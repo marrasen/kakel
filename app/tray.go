@@ -211,6 +211,7 @@ func (a *app) trayMenu(gen int) ([]gunim.TrayItem, map[int]func()) {
 		gunim.TrayItem{Separator: true},
 		gunim.TrayItem{Title: "New Window", ID: act(func() { a.newWindow(func() { a.handle(NewTerminal{}) }) })},
 		gunim.TrayItem{Title: "Secrets", ID: act(func() { a.toTray(func() { a.showSecretsPane(func(string) {}) }) })},
+		gunim.TrayItem{Title: "Settings", ID: act(func() { a.toTray(a.openSettings) })},
 		gunim.TrayItem{Separator: true},
 		gunim.TrayItem{Title: "Quit kakel", ID: act(func() {
 			if len(a.whatIsOpen()) == 0 {
