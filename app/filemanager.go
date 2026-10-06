@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"log"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -122,6 +123,9 @@ func (a *app) openFileWindow(fsys filemanager.FS, path string) error {
 		Transfer: a.transferFiles, FSName: a.fsName,
 		PlaceMenu: placeMenu, PlaceCommand: a.placeCommand,
 		SystemFrame: a.st.SystemTitleBar,
+		// What a window shows going wrong is kept in the Window Log too,
+		// past the banner it is dismissed from.
+		Log: func(line string) { log.Print(line) },
 	})
 	if err != nil {
 		return err

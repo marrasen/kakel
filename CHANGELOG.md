@@ -7,6 +7,23 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
+## Unreleased
+
+### Fixed
+
+**Show in system file manager opens File Explorer**, also when kakel
+opens folders. It opened kakel again, or failed with HRESULT 0x80004004.
+
+**What the file manager shows going wrong is in the Window Log too**,
+past the banner it is dismissed from.
+
+### Changed
+
+**Less drawing.** Long text, labels and previews draw only the lines in
+view, and the GPU gets nothing that can't show. A scrollbar lingers
+without drawing, and a transfer's speed graph draws 30 times a second
+rather than at every refresh.
+
 ## v0.10.0
 
 ### Changed
