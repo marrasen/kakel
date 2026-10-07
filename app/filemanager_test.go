@@ -149,3 +149,32 @@ func TestAFileManagerPaneOpensAFileInAReader(t *testing.T) {
 		t.Fatal("the reader didn't open beside the file manager pane")
 	}
 }
+
+// A file manager pane moved to another window shows there once the
+// windows are told, and the intents of its views go to it, not to
+// kakel.
+func TestAFileManagerPaneFollowsItsPaneToAnotherWindow(t *testing.T) {
+	a, one, two := twoWindowApp(t)
+	a.files = newFakeFiles(t)
+	a.front(one)
+	if err := a.filesOn(machines.Local, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	id := a.st.Focus
+	a.publish()
+	if fp := a.fmPanes[id]; fp == nil || fp.win != one {
+		t.Fatal("the file manager pane isn't shown in its window")
+	}
+	a.moveToWindow(id, two)
+	a.publish()
+	if a.fmPanes[id].win != two {
+		t.Fatal("the file manager didn't follow its pane to the other window")
+	}
+	from := gunim.ID(FilePaneViews(id) + "/browser")
+	if !a.toFilePane(gunim.Envelope{From: from, Intent: filemanager.Command{Name: filemanager.CmdRefresh}}) {
+		t.Fatal("an intent of the file manager's views went to kakel")
+	}
+	if a.toFilePane(gunim.Envelope{From: "window", Intent: NewTerminal{}}) {
+		t.Fatal("an intent of kakel's window went to the file manager")
+	}
+}
