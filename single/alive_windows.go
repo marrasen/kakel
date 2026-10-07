@@ -2,7 +2,11 @@
 
 package single
 
-import "golang.org/x/sys/windows"
+import (
+	"log"
+
+	"golang.org/x/sys/windows"
+)
 
 // alive reports whether a process numbered pid is running.
 func alive(pid int) bool {
@@ -30,7 +34,12 @@ var allowSetForegroundWindow = windows.NewLazySystemDLL("user32.dll").NewProc("A
 // one running, or the window that one opens stays behind the taskbar
 // or the window last used.
 func letToFront(pid int) {
-	if allowSetForegroundWindow.Find() == nil {
-		_, _, _ = allowSetForegroundWindow.Call(uintptr(pid))
+	if allowSetForegroundWindow.Find() != nil {
+		return
+	}
+	// It fails where this kakel had no right to pass on, as one started
+	// by a task: the window then opens behind.
+	if ok, _, err := allowSetForegroundWindow.Call(uintptr(pid)); ok == 0 {
+		log.Printf("single: letting kakel %d come to the front: %v", pid, err)
 	}
 }
