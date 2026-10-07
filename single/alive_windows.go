@@ -21,3 +21,16 @@ func alive(pid int) bool {
 	// STILL_ACTIVE.
 	return code == 259
 }
+
+var allowSetForegroundWindow = windows.NewLazySystemDLL("user32.dll").NewProc("AllowSetForegroundWindow")
+
+// letToFront lets the process numbered pid bring its windows to the
+// front. Windows lets only the program the user just started do that,
+// so a kakel handing over its command line passes the right on to the
+// one running, or the window that one opens stays behind the taskbar
+// or the window last used.
+func letToFront(pid int) {
+	if allowSetForegroundWindow.Find() == nil {
+		_, _, _ = allowSetForegroundWindow.Call(uintptr(pid))
+	}
+}

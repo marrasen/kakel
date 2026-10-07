@@ -78,6 +78,7 @@ func Hand(dir string, h Handover) (bool, error) {
 		// listens on that port now is not kakel.
 		return false, nil
 	}
+	letToFront(r.PID)
 	conn, err := net.DialTimeout("tcp", r.Addr, handTime)
 	if err != nil {
 		// Gone without taking the file with it.

@@ -12,3 +12,7 @@ func alive(pid int) bool {
 	err := syscall.Kill(pid, 0)
 	return err == nil || err == syscall.EPERM
 }
+
+// letToFront lets the process numbered pid bring its windows to the
+// front: only Windows asks for that.
+func letToFront(int) {}
