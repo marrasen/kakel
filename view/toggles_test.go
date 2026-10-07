@@ -21,8 +21,7 @@ import (
 // The switcher's shortcut closes it again.
 func TestTheSwitcherShortcutClosesItAgain(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFiles}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1",
-		Browsers: map[string]app.Browser{"p1": {Path: "/", Seq: 1}}})
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFileManager}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
 	press := func(k gi.Key) {
 		lastWindow.Input(gi.KeyPress{Key: k, Mods: gi.ModControl | gi.ModShift, Time: time.Now()})
 		for range 3 {
@@ -49,8 +48,7 @@ func TestTheSwitcherShortcutClosesItAgain(t *testing.T) {
 // screen too.
 func TestTheSidebarShortcutTogglesServers(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFiles}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1",
-		Browsers: map[string]app.Browser{"p1": {Path: "/", Seq: 1}}})
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFileManager}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
 	win.present(true, lastUI)
 	for len(lastWindow.Client().Intents()) > 0 {
 		<-lastWindow.Client().Intents()
@@ -65,8 +63,7 @@ func TestTheSidebarShortcutTogglesServers(t *testing.T) {
 // so rather than doing nothing.
 func TestCloseSelectedRowSaysWhyItDidNothing(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(withServers(app.State{Panes: []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFiles}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1",
-		Browsers: map[string]app.Browser{"p1": {Path: "/", Seq: 1}}}))
+	publish(withServers(app.State{Panes: []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFileManager}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"}))
 	was := win.toasts.Len()
 	win.run("sidebar.closeRow", lastUI)
 	if win.toasts.Len() != was+1 {
@@ -110,8 +107,7 @@ func TestTabThenEnterLeavesTheFile(t *testing.T) {
 // The palette's shortcut closes it again, from inside it.
 func TestThePaletteShortcutClosesItAgain(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFiles}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1",
-		Browsers: map[string]app.Browser{"p1": {Path: "/", Seq: 1}}})
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFileManager}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
 	press := func() {
 		lastWindow.Input(gi.KeyPress{Key: gi.KeyK, Mods: gi.ModControl | gi.ModShift, Time: time.Now()})
 		for range 3 {
@@ -184,13 +180,12 @@ func TestAPreformattedQuestionKeepsItsLinesWhole(t *testing.T) {
 	}
 }
 
-// The divider between two file panes drags, as any split's does, and
-// the new share goes to the program.
-func TestTheDividerBetweenFilePanesDrags(t *testing.T) {
+// The divider between two file manager panes drags, as any split's
+// does, and the new share goes to the program.
+func TestTheDividerBetweenFileManagerPanesDrags(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFiles}, {ID: "p2", Title: "b", Kind: app.KindFiles}},
-		Stage: &app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "p2"}, Share: 0.5}, Focus: "p1",
-		Browsers: map[string]app.Browser{"p1": {Path: "/", Seq: 1}, "p2": {Path: "/", Seq: 1}}})
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFileManager}, {ID: "p2", Title: "b", Kind: app.KindFileManager}},
+		Stage: &app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "p2"}, Share: 0.5}, Focus: "p1"})
 	for range 10 {
 		lastWindow.Frame(time.Second / 60)
 	}
@@ -217,15 +212,14 @@ func TestTheDividerBetweenFilePanesDrags(t *testing.T) {
 		}
 		return
 	}
-	t.Fatal("no divider to take hold of between the file panes")
+	t.Fatal("no divider to take hold of between the file manager panes")
 }
 
 // The switcher's ground is solid once it is in: the panes show only as
 // its tiles, not behind them as well.
 func TestTheSwitcherHidesThePanesBehindIt(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFiles}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1",
-		Browsers: map[string]app.Browser{"p1": {Path: "/", Seq: 1}}})
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFileManager}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
 	win.openSwitcher(lastUI)
 	for range 90 {
 		lastWindow.Frame(time.Second / 60)
@@ -251,9 +245,8 @@ func TestAPanePickedInASplitGrowsIntoItsPlace(t *testing.T) {
 	win, _, publish := windowStage(t)
 	split := &app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "p2"}, Share: 0.5}
 	alone := &app.Box{Pane: "p3"}
-	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFiles}, {ID: "p2", Title: "b", Kind: app.KindFiles}, {ID: "p3", Title: "c", Kind: app.KindFiles}},
-		Stage: alone, Focus: "p3", Groups: map[string]*app.Box{"p1": split, "p2": split, "p3": alone},
-		Browsers: map[string]app.Browser{"p1": {Path: "/", Seq: 1}, "p2": {Path: "/", Seq: 1}, "p3": {Path: "/", Seq: 1}}})
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFileManager}, {ID: "p2", Title: "b", Kind: app.KindFileManager}, {ID: "p3", Title: "c", Kind: app.KindFileManager}},
+		Stage: alone, Focus: "p3", Groups: map[string]*app.Box{"p1": split, "p2": split, "p3": alone}})
 	for range 5 {
 		lastWindow.Frame(time.Second / 60)
 	}

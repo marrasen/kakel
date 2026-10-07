@@ -93,11 +93,10 @@ func TestATunnelChangingOffStageShowsWhenItsPaneComesBack(t *testing.T) {
 	sh.Set("p1", screen.Open(account, vt.DefaultPalette(), quiet))
 	st := func(focus string, live bool) app.State {
 		return app.State{
-			Panes:    []app.Pane{{ID: "p1", Title: "Tunnel", Machine: "srv", Kind: app.KindTunnel, Tunnel: "t1"}, {ID: "p2", Title: "gthome", Kind: app.KindFiles}},
-			Stage:    &app.Box{Pane: focus},
-			Focus:    focus,
-			Tunnels:  []app.Tunnel{{ID: "t1", Machine: "srv", Label: ":80 → x:80", Note: "idle", Live: live, Pane: "p1"}},
-			Browsers: map[string]app.Browser{"p2": {Path: "/"}},
+			Panes:   []app.Pane{{ID: "p1", Title: "Tunnel", Machine: "srv", Kind: app.KindTunnel, Tunnel: "t1"}, {ID: "p2", Title: "gthome", Kind: app.KindFileManager}},
+			Stage:   &app.Box{Pane: focus},
+			Focus:   focus,
+			Tunnels: []app.Tunnel{{ID: "t1", Machine: "srv", Label: ":80 → x:80", Note: "idle", Live: live, Pane: "p1"}},
 		}
 	}
 	publish(st("p1", true))
@@ -119,21 +118,21 @@ func TestPaneTitlesComeAndGo(t *testing.T) {
 	if !ok {
 		t.Fatalf("with titles, the stage shows %T", win.stage.shown)
 	}
-	// A file pane's caption names its machine; the path under it names
-	// the folder.
+	// A file manager pane's caption names its machine; the file manager
+	// names the folder.
 	if got := c.label.Text; got != "This computer" {
 		t.Fatalf("the title reads %q", got)
 	}
 	st.PaneTitles = false
 	publish(st)
-	if _, ok := win.stage.shown.(*browser); !ok {
+	if _, ok := win.stage.shown.(*fmHost); !ok {
 		t.Fatalf("without titles, the stage shows %T", win.stage.shown)
 	}
 }
 
 func TestABellAsksForAttentionOnlyWithoutTheKeyboard(t *testing.T) {
 	_, _, publish := windowStage(t)
-	st := twoPanes("p2", nil)
+	st := twoPanes("p1", nil)
 	st.Bells = 1
 	st.Panes[0].Rang = true
 	publish(st)
@@ -476,15 +475,14 @@ func TestFullScreenShowsTheStageAlone(t *testing.T) {
 	}
 }
 
-// Two panes on stages of their own, jobs and a browser, with focus on
-// one of them.
+// Two panes on stages of their own, jobs and a file manager, with
+// focus on one of them.
 func twoPanes(focus string, jobs []app.Job) app.State {
 	return app.State{
-		Panes:    []app.Pane{{ID: "p1", Title: "Jobs", Kind: app.KindJobs}, {ID: "p2", Title: "gthome", Kind: app.KindFiles}},
-		Stage:    &app.Box{Pane: focus},
-		Focus:    focus,
-		Jobs:     jobs,
-		Browsers: map[string]app.Browser{"p2": {Path: "/"}},
+		Panes: []app.Pane{{ID: "p1", Title: "Jobs", Kind: app.KindJobs}, {ID: "p2", Title: "gthome", Kind: app.KindFileManager}},
+		Stage: &app.Box{Pane: focus},
+		Focus: focus,
+		Jobs:  jobs,
 	}
 }
 

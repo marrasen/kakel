@@ -7,13 +7,14 @@ package app
 import (
 	"context"
 	"errors"
-	"github.com/marrasen/gunim/filemanager"
 	"log"
 	"maps"
 	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/marrasen/gunim/filemanager"
 
 	"github.com/marrasen/kakel/look"
 	"github.com/marrasen/kakel/tunnel"
@@ -37,7 +38,6 @@ import (
 	"github.com/marrasen/kakel/settings"
 	shellfind "github.com/marrasen/kakel/shells"
 	"github.com/marrasen/kakel/single"
-	"github.com/marrasen/kakel/ui/files"
 	"github.com/marrasen/kakel/vfs"
 	"github.com/marrasen/kakel/vt"
 
@@ -74,9 +74,6 @@ type State struct {
 	// in, in whichever window, whose row it lights.
 	AllPanes []Pane
 	Working  string
-	// ThumbsMade counts the thumbnails made, for the icon views to draw
-	// again as they arrive.
-	ThumbsMade uint64
 	// InTray says kakel is to show its icon in the system tray, and run
 	// on there once its last window closes, where there is a tray.
 	InTray bool
@@ -97,8 +94,6 @@ type State struct {
 	Font  Font
 	// Marks are the colours of the rings round shared panes.
 	Marks look.Marks
-	// FileClip is what the file clipboard holds, marked in the lists.
-	FileClip FileClip
 	// KeyFiles are the key files kept, newest first, offered when a
 	// server is saved.
 	KeyFiles []string
@@ -111,10 +106,9 @@ type State struct {
 	Asks []Ask
 	// Saved are the saved servers.
 	Saved []remote.Host
-	// Browsers and Readers are what the file panes and the readers
-	// show, by pane. Each is replaced whole, never changed in place.
-	Browsers map[string]Browser
-	Readers  map[string]Reader
+	// Readers are what the readers show, by pane. Each is replaced
+	// whole, never changed in place.
+	Readers map[string]Reader
 	// Tunnels are the tunnels open, and those stopped until cleared,
 	// and SavedTunnels those kept for next time, newest first.
 	Tunnels []Tunnel
@@ -290,7 +284,7 @@ type Pane struct {
 	// On is the machine the pane runs on when that is a server the
 	// window in Machine reached, and "" for the window's own.
 	On string
-	// Kind says what the pane is: a terminal, a file pane or a reader.
+	// Kind says what the pane is: a terminal, a file manager or a reader.
 	Kind string
 	// Named is set once the user has named the pane, and shell is the
 	// title its shell last gave it.
@@ -451,8 +445,8 @@ type (
 	RunSavedCommand struct{ Saved settings.SavedCommand }
 	// OpenOn opens a terminal on Machine, "" for this computer.
 	OpenOn struct{ Machine machines.ID }
-	// FilesOn opens a file pane on Machine, at Path, or at home when
-	// Path is empty.
+	// FilesOn opens a file manager pane on Machine, at Path, or at home
+	// when Path is empty.
 	FilesOn struct {
 		Machine machines.ID
 		Path    string
@@ -551,17 +545,9 @@ type app struct {
 	// parked counts the file sessions relayed for another window that
 	// are left waiting to end, by the connection they ride on.
 	parked map[*remote.Conn]int
-	// listing counts the listings asked for each file pane, so one that
-	// lands after a later one was asked for is dropped: a pane is never
-	// sent back to where it was.
-	listing map[string]int
 	// choosers are the split choosers open, by the pane each was split
 	// from.
 	choosers map[string]string
-	// listingAt is the listing each file pane has on its way, which a
-	// listing again asks for once more: not the folder it shows, which
-	// the user may be leaving. It goes once that listing lands.
-	listingAt map[string]Browse
 	// farLogs are the logs of machines beyond windows on their way here,
 	// so a second ask waits for the first rather than opening another.
 	farLogs map[machines.ID]bool
@@ -581,11 +567,6 @@ type app struct {
 	// groupFocus the pane in each group that last had the keyboard.
 	tabOrder   []int
 	groupFocus map[int]string
-	// thumbQueue are the thumbnails waiting to be made, thumbWanted
-	// those waiting or being made, and thumbWorking how many are.
-	thumbQueue   []thumbJob
-	thumbWanted  map[files.ThumbKey]bool
-	thumbWorking int
 	// staged is the release put in place of this program, which starts
 	// the next time kakel does.
 	staged string
@@ -612,7 +593,7 @@ type app struct {
 	replies map[uint64]chan AskAnswered
 	// closing holds the panes folding away.
 	closing map[string]bool
-	// local is this computer's filesystem, once a file pane needs it.
+	// local is this computer's filesystem, once something needs it.
 	local vfs.FS
 	// themes are the themes on offer, and palette the terminals' now.
 	// settings is kakel's settings file, which keeps the theme
@@ -620,9 +601,7 @@ type app struct {
 	themes   []look.Themed
 	palette  vt.Palette
 	settings *settings.Settings
-	// clip is the file clipboard, jobs the queue of file work, and
-	// running the jobs followed.
-	clip    *fileClip
+	// jobs is the queue of file work, and running the jobs followed.
 	jobs    *jobs.Queue
 	running []*running
 	// jobSeq counts the jobs, and watching is set while a goroutine
@@ -659,8 +638,6 @@ type app struct {
 	// gone says the window is on its way out, leaving with what it
 	// shows; its panes close once it has gone.
 	gone bool
-	// paneFiles is each file pane's view of its machine's files.
-	paneFiles map[string]wrappedFiles
 	// paneAt is the address each pane on a server was opened at, to say
 	// so when a pane is reconnected somewhere else.
 	paneAt map[string]string
@@ -731,8 +708,12 @@ type app struct {
 	fmFiles      map[machines.ID]*fmFS
 	fmFavs       *fmFavourites
 	fmNames      atomic.Pointer[map[string]string]
-	hotKeys      HotKeys
-	launch       launchState
+	// fmPanes are the file manager panes, by pane, and fmRoute their file
+	// managers, for the windows' goroutines to hand their intents to.
+	fmPanes map[string]*fmPane
+	fmRoute atomic.Pointer[[]*filemanager.Window]
+	hotKeys HotKeys
+	launch  launchState
 	// openPrompt opens a window of its own for a question that wants
 	// something typed, and prompt is that window as it is.
 	openPrompt PromptOpener
@@ -799,13 +780,10 @@ func newApp(c gunim.Client, sh *screen.Shells) *app {
 		agents:       agents{by: map[string]*handover{}},
 		commands:     map[string]command{},
 		noticed:      map[string]uint64{},
-		paneFiles:    map[string]wrappedFiles{},
 		paneAt:       map[string]string{},
 		farLogs:      map[machines.ID]bool{},
 		notRun:       map[string]bool{},
-		listing:      map[string]int{},
 		choosers:     map[string]string{},
-		listingAt:    map[string]Browse{},
 		saying:       map[string]string{},
 		openedFor:    map[string]bool{},
 		programTitle: map[string]string{},
@@ -909,16 +887,12 @@ func (a *app) run(ctx context.Context) error {
 		a.letWindowGo(first)
 	case a.opts.filesSet:
 		// Started for a folder, as Windows starts it for one opened
-		// anywhere: a file manager window there, and kakel in the tray,
-		// the first window let go unseen. With no tray, a window of its
-		// own too, or kakel would end with the file manager's.
+		// anywhere: the first window holds a file manager pane there.
 		a.showTray()
-		first := a.cur
-		a.openFolder(a.opts.files)
-		if !a.inTray() {
-			a.newWindow(func() { a.openFirstOrSay() })
+		if err := a.filePaneOn(machines.Local, a.opts.files, Placement{}, true); err != nil {
+			a.failed("Couldn't open the folder", err.Error())
+			a.openFirstOrSay()
 		}
-		a.letWindowGo(first)
 	case a.opts.launcher:
 		// Started for the launcher alone: no terminal with it.
 		a.openLauncher()
@@ -1092,11 +1066,7 @@ func failedTitle(in gunim.Intent) string {
 		return "Couldn't disconnect"
 	case OpenFiles, FilesOn:
 		return "Couldn't open the files"
-	case PasteFiles:
-		return "Couldn't paste the files"
 	case DropFiles:
-		return "Couldn't take the files dropped"
-	case DropOnFiles:
 		return "Couldn't take the files dropped"
 	case SaveThisComputer:
 		return "Couldn't save This Computer's settings"
@@ -1204,10 +1174,6 @@ func (a *app) publish() {
 	a.noteTabFocus()
 	a.st.Machines = a.machines.Infos()
 	a.notePanes()
-	a.st.FileClip = FileClip{}
-	if c := a.clip; c != nil {
-		a.st.FileClip = FileClip{Key: c.machine, At: c.at, Names: slices.Clone(c.names), Cut: c.kind == jobs.Move}
-	}
 	st := a.st
 	st.Panes = slices.Clone(a.st.Panes)
 	st.AllPanes = a.allPanes()
@@ -1249,6 +1215,8 @@ func (a *app) publish() {
 			_ = w.c.Publish(WindowTopic, a.stateFor(w, st))
 		}
 	}
+	// After the state that gives each its place.
+	a.showFilePanes()
 	// A split opens once; after that it is only a split.
 	for _, g := range a.groups {
 		clearOpening(g)
@@ -1265,7 +1233,7 @@ func clearOpening(b *Box) {
 }
 
 func (a *app) handle(in gunim.Intent) {
-	if a.needsFiles(in) || a.handleTab(in) || a.handleServers(in) {
+	if a.handleTab(in) || a.handleServers(in) {
 		return
 	}
 	var err error
@@ -1368,28 +1336,8 @@ func (a *app) handle(in gunim.Intent) {
 		err = a.connect(in)
 	case OpenFiles:
 		err = a.openFiles()
-	case Browse:
-		a.browse(in)
 	case ReadFile:
 		a.readFile(in)
-	case EnterEntry:
-		a.enter(in)
-	case ClipFiles:
-		a.clipFiles(in)
-	case PasteFiles:
-		err = a.pasteFiles(in)
-	case DeleteFiles:
-		a.deleteFiles(in)
-	case RenameFile:
-		a.renameFile(in)
-	case MakeFolder:
-		a.makeFolder(in)
-	case GoUp:
-		a.goUp(in)
-	case GoTo:
-		a.goTo(in)
-	case ViewFile:
-		a.viewFile(in)
 	case SaveServer:
 		err = a.saveServer(in)
 	case ImportSSHConfig:
@@ -1519,13 +1467,9 @@ func (a *app) handle(in gunim.Intent) {
 	case FilesOn:
 		err = a.filesOn(in.Machine, in.Path)
 	case OpenFilesOn:
-		err = a.openFilesWhere(in.Machine, in.Path)
-	case OpenFileManager:
-		a.keepFilesIn(true)
-		err = a.openFileManager(in.Machine, in.Path)
-	case FilesInPane:
-		a.keepFilesIn(false)
 		err = a.filesOn(in.Machine, in.Path)
+	case OpenFileManager:
+		err = a.openFileManager(in.Machine, in.Path)
 	case ReloadShortcuts:
 		err = a.loadShortcuts(true)
 	case WriteShortcuts:
@@ -1595,17 +1539,8 @@ func (a *app) handle(in gunim.Intent) {
 		a.followReader(in.Pane, in.On)
 	case SaveLines:
 		a.saveLines(in)
-	case DropFileClip:
-		a.clip = nil
-		a.say("clip", "")
-	case ListFolders:
-		a.listFolders(in)
 	case AskAction:
 		err = a.askAction(in)
-	case DropOnFiles:
-		err = a.dropOnFiles(in)
-	case NeedThumbs:
-		a.needThumbs(in)
 	case DropFiles:
 		err = a.dropFiles(in)
 	case PasteImageAsFile:
@@ -2042,7 +1977,7 @@ func (a *app) dropChooser(id string) {
 }
 
 // movePane moves a pane that is open into a split beside another, as
-// Split Right and Split Down can: the way to two file panes
+// Split Right and Split Down can: the way to two file manager panes
 // side by side.
 func (a *app) movePane(in MovePane) {
 	target := in.Beside
@@ -2090,7 +2025,7 @@ const foldTime = 350 * time.Millisecond
 // gives its space to the other side, and the pane goes once it has.
 // The keyboard moves to the pane beside it at once.
 func (a *app) closePane(id string) {
-	if a.closing[id] || !a.has(id) {
+	if a.closing[id] || !a.has(id) || a.closeFilePane(id) {
 		return
 	}
 	g, ok := a.groupOf[id]
@@ -2152,18 +2087,12 @@ func (a *app) remove(id string) {
 		sh.Close()
 	}
 	a.shells.Set(id, nil)
+	a.dropFilePane(id)
 	delete(a.linksAt, id)
 	delete(a.notRun, id)
-	delete(a.listing, id)
 	delete(a.choosers, id)
-	delete(a.listingAt, id)
 	delete(a.openedFor, id)
 	delete(a.programTitle, id)
-	if _, ok := a.st.Browsers[id]; ok {
-		m := maps.Clone(a.st.Browsers)
-		delete(m, id)
-		a.st.Browsers = m
-	}
 	if _, ok := a.st.Readers[id]; ok {
 		m := maps.Clone(a.st.Readers)
 		delete(m, id)
@@ -2174,7 +2103,6 @@ func (a *app) remove(id string) {
 	delete(a.argvs, id)
 	delete(a.noticed, id)
 	delete(a.paneAt, id)
-	delete(a.paneFiles, id)
 	delete(a.farHost, id)
 	delete(a.typed, id)
 	delete(a.reads, id)

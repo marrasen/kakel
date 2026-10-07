@@ -96,6 +96,9 @@ func (a *app) serveWin(w *ownWin) {
 	c := w.c
 	go func() {
 		for env := range c.Intents() {
+			if a.toFilePane(env) {
+				continue
+			}
 			a.intents <- windowIn{w: w, env: env}
 		}
 		a.intents <- windowIn{w: w, closed: true}

@@ -10,7 +10,7 @@ that did not change draws nothing at all, and one that changed in part
 redraws that part.
 
 It is also a window manager for the things a terminal drags along with
-it: panes on several machines at once, a two-pane file manager, a file
+it: panes on several machines at once, a file manager in a pane, a file
 viewer, tunnels, and a way to hand a few panes to an agent without
 handing over the machine.
 
@@ -111,9 +111,10 @@ leave out borrows one you gave.
   are drawn to the exact cell size, so a framed TUI has unbroken lines.
 - **Shells here and on other machines**, over one SSH connection that
   carries several panes, a file session and tunnels at once.
-- **A two-pane file manager** with panes on as many machines as you
-  like, and copying, moving and deleting that run in the background and
-  say how far they have got.
+- **A file manager in a pane**, beside your terminals, on this machine
+  or any server: split, docked and moved between windows like a
+  terminal, in the same theme, with copying and moving between machines
+  that runs in the background and says how far it has got.
 - **A file viewer without a shell**: paging, search, hex, tailing,
   syntax colour, and JSON logs laid out as logs.
 - **Tunnels**, local, remote and SOCKS5, each with a pane saying what it
@@ -159,7 +160,6 @@ kakel comes with:
 | `Ctrl+Shift+B` | open or close the Servers pane |
 | `Ctrl+Shift+L` | go to the Servers pane |
 | `Ctrl+Shift+N` | connect to a server |
-| `Ctrl+Shift+G` | go to a directory, in a file pane |
 | `Ctrl+Shift+H` | every command and shortcut |
 | `F10` | the menus |
 | `Alt`, then an underlined letter | a menu, then a line in it |

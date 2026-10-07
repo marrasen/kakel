@@ -5,8 +5,10 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/marrasen/gunim"
 	"github.com/marrasen/kakel/app"
 
+	"github.com/marrasen/gunim/filemanager"
 	"github.com/marrasen/gunim/geom"
 	gi "github.com/marrasen/gunim/input"
 	"github.com/marrasen/gunim/widget"
@@ -85,8 +87,8 @@ func TestAltAndALetterInATerminalIsTheTerminals(t *testing.T) {
 }
 
 // A menu line that cannot act on the pane in front is greyed: Disconnect
-// and Go to Directory on a terminal here, and they come back for a file
-// pane on a server.
+// and Find in Scrollback on a file manager pane here, and Disconnect
+// and the connection's log come back for one on a server.
 func TestMenuLinesThatCannotActAreGreyed(t *testing.T) {
 	win, _, publish := windowStage(t)
 	greyed := func(id string) bool {
@@ -100,14 +102,12 @@ func TestMenuLinesThatCannotActAreGreyed(t *testing.T) {
 		t.Fatalf("no menu line runs %s", id)
 		return false
 	}
-	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "here", Kind: app.KindFiles}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1",
-		Browsers: map[string]app.Browser{"p1": {Path: "/"}}})
-	if !greyed("conn.disconnect") || greyed("files.goTo") || !greyed("pane.scrollback") {
-		t.Fatalf("on a file pane here: Disconnect greyed %v, Go to Directory %v, Find in Scrollback %v",
-			greyed("conn.disconnect"), greyed("files.goTo"), greyed("pane.scrollback"))
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "here", Kind: app.KindFileManager}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
+	if !greyed("conn.disconnect") || greyed("pane.close") || !greyed("pane.scrollback") {
+		t.Fatalf("on a file manager pane here: Disconnect greyed %v, Close Pane %v, Find in Scrollback %v",
+			greyed("conn.disconnect"), greyed("pane.close"), greyed("pane.scrollback"))
 	}
-	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "there", Kind: app.KindFiles, Machine: "srv"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1",
-		Browsers: map[string]app.Browser{"p1": {Path: "/"}}})
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "there", Kind: app.KindFileManager, Machine: "srv"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
 	if greyed("conn.disconnect") || greyed("conn.log") {
 		t.Fatal("on a pane on a server, Disconnect or its log is greyed")
 	}
@@ -125,19 +125,37 @@ func TestTheServersMenusOwnLinesKeepTheirLetters(t *testing.T) {
 	}
 }
 
-// A click in a file pane's list makes it the pane in front, as a click
-// in a terminal does: the menus act on it.
-func TestTheKeyboardComingIntoAFilePaneFrontsIt(t *testing.T) {
+// The keyboard coming into a file manager pane, as by a click in its
+// list, makes it the pane in front, as a click in a terminal does: the
+// menus act on it.
+func TestTheKeyboardComingIntoAFileManagerPaneFrontsIt(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFiles}, {ID: "p2", Title: "b", Kind: app.KindFiles}},
-		Stage: &app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "p2"}, Share: 0.5}, Focus: "p1",
-		Browsers: map[string]app.Browser{"p1": {Path: "/"}, "p2": {Path: "/"}}})
+	filemanager.RegisterViews(lastWindow)
+	fw := filePane(t, "p2")
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "Help", Kind: app.KindHelp}, {ID: "p2", Title: "b", Kind: app.KindFileManager}},
+		Stage: &app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "p2"}, Share: 0.5}, Focus: "p1"})
+	fw.Attach(lastWindow.Client(), app.FilePaneHost("p2"))
+	var listing gunim.Node
+	framesUntil(t, "the file manager shows in its place", func() bool {
+		listing = filemanager.FocusIn(lastUI, app.FilePaneViews("p2"))
+		return listing != nil
+	})
+	// The keyboard stays in the help beside it, where the window put it,
+	// as the file manager comes.
+	if n := win.focusNode("p1", lastUI); n == nil || lastUI.Focused() != n {
+		t.Fatalf("the file manager coming took the keyboard from the help pane: %T has it", lastUI.Focused())
+	}
 	for len(lastWindow.Client().Intents()) > 0 {
 		<-lastWindow.Client().Intents()
 	}
-	lastUI.Focus(win.browsers["p2"].table)
-	if in, ok := nextIntent(t).(app.FocusPane); !ok || in.Pane != "p2" {
-		t.Fatalf("the keyboard coming into p2 sent %#v", in)
+	lastUI.Focus(listing)
+	for {
+		if in, ok := nextIntent(t).(app.FocusPane); ok {
+			if in.Pane != "p2" {
+				t.Fatalf("the keyboard coming into p2 put %q in front", in.Pane)
+			}
+			return
+		}
 	}
 }
 
@@ -145,14 +163,16 @@ func TestTheKeyboardComingIntoAFilePaneFrontsIt(t *testing.T) {
 // in front again, when the program put another pane there meanwhile.
 func TestADialogClosingLeavesThePaneInFront(t *testing.T) {
 	win, _, publish := windowStage(t)
-	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFiles}, {ID: "p2", Title: "b", Kind: app.KindFiles}},
-		Stage: &app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "p2"}, Share: 0.5}, Focus: "p1",
-		Browsers: map[string]app.Browser{"p1": {Path: "/"}, "p2": {Path: "/"}}}
+	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "Help", Kind: app.KindHelp}, {ID: "p2", Title: "Jobs", Kind: app.KindJobs}},
+		Stage: &app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "p2"}, Share: 0.5}, Focus: "p1"}
 	publish(st)
-	lastUI.Focus(win.browsers["p1"].table)
-	win.browsers["p1"].askGoTo(lastUI)
+	lastUI.Focus(win.focusNode("p1", lastUI))
+	win.run("pane.rename", lastUI)
 	for range 5 {
 		lastWindow.Frame(time.Second / 60)
+	}
+	if win.dialog == nil {
+		t.Fatal("Rename Pane opened no dialog")
 	}
 	st.Focus = "p2"
 	publish(st)

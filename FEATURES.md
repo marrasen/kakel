@@ -35,7 +35,7 @@ The whole list. The [README](README.md) has the short version.
   watching something comes forward rather than opening a second one, and
   the row says when somebody elsewhere is reading it.
 - **The files of the window taken over.** The same connection carries
-  them, as SFTP on a channel of its own, so a browser pane on that
+  them, as SFTP on a channel of its own, so a file manager pane on that
   machine costs no second login. A window that would rather not offer
   its files refuses the channel by name.
 - **The machines beyond a connected window.** The servers that window
@@ -118,43 +118,25 @@ The whole list. The [README](README.md) has the short version.
   each showing its cursor, for the same command on several servers. A
   chip in the title bar says so while it is on, and its × turns it
   off.
-- **A file manager with as many panes as you want.** One manager for the
-  window, and a pane added to it from the plus on any machine in the
-  Servers pane: this machine, a server, or five of each with kakel in the
-  middle. Each pane says which machine it is on above the directory it
-  is showing. Tab moves to the next pane and Shift+Tab back, Enter
-  descends, Backspace goes up and Space marks, the way a two-pane browser
-  has worked for thirty years. Moving files is a clipboard rather than a
-  direction: F5 copies and F6 cuts, and F7 pastes into whichever pane you
-  have gone to. A copy can be pasted into one pane after another; a cut
-  lands once. What is waiting to be pasted is marked in the pane it came
-  from, and comes from the directory it was taken in whatever that pane
-  is showing by then. Files on a machine with exactly one saved folder
-  open at that folder; with none or several, at home. Ctrl+C, Ctrl+X and
-  Ctrl+V do what F5, F6 and F7 do. A bar along the bottom says which key
-  does what,
-  the way Midnight Commander does, and clicking a key on it runs that
-  key. A directory is never read on the goroutine that draws, so a slow
-  machine cannot stop the window, and a read that fails leaves the
-  listing that worked on screen with the reason beside it.
-- **Files shown and moved as in a file manager.** Each file shows its
-  kind as a coloured icon. Ctrl+2, or Machine › Icon View, shows the
-  folder as tiles, a picture as a thumbnail of itself, made in the
-  background from wherever the file is; Ctrl+1 goes back to the details.
-  Drag files from one file pane to another, in any of kakel's windows:
-  between two folders of one disk they move, and anywhere else they
-  copy, and Ctrl copies and Shift moves. The card under the pointer says
-  which, or why the drop would do nothing, and a folder a drag rests on
-  springs open. Files dragged in from Explorer or another program are
-  copied in, onto a server too, and files on this computer drag out to
-  another program.
-- **Zip files walked into like folders.** A `.zip`, `.jar`, `.whl`,
-  `.xpi`, `.crx` or `.vsix` opens with Enter as a folder, on any machine,
-  and its row says "archive" beside its size. It is read only: copy a
-  file out of it, but nothing is written into it. One over 64 MB is
-  refused, as the whole of it is read to list it.
-- **A reader for a file, without a shell.** F3 opens a file from the
-  browser and F4 tails one, on this machine or on a server. It works the
+- **A file manager in a pane.** The file manager is a pane like a
+  terminal: split it beside a terminal, put it in a tab, dock it, or drag
+  it to another window, and it keeps its folder, its history and what is
+  selected. It takes kakel's theme. Open one from Files on a machine's
+  card, beside the file manager in front, or with Files in a New Window
+  in a window of its own; a folder opened from Windows opens in one too.
+  Its places are the machines: this computer's folders, and each saved
+  server under Servers, connected to when you go there. Its menus sit
+  behind the button left of Back. Copy, cut and paste work between
+  folders and between machines, as kakel's background copies, and a drag
+  does too, from Explorer or another program as well. Files on a machine
+  with exactly one saved folder open at that folder; with none or
+  several, at home. Its dialogs, such as a rename or a name that clashes,
+  cover the pane alone, so the terminal beside it keeps working. Its own
+  keys work while it has the keyboard, and `Ctrl+Shift` keys stay
+  kakel's. A pane narrower than 860 pixels folds its preview away.
+- **A reader for a file, without a shell.** View in Reader on a file's
+  menu in the file manager opens it, and Follow in Reader tails it, on
+  this machine or on a server. It works the
   way `less` does: a page at a time, "/" to search, "n" and "N" for the
   next match and the one before, ":" to go to a line, and Ctrl+H for a
   hex dump. A file being tailed is looked at every 300 ms and
@@ -236,7 +218,7 @@ The whole list. The [README](README.md) has the short version.
   many streams, how fast, and how many failed.
 - **A Servers pane.** `Ctrl+Shift+L` opens it in a tab of its own, or
   goes to it where it is; drag its tab out to give it a window of its
-  own. It lists every terminal, file pane, tunnel and transfer, in every
+  own. It lists every terminal, file manager pane, tunnel and transfer, in every
   window, under the machine it is on with this one at the top. A click
   on a row in another window brings that window to the front. Every
   saved server is on it whether or not anything is connected, and every
@@ -258,7 +240,7 @@ The whole list. The [README](README.md) has the short version.
 - **Secrets are asked for where you work.** A key passphrase, an account
   password, the secrets' passphrase and a one-time code each open in a
   small window of their own, over the other windows and with the
-  keyboard in the field, so one asked for from a file manager window is
+  keyboard in the field, so one asked for from a file manager pane is
   typed right there. Enter answers, and Escape or closing
   the window cancels. Several wait their turn, one window at a time. A
   passphrase that does not open the key is asked for again, with no

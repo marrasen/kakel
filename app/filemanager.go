@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"errors"
-	"log"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -20,36 +19,28 @@ import (
 	"github.com/marrasen/gunim/filemanager"
 )
 
-// The file manager: windows of their own, in the style of gunim's Files,
-// outside kakel's tabs. Its places are the machines, this computer's
-// folders under This computer and each saved server under Servers. A
-// file pane is the other way to work with files; where files open is
-// the user's last choice between the two.
+// The file manager: gunim's, in panes among kakel's terminals; see
+// fmpanes.go. Its places are the machines, this computer's folders under
+// This computer and each saved server under Servers.
 
-// FileWindows opens the file manager's windows and tells them their
-// places changed: gunim's filemanager.Hub.
+// FileWindows makes the file manager's panes and tells them their places
+// changed: gunim's filemanager.Hub.
 type FileWindows interface {
-	Open(o filemanager.Options) (*filemanager.Window, error)
+	NewPane(o filemanager.Options, host filemanager.PaneHost) (*filemanager.Window, error)
 	Refresh()
 }
 
 // Intents for the file manager.
 type (
-	// OpenFilesOn opens the files on Machine, at Path or at home, where
-	// the user last chose: a file manager window or a file pane.
+	// OpenFilesOn opens a file manager pane on Machine, at Path or at
+	// home, in the window in front.
 	OpenFilesOn struct {
 		Machine machines.ID
 		Path    string
 	}
-	// OpenFileManager opens a file manager window on Machine, at Path or
-	// at home, and keeps that as where files open.
+	// OpenFileManager opens a window of its own holding a file manager
+	// pane on Machine, at Path or at home.
 	OpenFileManager struct {
-		Machine machines.ID
-		Path    string
-	}
-	// FilesInPane opens a file pane on Machine, at Path or at home, and
-	// keeps that as where files open.
-	FilesInPane struct {
 		Machine machines.ID
 		Path    string
 	}
@@ -60,81 +51,68 @@ type (
 const serverFS = "kakel:"
 
 // gone marks a server place whose files the file manager had and lost,
-// so a window showing them sees the place as elsewhere, and a click on
-// it connects again.
+// so a pane showing them sees the place as elsewhere, and a click on it
+// connects again.
 const gone = "\x00gone"
 
-// openFilesWhere opens files where the user last chose.
-func (a *app) openFilesWhere(m machines.ID, path string) error {
-	if a.files != nil && a.settings != nil && a.settings.FilesInWindow() {
-		return a.openFileManager(m, path)
+// filesOn opens a file manager pane on machine, at path, or when path is
+// empty at the one folder saved for the machine, or else at home: beside
+// the file manager pane in front, two side by side being the way to copy
+// between them, and otherwise on a stage of its own.
+func (a *app) filesOn(machine machines.ID, path string) error {
+	at := Placement{}
+	if a.kindOfPane(a.st.Focus) == KindFileManager {
+		at.Beside = a.st.Focus
 	}
-	return a.filesOn(m, path)
+	return a.filePaneOn(machine, path, at, false)
 }
 
-// openFolder opens a file manager window on this computer's folder dir,
-// or home for "", as a folder opened anywhere asks once kakel opens
-// them. The window is the file manager's whatever files open in last.
+// filePaneOn opens a file manager pane on machine, at path or as filesOn
+// says, where at says. A server is connected to first, quietly when
+// quiet, and its files opened.
+func (a *app) filePaneOn(machine machines.ID, path string, at Placement, quiet bool) error {
+	if a.files == nil {
+		return errNoFileManager
+	}
+	if saved := a.savedFolders(machine); path == "" && len(saved) == 1 {
+		// One folder saved for the machine is where its files open,
+		// however they are asked for: it is the one the user wants.
+		path = saved[0]
+	}
+	if machine == machines.Local {
+		return a.newFilePane(machine, filemanager.LocalFS(), path, at)
+	}
+	failed := func(err error) {
+		if err != nil {
+			a.failed("Couldn't open the files on "+a.machines.Name(machine), err.Error())
+		}
+	}
+	return a.withFilesHow(machine, func(f vfs.FS) {
+		failed(a.newFilePane(machine, a.fmFor(machine, f), path, at))
+	}, failed, quiet)
+}
+
+// openFolder opens a window of its own holding a file manager pane on
+// this computer's folder dir, or home for "", as a folder opened anywhere
+// asks once kakel opens them.
 func (a *app) openFolder(dir string) {
 	if err := a.openFileManager(machines.Local, dir); err != nil {
 		a.failed("Couldn't open the folder", err.Error())
 	}
 }
 
-// keepFilesIn keeps where files open, as the user just chose.
-func (a *app) keepFilesIn(window bool) {
-	if a.settings == nil || a.settings.FilesInWindow() == window {
-		return
-	}
-	if err := a.settings.PutFilesInWindow(window); err != nil {
-		a.failed("Couldn't keep where files open", err.Error())
-	}
-}
-
-// openFileManager opens a file manager window on m, at path or at home.
-// A server is connected to first, and its files opened.
+// openFileManager opens a window of its own holding a file manager pane
+// on m, at path or at home. A server is connected to quietly first, as
+// the window is the files' alone.
 func (a *app) openFileManager(m machines.ID, path string) error {
 	if a.files == nil {
-		return errors.New("the file manager can't open here")
+		return errNoFileManager
 	}
-	if m == machines.Local {
-		return a.openFileWindow(filemanager.LocalFS(), path)
-	}
-	// Connected to quietly, as the files open in a window of their own:
-	// no pane of the connection's log, and no kakel window to hold one.
-	failed := func(err error) {
-		if err != nil {
+	a.newWindow(func() {
+		if err := a.filePaneOn(m, path, Placement{}, true); err != nil {
 			a.failed("Couldn't open the files on "+a.machines.Name(m), err.Error())
 		}
-	}
-	return a.withFilesHow(m, func(f vfs.FS) {
-		if err := a.openFileWindow(a.fmFor(m, f), path); err != nil {
-			failed(err)
-		}
-	}, failed, true)
-}
-
-// openFileWindow opens a file manager window on fsys, at path or at home.
-func (a *app) openFileWindow(fsys filemanager.FS, path string) error {
-	a.notePlaces()
-	w, err := a.files.Open(filemanager.Options{
-		FS: fsys, Dir: path, Name: ProgramName, PrefsPath: fileManagerPrefs(),
-		Places: a.fileManagerPlaces, Visit: a.visitPlace, Favourites: a.favStore(),
-		Transfer: a.transferFiles, FSName: a.fsName,
-		PlaceMenu: placeMenu, PlaceCommand: a.placeCommand,
-		SystemFrame: a.st.SystemTitleBar,
-		// What a window shows going wrong is kept in the Window Log too,
-		// past the banner it is dismissed from.
-		Log: func(line string) { log.Print(line) },
 	})
-	if err != nil {
-		return err
-	}
-	a.fileWins = append(a.fileWins, w)
-	go func() {
-		<-w.Done()
-		a.events <- func() { a.fileWins = slices.DeleteFunc(a.fileWins, func(o *filemanager.Window) bool { return o == w }) }
-	}()
 	return nil
 }
 
@@ -251,15 +229,16 @@ func (a *app) notePlaces() {
 		return
 	}
 	a.serverPlaces.Store(&places)
-	if a.files != nil && len(a.fileWins) > 0 {
+	if a.files != nil && len(a.fmPanes) > 0 {
 		a.files.Refresh()
 	}
 }
 
-// visitPlace turns window w to a place on another file system than the
-// one it shows: this computer's, or a server's, connected to first.
-// With newWindow, as with Ctrl held, the place opens in a window of its
-// own, and w stays as it is. It runs on a goroutine of its own.
+// visitPlace turns file manager w to a place on another file system than
+// the one it shows: this computer's, or a server's, connected to first.
+// With newWindow, as with Ctrl held, the place opens in a pane of its
+// own, on a stage of its own, and w stays as it is. It runs on a
+// goroutine of its own.
 func (a *app) visitPlace(w *filemanager.Window, fs, path string, newWindow bool) {
 	if fs == "" {
 		if !newWindow {
@@ -267,8 +246,8 @@ func (a *app) visitPlace(w *filemanager.Window, fs, path string, newWindow bool)
 			return
 		}
 		a.events <- func() {
-			if err := a.openFileWindow(filemanager.LocalFS(), path); err != nil {
-				w.Notify("Couldn't open a window", words.UpperFirst(err.Error())+".", "warning")
+			if err := a.newFilePane(machines.Local, filemanager.LocalFS(), path, Placement{}); err != nil {
+				w.Notify("Couldn't open the files", words.UpperFirst(err.Error())+".", "warning")
 			}
 		}
 		return
@@ -290,7 +269,7 @@ func (a *app) visitPlace(w *filemanager.Window, fs, path string, newWindow bool)
 				w.Show(a.fmFor(m, f), path)
 				return
 			}
-			if err := a.openFileWindow(a.fmFor(m, f), path); err != nil {
+			if err := a.newFilePane(m, a.fmFor(m, f), path, Placement{}); err != nil {
 				failed(err)
 			}
 		}
@@ -599,9 +578,9 @@ func (a *app) onMachine(m machines.ID) []string {
 	return out
 }
 
-// closeFileManager closes every file manager window, as kakel ends.
+// closeFileManager stops every file manager pane, as kakel ends.
 func (a *app) closeFileManager() {
-	for _, w := range a.fileWins {
-		w.Close()
+	for id := range a.fmPanes {
+		a.dropFilePane(id)
 	}
 }

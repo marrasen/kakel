@@ -13,7 +13,6 @@ import (
 	gi "github.com/marrasen/gunim/input"
 	"github.com/marrasen/gunim/paint"
 
-	"github.com/marrasen/kakel/vfs"
 	"github.com/marrasen/kakel/vt"
 )
 
@@ -62,19 +61,18 @@ func TestThePanesNotPickedFadeAsThePickGrows(t *testing.T) {
 
 // A pane that is no terminal shows in the switcher too, drawn small as
 // it was last drawn.
-func TestTheSwitcherShowsAFilePane(t *testing.T) {
+func TestTheSwitcherShowsAPaneThatIsNoTerminal(t *testing.T) {
 	win, sh, publish := windowStage(t)
 	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
 	sh.Set("p2", screen.Open(sessiontest.New(), vt.DefaultPalette(), quiet))
 	t.Cleanup(func() { _ = sh.Get("p2").T.Close() })
-	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "srv", Kind: app.KindFiles}, {ID: "p2", Title: "Terminal 2"}},
-		Stage: &app.Box{Pane: "p1"}, Focus: "p1",
-		Browsers: map[string]app.Browser{"p1": {Path: "/srv", Entries: []vfs.Entry{{Name: "a.txt"}, {Name: "b.txt"}}, Seq: 1}}})
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "Help", Kind: app.KindHelp}, {ID: "p2", Title: "Terminal 2"}},
+		Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
 	for range 10 {
 		lastWindow.Frame(time.Second / 60)
 	}
 	if d := win.drawings["p1"]; d == nil || d.Recording().Empty() {
-		t.Fatal("the file pane's drawing was not kept")
+		t.Fatal("the help pane's drawing was not kept")
 	}
 	win.run("view.switcher", lastUI)
 	for range 60 {
@@ -87,7 +85,7 @@ func TestTheSwitcherShowsAFilePane(t *testing.T) {
 		}
 	}
 	if !small {
-		t.Fatal("the switcher shows no text drawn small: the file pane's tile is empty")
+		t.Fatal("the switcher shows no text drawn small: the help pane's tile is empty")
 	}
 }
 
@@ -128,8 +126,7 @@ func TestThePanePickedIsLiveAtOnce(t *testing.T) {
 // it, fading.
 func TestTheSwitcherCoversTheStageAtOnce(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFiles}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1",
-		Browsers: map[string]app.Browser{"p1": {Path: "/", Seq: 1}}})
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFileManager}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
 	for range 5 {
 		lastWindow.Frame(time.Second / 60)
 	}
@@ -189,12 +186,12 @@ func TestASwitcherTileCarriesThePanesCaption(t *testing.T) {
 	}
 }
 
-// A file pane's caption names where it runs alone: the path line under
-// it names the folder, and the two said the folder twice.
-func TestAFilePanesCaptionNamesOnlyItsMachine(t *testing.T) {
+// A file manager pane's caption names where it runs alone: the file
+// manager names the folder, and the two would say the folder twice.
+func TestAFileManagerPanesCaptionNamesOnlyItsMachine(t *testing.T) {
 	win, _, _ := windowStage(t)
-	if got := win.captionOf(app.Pane{ID: "p1", Title: "tmp", Kind: app.KindFiles}); got != "This computer" {
-		t.Fatalf("a file pane here is captioned %q", got)
+	if got := win.captionOf(app.Pane{ID: "p1", Title: "tmp", Kind: app.KindFileManager}); got != "This computer" {
+		t.Fatalf("a file manager pane here is captioned %q", got)
 	}
 	if got := win.captionOf(app.Pane{ID: "p2", Title: "Terminal 1"}); got != "This computer: Terminal 1" {
 		t.Fatalf("a terminal here is captioned %q", got)

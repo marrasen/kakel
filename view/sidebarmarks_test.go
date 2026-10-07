@@ -29,7 +29,7 @@ func TestTheSidebarMarksWhatEachRowIs(t *testing.T) {
 	st := app.State{Connected: []machines.ID{"srv"},
 		Panes: []app.Pane{
 			{ID: "p1", Title: "Terminal 1"},
-			{ID: "p2", Title: "docs", Kind: app.KindFiles},
+			{ID: "p2", Title: "docs", Kind: app.KindFileManager},
 			{ID: "p3", Title: "far shell", Machine: "desk", On: "db"},
 		},
 		Windows: []app.RemoteWindow{{Name: "desk", Addr: "desk:2222"}},
@@ -39,9 +39,8 @@ func TestTheSidebarMarksWhatEachRowIs(t *testing.T) {
 			// On a machine the window reached with nothing open there:
 			// under the window.
 			{ID: "j3", Title: "Copying 1 item", Machine: machines.FarID("desk", "web"), Kind: "copy", Share: 0.1}},
-		Stage:    &app.Box{Pane: "p2"},
-		Focus:    "p2",
-		Browsers: map[string]app.Browser{"p2": {Path: "/", Seq: 1}},
+		Stage: &app.Box{Pane: "p2"},
+		Focus: "p2",
 	}
 	publish(withServers(st))
 	row := func(key string) *sideRow {
@@ -54,7 +53,7 @@ func TestTheSidebarMarksWhatEachRowIs(t *testing.T) {
 	}
 	now := time.Now()
 	if m := row("p2").marks; m.kind != "files" || m.live(now) != meter.Settled {
-		t.Fatalf("a file pane is marked %q, %v", m.kind, m.live(now))
+		t.Fatalf("a file manager pane is marked %q, %v", m.kind, m.live(now))
 	}
 	if m := row("tunnel:t1").marks; m.traffic != busy || m.live(now) != meter.Active {
 		t.Fatalf("a busy tunnel is marked %+v", m)
@@ -205,8 +204,7 @@ func TestAMachineOverThereHasAHeadingWithNothingOpenOnIt(t *testing.T) {
 // brings it out again; a note that says something new is up again.
 func TestANoteGoesQuietOnceItHasSettled(t *testing.T) {
 	win, _, publish := windowStage(t)
-	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "build", Kind: app.KindFiles, Note: "42%"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1",
-		Browsers: map[string]app.Browser{"p1": {Path: "/", Seq: 1}}}
+	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "build", Kind: app.KindFileManager, Note: "42%"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"}
 	publish(withServers(st))
 	row, ok := win.cards.row(widget.Key("p1"))
 	if !ok || row.note.Text != "42%" {

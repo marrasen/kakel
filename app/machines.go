@@ -8,13 +8,10 @@ import (
 )
 
 // used reports whether anything open here is on machine id or beyond
-// it: a pane, a tunnel, a job, a file clipped or a copy listed. What
+// it: a pane, a tunnel, a job or a copy listed. What
 // the machine's own connection keeps, the registry knows.
 func (a *app) used(id machines.ID) bool {
 	on := func(m machines.ID) bool { return m.Of(id) }
-	if c := a.clip; c != nil && on(c.machine) {
-		return true
-	}
 	if slices.ContainsFunc(a.running, func(r *running) bool { return on(r.from) || on(r.to) }) {
 		return true
 	}

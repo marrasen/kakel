@@ -35,8 +35,8 @@ func TestTheHelpListsEveryCommandWithItsShortcut(t *testing.T) {
 	if !found {
 		t.Fatal("the help lacks Close Pane on Ctrl+Shift+W")
 	}
-	// Under the menu it is on, and the file pane's keys from
-	// kakel's own list.
+	// Under the menu it is on, and the reader's keys from kakel's own
+	// list.
 	var heads []string
 	under := map[string]string{}
 	keys := slices.Sorted(maps.Keys(win.help.rows))
@@ -48,8 +48,8 @@ func TestTheHelpListsEveryCommandWithItsShortcut(t *testing.T) {
 		}
 		under[r[0]] = heads[len(heads)-1]
 	}
-	if heads[0] != "File" || under["Close Pane"] != "File" || !strings.HasPrefix(under["Tail"], "The file pane's keys") || !strings.HasPrefix(under["Hex"], "The reader's keys") {
-		t.Fatalf("the help's groups are %v, with Close Pane under %q, Tail under %q, Hex under %q", heads, under["Close Pane"], under["Tail"], under["Hex"])
+	if heads[0] != "File" || under["Close Pane"] != "File" || !strings.HasPrefix(under["Hex"], "The reader's keys") {
+		t.Fatalf("the help's groups are %v, with Close Pane under %q, Hex under %q", heads, under["Close Pane"], under["Hex"])
 	}
 }
 

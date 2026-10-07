@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"slices"
 	"strings"
 	"time"
@@ -16,33 +15,11 @@ import (
 	"github.com/marrasen/kakel/vfs"
 )
 
-// Copying, moving, deleting, renaming and making folders, with
-// kakel's jobs package, on the program's side.
+// Copying, moving and deleting files, with kakel's jobs package, on the
+// program's side.
 
-// Intents for working on files.
+// Intents for the jobs.
 type (
-	// ClipFiles puts names from a file pane's folder on the file
-	// clipboard, to copy, or to move with Cut.
-	ClipFiles struct {
-		Pane  string
-		Names []string
-		Cut   bool
-	}
-	// PasteFiles copies or moves what the file clipboard holds into a
-	// file pane's folder.
-	PasteFiles struct{ Pane string }
-	// DeleteFiles deletes names from a file pane's folder, which the
-	// user has already been asked about.
-	DeleteFiles struct {
-		Pane  string
-		Names []string
-	}
-	// RenameFile renames one name in a file pane's folder.
-	RenameFile struct{ Pane, From, To string }
-	// MakeFolder makes a folder in a file pane's folder.
-	MakeFolder struct{ Pane, Name string }
-	// DropFileClip empties the file clipboard.
-	DropFileClip struct{}
 	// ShowJobs opens the jobs pane, or goes to it.
 	ShowJobs struct{}
 	// CancelJob stops a job part way.
@@ -90,24 +67,6 @@ const KindJobs = "jobs"
 // mostFinishedJobs is how many finished jobs the pane keeps.
 const mostFinishedJobs = 20
 
-// fileClip is what the file clipboard holds.
-type fileClip struct {
-	kind    jobs.Kind
-	from    vfs.FS
-	machine machines.ID
-	at      string
-	names   []string
-}
-
-// FileClip is the file clipboard as the window shows it: the names
-// waiting in folder At of the files kept under Key.
-type FileClip struct {
-	Key   machines.ID
-	At    string
-	Names []string
-	Cut   bool
-}
-
 // jobKind names a kind of job for its row's icon.
 func jobKind(k jobs.Kind) string {
 	switch k {
@@ -144,59 +103,7 @@ type running struct {
 	quiet bool
 }
 
-// folderOf returns a file pane's filesystem and folder.
-func (a *app) folderOf(pane string) (vfs.FS, string, bool) {
-	b, ok := a.st.Browsers[pane]
-	f := a.filesOf(pane)
-	return f, b.Path, ok && f != nil
-}
-
-func (a *app) clipFiles(in ClipFiles) {
-	f, at, ok := a.folderOf(in.Pane)
-	if !ok || len(in.Names) == 0 {
-		return
-	}
-	kind, verb := jobs.Copy, "copy"
-	if in.Cut {
-		kind, verb = jobs.Move, "move"
-	}
-	a.clip = &fileClip{kind: kind, from: f, machine: a.filesKey(in.Pane), at: at, names: in.Names}
-	a.say("clip", fmt.Sprintf("Ready to %s %s; paste in a folder with F7 or Ctrl+V.", verb, words.Count(len(in.Names), "item")))
-}
-
-func (a *app) pasteFiles(in PasteFiles) error {
-	f, into, ok := a.folderOf(in.Pane)
-	if !ok {
-		return nil
-	}
-	c := a.clip
-	if c == nil {
-		return errors.New("kakel: nothing to paste; copy or cut files first, with F5 or F6")
-	}
-	if c.kind == jobs.Move {
-		// A move happens once.
-		a.clip = nil
-	}
-	a.say("clip", "")
-	op := jobs.Op{Kind: c.kind, From: c.from, At: c.at, Names: c.names, To: f, Into: into}
-	verb := "Copying"
-	if c.kind == jobs.Move {
-		verb = "Moving"
-	}
-	a.followOn(op, fmt.Sprintf("%s %s to %s", verb, words.Count(len(c.names), "item"), vfs.Base(f, into)), c.machine, a.filesKey(in.Pane))
-	return nil
-}
-
-func (a *app) deleteFiles(in DeleteFiles) {
-	f, at, ok := a.folderOf(in.Pane)
-	if !ok || len(in.Names) == 0 {
-		return
-	}
-	a.followOn(jobs.Op{Kind: jobs.Delete, From: f, At: at, Names: in.Names}, "Deleting "+words.Count(len(in.Names), "item"), a.filesKey(in.Pane), "")
-}
-
-// follow starts a job and follows it, listing again the file panes
-// showing either end once it is done.
+// follow starts a job and follows it.
 func (a *app) follow(op jobs.Op, title string) { a.followOn(op, title, "", "") }
 
 // followOn is follow, for a job between the machines from and to, which
@@ -221,26 +128,6 @@ func (a *app) followAsking(op jobs.Op, title string, from, to machines.ID, ask j
 	}
 	a.showJobs()
 	return job
-}
-
-// relistOn lists again every file pane on either filesystem op worked
-// on, wherever it has gone since the job started: a folder under the
-// one copied into changed too.
-func (a *app) relistOn(op jobs.Op) {
-	for id, b := range a.st.Browsers {
-		f := a.filesOf(id)
-		if f != nil && (vfs.Same(f, op.From) || (op.To != nil && vfs.Same(f, op.To))) {
-			again := Browse{Pane: id, Path: b.Path, Again: true}
-			if on, ok := a.listingAt[id]; ok {
-				// The one on its way, asked again whole, so what it was
-				// asked for, such as a Go To, still hears.
-				again = on
-			} else if b.Path == "" {
-				continue
-			}
-			a.browse(again)
-		}
-	}
 }
 
 // watchJobs looks at the jobs four times a second while any runs.
@@ -294,7 +181,6 @@ func (a *app) showJobs() bool {
 			a.worked(pastTense(r.title), row.Detail, "")
 			a.done()
 		}
-		a.relistOn(r.op)
 	}
 	a.st.Jobs = rows
 	a.jobLines = lines
@@ -422,67 +308,6 @@ func (a *app) showJobsPane() {
 	}
 	a.next++
 	a.addPane(Pane{ID: "p" + itoa(a.next), Title: "Jobs", Kind: KindJobs}, nil, Placement{})
-}
-
-// renameFile renames one name, refusing to write over another. A
-// change of letter case alone goes through.
-func (a *app) renameFile(in RenameFile) {
-	f, at, ok := a.folderOf(in.Pane)
-	if !ok || in.To == in.From {
-		return
-	}
-	if err := vfs.PlainName(f, in.To); err != nil {
-		a.failed("Couldn't rename "+in.From, words.UpperFirst(err.Error())+".")
-		return
-	}
-	from, to := vfs.Join(f, at, in.From), vfs.Join(f, at, in.To)
-	go func() {
-		_, err := f.Stat(to)
-		switch {
-		case err == nil && !strings.EqualFold(in.From, in.To):
-			err = fmt.Errorf("%s is already there", in.To)
-		case err == nil:
-			// Only the letter case changes. Where case counts, the folder
-			// may hold another file with that very name, which the rename
-			// would write over.
-			err = vfs.NameFree(f, at, in.To)
-			if err == nil {
-				err = f.Rename(from, to)
-			}
-		case !errors.Is(err, fs.ErrNotExist):
-		default:
-			err = f.Rename(from, to)
-		}
-		a.events <- func() {
-			if err != nil {
-				a.failed("Couldn't rename "+in.From, err.Error())
-				return
-			}
-			a.browse(Browse{Pane: in.Pane, Path: at, Land: in.To})
-		}
-	}()
-}
-
-// makeFolder makes a folder, and puts the cursor on it.
-func (a *app) makeFolder(in MakeFolder) {
-	f, at, ok := a.folderOf(in.Pane)
-	if !ok {
-		return
-	}
-	if err := vfs.PlainName(f, in.Name); err != nil {
-		a.failed("Couldn't make the folder", words.UpperFirst(err.Error())+".")
-		return
-	}
-	go func() {
-		err := f.Mkdir(vfs.Join(f, at, in.Name), 0o755)
-		a.events <- func() {
-			if err != nil {
-				a.failed("Couldn't make "+in.Name, err.Error())
-				return
-			}
-			a.browse(Browse{Pane: in.Pane, Path: at, Land: in.Name})
-		}
-	}()
 }
 
 // overwriteAsker asks the user about a name that is already there.

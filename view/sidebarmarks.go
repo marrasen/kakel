@@ -395,7 +395,7 @@ func (w *Window) markRows(rows []sideItem, st app.State) []sideItem {
 // paneKindIcon is the icon for a pane.
 func paneKindIcon(p app.Pane) string {
 	switch p.Kind {
-	case app.KindFiles:
+	case app.KindFileManager:
 		return "files"
 	case app.KindReader:
 		return "reader"

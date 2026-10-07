@@ -151,16 +151,19 @@ func (a *app) stress(ctx context.Context, d time.Duration) {
 				}
 			})
 		},
-		// File manager windows, opened and closed.
+		// File manager panes, opened and closed.
 		"files": func() {
 			on(func() {
-				if len(a.fileWins) < 3 && rand.IntN(2) == 0 {
+				if len(a.fmPanes) < 3 && rand.IntN(2) == 0 {
 					dir := []string{"", os.TempDir(), "/usr/lib", "/"}[rand.IntN(4)]
-					if err := a.openFileManager(machines.Local, dir); err != nil {
-						Stressf("%s: a file manager window didn't open: %v", StressEnv, err)
+					if err := a.filesOn(machines.Local, dir); err != nil {
+						Stressf("%s: a file manager pane didn't open: %v", StressEnv, err)
 					}
-				} else if len(a.fileWins) > 0 {
-					a.fileWins[rand.IntN(len(a.fileWins))].Close()
+				} else {
+					for id := range a.fmPanes {
+						a.closePane(id)
+						break
+					}
 				}
 			})
 		},

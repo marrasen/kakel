@@ -2,7 +2,7 @@
 //
 // It runs shells here and on other machines through its own sessions,
 // VT parser and key encoder, and draws their screens with gunim's
-// CellGrid, beside the file panes, tunnels and the rest of the window.
+// CellGrid, beside the file manager, tunnels and the rest of the window.
 package main
 
 import (
@@ -193,6 +193,9 @@ func (ws *ownWindows) open(o gunim.WindowOptions) (*gunim.Window, gunim.Client, 
 	o.Icons = appicon.Images()
 	// The close button asks first, as Exit does for the last window.
 	o.AskToClose = app.CloseWindow{}
+	// Files drag from a file manager pane while another window is in
+	// front, as from Explorer's.
+	o.DragFromBehind = true
 	w, err := ws.app.NewWindow(o)
 	if err != nil {
 		return nil, gunim.Client{}, fmt.Errorf("kakel: %w", err)
@@ -203,6 +206,8 @@ func (ws *ownWindows) open(o gunim.WindowOptions) (*gunim.Window, gunim.Client, 
 	ws.win = append(ws.win, w)
 	ws.mu.Unlock()
 	look.Register(w, all)
+	// The file manager panes' views, which kakel's themes colour.
+	filemanager.RegisterViews(w)
 	// Each window its own keys, which the shortcuts file changes there.
 	keys := view.Shortcuts()
 	gunim.RegisterView(w, "window", func(app.State) *view.Window { return view.NewWindow(ws.sh, keys, all) },

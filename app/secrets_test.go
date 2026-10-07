@@ -427,7 +427,7 @@ func TestKeysToChooseAreToldApart(t *testing.T) {
 func TestTheSecretsGetAWindowOfTheirOwn(t *testing.T) {
 	a, _ := secretsApp(t)
 	a.next = 100
-	a.addPane(Pane{ID: "p1", Kind: KindFiles}, nil, Placement{})
+	a.addPane(Pane{ID: "p1", Kind: KindFileManager}, nil, Placement{})
 	startVault(t, a)
 	first := a.cur
 	var opened *gunim.Window

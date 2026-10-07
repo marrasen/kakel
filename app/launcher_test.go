@@ -89,10 +89,11 @@ func takesKeys(t *testing.T) { t.Setenv("KAKEL_ALONE", "") }
 // last worked in, and is what Enter opens there next time.
 func TestALaunchOpensWhereTheUserWorks(t *testing.T) {
 	a, _, two := twoWindowApp(t)
+	a.files = newFakeFiles(t)
 	a.next = 100
 	a.noteWork()
 	a.handleLaunch(Launch{Machine: machines.Local, Action: "files"})
-	if a.cur != two || a.kindOfPane(a.st.Focus) != KindFiles {
+	if a.cur != two || a.kindOfPane(a.st.Focus) != KindFileManager {
 		t.Fatalf("window %d in front, the focus on a %q pane", a.cur.id, a.kindOfPane(a.st.Focus))
 	}
 	ms := a.launchMachines()
@@ -214,33 +215,37 @@ func TestNewWindowFromTheLauncherOpensOne(t *testing.T) {
 	}
 }
 
-// Files asked for from the tray or the launcher, where files open in a
-// window, open there alone: no kakel window opens for them.
-func TestFilesFromTheTrayOpenNoKakelWindow(t *testing.T) {
+// Files asked for from the tray or the launcher open in a file manager
+// pane of the window worked in, and with every window gone, in a window
+// opened for them.
+func TestFilesFromTheTrayOpenInTheWindowWorkedIn(t *testing.T) {
 	a, one, two := twoWindowApp(t)
 	a.traySet = (&fakeTray{}).tray()
 	a.settings = mustSettings(t)
-	if err := a.settings.PutFilesInWindow(true); err != nil {
-		t.Fatal(err)
-	}
-	files := &fakeFiles{}
+	files := newFakeFiles(t)
 	a.files = files
+	a.next = 100
 	a.publish()
 	opened := 0
 	a.openWindow = func(_ *gunim.Window, _ geom.Point, s geom.Size) (gunim.Client, *gunim.Window, error) {
 		opened++
-		return gunimtest.New(t, s, nil).Client(), nil, nil
+		w := gunimtest.New(t, s, nil)
+		return w.Client(), w, nil
 	}
+	a.handleLaunch(Launch{Action: "files"})
+	if len(files.opened) != 1 || opened != 0 || a.ownerOf(a.st.Focus) != two || a.kindOfPane(a.st.Focus) != KindFileManager {
+		t.Fatalf("files opened %d file managers and %d windows, and the keyboard is on %q", len(files.opened), opened, a.st.Focus)
+	}
+
 	for _, w := range []*ownWin{one, two} {
 		for _, p := range a.panesIn(w) {
 			a.remove(p.ID)
 		}
 		a.letWindowGo(w)
 	}
-	a.handleLaunch(Launch{Action: "files"})
 	a.filesFromOutside("", "/tmp")
-	time.Sleep(50 * time.Millisecond)
-	if len(files.opened) != 2 || opened != 0 || a.opening != 0 {
-		t.Fatalf("files opened %d windows of their own, and %d kakel windows opened, %d on their way", len(files.opened), opened, a.opening)
+	waitFor(t, a, "a window holding the files", func() bool { return opened == 1 && len(files.opened) == 2 })
+	if p := a.st.Panes[len(a.st.Panes)-1]; p.Kind != KindFileManager || files.opened[1].Dir != "/tmp" || a.ownerOf(p.ID) == nil || a.ownerOf(p.ID).gone {
+		t.Fatalf("with no window, the files opened as %+v at %q", p, files.opened[1].Dir)
 	}
 }

@@ -50,11 +50,12 @@ Machines and connections:
 - `meter`: bytes moved, and how long ago.
 - `serve`: one kakel window connected to another: the listener, the
   client, and what they say to each other.
-- `vfs`: a filesystem a file pane works on: this machine, or one over
-  SFTP.
+- `vfs`: a filesystem kakel reads files through: this machine, or one
+  over SFTP.
 - `jobs`: copying, moving and deleting in the background.
-- `ui/files`: the reader, and the file panes' keys. `view` draws the
-  file panes themselves.
+- `ui/files`: the reader. The file manager panes are gunim's
+  `filemanager`: `app/fmpanes.go` runs them, and `view/fmhost.go` gives
+  each its place in a window.
 - `pasted`: where a pasted image or a dropped file is written.
 
 Agents:

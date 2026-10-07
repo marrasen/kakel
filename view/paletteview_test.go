@@ -35,8 +35,8 @@ func TestThePaletteFindsCommandsByOtherWords(t *testing.T) {
 // not in the order the panes were opened.
 func TestNextPaneGoesInTheSidebarsOrder(t *testing.T) {
 	win, _, publish := windowStage(t)
-	panes := []app.Pane{{ID: "p1", Title: "one", Kind: app.KindFiles}, {ID: "p2", Title: "two", Kind: app.KindFiles, Machine: "srv"}, {ID: "p3", Title: "three", Kind: app.KindFiles}}
-	publish(app.State{Panes: panes, Stage: &app.Box{Pane: "p1"}, Focus: "p1", Browsers: map[string]app.Browser{"p1": {Path: "/"}, "p2": {Path: "/"}, "p3": {Path: "/"}}})
+	panes := []app.Pane{{ID: "p1", Title: "one", Kind: app.KindFileManager}, {ID: "p2", Title: "two", Kind: app.KindFileManager, Machine: "srv"}, {ID: "p3", Title: "three", Kind: app.KindFileManager}}
+	publish(app.State{Panes: panes, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
 	for len(lastWindow.Client().Intents()) > 0 {
 		<-lastWindow.Client().Intents()
 	}

@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marrasen/gunim"
 	"github.com/marrasen/kakel/internal/winattrs"
 	"github.com/marrasen/kakel/jobs"
 	"github.com/marrasen/kakel/machines"
@@ -23,6 +24,8 @@ import (
 	"github.com/pkg/sftp"
 
 	"github.com/marrasen/gunim/filemanager"
+	"github.com/marrasen/gunim/geom"
+	"github.com/marrasen/gunim/gunimtest"
 )
 
 // sftpHere is this machine's files over SFTP, as a server's are read.
@@ -229,25 +232,33 @@ func TestAWindowsServersDrivesAreVolumes(t *testing.T) {
 	}
 }
 
-// A server's files open in a file manager window, and the server's place
+// Files in a New Window on a server opens a kakel window of its own, holding
+// a file manager pane on the server's files, and the server's place
 // shows where its home is. Once the connection ends, the place is
-// elsewhere to the window, so a click on it connects again.
-func TestAServersFilesOpenInAWindow(t *testing.T) {
+// elsewhere to the pane, so a click on it connects again.
+func TestAServersFileManagerOpensInAWindowOfItsOwn(t *testing.T) {
 	a, _ := agentApp(t)
 	a.settings = mustSettings(t)
-	files := &fakeFiles{}
+	files := newFakeFiles(t)
 	a.files = files
 	a.st.Saved = []remote.Host{{ID: "s1", Name: "web", Address: "web.example"}}
 	a.st.Connected = []machines.ID{"s1"}
 	a.machines.At("s1").Files = sftpHere(t)
+	windows := 0
+	a.openWindow = func(_ *gunim.Window, _ geom.Point, s geom.Size) (gunim.Client, *gunim.Window, error) {
+		windows++
+		w := gunimtest.New(t, s, nil)
+		return w.Client(), w, nil
+	}
 
 	a.handle(OpenFileManager{Machine: "s1"})
-	if len(files.opened) != 1 {
-		t.Fatalf("opened %d windows", len(files.opened))
+	waitFor(t, a, "a window holding the files", func() bool { return windows == 1 && len(files.opened) == 1 })
+	if p := a.st.Panes[len(a.st.Panes)-1]; p.Kind != KindFileManager || p.Machine != "s1" || a.ownerOf(p.ID) != a.cur || len(a.panesIn(a.cur)) != 1 {
+		t.Fatalf("the files opened as %+v, in a window of %d panes", p, len(a.panesIn(a.cur)))
 	}
 	fm, ok := files.opened[0].FS.(*fmFS)
 	if !ok || fm.ID() != serverFS+"s1" {
-		t.Fatalf("the window opened on %#v", files.opened[0].FS)
+		t.Fatalf("the file manager opened on %#v", files.opened[0].FS)
 	}
 	home, err := a.fsFor("s1").Home()
 	if err != nil {
@@ -501,7 +512,7 @@ func TestAServerConnectedSaysSoAmongThePlaces(t *testing.T) {
 
 // Files asked for on a saved kakel window not connected connect to it
 // quietly, with no terminal and no pane of its log, and open in a file
-// manager window.
+// manager pane on its files, in a window of its own.
 func TestFilesOnASavedWindowConnectToIt(t *testing.T) {
 	a, _ := agentApp(t)
 	dir := t.TempDir()
@@ -522,8 +533,12 @@ func TestFilesOnASavedWindowConnectToIt(t *testing.T) {
 	b.book = book
 	b.st.Saved = book.Hosts()
 	desk := machines.ID(b.st.Saved[0].ID)
-	files := &fakeFiles{}
+	files := newFakeFiles(t)
 	b.files = files
+	b.openWindow = func(_ *gunim.Window, _ geom.Point, s geom.Size) (gunim.Client, *gunim.Window, error) {
+		w := gunimtest.New(t, s, nil)
+		return w.Client(), w, nil
+	}
 	panes := len(b.st.Panes)
 
 	if err := b.openFileManager(desk, ""); err != nil {
@@ -531,11 +546,14 @@ func TestFilesOnASavedWindowConnectToIt(t *testing.T) {
 	}
 	pumpBoth(t, a, b, "the question about the host key", func() bool { return len(b.st.Asks) > 0 })
 	b.handle(AskAnswered{ID: b.st.Asks[0].ID, Yes: true})
-	pumpBoth(t, a, b, "the files window", func() bool { return len(files.opened) == 1 })
+	pumpBoth(t, a, b, "the file manager pane", func() bool { return len(files.opened) == 1 })
 	if b.machines.Get(desk).Window == nil {
 		t.Fatal("the window isn't connected")
 	}
-	if len(b.st.Panes) != panes {
+	if got, want := files.opened[0].FS.ID(), serverFS+string(desk); got != want {
+		t.Fatalf("the file manager opened on %q, want %q", got, want)
+	}
+	if len(b.st.Panes) != panes+1 || b.st.Panes[panes].Kind != KindFileManager {
 		t.Fatalf("panes opened: %+v", b.st.Panes)
 	}
 }

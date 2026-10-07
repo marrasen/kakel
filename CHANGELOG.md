@@ -7,6 +7,32 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
+## Unreleased
+
+### Changed
+
+**The file manager is a pane.** It splits beside a terminal, goes in a
+tab, docks, and moves between windows like any pane, and it takes
+kakel's theme. Its menus are behind a button left of Back. Its dialogs
+cover the pane alone, so the terminal beside it keeps working.
+
+**It replaces the old file pane and the file manager's own windows.**
+Files opens a file manager pane, beside the one in front. Files in a
+New Window, and a folder opened from Windows, open a kakel window
+holding one. The setting that chose between a window and a pane is
+gone.
+
+### Added
+
+**View in Reader and Follow in Reader** on a file's menu in the file
+manager open it in kakel's reader beside the pane, as F3 and F4 did in
+the old file pane.
+
+### Removed
+
+**The old file pane, with its key bar, Go To (`Ctrl+Shift+G`) and zip
+files opened as folders.** The file manager does what the rest did.
+
 ## v0.11.1
 
 ### Fixed

@@ -6,7 +6,7 @@ import (
 	"github.com/marrasen/kakel/ui"
 )
 
-// Key is one key on the bar along the bottom of the browser: the chord
+// Key is one key on the bar along the bottom of the reader: the chord
 // it wants, what the bar calls it, and what it does.
 type Key struct {
 	Chord ui.Chord
@@ -35,34 +35,6 @@ func (k Key) press() input.Event {
 
 // chord names a key and the modifiers held with it.
 func chord(k input.Key, mods input.Mods) ui.Chord { return ui.Chord{Key: k, Mods: mods} }
-
-// BrowserKeys is what the bar offers.
-//
-// The order and the names are Midnight Commander's, because that is
-// what a two-pane browser means to anyone who has used one: a user who
-// knows those keys should not have to learn these.
-func BrowserKeys() []Key {
-	return []Key{
-		{Chord: chord(input.KeyTab, 0), Shown: "Tab", Title: "Next"},
-		{Chord: chord(input.KeyG, input.ModCtrl), Shown: "^G", Title: "Go to"},
-		{Chord: chord(input.KeyF2, 0), Shown: "F2", Title: "Rename"},
-		// F3 and F4 are what a two-pane browser has meant since Norton
-		// Commander: read this file, and follow it as it grows.
-		{Chord: chord(input.KeyF3, 0), Shown: "F3", Title: "View"},
-		{Chord: chord(input.KeyF4, 0), Shown: "F4", Title: "Tail"},
-		// Copy, cut and paste are the chords they are everywhere else. A
-		// file pane is not a terminal, so nothing else wants them here.
-		{Chord: chord(input.KeyC, input.ModCtrl), Shown: "^C", Title: "Copy"},
-		{Chord: chord(input.KeyX, input.ModCtrl), Shown: "^X", Title: "Cut"},
-		{Chord: chord(input.KeyV, input.ModCtrl), Shown: "^V", Title: "Paste"},
-		{Chord: chord(input.KeyF8, 0), Shown: "F8", Title: "Delete"},
-		{Chord: chord(input.KeyF9, 0), Shown: "F9", Title: "Mkdir"},
-		// Not F10: the window opens its menu bar on that, and an
-		// accelerator wins before any widget sees the key. ^D is what
-		// closes a shell, which is near enough the same thing.
-		{Chord: chord(input.KeyD, input.ModCtrl), Shown: "^D", Title: "Close"},
-	}
-}
 
 // keyCell returns the columns one key on the bar is drawn in.
 //
@@ -96,7 +68,7 @@ func keyAt(col, cols, n int) (int, bool) {
 // drawKeys paints the bar.
 //
 // Every cell is written once, with the same value each frame, so a
-// browser nobody is touching leaves the row clean.
+// reader nobody is touching leaves the row clean.
 func drawKeys(v grid.View, y, cols int, keys []Key, st Style, wired func(Key) bool) {
 	if cols <= 0 || len(keys) == 0 {
 		return

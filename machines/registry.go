@@ -35,7 +35,7 @@ type Machine struct {
 	// Window is its connection when it is another kakel window.
 	Window *Window
 
-	// Files are its files, once opened, for all its file panes.
+	// Files are its files, once opened, for everything that reads them.
 	Files vfs.FS
 
 	// Log is its connection log, from the first time it was connected

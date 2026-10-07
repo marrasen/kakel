@@ -46,3 +46,4 @@ require (
 	golang.org/x/mobile v0.0.0-20250606033058-a2a15c67f36f // indirect
 	golang.org/x/text v0.42.0 // indirect
 )
+replace github.com/marrasen/gunim => ../gunim-fmpane

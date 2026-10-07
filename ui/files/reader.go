@@ -529,7 +529,7 @@ func (r *Reader) AtEnd() bool { return r.top >= r.lastTop() }
 func (r *Reader) Follow(on bool) {
 	if r.isPic {
 		// An image is not appended to, so there is nothing to follow.
-		// Without this, tailing one from the browser leaves a pane
+		// Without this, following one leaves a pane
 		// labelled "(following)" for good, asking a machine at the far
 		// end about the file three times a second.
 		return

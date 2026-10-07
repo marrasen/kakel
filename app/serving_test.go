@@ -306,9 +306,14 @@ func TestAWindowConnectsToAServedOne(t *testing.T) {
 	}
 
 	// Its files.
+	files := newFakeFiles(t)
+	b.files = files
 	b.st.Focus = b.st.Panes[0].ID
 	b.handle(OpenFiles{})
-	pumpBoth(t, a, b, "the files", func() bool { return len(b.st.Panes) == 3 && b.st.Panes[2].Kind == KindFiles })
+	pumpBoth(t, a, b, "the files", func() bool { return len(b.st.Panes) == 3 && b.st.Panes[2].Kind == KindFileManager })
+	if got, want := files.opened[0].FS.ID(), serverFS+string(b.st.Panes[0].Machine); got != want {
+		t.Fatalf("the file manager opened on %q, want the window's files, %q", got, want)
+	}
 
 	// Disconnected by the first, the second is told, and its panes end.
 	a.handle(DisconnectClients{})

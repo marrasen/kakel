@@ -517,6 +517,39 @@ func (c *pathCompleter) rest(typed string) string {
 	return restOf(runtime.GOOS == "windows", c.names, leaf)
 }
 
+// restOf is what the names starting with leaf share after it, and empty
+// when nothing does: whatever the case, where the filesystem pays case
+// no mind.
+func restOf(anyCase bool, names []string, leaf string) string {
+	rest, found := "", false
+	for _, name := range names {
+		if len(name) <= len(leaf) {
+			continue
+		}
+		starts := strings.HasPrefix(name, leaf)
+		if anyCase {
+			starts = strings.EqualFold(name[:len(leaf)], leaf)
+		}
+		if !starts {
+			continue
+		}
+		after := name[len(leaf):]
+		if !found {
+			rest, found = after, true
+			continue
+		}
+		n := 0
+		for n < len(rest) && n < len(after) && rest[n] == after[n] {
+			n++
+		}
+		rest = rest[:n]
+		if rest == "" {
+			return ""
+		}
+	}
+	return rest
+}
+
 // restOfPath is a completer's rest, for a path typed once.
 func restOfPath(typed string) string {
 	var c pathCompleter

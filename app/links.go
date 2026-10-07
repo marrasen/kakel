@@ -22,8 +22,8 @@ import (
 )
 
 // Links in a terminal: Ctrl and a click on an address opens it in the
-// browser, and on a path opens it, a folder in a file pane and a file in
-// the reader, at the line it names. An address on a server's own
+// browser, and on a path opens it, a folder in a file manager pane and a
+// file in the reader, at the line it names. An address on a server's own
 // loopback, such as a development server's, opens through a tunnel made
 // for it.
 
@@ -282,16 +282,16 @@ func (a *app) forgetFar(machine machines.ID) {
 	}
 }
 
-// openPath opens a path a link named: a folder in a file pane, a file
-// in the reader at line.
+// openPath opens a path a link named: a folder in a file manager pane,
+// a file in the reader at line.
 func (a *app) openPath(machine machines.ID, at string, isDir bool, line int) error {
-	// A server's files are opened first when no file pane has yet.
+	// A server's files are opened first when nothing has opened them yet.
 	return a.withFiles(machine, func(f vfs.FS) {
 		if !isDir {
 			a.readOn(machine, f, at, false, line, Placement{})
 			return
 		}
-		if err := a.openFilesOn(machine, f, at); err != nil {
+		if err := a.filesOn(machine, vfs.Spelled(f, at)); err != nil {
 			a.failed("Couldn't open "+at, err.Error())
 		}
 	})

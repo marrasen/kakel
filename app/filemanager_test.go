@@ -1,72 +1,94 @@
 package app
 
 import (
-	"errors"
+	"context"
+	"os"
 	"path/filepath"
 	"slices"
 	"testing"
+	"time"
 
+	"github.com/marrasen/kakel/machines"
+	"github.com/marrasen/kakel/remote"
 	"github.com/marrasen/kakel/single"
 
-	"github.com/marrasen/kakel/remote"
-
+	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/filemanager"
+	"github.com/marrasen/gunim/geom"
+	"github.com/marrasen/gunim/gunimtest"
 )
 
-// fakeFiles stands in for the file manager's hub: it records what it is
-// asked to open, and opens nothing.
+// fakeFiles stands in for the file manager's hub: it records the
+// options of each pane it is asked for, and runs the pane on a hub of its
+// own, with its settings in the test's folder.
 type fakeFiles struct {
+	t         *testing.T
+	hub       *filemanager.Hub
 	opened    []filemanager.Options
 	refreshed int
 }
 
-var errNotOpened = errors.New("not opened in a test")
+func newFakeFiles(t *testing.T) *fakeFiles {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	return &fakeFiles{t: t, hub: filemanager.NewHub(ctx, nil)}
+}
 
-func (f *fakeFiles) Open(o filemanager.Options) (*filemanager.Window, error) {
+func (f *fakeFiles) NewPane(o filemanager.Options, host filemanager.PaneHost) (*filemanager.Window, error) {
 	f.opened = append(f.opened, o)
-	return nil, errNotOpened
+	o.PrefsPath, o.Poll = filepath.Join(f.t.TempDir(), "files.json"), -1
+	return f.hub.NewPane(o, host)
 }
 
 func (f *fakeFiles) Refresh() { f.refreshed++ }
 
-// Files open where the user last chose: a window once one was asked
-// for, a pane once a pane was, and the servers are the file manager's
-// places, under Servers, with how they are doing.
-func TestFilesOpenWhereLastChosen(t *testing.T) {
+// Files open in a file manager pane, beside the one in front, and the
+// servers are the file manager's places, under Servers, with how they
+// are doing.
+func TestFilesOpenInAFileManagerPane(t *testing.T) {
 	a, _ := agentApp(t)
 	a.settings = mustSettings(t)
-	files := &fakeFiles{}
+	files := newFakeFiles(t)
 	a.files = files
 	a.st.Saved = []remote.Host{{ID: "s1", Name: "web", Address: "web.example"}}
 
 	panes := len(a.st.Panes)
 	a.handle(OpenFilesOn{})
-	if len(files.opened) != 0 || len(a.st.Panes) != panes+1 {
-		t.Fatalf("by default, files opened %d windows and %d panes", len(files.opened), len(a.st.Panes)-panes)
+	if len(files.opened) != 1 || len(a.st.Panes) != panes+1 || files.opened[0].FS == nil {
+		t.Fatalf("files opened %d file managers and %d panes", len(files.opened), len(a.st.Panes)-panes)
 	}
-	a.handle(OpenFileManager{})
-	if len(files.opened) != 1 || !a.settings.FilesInWindow() || files.opened[0].FS == nil {
-		t.Fatalf("asked for a window, opened %+v, kept %v", files.opened, a.settings.FilesInWindow())
+	first := a.st.Panes[len(a.st.Panes)-1]
+	if first.Kind != KindFileManager || a.st.Focus != first.ID || a.fmPanes[first.ID] == nil {
+		t.Fatalf("the pane opened is %+v, with the keyboard on %q", first, a.st.Focus)
 	}
 	a.handle(OpenFilesOn{})
-	if len(files.opened) != 2 {
-		t.Fatal("once a window was chosen, files didn't open in one")
+	second := a.st.Panes[len(a.st.Panes)-1]
+	if a.groupOf[second.ID] != a.groupOf[first.ID] {
+		t.Fatal("a second file manager pane didn't open beside the one in front")
 	}
 	places, _ := files.opened[0].Places()
 	i := slices.IndexFunc(places, func(p filemanager.Place) bool { return p.Group == "Servers" })
 	if i < 0 || places[i].Name != "web" || places[i].Note != "Not connected" || places[i].FS != serverFS+"s1" {
 		t.Fatalf("the places are %+v", places)
 	}
-	a.handle(FilesInPane{})
-	if a.settings.FilesInWindow() {
-		t.Fatal("a pane chosen, files still open in windows")
+	// Closed, its file manager stops, and the pane goes.
+	a.handle(ClosePane{Pane: second.ID})
+	fw := a.fmPanes[second.ID].w
+	select {
+	case <-fw.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("closing the pane left its file manager running")
+	}
+	waitFor(t, a, "the pane goes", func() bool { return !a.has(second.ID) })
+	if _, ok := a.fmPanes[second.ID]; ok {
+		t.Fatal("a closed file manager pane is still kept")
 	}
 }
 
-// -files opens a folder in a file manager window, as Windows asks once
-// kakel opens folders: in the kakel running, handed over, whatever files
-// opened in last, and a drive's root read through the quote Windows'
-// "%V\." keeps whole.
+// -files opens a folder in a window holding a file manager pane, as
+// Windows asks once kakel opens folders: in the kakel running, handed
+// over, and a drive's root read through the quote Windows' "%V\." keeps
+// whole.
 func TestAFolderOpenedAnywhereOpensInTheFileManager(t *testing.T) {
 	for _, c := range []struct {
 		args []string
@@ -81,7 +103,7 @@ func TestAFolderOpenedAnywhereOpensInTheFileManager(t *testing.T) {
 			t.Fatal(err)
 		}
 		dir, set := o.OpensFolder()
-		if !set || dir != c.want || !o.StartsHidden() || o.StartsInTray() {
+		if !set || dir != c.want || o.StartsHidden() || o.StartsInTray() {
 			t.Errorf("%q opens %q (%v), hidden %v, in the tray %v", c.args, dir, set, o.StartsHidden(), o.StartsInTray())
 		}
 	}
@@ -91,11 +113,39 @@ func TestAFolderOpenedAnywhereOpensInTheFileManager(t *testing.T) {
 
 	a, _ := agentApp(t)
 	a.settings = mustSettings(t)
-	files := &fakeFiles{}
+	files := newFakeFiles(t)
 	a.files = files
-	panes := len(a.st.Panes)
+	var windows int
+	a.openWindow = func(*gunim.Window, geom.Point, geom.Size) (gunim.Client, *gunim.Window, error) {
+		windows++
+		w := gunimtest.New(t, geom.Sz(400, 300), nil)
+		return w.Client(), w, nil
+	}
 	a.handover(single.Handover{Args: []string{"-files", "/srv/data/."}})
-	if len(files.opened) != 1 || files.opened[0].Dir != filepath.FromSlash("/srv/data") || len(a.st.Panes) != panes {
-		t.Fatalf("handed a folder, kakel opened %+v and %d panes", files.opened, len(a.st.Panes)-panes)
+	waitFor(t, a, "a window opens", func() bool { return windows == 1 && len(files.opened) == 1 })
+	p := a.st.Panes[len(a.st.Panes)-1]
+	if files.opened[0].Dir != filepath.FromSlash("/srv/data") || p.Kind != KindFileManager || a.ownerOf(p.ID) != a.cur || len(a.panesIn(a.cur)) != 1 {
+		t.Fatalf("handed a folder, kakel opened %+v in a window of %d panes", files.opened, len(a.panesIn(a.cur)))
+	}
+}
+
+// View in Reader on a file in a file manager pane opens the file in a
+// reader beside the pane.
+func TestAFileManagerPaneOpensAFileInAReader(t *testing.T) {
+	a, _ := agentApp(t)
+	a.settings = mustSettings(t)
+	a.files = newFakeFiles(t)
+	if err := a.filesOn(machines.Local, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	pane := a.st.Focus
+	file := filepath.Join(t.TempDir(), "notes.txt")
+	if err := os.WriteFile(file, []byte("hello\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a.fileAction(a.fmPanes[pane].w, "", []string{file}, "view")
+	waitFor(t, a, "a reader opens", func() bool { return a.kindOfPane(a.st.Focus) == KindReader })
+	if a.groupOf[a.st.Focus] != a.groupOf[pane] {
+		t.Fatal("the reader didn't open beside the file manager pane")
 	}
 }

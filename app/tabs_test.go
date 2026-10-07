@@ -37,7 +37,7 @@ func TestATabRemembersItsPane(t *testing.T) {
 	a, one, _ := twoWindowApp(t)
 	a.front(one)
 	a.handle(MovePane{Pane: "p2", Beside: "p1"})
-	a.addPane(Pane{ID: "p4", Kind: KindFiles}, nil, Placement{})
+	a.addPane(Pane{ID: "p4", Kind: KindFileManager}, nil, Placement{})
 	a.focus("p2")
 	a.noteTabFocus()
 	g := a.groupOf["p2"]
@@ -75,7 +75,7 @@ func TestNextTabGoesRound(t *testing.T) {
 func TestMoveTabReorders(t *testing.T) {
 	a, one, _ := twoWindowApp(t)
 	a.front(one)
-	a.addPane(Pane{ID: "p4", Kind: KindFiles}, nil, Placement{})
+	a.addPane(Pane{ID: "p4", Kind: KindFileManager}, nil, Placement{})
 	g1, g2, g4 := a.groupOf["p1"], a.groupOf["p2"], a.groupOf["p4"]
 	a.handle(MoveTab{Group: g4, Before: g1})
 	if got := groups(a.tabsOf(one)); len(got) != 3 || got[0] != g4 || got[1] != g1 || got[2] != g2 {
@@ -104,7 +104,7 @@ func TestMoveTabReorders(t *testing.T) {
 func TestATabMovesToAnotherWindowWhole(t *testing.T) {
 	a, one, two := twoWindowApp(t)
 	a.front(one)
-	a.addPane(Pane{ID: "p4", Kind: KindFiles}, nil, Placement{})
+	a.addPane(Pane{ID: "p4", Kind: KindFileManager}, nil, Placement{})
 	a.handle(MovePane{Pane: "p4", Beside: "p2"})
 	a.focus("p1")
 	g := a.groupOf["p2"]
@@ -128,7 +128,7 @@ func TestATabMovesToAnotherWindowWhole(t *testing.T) {
 func TestAWindowShowsTheNextTabWhenOneLeaves(t *testing.T) {
 	a, one, two := twoWindowApp(t)
 	a.front(one)
-	a.addPane(Pane{ID: "p4", Kind: KindFiles}, nil, Placement{})
+	a.addPane(Pane{ID: "p4", Kind: KindFileManager}, nil, Placement{})
 	a.focus("p1")
 	a.front(two)
 	a.handle(MoveTab{Group: a.groupOf["p1"]})
@@ -174,7 +174,7 @@ func TestATabDockedOnItselfStays(t *testing.T) {
 func TestClosingATabShowsTheOneBeside(t *testing.T) {
 	a, one, _ := twoWindowApp(t)
 	a.front(one)
-	a.addPane(Pane{ID: "p4", Kind: KindFiles}, nil, Placement{})
+	a.addPane(Pane{ID: "p4", Kind: KindFileManager}, nil, Placement{})
 	a.handle(MoveTab{Group: a.groupOf["p4"], Before: a.groupOf["p1"]})
 	a.focus("p1")
 	a.handle(CloseTab{Group: a.groupOf["p1"]})
@@ -215,7 +215,7 @@ func TestATabLetGoOutsideOpensAWindow(t *testing.T) {
 func TestClosingASplitsTabHandsNoKeysToItsPanes(t *testing.T) {
 	a, one, _ := twoWindowApp(t)
 	a.front(one)
-	a.addPane(Pane{ID: "p4", Kind: KindFiles}, nil, Placement{Beside: "p1"})
+	a.addPane(Pane{ID: "p4", Kind: KindFileManager}, nil, Placement{Beside: "p1"})
 	a.focus("p4")
 	a.handle(CloseTab{})
 	if a.has("p1") || a.has("p4") || len(a.closing) != 0 {
@@ -264,7 +264,7 @@ func TestATabLeftAloneStaysWhenItsWindowOpens(t *testing.T) {
 func TestAPaneMovedAwayShowsTheTabBeside(t *testing.T) {
 	a, one, _ := twoWindowApp(t)
 	a.front(one)
-	a.addPane(Pane{ID: "p4", Kind: KindFiles}, nil, Placement{})
+	a.addPane(Pane{ID: "p4", Kind: KindFileManager}, nil, Placement{})
 	a.handle(MoveTab{Group: a.groupOf["p4"], Before: a.groupOf["p1"]})
 	a.focus("p4")
 	a.moveToWindow("p4", a.wins[1])
