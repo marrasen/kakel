@@ -14,7 +14,7 @@ require (
 	// upstream's own test expected. And AdvanceBytes parses a whole write,
 	// taking text and CSI parameters without the state table.
 	github.com/marrasen/go-vte v1.0.11-gt.3
-	github.com/marrasen/gunim v0.0.0-20261007150221-5c958689280a
+	github.com/marrasen/gunim v0.0.0-20261007173015-98ccf4773bf9
 	github.com/pkg/sftp v1.13.11
 	github.com/rivo/uniseg v0.4.7
 	golang.design/x/clipboard v0.9.0
@@ -46,4 +46,3 @@ require (
 	golang.org/x/mobile v0.0.0-20250606033058-a2a15c67f36f // indirect
 	golang.org/x/text v0.42.0 // indirect
 )
-replace github.com/marrasen/gunim => ../gunim-fmpane
