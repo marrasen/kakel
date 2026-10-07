@@ -155,7 +155,7 @@ func (a *app) forgetFavourites(machine machines.ID) {
 		return
 	}
 	a.showFavourites()
-	if a.files != nil && len(a.fileWins) > 0 {
+	if a.files != nil && len(a.fmPanes) > 0 {
 		a.files.Refresh()
 	}
 }
@@ -246,7 +246,7 @@ func (a *app) noteNames() {
 		return
 	}
 	a.fmNames.Store(&names)
-	if old != nil && a.files != nil && len(a.fileWins) > 0 {
+	if old != nil && a.files != nil && len(a.fmPanes) > 0 {
 		a.files.Refresh()
 	}
 }

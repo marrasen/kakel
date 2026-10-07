@@ -38,7 +38,12 @@ const Nothing = "nothing"
 //
 // Lines stay for good. Taking one out breaks the files this was added
 // for, which is the whole point of having it.
-var Renamed = map[string]string{}
+var Renamed = map[string]string{
+	// The old file pane's, which the file manager pane replaced: they
+	// run nothing now.
+	"files.goTo":  "",
+	"files.icons": "",
+}
 
 // ErrDisk marks a failure to read the file itself, as against a file
 // read whole and found wrong. A window opens without a file it cannot

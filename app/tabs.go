@@ -5,6 +5,8 @@ import (
 	"strconv"
 
 	"github.com/marrasen/gunim/geom"
+
+	"github.com/marrasen/kakel/words"
 )
 
 // A window's tabs are its groups: each group of panes, alone or in
@@ -104,7 +106,26 @@ func (a *app) handleTab(in any) bool {
 // closeTab closes every pane in group g at once: folding them one by
 // one would hand the keyboard to panes on their way out.
 func (a *app) closeTab(g int) {
-	for _, id := range a.groups[g].leaves(nil) {
+	ids := a.groups[g].leaves(nil)
+	if n := a.fileOpsIn(ids); n > 0 {
+		// Closing a file manager stops what it runs: asked first, as the
+		// file manager itself asks.
+		a.askThen(a.ctx, Ask{
+			Title: "Close this tab?", Text: "Still running here: " + words.ManyOf(n, "copy", "copies") + ", which stop where they have got to.",
+			Yes: "Close", Danger: true,
+		}, func(ans AskAnswered) {
+			if ans.Yes {
+				a.removeAll(ids)
+			}
+		})
+		return
+	}
+	a.removeAll(ids)
+}
+
+// removeAll takes the panes ids away at once, those not closing already.
+func (a *app) removeAll(ids []string) {
+	for _, id := range ids {
 		if !a.closing[id] {
 			a.remove(id)
 		}

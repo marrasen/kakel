@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"log"
+	"slices"
 	"strings"
 
 	"github.com/marrasen/gunim"
@@ -53,7 +54,15 @@ func (a *app) newFilePane(machine machines.ID, fsys filemanager.FS, path string,
 	fw, err := a.files.NewPane(a.fileManagerOptions(fsys, path), filemanager.PaneHost{
 		ID: FilePaneViews(id),
 		Title: func(fs, folder string) {
-			a.later(func() { a.retitleFilePane(id, fs, folder) })
+			// The newest is kept, and taken whenever the program gets to
+			// it: the goroutines that hand it over may come in any order.
+			a.fmTitleMu.Lock()
+			if a.fmTitles == nil {
+				a.fmTitles = map[string][2]string{}
+			}
+			a.fmTitles[id] = [2]string{fs, folder}
+			a.fmTitleMu.Unlock()
+			a.later(func() { a.retitleFilePane(id) })
 		},
 		Open: func(o filemanager.Options) error {
 			a.later(func() { a.openFilePaneLike(o) })
@@ -63,7 +72,8 @@ func (a *app) newFilePane(machine machines.ID, fsys filemanager.FS, path string,
 	if err != nil {
 		return err
 	}
-	title := path
+	// Named for its folder once the file manager has read it.
+	title := "Files"
 	if path != "" {
 		title = fsys.Paths().Base(path)
 	}
@@ -159,10 +169,17 @@ func (a *app) openFilePaneLike(o filemanager.Options) {
 	}
 }
 
-// retitleFilePane names file manager pane id after the folder it shows,
-// and files it under the machine whose files it shows, fs, as a place
-// can turn it to another's.
-func (a *app) retitleFilePane(id, fs, folder string) {
+// retitleFilePane names file manager pane id after the folder it shows
+// last said, and files it under the machine whose files it shows, as a
+// place can turn it to another's.
+func (a *app) retitleFilePane(id string) {
+	a.fmTitleMu.Lock()
+	t, ok := a.fmTitles[id]
+	a.fmTitleMu.Unlock()
+	if !ok {
+		return
+	}
+	fs, folder := t[0], t[1]
 	for i := range a.st.Panes {
 		p := &a.st.Panes[i]
 		if p.ID != id {
@@ -199,6 +216,9 @@ func (a *app) closeFilePane(id string) bool {
 	if fp == nil || fp.done {
 		return false
 	}
+	// In front, so the question about what runs in it is seen, for one
+	// closed from elsewhere, as the Servers pane.
+	a.focusRaised(id)
 	fp.w.Close()
 	return true
 }
@@ -214,7 +234,23 @@ func (a *app) dropFilePane(id string) {
 		fp.w.Stop()
 	}
 	delete(a.fmPanes, id)
+	a.fmTitleMu.Lock()
+	delete(a.fmTitles, id)
+	a.fmTitleMu.Unlock()
 	a.routeFilePanes()
+}
+
+// fileOpsIn counts the operations running in the file manager panes
+// among ids, or in all of them for nil: copies, moves and deletes, which
+// closing a pane stops.
+func (a *app) fileOpsIn(ids []string) int {
+	n := 0
+	for id, fp := range a.fmPanes {
+		if !fp.done && (ids == nil || slices.Contains(ids, id)) {
+			n += fp.w.Running()
+		}
+	}
+	return n
 }
 
 // routeFilePanes tells the windows' goroutines which file managers the

@@ -74,11 +74,7 @@ func (a *app) filePaneOn(machine machines.ID, path string, at Placement, quiet b
 	if a.files == nil {
 		return errNoFileManager
 	}
-	if saved := a.savedFolders(machine); path == "" && len(saved) == 1 {
-		// One folder saved for the machine is where its files open,
-		// however they are asked for: it is the one the user wants.
-		path = saved[0]
-	}
+	path = a.startFolder(machine, path)
 	if machine == machines.Local {
 		return a.newFilePane(machine, filemanager.LocalFS(), path, at)
 	}
@@ -90,6 +86,17 @@ func (a *app) filePaneOn(machine machines.ID, path string, at Placement, quiet b
 	return a.withFilesHow(machine, func(f vfs.FS) {
 		failed(a.newFilePane(machine, a.fmFor(machine, f), path, at))
 	}, failed, quiet)
+}
+
+// startFolder is where files on machine open for path: path, or for ""
+// the one folder saved for the machine, or else home, "".
+func (a *app) startFolder(machine machines.ID, path string) string {
+	if saved := a.savedFolders(machine); path == "" && len(saved) == 1 {
+		// One folder saved for the machine is where its files open,
+		// however they are asked for: it is the one the user wants.
+		return saved[0]
+	}
+	return path
 }
 
 // openFolder opens a window of its own holding a file manager pane on
@@ -109,7 +116,27 @@ func (a *app) openFileManager(m machines.ID, path string) error {
 		return errNoFileManager
 	}
 	a.newWindow(func() {
-		if err := a.filePaneOn(m, path, Placement{}, true); err != nil {
+		// Into this window, however long the server takes, and whichever
+		// window is in front by then.
+		w := a.cur
+		at := Placement{}
+		if m != machines.Local {
+			// The dial and the opening of the files, under way, keep the
+			// window meanwhile.
+			failed := func(err error) {
+				if err != nil {
+					a.failed("Couldn't open the files on "+a.machines.Name(m), err.Error())
+				}
+			}
+			failed(a.withFilesHow(m, func(f vfs.FS) {
+				if !w.gone {
+					a.front(w)
+				}
+				failed(a.newFilePane(m, a.fmFor(m, f), a.startFolder(m, path), at))
+			}, failed, true))
+			return
+		}
+		if err := a.filePaneOn(m, path, at, true); err != nil {
 			a.failed("Couldn't open the files on "+a.machines.Name(m), err.Error())
 		}
 	})

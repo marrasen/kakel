@@ -124,7 +124,7 @@ func (a *app) hangUp() {
 func (a *app) whatIsOpen() []string {
 	var out []string
 	// Copies and deletes running, kakel's own and those of the file
-	// manager's windows: these, a file manager window counts itself.
+	// manager panes: these, a file manager counts itself.
 	copies, deletes := 0, 0
 	for _, r := range a.running {
 		if r.quiet || r.job.Progress().Done {
@@ -136,9 +136,7 @@ func (a *app) whatIsOpen() []string {
 			copies++
 		}
 	}
-	for _, w := range a.fileWins {
-		copies += w.Running()
-	}
+	copies += a.fileOpsIn(nil)
 	if copies > 0 {
 		out = append(out, words.ManyOf(copies, "copy running", "copies running"))
 	}

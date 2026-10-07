@@ -285,7 +285,12 @@ func (a *app) closeWindow(w *ownWin) {
 	}
 	// The tool panes have nothing to lose, and are not asked about.
 	panes := slices.DeleteFunc(a.panesIn(w), func(p Pane) bool { return isToolKind(p.Kind) })
-	if len(panes) <= 1 {
+	var ids []string
+	for _, p := range panes {
+		ids = append(ids, p.ID)
+	}
+	ops := a.fileOpsIn(ids)
+	if len(panes) <= 1 && ops == 0 {
 		for _, p := range a.panesIn(w) {
 			a.remove(p.ID)
 		}
@@ -296,8 +301,12 @@ func (a *app) closeWindow(w *ownWin) {
 		return
 	}
 	w.asking = true
+	open := words.ManyOf(len(panes), "pane", "panes")
+	if ops > 0 {
+		open = words.ManyOf(ops, "copy running", "copies running") + ", and " + open
+	}
 	a.askThen(a.ctx, Ask{
-		Title: "Close this window?", Text: "Still open here: " + words.ManyOf(len(panes), "pane", "panes") + ".",
+		Title: "Close this window?", Text: "Still open here: " + open + ".",
 		Yes: "Close", Danger: true,
 	}, func(ans AskAnswered) {
 		w.asking = false

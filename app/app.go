@@ -697,13 +697,11 @@ type app struct {
 	// openLaunch opens the launcher's window, hotKeys takes its key from
 	// every program, and launch is the launcher as it is.
 	openLaunch LauncherOpener
-	// files opens the file manager's windows, and fileWins are those
-	// open; serverPlaces are the servers as its places list them, read
+	// files makes the file manager's panes; serverPlaces are the servers as its places list them, read
 	// off the program's goroutine, fmFiles the machines' files as it
 	// reads them, and fmFavs the favourites its windows share.
 	files        FileWindows
 	updateWins   UpdateWindows
-	fileWins     []*filemanager.Window
 	serverPlaces atomic.Pointer[[]filemanager.Place]
 	fmFiles      map[machines.ID]*fmFS
 	fmFavs       *fmFavourites
@@ -711,9 +709,13 @@ type app struct {
 	// fmPanes are the file manager panes, by pane, and fmRoute their file
 	// managers, for the windows' goroutines to hand their intents to.
 	fmPanes map[string]*fmPane
-	fmRoute atomic.Pointer[[]*filemanager.Window]
-	hotKeys HotKeys
-	launch  launchState
+	// fmTitles are the file system and the folder each file manager pane
+	// said it shows last, by pane, under fmTitleMu.
+	fmTitleMu sync.Mutex
+	fmTitles  map[string][2]string
+	fmRoute   atomic.Pointer[[]*filemanager.Window]
+	hotKeys   HotKeys
+	launch    launchState
 	// openPrompt opens a window of its own for a question that wants
 	// something typed, and prompt is that window as it is.
 	openPrompt PromptOpener
@@ -932,7 +934,7 @@ func (a *app) run(ctx context.Context) error {
 				// its way, as the first, hidden, gives way to one shown.
 				// A file manager window open keeps kakel too, and so does
 				// a question in a window of its own.
-				if len(a.wins) == 0 && !a.inTray() && a.opening == 0 && len(a.fileWins) == 0 && !a.prompted() {
+				if len(a.wins) == 0 && !a.inTray() && a.opening == 0 && !a.prompted() {
 					a.closeAll()
 					a.leaveTray()
 					return a.c.Err()
@@ -973,7 +975,7 @@ func (a *app) run(ctx context.Context) error {
 		a.leaveIfEmpty()
 		a.leaveEmpty()
 		a.showPrompt()
-		if (a.gone || !a.inTray() && a.opening == 0 && len(a.fileWins) == 0 && !a.prompted()) && len(a.liveWins()) == 0 && len(a.wins) == 0 {
+		if (a.gone || !a.inTray() && a.opening == 0 && !a.prompted()) && len(a.liveWins()) == 0 && len(a.wins) == 0 {
 			// Leaving with no window to wait for, as from the tray.
 			a.closeAll()
 			a.leaveTray()
@@ -1163,7 +1165,7 @@ func (a *app) leaveIfEmpty() {
 // pane failed.
 func (a *app) emptyAndIdle() bool {
 	return len(a.st.Panes) == 0 && len(a.st.Asks) == 0 && len(a.machines.Dialing()) == 0 && a.opening == 0 && a.starting == 0 && !a.stayEmpty &&
-		a.launch.c == nil && !a.launch.opening && len(a.fileWins) == 0
+		a.launch.c == nil && !a.launch.opening
 }
 
 func (a *app) publish() {
