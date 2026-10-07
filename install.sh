@@ -3,6 +3,11 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/marrasen/kakel/main/install.sh | sh
 #
+# With KAKEL_BETA=1 it takes the newest beta, where one is newer than the
+# newest release, and the installed kakel goes on taking betas:
+#
+#   curl -fsSL https://raw.githubusercontent.com/marrasen/kakel/main/install.sh | KAKEL_BETA=1 sh
+#
 # It fetches the newest release, checks it against SHA256SUMS, and has
 # kakel install itself into ~/.local/share/kakel, with a desktop file
 # and a link at ~/.local/bin/kakel.
@@ -17,7 +22,10 @@ Linux/x86_64 | Linux/amd64) ;;
 	;;
 esac
 
-tag=$(curl -fsSL https://api.github.com/repos/marrasen/kakel/releases/latest |
+# GitHub's latest is never a beta; the list has them, newest first.
+from=releases/latest
+[ "${KAKEL_BETA:-}" = 1 ] && from=releases
+tag=$(curl -fsSL "https://api.github.com/repos/marrasen/kakel/$from" |
 	sed -n 's/^ *"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)
 [ -n "$tag" ] || { echo "Couldn't find the newest release." >&2; exit 1; }
 name="kakel_${tag}_linux_amd64.tar.gz"

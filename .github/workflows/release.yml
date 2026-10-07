@@ -87,7 +87,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${{ github.ref_name }}" \
+          # A beta, v0.12.0-beta.1, is a pre-release: only those who take
+          # betas get it, and GitHub's latest stays the last release.
+          beta=
+          case "${{ github.ref_name }}" in
+          *-*) beta=--prerelease ;;
+          esac
+          gh release create "${{ github.ref_name }}" $beta \
             --title "${{ github.ref_name }}" \
             --notes-file release-notes.md \
             dist/*

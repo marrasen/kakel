@@ -68,10 +68,10 @@ type settingsPane struct {
 	tabs *widget.Tabs
 
 	// General.
-	autostart, tray, folders, titleBar *widget.Switch
-	foldersRow, installRow             *maybeShown
-	launcher                           *savedLine
-	updates                            *widget.Dropdown
+	autostart, tray, folders, titleBar, beta *widget.Switch
+	foldersRow, installRow                   *maybeShown
+	launcher                                 *savedLine
+	updates                                  *widget.Dropdown
 
 	// Appearance.
 	theme, font *widget.Dropdown
@@ -278,6 +278,8 @@ func (p *settingsPane) general() gunim.Node {
 	p.updates.OnPick(func(i int, u *gunim.UI) {
 		p.send(app.SetUpdates{What: updateChoices[max(0, min(i, len(updateChoices)-1))].value}, u)
 	})
+	p.beta = widget.NewSwitch("")
+	p.beta.OnFlip(func(on bool, u *gunim.UI) { p.send(app.SetBeta{On: on}, u) })
 	about := widget.NewButton("About kakel…")
 	about.OnActivate(func(u *gunim.UI) { p.send(app.ShowAbout{}, u) })
 	install := p.settingButton("Install kakel…", "app.install")
@@ -296,6 +298,7 @@ func (p *settingsPane) general() gunim.Node {
 			settingRow("Use the system's title bar", "The title bar your window manager draws, with its own buttons, for the windows opened from now on.", p.titleBar)),
 		settingsSection("Updates",
 			settingRow("New releases", "Installed, an update starts the next time kakel does.", p.updates),
+			settingRow("Beta releases", "Take betas too: what comes next, sooner, and less tried.", p.beta),
 			settingRow("About kakel", "The version, what each release changed, and a check for updates.", about)),
 	)
 }
@@ -523,6 +526,8 @@ func (p *settingsPane) show(st app.State, u *gunim.UI) {
 		}
 	}
 	p.updates.Disabled = !st.Update.Installed
+	setOn(p.beta, st.Update.Beta)
+	p.beta.Disabled = !st.Update.Installed
 	// Appearance.
 	if !slices.Equal(st.Themes, p.themeNames) {
 		p.themeNames = slices.Clone(st.Themes)

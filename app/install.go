@@ -44,7 +44,7 @@ func Installer() install.App {
 		Autostart:   &install.Autostart{Args: []string{"-tray"}, Label: "Start kakel with the computer, in the tray"},
 		// The folder follows -files, the last argument.
 		Folders: &install.Folders{Args: []string{"-files"}},
-		Updates: install.GitHub{Repo: "marrasen/kakel", Asset: releaseAsset},
+		Updates: releases{},
 		// The public key the releases are signed with: see RELEASING.md.
 		UpdateKey: "j2nZwJ7kHSNj2JxWTwQs/GrWL1n+Zqg8F4tAybrtwIY=",
 		// kakel kept its own Updates setting before gunim kept the mode:
@@ -57,6 +57,41 @@ func Installer() install.App {
 		Uninstalling: func(context.Context, install.Installation) error { removeConPTY(); return nil },
 		Quit:         quitRunning,
 	}
+}
+
+// releases are kakel's releases on GitHub, beta releases with them
+// where updates take those: asked each time they are looked for, so
+// turning beta releases on or off takes at the next look, with no
+// restart.
+type releases struct{}
+
+// github is where the releases are, as the settings say now.
+func (releases) github() install.GitHub {
+	return install.GitHub{Repo: "marrasen/kakel", Asset: releaseAsset, Prerelease: wantsBeta()}
+}
+
+// Latest implements [install.Source].
+func (r releases) Latest(ctx context.Context) (install.Release, error) {
+	return r.github().Latest(ctx)
+}
+
+// ReleaseNotes implements [install.Changelog].
+func (r releases) ReleaseNotes(ctx context.Context) ([]install.ReleaseNotes, error) {
+	return r.github().ReleaseNotes(ctx)
+}
+
+// wantsBeta reports whether updates take beta releases too: as the
+// settings say, and where they say nothing, when this build is a beta,
+// so a beta goes on to the next.
+func wantsBeta() bool {
+	if path, err := settings.Path(); err == nil {
+		if s, err := settings.Load(path); err == nil {
+			if on, set := s.Beta(); set {
+				return on
+			}
+		}
+	}
+	return isBeta(thisVersion())
 }
 
 // releaseVersion is this build's version when it is a release, and ""

@@ -47,6 +47,8 @@ type (
 	// ShowReadyUpdate shows the update window on Release, put in place
 	// by itself, to restart into it.
 	ShowReadyUpdate struct{ Release install.Release }
+	// SetBeta has updates take beta releases too, or no longer.
+	SetBeta struct{ On bool }
 	// ShowAbout opens the window about kakel: its version, what each
 	// release changed, and Check for Updates.
 	ShowAbout struct{}
@@ -73,6 +75,8 @@ type Update struct {
 	Installed, Installable, Autostart bool
 	Folders, FoldersHere              bool
 	Updates                           string
+	// Beta says updates take beta releases too.
+	Beta bool
 }
 
 // live is the kakel running, for gunim's updates to reach: they look on
@@ -128,6 +132,7 @@ func (a *app) showUpdate() {
 	} else if a.settings != nil {
 		u.Updates = a.settings.Updates()
 	}
+	u.Beta = wantsBeta()
 	a.st.Update = u
 }
 
@@ -165,6 +170,15 @@ func (a *app) setUpdates(what string) error {
 		return a.settings.PutUpdates(what)
 	}
 	return nil
+}
+
+// setBeta has updates take beta releases too, or no longer, from the
+// next look on.
+func (a *app) setBeta(on bool) error {
+	if a.settings == nil {
+		return errors.New("there are no settings to keep it in")
+	}
+	return a.settings.PutBeta(on)
 }
 
 // updated says a release gunim's updates put in place by themselves is
@@ -265,14 +279,37 @@ func (a *app) quitForUpdate() error {
 	}
 }
 
-// isRelease reports whether version names a release, vX.Y.Z, not a
-// build from a working tree.
+// isRelease reports whether version names a release, vX.Y.Z, or a beta
+// of one, vX.Y.Z-beta.N, with -alpha.N and -rc.N too; not a build from
+// a working tree, which git describe calls vX.Y.Z-N-gCOMMIT.
 func isRelease(version string) bool {
-	if !strings.HasPrefix(version, "v") || strings.Count(version, ".") != 2 || strings.ContainsAny(version, "-+") {
+	core, pre, _ := strings.Cut(version, "-")
+	if !strings.HasPrefix(core, "v") || strings.Count(core, ".") != 2 || strings.Contains(version, "+") {
+		return false
+	}
+	if pre != "" && !isPreRelease(pre) {
 		return false
 	}
 	return install.IsRelease(version)
 }
+
+// isPreRelease reports whether pre, what follows the dash, names a beta
+// as kakel's are named: alpha.N, beta.N or rc.N.
+func isPreRelease(pre string) bool {
+	kind, n, ok := strings.Cut(pre, ".")
+	if !ok || kind != "alpha" && kind != "beta" && kind != "rc" || n == "" {
+		return false
+	}
+	for _, c := range n {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// isBeta reports whether version is a beta release.
+func isBeta(version string) bool { return isRelease(version) && strings.Contains(version, "-") }
 
 // standing is how this build compares to a release.
 type standing int

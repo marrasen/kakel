@@ -7,7 +7,10 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
-## Unreleased
+## v0.12.0-beta.1
+
+A beta: the file manager as a pane, for those who take betas to try
+before it is a release.
 
 ### Changed
 
@@ -23,6 +26,11 @@ holding one. The setting that chose between a window and a pane is
 gone.
 
 ### Added
+
+**Beta releases.** Settings › General › Beta releases has updates take
+betas too. A beta takes the next beta by itself, until told otherwise.
+`install.ps1` and `install.sh` install the newest beta with
+`KAKEL_BETA=1`.
 
 **View in Reader and Follow in Reader** on a file's menu in the file
 manager open it in kakel's reader beside the pane, as F3 and F4 did in

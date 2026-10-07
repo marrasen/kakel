@@ -2,13 +2,24 @@
 #
 #   irm https://raw.githubusercontent.com/marrasen/kakel/main/install.ps1 | iex
 #
+# With KAKEL_BETA set to 1 it takes the newest beta, where one is newer
+# than the newest release, and the installed kakel goes on taking betas:
+#
+#   $env:KAKEL_BETA = 1; irm https://raw.githubusercontent.com/marrasen/kakel/main/install.ps1 | iex
+#
 # It fetches the newest release, checks it against SHA256SUMS, and has
 # kakel install itself into %LOCALAPPDATA%\Programs\kakel, with a Start
 # menu shortcut and an entry under Installed apps.
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
-$release = Invoke-RestMethod 'https://api.github.com/repos/marrasen/kakel/releases/latest'
+# GitHub's latest is never a beta; the list has them, newest first.
+if ($env:KAKEL_BETA -eq '1') {
+    $release = (Invoke-RestMethod 'https://api.github.com/repos/marrasen/kakel/releases') |
+        Where-Object { -not $_.draft } | Select-Object -First 1
+} else {
+    $release = Invoke-RestMethod 'https://api.github.com/repos/marrasen/kakel/releases/latest'
+}
 $name = "kakel_$($release.tag_name)_windows_amd64.zip"
 $zip = $release.assets | Where-Object name -eq $name
 $sums = $release.assets | Where-Object name -eq 'SHA256SUMS'

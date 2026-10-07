@@ -36,6 +36,11 @@ On Linux:
 curl -fsSL https://raw.githubusercontent.com/marrasen/kakel/main/install.sh | sh
 ```
 
+To take the newest beta instead, set `KAKEL_BETA` to 1 first:
+`$env:KAKEL_BETA = 1` in PowerShell, or `| KAKEL_BETA=1 sh` on Linux. A
+beta goes on to the next beta, and to the release after it. Settings ›
+General › Beta releases turns that on or off for any installed kakel.
+
 On Windows kakel goes to `%LOCALAPPDATA%\Programs\kakel`, with a Start
 menu shortcut and an entry under Installed apps, which removes it again.
 On Linux it goes to `~/.local/share/kakel`, with a desktop file and a
