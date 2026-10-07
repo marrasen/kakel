@@ -360,6 +360,9 @@ func (a *app) windowClosed(w *ownWin) {
 		a.remove(p.ID)
 	}
 	a.wins = slices.DeleteFunc(a.wins, func(o *ownWin) bool { return o == w })
+	if a.closedWindow != nil && w.gw != nil {
+		a.closedWindow(w.gw)
+	}
 }
 
 // leaveEmpty lets a window with no panes go, while another window

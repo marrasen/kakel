@@ -523,7 +523,10 @@ type app struct {
 	winOf      map[string]int
 	intents    chan windowIn
 	openWindow WindowOpener
-	opening    int
+	// closedWindow hears of each window closed, for whoever opened it to
+	// let it go.
+	closedWindow func(*gunim.Window)
+	opening      int
 	// linksAt is where each pane with links runs, for its paths, which
 	// its terminal looks up on a goroutine of its own.
 	linksAt map[string]*atomic.Pointer[machines.ID]
@@ -929,6 +932,9 @@ func (a *app) run(ctx context.Context) error {
 			return fmt.Errorf("-shot: %w", err)
 		}
 		go a.runShot(list)
+	}
+	if d, ok := StressFor(); ok {
+		go a.stress(ctx, d)
 	}
 	for _, w := range a.wins {
 		a.serveWin(w)
@@ -2308,13 +2314,15 @@ func (a *app) previewTheme(name string) {
 }
 
 // Config is what the program side starts with: its first window, the
-// shells the windows draw, a way to open more windows, the command
-// line, and the themes on offer, with what went wrong reading them.
+// shells the windows draw, a way to open more windows and word of one
+// gone, the command line, and the themes on offer, with what went wrong
+// reading them.
 type Config struct {
 	Client         gunim.Client
 	Window         *gunim.Window
 	Shells         *screen.Shells
 	OpenWindow     WindowOpener
+	WindowClosed   func(*gunim.Window)
 	Options        Options
 	Themes         []look.Themed
 	ThemeTrouble   error
@@ -2344,6 +2352,7 @@ func Start(ctx context.Context, cfg Config) error {
 	a := newApp(cfg.Client, cfg.Shells)
 	a.wins[0].gw = cfg.Window
 	a.openWindow = cfg.OpenWindow
+	a.closedWindow = cfg.WindowClosed
 	a.opts = cfg.Options
 	a.themes = cfg.Themes
 	a.themeTrouble = cfg.ThemeTrouble

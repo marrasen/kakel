@@ -536,6 +536,9 @@ func (s *serverCards) sync(rows []sideItem, u *gunim.UI) {
 		for _, r := range c.items {
 			had[r.key] = r
 		}
+		// Cleared before it is filled again: a row gone, left past the
+		// end, would keep its pane's terminal, history and all.
+		clear(c.items)
 		c.items = c.items[:0]
 		for _, it := range g.items {
 			r := had[it.key]

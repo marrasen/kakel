@@ -85,6 +85,30 @@ func TestTheServerCardsTakeTheKeyboard(t *testing.T) {
 	}
 }
 
+// A row gone from a card is let go: kept past the end of the card's
+// rows, it would keep its pane's terminal, history and all.
+func TestACardLetsAGoneRowGo(t *testing.T) {
+	win, _, publish := windowStageOf(t, geom.Sz(1100, 600))
+	terms := []app.Pane{{ID: "t1", Title: "one", Kind: app.KindTerminal}, {ID: "t2", Title: "two", Kind: app.KindTerminal}}
+	publish(withServers(app.State{Focus: "ps", Panes: terms}))
+	settle()
+	here := win.cards.cards[machines.Local]
+	had := len(here.items)
+	if had < 2 {
+		t.Fatalf("this computer's card has %d rows, want the two terminals", had)
+	}
+	publish(withServers(app.State{Focus: "ps", Panes: terms[:1]}))
+	settle()
+	if len(here.items) != had-1 {
+		t.Fatalf("with a terminal closed, the card has %d rows, want %d", len(here.items), had-1)
+	}
+	for _, r := range here.items[len(here.items):cap(here.items)] {
+		if r != nil {
+			t.Fatalf("the card still holds the row of %q", r.key)
+		}
+	}
+}
+
 // Narrow, each card is a line, its buttons icons at its end.
 func TestNarrowCardsAreLines(t *testing.T) {
 	win := cardsStage(t, geom.Sz(360, 600))
