@@ -24,7 +24,7 @@ import (
 type Shell struct {
 	T *uiterm.Terminal
 	// mu guards view, which the window's goroutine draws into and
-	// reads from.
+	// reads from, and the terminal's own grid while it is drawn from.
 	mu   sync.Mutex
 	view *grid.Grid
 	// wrote is when the program last wrote, in nanoseconds, for the
@@ -179,8 +179,14 @@ func (sh *Shell) Resize(cols, rows int) bool {
 func (sh *Shell) Close() { _ = sh.T.Close() }
 
 // SetPalette draws the screen in pal from now on, what is on it
-// included.
-func (sh *Shell) SetPalette(pal vt.Palette) { sh.T.SetPalette(pal) }
+// included. It waits for a draw going on, which reads the colours and
+// the rows to copy unlocked, as the window's goroutine alone writes
+// them otherwise.
+func (sh *Shell) SetPalette(pal vt.Palette) {
+	sh.mu.Lock()
+	defer sh.mu.Unlock()
+	sh.T.SetPalette(pal)
+}
 
 // Shells holds the running shells by pane, for the window to draw.
 type Shells struct {
