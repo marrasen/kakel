@@ -930,6 +930,9 @@ func (a *app) run(ctx context.Context) error {
 		}
 		go a.runShot(list)
 	}
+	if d, ok := StressFor(); ok {
+		go a.stress(ctx, d)
+	}
 	for _, w := range a.wins {
 		a.serveWin(w)
 	}
