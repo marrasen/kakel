@@ -7,6 +7,24 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
+## v0.11.1
+
+### Fixed
+
+**Memory no longer grows as windows open and close.** Every closed
+window stayed in memory with all it showed: its terminals and their
+history, which can be over 100 MB a terminal. A row of a closed pane in
+the Servers pane held its terminal too. Both let go now.
+
+**Changing the theme no longer races a terminal being drawn.** The
+colours changed under a window that was copying them, which could draw
+a frame wrong.
+
+### Added
+
+**`GUNIM_DEBUG_POPUP=1` says how a dropdown's window is sized**, to find
+why the Font list in Settings is cut short on Windows.
+
 ## v0.11.0
 
 ### Fixed
