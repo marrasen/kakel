@@ -1108,7 +1108,7 @@ func failedTitle(in gunim.Intent) string {
 		return "Couldn't add the key"
 	case DisallowKey:
 		return "Couldn't remove the key"
-	case SetUpdates:
+	case SetUpdates, SetBeta:
 		return "Couldn't keep the update setting"
 	case SaveLook:
 		return "Couldn't keep the settings"
@@ -1624,6 +1624,9 @@ func (a *app) handle(in gunim.Intent) {
 		err = a.installKakel(in)
 	case SetUpdates:
 		err = a.setUpdates(in.What)
+		a.showUpdate()
+	case SetBeta:
+		err = a.setBeta(in.On)
 		a.showUpdate()
 	case SaveLook:
 		err = a.saveLook(in)

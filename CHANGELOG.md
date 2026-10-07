@@ -7,6 +7,15 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
+## Unreleased
+
+### Added
+
+**Beta releases.** Settings › General › Beta releases has updates take
+betas too. A beta takes the next beta by itself, until told otherwise.
+`install.ps1` and `install.sh` install the newest beta with
+`KAKEL_BETA=1`.
+
 ## v0.11.1
 
 ### Fixed

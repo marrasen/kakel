@@ -23,6 +23,20 @@ Releases are driven by a tag. Everything else is done by CI.
    build the binaries, and put them on a GitHub release with the notes
    from the changelog.
 
+## Betas
+
+A beta is a tag with `-beta.N` after the version, as `v0.12.0-beta.1`,
+and its own `## v0.12.0-beta.1` section in the changelog. The same
+steps cut it, from any branch. CI publishes it as a pre-release, so
+GitHub's latest release stays the last one that is not a beta.
+
+Only kakels that take betas update to one: a beta itself, until told
+otherwise, and any kakel with Settings › General › Beta releases on.
+`install.ps1` and `install.sh` take the newest beta with `KAKEL_BETA=1`.
+A beta updates to the release it led to, as that is newer.
+`-alpha.N` and `-rc.N` work the same way; nothing else after a dash
+counts as a release.
+
 ## Numbering
 
 [Semantic versioning](https://semver.org/spec/v2.0.0.html). While the

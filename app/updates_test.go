@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/marrasen/gunim/install"
+	"github.com/marrasen/kakel/internal/testhome"
 	"github.com/marrasen/kakel/settings"
 )
 
@@ -19,7 +20,13 @@ func TestIsRelease(t *testing.T) {
 		"v0.1.0":                               true,
 		"v1.2.3-4-gabcdef":                     false,
 		"v1.2.3-4-gabcdef-dirty":               false,
-		"v1.2.3-beta.1":                        false,
+		"v1.2.3-beta.1":                        true,
+		"v1.2.3-rc.12":                         true,
+		"v1.2.3-beta.1-2-gabcdef":              false,
+		"v1.2.3-beta.1-dirty":                  false,
+		"v1.2.3-beta":                          false,
+		"v1.2.3-gamma.1":                       false,
+		"v1.2.3-beta.1+meta":                   false,
 		"v0.5.1-0.20261005120000-0123456789ab": false,
 		"dev-abcdef":                           false,
 		"abcdef":                               false,
@@ -28,6 +35,38 @@ func TestIsRelease(t *testing.T) {
 		if got := isRelease(v); got != want {
 			t.Errorf("isRelease(%q) = %v, want %v", v, got, want)
 		}
+	}
+}
+
+// A beta takes betas as updates until the user says otherwise; a release
+// takes them once asked to.
+func TestBetasAreTakenByBetasAndWhenAsked(t *testing.T) {
+	if isBeta("v1.2.3") || !isBeta("v1.2.3-beta.1") || isBeta("v1.2.3-4-gabcdef") {
+		t.Fatal("isBeta tells betas wrong")
+	}
+	testhome.New(t)
+	if wantsBeta() != isBeta(thisVersion()) {
+		t.Fatal("unset, the build doesn't say whether betas are taken")
+	}
+	path, err := settings.Path()
+	if err != nil {
+		t.Fatal(err)
+	}
+	set, err := settings.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := set.PutBeta(true); err != nil {
+		t.Fatal(err)
+	}
+	if !wantsBeta() || !(releases{}).github().Prerelease {
+		t.Fatal("asked for betas, the updates don't take them")
+	}
+	if err := set.PutBeta(false); err != nil {
+		t.Fatal(err)
+	}
+	if wantsBeta() {
+		t.Fatal("told no betas, the updates still take them")
 	}
 }
 
