@@ -163,6 +163,19 @@ func TestClosingAWindowAsksAndClosesItsPanes(t *testing.T) {
 	}
 }
 
+// Whoever opened a window hears that it closed, to let it go: held, it
+// would keep its terminals, history and all.
+func TestAClosedWindowIsLetGo(t *testing.T) {
+	a, _, two := twoWindowApp(t)
+	two.gw = gunimtest.New(t, geom.Sz(400, 300), nil)
+	var gone *gunim.Window
+	a.closedWindow = func(w *gunim.Window) { gone = w }
+	a.windowClosed(two)
+	if gone != two.gw {
+		t.Fatalf("heard %p closed, want %p", gone, two.gw)
+	}
+}
+
 // The last window's close button asks as Exit does.
 func TestTheLastWindowClosesAsExitDoes(t *testing.T) {
 	a := newApp(gunimtest.New(t, geom.Sz(400, 300), nil).Client(), screen.NewShells())

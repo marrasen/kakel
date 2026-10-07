@@ -129,7 +129,7 @@ func run() error {
 		}
 		go stressWindows(ctx, a)
 		return app.Start(ctx, app.Config{
-			Client: c, Window: w, Shells: sh, OpenWindow: ws.openFrom, Options: opts,
+			Client: c, Window: w, Shells: sh, OpenWindow: ws.openFrom, WindowClosed: ws.closed, Options: opts,
 			Themes: all, ThemeTrouble: trouble, RegisterThemes: ws.registerThemes,
 			Tray: app.Tray{Set: a.SetTray, StayOpen: a.StayOpen, Notify: a.TrayNotify}, Handovers: handovers,
 			OpenLauncher: ws.openLauncher, HotKeys: a.RegisterHotKey, OpenPrompt: ws.openPrompt, Sound: sounds.Set,
@@ -317,6 +317,14 @@ func (ws *ownWindows) openPrompt(q app.Ask, name string, near *gunim.Window) (gu
 		return gunim.Client{}, err
 	}
 	return c, nil
+}
+
+// closed lets w go, closed: held here, it would keep all it showed, the
+// terminals and their history too.
+func (ws *ownWindows) closed(w *gunim.Window) {
+	ws.mu.Lock()
+	defer ws.mu.Unlock()
+	ws.win = slices.DeleteFunc(ws.win, func(o *gunim.Window) bool { return o == w })
 }
 
 // registerThemes names all to every window, and to those opened later.
