@@ -7,6 +7,34 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
+## v0.12.0-beta.5
+
+### Changed
+
+**Open with is a submenu** in a file's right-click menu. It opens
+beside the menu as the pointer rests on it, or with the Right arrow,
+and lists the apps once Windows has found them.
+
+**New Terminal and New File Manager come first in the palette**, said
+alike. New File Manager was Files Here, and Files in a New Window is
+New File Manager Window, further down. The File menu and a machine's
+menu use the same words. The old words still find them.
+
+**A drag scrolls a list sooner near its edge.** It starts 48 px from
+the edge, at once, and speeds up toward it. A dragged file keeps the
+list scrolling just past its edge.
+
+### Fixed
+
+**Ctrl+C stops a program in cmd or PowerShell again.** After an update,
+kakel started again ignoring Ctrl+C, and so did every shell in it.
+
+**A file's right-click menu shows all its lines.** It was cut at 480
+px and scrolled; now it is as tall as the screen allows.
+
+**F5 refreshes the file manager in front**, also after a click on its
+tab or the sidebar. Ctrl+R does too.
+
 ## v0.12.0-beta.4
 
 ### Changed
