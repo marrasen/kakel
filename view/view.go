@@ -291,7 +291,7 @@ type Window struct {
 func NewWindow(sh *screen.Shells, keys *ui.Keymap, all []look.Themed) *Window {
 	w := &Window{
 		contents:    map[string]theme.Theme{},
-		stage:       &stage{},
+		stage:       newStage(),
 		shells:      sh,
 		keys:        keys,
 		terms:       map[string]*term{},
@@ -2565,7 +2565,33 @@ func (w *Window) term(id string) *term {
 
 // stage holds the arrangement on screen, and fills the space it has.
 type stage struct {
+	anim.Group
 	shown gunim.Node
+	// cover is how much of the window's background still lies over what
+	// came on stage as the tab in front changed, from 1 down to 0, and
+	// from is the side the tab picked lies on: -1 left, 1 right, 0
+	// neither. What came clears from that side first.
+	cover *anim.Float
+	from  float32
+}
+
+func newStage() *stage {
+	s := &stage{cover: anim.NewFloat(0)}
+	s.Add(s.cover)
+	return s
+}
+
+// stageIn is how what comes on stage with another tab clears: quickly,
+// so a switch never waits on it.
+var stageIn = anim.Tween{Duration: 150 * time.Millisecond, Ease: anim.EaseOut}
+
+// comeIn shows what is on stage now coming in, from the side from says.
+// Only the drawing moves: the panes are in place, and the keyboard is
+// where it goes, from the start.
+func (s *stage) comeIn(from float32) {
+	s.from = from
+	s.cover.Jump(1)
+	s.cover.Animate(0, stageIn)
 }
 
 // show puts n on stage in place of what was there. The old nodes leave
@@ -2592,11 +2618,36 @@ func (s *stage) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children) 
 	return c.Max
 }
 
-// Paint implements [gunim.Node].
-func (s *stage) Paint(p *paint.Painter, _ gunim.Frame, _ geom.Size, kids gunim.Children) {
+// Paint implements [gunim.Node]. What came on stage with another tab
+// draws as it is, unmoved, so a terminal draws its cells as it did the
+// frame before; the background lies over it, thinning, as a single
+// shape. That is far cheaper on a large window than a layer the size
+// of the stage, faded or moved, would be.
+func (s *stage) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gunim.Children) {
 	for k := range kids.All {
 		k.Paint(p)
 	}
+	c := min(max(s.cover.Value(), 0), 1)
+	if c <= 0 || box.W <= 0 || box.H <= 0 {
+		return
+	}
+	bg := widget.Background.Get(f.Theme)
+	at := func(c float32) color.NRGBA {
+		v := bg
+		v.A = uint8(float32(bg.A)*min(max(c, 0), 1) + 0.5)
+		return v
+	}
+	r := geom.Rect{Max: box.Point()}
+	if s.from == 0 {
+		p.RRect(r, 0, paint.Solid(at(c)))
+		return
+	}
+	// The side the tab lies on clears ahead of the other.
+	near, far := geom.Pt(0, 0), geom.Pt(box.W, 0)
+	if s.from > 0 {
+		near, far = far, near
+	}
+	p.RRect(r, 0, paint.Fill{Gradient: &paint.Gradient{From: near, To: far, Start: at(1.5*c - 0.5), End: at(1.5 * c)}})
 }
 
 // sideItem is one row of the sidebar: a machine's heading, or a pane

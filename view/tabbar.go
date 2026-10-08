@@ -83,6 +83,16 @@ type tabBar struct {
 	// before the row changes, and the other in after.
 	laid            bool
 	fade, titleFade *anim.Float
+	// lit is how far the front tab's look has come from the tab that
+	// was in front, was, to the one in front now: its fill glides from
+	// litFrom, where it was drawn, and the titles' ink fades across.
+	lit     *anim.Float
+	litFrom geom.Rect
+	was     int
+	// dropped is the group whose drag ended in a drop, or out of the
+	// window, until the tabs change for it: the tab in front changing
+	// with them is the drag's doing, and shows no switch.
+	dropped int
 }
 
 // tabMove is how a tab moves on the bar: its box, sliding to where the
@@ -112,10 +122,14 @@ var tabSlide = anim.Spring{Response: 0.28, Damping: 1}
 
 func newTabBar(w *Window) *tabBar {
 	b := &tabBar{w: w, hot: -1, pressed: -1, landing: -1, moves: map[int]*tabMove{}, arriving: map[int]bool{},
-		fade: anim.NewFloat(1), titleFade: anim.NewFloat(1)}
-	b.Add(b.fade, b.titleFade)
+		fade: anim.NewFloat(1), titleFade: anim.NewFloat(1), lit: anim.NewFloat(1)}
+	b.Add(b.fade, b.titleFade, b.lit)
 	return b
 }
+
+// tabGlide is how the front tab's look moves to the tab picked: about
+// as quickly as the stage clears for it.
+var tabGlide = anim.Tween{Duration: 160 * time.Millisecond, Ease: anim.EaseOut}
 
 // rowFadeOut and rowFadeIn are how the tabs and the window's title fade
 // as the title row changes between them: the one going quickly, the
@@ -148,8 +162,10 @@ func (b *tabBar) shown() bool { return b.laid }
 // wanted reports whether the window has tabs to show: two or more.
 func (b *tabBar) wanted() bool { return len(b.tabs) > 1 }
 
-// show puts the window's tabs on the bar.
-func (b *tabBar) show(tabs []app.Tab, focus string, u *gunim.UI) {
+// show puts the window's tabs on the bar, and reports whether the tab
+// in front changed in a way the window shows in motion, and from which
+// side the tab picked comes, as switchOf says.
+func (b *tabBar) show(tabs []app.Tab, focus string, u *gunim.UI) (from float32, switched bool) {
 	front := 0
 	for _, t := range tabs {
 		// A group's panes share its arrangement.
@@ -167,7 +183,7 @@ func (b *tabBar) show(tabs []app.Tab, focus string, u *gunim.UI) {
 	}
 	size := smallText.Get(u.Theme()) + 1
 	if slices.Equal(tabs, b.tabs) && front == b.front && slices.Equal(titles, b.shaped) && size == b.shapedSize {
-		return
+		return 0, false
 	}
 	if len(tabs) != len(b.tabs) {
 		// What the pointer was on may be another tab now.
@@ -175,6 +191,15 @@ func (b *tabBar) show(tabs []app.Tab, focus string, u *gunim.UI) {
 		if b.carried == 0 {
 			b.pressed = -1
 		}
+	}
+	from, switched = b.switchOf(tabs, front)
+	if switched {
+		b.litFrom, b.was = b.litAt(), b.front
+		b.lit.Jump(0)
+		b.lit.Animate(1, tabGlide)
+	}
+	if !slices.Equal(tabs, b.tabs) {
+		b.dropped = 0
 	}
 	b.tabsMoved(tabs)
 	b.tabs, b.front = tabs, front
@@ -192,6 +217,77 @@ func (b *tabBar) show(tabs []app.Tab, focus string, u *gunim.UI) {
 		b.hot, b.pressed, b.landing, b.crossHot, b.plusPressed = -1, -1, -1, false, false
 	}
 	u.Invalidate()
+	return from, switched
+}
+
+// switchOf reports whether the tab in front changing to front, as the
+// bar comes to show tabs, is a switch to show in motion, and from which
+// side the tab picked comes: -1 the left, 1 the right, 0 neither. A
+// window's first tabs are simply there, and so is a tab in front while
+// a tab is dragged, or after one was dragged away.
+func (b *tabBar) switchOf(tabs []app.Tab, front int) (float32, bool) {
+	if front == b.front || front == 0 || b.front == 0 || len(b.tabs) == 0 || b.carried != 0 ||
+		b.dropped != 0 && !slices.Equal(tabs, b.tabs) {
+		return 0, false
+	}
+	// Where each was on the bar, or, new on it, where it is now.
+	at := func(g int) int {
+		of := func(t app.Tab) bool { return t.Group == g }
+		if i := slices.IndexFunc(b.tabs, of); i >= 0 {
+			return i
+		}
+		return slices.IndexFunc(tabs, of)
+	}
+	switch from, to := at(b.front), at(front); {
+	case to < from:
+		return -1, true
+	case to > from:
+		return 1, true
+	}
+	return 0, true
+}
+
+// litAt is where the front tab's fill is drawn: on its way from where
+// it was while it glides, or on the tab in front. It is empty while no
+// tab is in front.
+func (b *tabBar) litAt() geom.Rect {
+	to, ok := b.drawnOf(b.front)
+	if !ok {
+		return geom.Rect{}
+	}
+	if t := b.lit.Value(); t < 1 && !b.litFrom.Empty() {
+		return anim.Mix(anim.RectCodec, b.litFrom, to, max(t, 0))
+	}
+	return to
+}
+
+// drawnOf is where the tab of group g is drawn, closing or not.
+func (b *tabBar) drawnOf(g int) (geom.Rect, bool) {
+	for i, t := range b.tabs {
+		if t.Group == g && i < len(b.boxes) {
+			r, _ := b.drawnAt(i)
+			return r, true
+		}
+	}
+	for _, gone := range b.gone {
+		if gone.tab.Group == g {
+			return gone.box.Value(), true
+		}
+	}
+	return geom.Rect{}, false
+}
+
+// litOf is how far tab g has the front tab's look, 0 to 1: coming on
+// the tab in front, going on the one that was.
+func (b *tabBar) litOf(g int) float32 {
+	t := min(max(b.lit.Value(), 0), 1)
+	switch g {
+	case b.front:
+		return t
+	case b.was:
+		return 1 - t
+	}
+	return 0
 }
 
 // tabsMoved notes what changes on the bar as it comes to show tabs: a
@@ -371,10 +467,21 @@ func (b *tabBar) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, _ gunim.C
 	for _, g := range b.gone {
 		b.paintTab(p, th, g.tab, g.title, g.more, g.kind, g.box.Value(), g.open.Value(), tabLook{})
 	}
+	// The front tab's fill, under the tabs, where it glides between
+	// them, as faint as the tab is while it opens.
+	if r := b.litAt(); r.Size().W > 0 {
+		fill := look.RowActive.Get(th)
+		if i := slices.IndexFunc(b.tabs, func(t app.Tab) bool { return t.Group == b.front }); i >= 0 {
+			_, open := b.drawnAt(i)
+			fill.A = uint8(float32(fill.A) * min(max(open, 0), 1))
+		}
+		p.RRect(r, look.RowRadius.Get(th), paint.Solid(fill))
+	}
 	for i, t := range b.tabs {
 		r, open := b.drawnAt(i)
 		b.paintTab(p, th, t, b.titles[i], b.more[i], b.w.tabKind(t), r, open, tabLook{
 			front:    t.Group == b.front,
+			lit:      b.litOf(t.Group),
 			hot:      i == b.hot && b.carried == 0,
 			lifted:   t.Group == b.carried,
 			cross:    b.crossShown(i),
@@ -396,10 +503,16 @@ func (b *tabBar) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, _ gunim.C
 }
 
 // tabLook is how a tab is drawn: in front, under the pointer, dragged
-// away, with its × showing, and with the pointer on the ×.
-type tabLook struct{ front, hot, lifted, cross, crossLit bool }
+// away, with its × showing, and with the pointer on the ×. lit is how
+// far its title has the front tab's ink, 0 to 1, as the tab in front
+// changes.
+type tabLook struct {
+	front, hot, lifted, cross, crossLit bool
+	lit                                 float32
+}
 
-// paintTab draws tab t in r, open as far as open says.
+// paintTab draws tab t in r, open as far as open says. The front tab's
+// fill is the bar's to draw, as it glides between tabs.
 func (b *tabBar) paintTab(p *paint.Painter, th *theme.Live, t app.Tab, title, more text.Run, kind string, r geom.Rect, open float32, l tabLook) {
 	if r.Size().W <= 0 || open <= 0 {
 		return
@@ -409,15 +522,15 @@ func (b *tabBar) paintTab(p *paint.Painter, th *theme.Live, t app.Tab, title, mo
 	}
 	ink, faint := widget.Ink.Get(th), look.Faint.Get(th)
 	radius := look.RowRadius.Get(th)
-	switch {
-	case l.front:
-		p.RRect(r, radius, paint.Solid(look.RowActive.Get(th)))
-	case l.hot:
+	if l.hot && !l.front {
 		p.RRect(r, radius, paint.Solid(look.RowHover.Get(th)))
 	}
 	c := faint
-	if l.front {
+	switch {
+	case l.lit >= 1:
 		c = ink
+	case l.lit > 0:
+		c = anim.Mix(anim.ColorCodec, faint, ink, l.lit)
 	}
 	if l.lifted {
 		c.A /= 3
@@ -645,6 +758,9 @@ func (b *tabBar) dragEnded(e input.DragEnd, u *gunim.UI) {
 	if g == 0 {
 		return
 	}
+	if e.Out || e.Taken {
+		b.dropped = g
+	}
 	if e.Out && !e.Taken {
 		// The tab's top left corner where the image's was, and the
 		// window as large as this one.
@@ -704,8 +820,13 @@ func (g *tabGhost) Handle(e input.Event, u *gunim.UI) bool {
 // room while it shows: the menu button keeps its own, and "kakel" makes
 // way. The change fades: what goes first, then the row changes, then
 // what comes; see settleTitleRow.
+//
+// A switch to another tab shows in motion: the front tab's look glides
+// to it, and what it holds comes on stage from its side.
 func (w *Window) showTabs(st app.State, u *gunim.UI) {
-	w.tabs.show(st.Tabs, st.Focus, u)
+	if from, switched := w.tabs.show(st.Tabs, st.Focus, u); switched {
+		w.stage.comeIn(from)
+	}
 	w.settleTitleRow(u.Theme())
 	u.Invalidate()
 }

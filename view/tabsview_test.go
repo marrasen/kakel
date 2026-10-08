@@ -1,12 +1,17 @@
 package view
 
 import (
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/marrasen/kakel/app"
+	"github.com/marrasen/kakel/internal/sessiontest"
+	"github.com/marrasen/kakel/screen"
+	"github.com/marrasen/kakel/vt"
 
 	"github.com/marrasen/gunim"
+	"github.com/marrasen/gunim/filemanager"
 	"github.com/marrasen/gunim/geom"
 	gi "github.com/marrasen/gunim/input"
 )
@@ -349,5 +354,136 @@ func TestTabsOpenAndCloseInMotion(t *testing.T) {
 	}
 	if r, _ := b.drawnAt(1); r != b.boxes[1] {
 		t.Fatalf("settled, the last tab is at %v, want %v", r, b.boxes[1])
+	}
+}
+
+// twoTermTabs is twoTabs with a terminal in each tab, and the sessions
+// typed into, by pane.
+func twoTermTabs(t *testing.T, sh *screen.Shells) (app.State, map[string]*sessiontest.Typed) {
+	t.Helper()
+	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
+	sessions := map[string]*sessiontest.Typed{}
+	for _, id := range []string{"p1", "p2"} {
+		s := sessiontest.New()
+		sessions[id] = s
+		sh.Set(id, screen.Open(s, vt.DefaultPalette(), quiet))
+		t.Cleanup(func() { _ = sh.Get(id).T.Close() })
+	}
+	st := twoTabs()
+	st.Panes = []app.Pane{{ID: "p1", Title: "Terminal 1"}, {ID: "p2", Title: "Terminal 2"}}
+	return st, sessions
+}
+
+// inFront is st with the tab of pane id in front.
+func inFront(st app.State, id string) app.State {
+	st.Stage, st.Focus = st.Groups[id], id
+	return st
+}
+
+// A switch to another tab shows in motion: the front tab's look glides
+// to it, and what it holds comes in from its side. What is typed goes to
+// it from the start, and once settled nothing moves.
+func TestASwitchedTabComesIn(t *testing.T) {
+	win, sh, publish := windowStage(t)
+	st, sessions := twoTermTabs(t, sh)
+	publish(st)
+	settle()
+	b, s := win.tabs, win.stage
+	if s.cover.Value() != 0 || b.lit.Value() != 1 {
+		t.Fatalf("the window's first tabs move: the stage is %v covered, the front tab %v lit", s.cover.Value(), b.lit.Value())
+	}
+	publish(inFront(st, "p2"))
+	if b.front != 2 || s.from != 1 {
+		t.Fatalf("switched, the tab in front is %d, coming from %v", b.front, s.from)
+	}
+	if c := s.cover.Value(); c <= 0 || c >= 1 || !s.cover.Active() {
+		t.Fatalf("a moment after the switch, the stage is %v covered", c)
+	}
+	if l := b.lit.Value(); l <= 0 || l >= 1 {
+		t.Fatalf("a moment after the switch, the front tab's look is %v of the way", l)
+	}
+	if r := b.litAt(); r.Min.X <= b.boxes[0].Min.X || r.Min.X >= b.boxes[1].Min.X {
+		t.Fatalf("the front tab's fill is at %v, want between %v and %v", r, b.boxes[0], b.boxes[1])
+	}
+	// Typed while it moves, it reaches the tab picked.
+	lastWindow.Input(gi.TextInput{Text: "ls"})
+	lastWindow.Frame(time.Second / 60)
+	got := sessions["p2"].Sent()
+	for end := time.Now().Add(time.Second); !strings.Contains(got, "ls") && time.Now().Before(end); got = sessions["p2"].Sent() {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !strings.Contains(got, "ls") || strings.Contains(sessions["p1"].Sent(), "ls") {
+		t.Fatalf("typed as the tab came in, p2 was sent %q and p1 %q", got, sessions["p1"].Sent())
+	}
+	settle()
+	if s.cover.Value() != 0 || s.cover.Active() || b.lit.Value() != 1 || b.lit.Active() || s.Step(time.Second/60) {
+		t.Fatalf("settled, the stage is %v covered and the front tab %v lit", s.cover.Value(), b.lit.Value())
+	}
+	if r := b.litAt(); r != b.boxes[1] {
+		t.Fatalf("settled, the front tab's fill is at %v, want %v", r, b.boxes[1])
+	}
+	// Back to the left, it comes from the left.
+	publish(inFront(st, "p1"))
+	if s.from != -1 || !s.cover.Active() {
+		t.Fatalf("switched back, the stage comes from %v, moving %v", s.from, s.cover.Active())
+	}
+}
+
+// The tab in front dragged out of the window leaves the next one in
+// front with no motion: it is simply there.
+func TestATabDraggedOutSwitchesStill(t *testing.T) {
+	win, _, publish := windowStage(t)
+	publish(twoTabs())
+	drain()
+	at := tabAt(t, win, 0)
+	lastWindow.Input(gi.PointerDown{Pos: at, Button: gi.ButtonPrimary})
+	lastWindow.Input(gi.PointerMove{Pos: at.Add(geom.Pt(20, 30))})
+	lastWindow.Frame(time.Second / 60)
+	if win.tabs.carried != 1 {
+		t.Fatalf("the tab did not lift off: %d is carried", win.tabs.carried)
+	}
+	win.tabs.Handle(gi.DragEnd{Out: true, At: geom.Pt(1200, 300)}, lastUI)
+	// The program moves the tab to a window of its own.
+	st := inFront(twoTabs(), "p2")
+	st.Panes, st.Tabs = st.Panes[1:], st.Tabs[1:]
+	delete(st.Groups, "p1")
+	publish(st)
+	if win.stage.cover.Value() != 0 || win.tabs.lit.Value() != 1 {
+		t.Fatalf("dragged out, the stage is %v covered and the front tab %v lit", win.stage.cover.Value(), win.tabs.lit.Value())
+	}
+}
+
+// A file manager pane switched to in its tab comes in, has the keyboard,
+// and fills its place once settled; parked again as its tab goes
+// behind, it keeps its views.
+func TestAFileManagerTabComesIn(t *testing.T) {
+	win, _, publish := windowStage(t)
+	filemanager.RegisterViews(lastWindow)
+	fw := filePane(t, "p1")
+	st := twoTabs()
+	st.Panes[0] = app.Pane{ID: "p1", Title: "dir", Kind: app.KindFileManager}
+	st = inFront(st, "p2")
+	publish(st)
+	fw.Attach(lastWindow.Client(), app.FilePaneHost("p1"))
+	var listing gunim.Node
+	framesUntil(t, "the file manager has its views", func() bool {
+		listing = filemanager.FocusIn(lastUI, app.FilePaneViews("p1"))
+		return listing != nil
+	})
+	settle()
+	publish(inFront(st, "p1"))
+	if !win.stage.cover.Active() || win.stage.from != -1 {
+		t.Fatal("the file manager's tab did not come in")
+	}
+	framesUntil(t, "the listing has the keyboard", func() bool { return lastUI.Focused() == listing })
+	settle()
+	stage, _ := lastUI.Bounds(win.stage)
+	if r, ok := lastUI.Bounds(win.fmHosts["p1"]); !ok || r != stage || win.stage.cover.Value() != 0 {
+		t.Fatalf("settled, the file manager is at %v on a stage at %v, %v covered", r, stage, win.stage.cover.Value())
+	}
+	publish(inFront(st, "p2"))
+	settle()
+	if filemanager.FocusIn(lastUI, app.FilePaneViews("p1")) != listing {
+		t.Fatal("parked after its tab came in, the file manager lost its views")
 	}
 }

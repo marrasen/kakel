@@ -20,6 +20,10 @@ badly.
 where it opened in a window of its own. Asked for again, it goes to
 the tab where it is.
 
+**Switching tabs shows in motion.** The front tab's highlight glides to
+the tab picked, and what it holds fades in from that side, in 150 ms.
+What you type goes to the new tab at once.
+
 ### Fixed
 
 **A question window keeps its size.** Connect to Server, a password
