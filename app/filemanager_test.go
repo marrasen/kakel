@@ -37,7 +37,19 @@ func newFakeFiles(t *testing.T) *fakeFiles {
 func (f *fakeFiles) NewPane(o filemanager.Options, host filemanager.PaneHost) (*filemanager.Window, error) {
 	f.opened = append(f.opened, o)
 	o.PrefsPath, o.Poll = filepath.Join(f.t.TempDir(), "files.json"), -1
-	return f.hub.NewPane(o, host)
+	w, err := f.hub.NewPane(o, host)
+	if err == nil {
+		// Stopped before its folder is taken away, which Windows refuses
+		// while it has a file there open.
+		f.t.Cleanup(func() {
+			w.Stop()
+			select {
+			case <-w.Done():
+			case <-time.After(5 * time.Second):
+			}
+		})
+	}
+	return w, err
 }
 
 func (f *fakeFiles) Refresh() { f.refreshed++ }
