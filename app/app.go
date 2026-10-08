@@ -2181,7 +2181,17 @@ func (a *app) retitle(id, title string) {
 	if title != "" {
 		a.programTitle[id] = title
 	}
-	title = a.shellTitle(id, title)
+	if a.watchesWindow(id) {
+		// The window it watches says what the pane is called, as its
+		// own tab does: "Command Prompt" rather than the path the
+		// program gave.
+		return
+	}
+	a.setTitle(id, a.shellTitle(id, title))
+}
+
+// setTitle is what pane id is called now, unless the user named it.
+func (a *app) setTitle(id, title string) {
 	for i := range a.st.Panes {
 		if p := &a.st.Panes[i]; p.ID == id && title != "" {
 			p.shell = title

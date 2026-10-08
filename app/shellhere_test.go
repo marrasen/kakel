@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/screen"
 	"github.com/marrasen/kakel/settings"
 
@@ -156,4 +157,19 @@ func TestAPaneTitledBeforeTheShellsWereKnownIsNamedAgain(t *testing.T) {
 	}
 	a.scanShells()
 	waitFor(t, a, "the pane named again", func() bool { return a.titleOf("p1") == "Command Prompt" })
+}
+
+// A pane watching another kakel window is named as that window names
+// it: the path the program gives is not what the window's tab says.
+func TestAWatchedPaneKeepsTheTitleItsWindowGives(t *testing.T) {
+	w := gunimtest.New(t, geom.Sz(400, 300), nil)
+	a := newApp(w.Client(), screen.NewShells())
+	win := a.machines.NewQuick("desk:7777", true)
+	a.machines.At(win).Window = &machines.Window{Bound: map[string]string{"o1": "p1"}}
+	t.Cleanup(func() { a.machines.At(win).Window = nil })
+	a.addPane(Pane{ID: "p1", Title: "Command Prompt", Machine: win}, nil, Placement{})
+	a.retitle("p1", `C:\WINDOWS\system32\cmd.exe`)
+	if got := a.titleOf("p1"); got != "Command Prompt" {
+		t.Fatalf("a watched pane is called %q", got)
+	}
 }

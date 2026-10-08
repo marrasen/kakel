@@ -149,6 +149,8 @@ const (
 	tabIcon   = 16
 	tabCross  = 16
 	tabGap    = 2
+	// tabTop is how far below the top of the bar a tab starts.
+	tabTop = 4
 	// tabPlus is the room the + takes, and captionLeast the room the
 	// bar always leaves after it to move the window by.
 	tabPlus      = 32
@@ -406,7 +408,22 @@ func (w *Window) tabKind(t app.Tab) string {
 	if t.Panes > 1 {
 		return "split"
 	}
-	return w.kindOf(t.Pane)
+	return w.paneIcon(t.Pane, w.kindOf(t.Pane))
+}
+
+// paneIcon is the icon pane id shows, kind being what it would show
+// anyway: a terminal in another kakel window, watched here, shows that
+// window's mark, so it is not taken for one on this computer.
+func (w *Window) paneIcon(id, kind string) string {
+	if kind != app.KindTerminal {
+		return kind
+	}
+	for _, p := range w.panes {
+		if p.ID == id && slices.ContainsFunc(w.remoteWindows, func(rw app.RemoteWindow) bool { return rw.Name == p.Machine }) {
+			return "window"
+		}
+	}
+	return kind
 }
 
 // Layout implements [gunim.Node]: the tabs side by side, as wide as
@@ -443,7 +460,7 @@ func (b *tabBar) Layout(c gunim.Constraints, f gunim.Frame, _ gunim.Children) ge
 	}
 	x := float32(0)
 	for i := range b.tabs {
-		b.boxes = append(b.boxes, geom.Rc(x, 4, want[i], h-4))
+		b.boxes = append(b.boxes, geom.Rc(x, tabTop, want[i], h-tabTop))
 		x += want[i] + tabGap
 	}
 	b.plus = geom.Rc(x+2, (h-24)/2, 24, 24)

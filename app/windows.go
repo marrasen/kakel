@@ -402,6 +402,7 @@ func (a *app) showWindows() {
 				continue
 			}
 			if pane, ok := w.Bound[o.ID]; ok && a.has(pane) {
+				a.setTitle(pane, o.Label)
 				continue
 			}
 			rw.Open = append(rw.Open, o)
@@ -409,6 +410,19 @@ func (a *app) showWindows() {
 		out = append(out, rw)
 	}
 	a.st.Windows = out
+}
+
+// watchesWindow reports whether pane id watches something a window
+// connected to has open.
+func (a *app) watchesWindow(id string) bool {
+	for _, name := range a.machines.Windows() {
+		for _, pane := range a.machines.Get(name).Window.Bound {
+			if pane == id {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // openThrough opens something new on window, a kakel window connected
