@@ -20,6 +20,12 @@ Select All act on the files, and `Ctrl+Shift+X` cuts.
 **The + on the tab bar opens a tab like the one in front**: a file
 manager at the same folder, or a terminal. A right click offers either.
 
+### Fixed
+
+**A folder opened from Windows comes to the front**, as Win+R and
+"Documents" with kakel running ask: the kakel started for it lets the
+one running bring its window forward, where Windows left it behind.
+
 ### Added
 
 **Open with…** on a file's menu in the file manager, on Windows: the
