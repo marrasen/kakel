@@ -27,8 +27,6 @@ type Shell struct {
 	// reads from, and the terminal's own grid while it is drawn from.
 	mu   sync.Mutex
 	view *grid.Grid
-	// draws counts the draws into view.
-	draws uint64
 	// wrote is when the program last wrote, in nanoseconds, for the
 	// sidebar's mark to breathe while output comes.
 	wrote *atomic.Int64
@@ -164,19 +162,14 @@ func (sh *Shell) Drawn(f func(*grid.Grid)) {
 		sh.view.Resize(size.Cols, size.Rows)
 	}
 	sh.T.DrawScreen(sh.view.View())
-	sh.draws++
 	f(sh.view)
 }
 
-// Peek runs f on the screen as the window drawing it last drew it, and
-// the count of its draws so far, while nobody draws into it. It draws
-// nothing itself, so another window can look: a draw moves what the
-// terminal keeps of the one before, which is the drawing window's own.
-func (sh *Shell) Peek(f func(g *grid.Grid, draws uint64)) {
-	sh.mu.Lock()
-	defer sh.mu.Unlock()
-	f(sh.view, sh.draws)
-}
+// Snapshot copies the live screen into g, for another window to draw,
+// and reports whether it did: not while output is being read into it.
+// It never waits on the window the shell is in, which may not be
+// drawing, and leaves that window's drawing as it is.
+func (sh *Shell) Snapshot(g *grid.Grid) bool { return sh.T.Snapshot(g) }
 
 // Resize gives the shell a new size in cells. It reports whether the
 // size changed.

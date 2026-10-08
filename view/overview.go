@@ -11,6 +11,7 @@ import (
 	"github.com/marrasen/gunim/anim"
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/paint"
+	"github.com/marrasen/gunim/theme"
 	"github.com/marrasen/gunim/widget"
 )
 
@@ -18,6 +19,15 @@ import (
 // kakel's windows shrinks from where it stands into a card, and the pane
 // picked grows back into its window, which is in front as All Panes
 // goes.
+
+// overShade is how dark the screen behind the cards goes.
+var overShade = color.NRGBA{A: 0x8c}
+
+// SeeThrough is the theme th as All Panes' own window wears it: its
+// background see-through, so the screen shows behind the cards.
+func SeeThrough(th theme.Theme) theme.Theme {
+	return th.With(theme.Set(gunim.WindowBackground, color.NRGBA{}))
+}
 
 // Overview is All Panes' own window's view.
 type Overview struct {
@@ -102,11 +112,11 @@ func (o *Overview) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Childre
 }
 
 // Paint implements [gunim.Node]: the screen behind the cards, darker as
-// they come in.
+// they come in. The window's own background is see-through, where the
+// system lets a window be, so it is the screen itself that darkens.
 func (o *Overview) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gunim.Children) {
-	bg := widget.Background.Get(f.Theme)
-	k := 0.55 + 0.25*min(max(o.dark.Value(), 0), 1)
-	shade := color.NRGBA{R: uint8(float32(bg.R) * (1 - k)), G: uint8(float32(bg.G) * (1 - k)), B: uint8(float32(bg.B) * (1 - k)), A: 0xff}
+	shade := overShade
+	shade.A = uint8(float32(shade.A) * min(max(o.dark.Value(), 0), 1))
 	p.RRect(geom.Rect{Max: box.Point()}, 0, paint.Solid(shade))
 	for k := range kids.All {
 		k.Paint(p)

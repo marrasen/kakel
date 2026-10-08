@@ -1,6 +1,7 @@
 package view
 
 import (
+	"image/color"
 	"sync"
 	"time"
 
@@ -24,11 +25,12 @@ import (
 // mirror is a terminal of another window, as All Panes draws it.
 type mirror struct {
 	sh    *screen.Shell
+	g     *grid.Grid
 	cells *widget.CellGrid
 	row   []widget.Cell
-	// draws is how many times the screen had been drawn as it was
+	// wrote is when the shell had last written as the screen was
 	// copied, and copied that it has been.
-	draws  uint64
+	wrote  time.Time
 	copied bool
 }
 
@@ -36,31 +38,41 @@ func newMirror(sh *screen.Shell) *mirror {
 	g := widget.NewCellGrid()
 	g.Size = 15
 	g.Background = look.TermBackground
-	return &mirror{sh: sh, cells: g}
+	return &mirror{sh: sh, g: grid.New(1, 1, color.RGBA{}, color.RGBA{}), cells: g}
 }
 
-// sync copies the screen as the window it is in last drew it, when that
-// window has drawn it since it last did. It copies every row, and leaves
-// the terminal and the rows marked changed as they are: they are that
-// window's.
-func (m *mirror) sync() {
-	m.sh.Peek(func(g *grid.Grid, draws uint64) {
-		if draws == 0 || m.copied && draws == m.draws {
-			// Never drawn by its window, as a tab not yet shown: nothing
-			// to copy.
-			return
+// sync copies the live screen, while the shell writes or has written
+// since it last did. It reads the terminal itself, not what the window
+// it is in drew, which may draw nothing while All Panes covers it.
+func (m *mirror) sync(now time.Time) {
+	at := m.sh.Wrote()
+	if m.copied && at.Equal(m.wrote) && !m.busy(now) {
+		return
+	}
+	if !m.sh.Snapshot(m.g) {
+		// Being written: copied next time.
+		return
+	}
+	m.wrote, m.copied = at, true
+	cols, rows := m.g.Size()
+	m.cells.Resize(cols, rows)
+	for y := range rows {
+		m.row = m.row[:0]
+		for x := range cols {
+			m.row = append(m.row, cellOf(m.g, x, y))
 		}
-		m.draws, m.copied = draws, true
-		cols, rows := g.Size()
-		m.cells.Resize(cols, rows)
-		for y := range rows {
-			m.row = m.row[:0]
-			for x := range cols {
-				m.row = append(m.row, cellOf(g, x, y))
-			}
-			m.cells.SetRow(y, m.row)
-		}
-	})
+		m.cells.SetRow(y, m.row)
+	}
+	cur := m.g.Cursor()
+	shape := widget.CursorBlock
+	switch cur.Style {
+	case grid.CursorBar:
+		shape = widget.CursorBar
+	case grid.CursorUnderline:
+		shape = widget.CursorUnderline
+	case grid.CursorBlock:
+	}
+	m.cells.SetCursor(widget.Cursor{Col: cur.X, Row: cur.Y, Shape: shape, Visible: cur.Visible && !m.sh.T.Exited()})
 }
 
 // busy reports whether the shell wrote lately, so the window it is in

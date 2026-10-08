@@ -7,6 +7,20 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
+## Unreleased
+
+### Changed
+
+**All Panes lets the screen show through**, darkened, behind the
+cards, where the system lets a window be see-through, as Windows does.
+Its window has no line round it.
+
+### Fixed
+
+**Terminals in All Panes stay live.** They showed what their windows
+last drew, and the windows draw nothing while All Panes covers them;
+now All Panes reads each terminal's screen itself, cursor and all.
+
 ## v0.12.0-beta.7
 
 ### Changed

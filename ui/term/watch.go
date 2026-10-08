@@ -103,6 +103,21 @@ func (t *Terminal) Replay() string {
 	return t.liveScreen()
 }
 
+// Snapshot copies the live screen into g, sized to it, for a host
+// drawing the terminal somewhere other than its own window, as All
+// Panes does, and reports whether it did. It leaves alone what the
+// terminal keeps for its own drawing: its next draw copies every row.
+// While output is being read into the screen it copies nothing, rather
+// than wait, as the terminal's own drawing does not.
+func (t *Terminal) Snapshot(g *grid.Grid) bool {
+	if !t.mu.TryLock() {
+		return false
+	}
+	defer t.mu.Unlock()
+	t.term.RenderLive(g)
+	return true
+}
+
 // liveScreen is the escape sequences that would draw this terminal's
 // live screen. The emulator's lock is already held.
 //

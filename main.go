@@ -282,6 +282,8 @@ func (ws *ownWindows) openOverview(m driver.Monitor) (gunim.Client, *gunim.Windo
 	w, err := ws.app.NewWindow(gunim.WindowOptions{
 		Title: "All Panes", Size: m.Bounds.Size(), Icons: appicon.Images(), Pinned: true, Fixed: true, Instant: true,
 		TitleBar: view.NoTitleBar(), Place: &driver.Placement{Bounds: m.Bounds},
+		// No line round it: it is the screen, not a window on it.
+		Border: driver.Border{None: true},
 	})
 	if err != nil {
 		return gunim.Client{}, nil, fmt.Errorf("kakel: %w", err)
@@ -289,7 +291,11 @@ func (ws *ownWindows) openOverview(m driver.Monitor) (gunim.Client, *gunim.Windo
 	ws.mu.Lock()
 	all := ws.all
 	ws.mu.Unlock()
-	look.Register(w, all)
+	// The themes, each with the background see-through, so the screen
+	// shows behind the cards.
+	for _, t := range all {
+		w.RegisterTheme(view.SeeThrough(t.Theme))
+	}
 	gunim.RegisterView(w, "overview", func(app.OverState) *view.Overview { return view.NewOverview(ws.sh, view.Shortcuts()) },
 		func(o *view.Overview, st app.OverState, u *gunim.UI) { o.Update(st, u) })
 	gunim.RegisterPatch(w, "overview", func(o *view.Overview, _ app.OutputArrived, u *gunim.UI) { o.OutputArrived(u) })

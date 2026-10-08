@@ -510,7 +510,7 @@ func paintElsewhere(p *paint.Painter, f gunim.Frame, t *tile, r geom.Rect) bool 
 	var nat geom.Size
 	var draw func()
 	switch d, ok := sharedOf(t.id); {
-	case t.mirror != nil && t.mirror.copied:
+	case t.mirror != nil:
 		nat = t.mirror.natural(f)
 		draw = func() { t.mirror.cells.Paint(p, f, nat, gunim.Children{}) }
 	case ok:
@@ -742,7 +742,7 @@ func (s *switcher) Layout(c gunim.Constraints, f gunim.Frame, _ gunim.Children) 
 	again, shared := false, false
 	for _, t := range s.tiles {
 		if t.mirror != nil {
-			t.mirror.sync()
+			t.mirror.sync(f.Now)
 			// Its window draws what was written a moment after.
 			again = again || t.mirror.busy(f.Now)
 		} else if !s.drawsLive(t) {
@@ -946,7 +946,13 @@ func (s *switcher) paintPane(p *paint.Painter, f gunim.Frame, tl *tile, r geom.R
 	// Square and flat where it stands on the stage, as the pane is, and
 	// rounded, lifted, as the switcher comes in.
 	radius := 6 * min(max(shadow, 0), 1)
-	p.ShadowRRect(r, radius, paint.Solid(widget.Background.Get(th)), paint.Shadow{Offset: geom.Pt(0, 4), Blur: 18, Color: color.NRGBA{A: uint8(0x90 * shadow)}})
+	ground := widget.Background.Get(th)
+	if s.w == nil {
+		// Over the screen, the window's background is see-through: a
+		// pane stands on a terminal's ground.
+		ground = look.TermBackground.Get(th)
+	}
+	p.ShadowRRect(r, radius, paint.Solid(ground), paint.Shadow{Offset: geom.Pt(0, 4), Blur: 18, Color: color.NRGBA{A: uint8(0x90 * shadow)}})
 	// The caption line, shrunk as the pane is, over it.
 	if tl.titled {
 		// Shrunk with the tile, and never taller than the line on stage:
