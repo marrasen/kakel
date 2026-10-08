@@ -53,6 +53,10 @@ type Theme struct {
 	// "calm", as kakel moves them, which empty means too; or "lively",
 	// with a bounce.
 	Motion string `json:"motion,omitempty"`
+
+	// Edits are the changes the theme editor saved for this theme, as
+	// gunim's theme values by key, from the file's edits. Nil for none.
+	Edits json.RawMessage `json:"-"`
 }
 
 // Motions a theme can ask for.
@@ -98,6 +102,9 @@ type Echo struct {
 type stored struct {
 	Version int     `json:"version"`
 	Themes  []Theme `json:"themes"`
+	// Edits are the theme editor's changes, by the name of the theme
+	// they change: one of the user's or a built-in one.
+	Edits map[string]json.RawMessage `json:"edits,omitempty"`
 }
 
 // Palette turns a theme into the colours a window draws with.
@@ -340,7 +347,110 @@ func Load(path string) ([]Theme, error) {
 		}
 		mine = append(mine, t)
 	}
-	return append(all, mine...), nil
+	all = append(all, mine...)
+	for name, raw := range file.Edits {
+		// Edits for a theme no longer there wait in the file, in case it
+		// comes back; saving another theme's edits keeps them.
+		for i := range all {
+			if strings.EqualFold(all[i].Name, name) {
+				all[i].Edits = raw
+			}
+		}
+	}
+	return all, nil
+}
+
+// SaveEdits writes the theme editor's changes to the theme called name
+// into the file at path, as gunim's theme values by key. Empty edits
+// take the theme's out. The rest of the file keeps what it says, the
+// user's own themes with any field this kakel does not know; only the
+// spacing is written again.
+func SaveEdits(path, name string, edits json.RawMessage) error {
+	fail := func(err error) error { return fmt.Errorf("themes: save the edits to %s in %s: %w", name, path, err) }
+	if len(edits) > 0 && !json.Valid(edits) {
+		return fail(errors.New("they are not JSON"))
+	}
+	// The file the path names: a rename would replace a link to it,
+	// leaving what it points at as it was.
+	if real, err := filepath.EvalSymlinks(path); err == nil {
+		path = real
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return fail(err)
+	}
+	file := map[string]json.RawMessage{}
+	raw, err := os.ReadFile(path)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		file["version"] = json.RawMessage(strconv.Itoa(FileVersion))
+		file["themes"] = json.RawMessage("[]")
+	case err != nil:
+		return fail(err)
+	default:
+		if err := json.Unmarshal(raw, &file); err != nil {
+			return fail(err)
+		}
+	}
+	all := map[string]json.RawMessage{}
+	if have, ok := file["edits"]; ok {
+		if err := json.Unmarshal(have, &all); err != nil {
+			return fail(err)
+		}
+	}
+	for have := range all {
+		if strings.EqualFold(have, name) {
+			delete(all, have)
+		}
+	}
+	if len(edits) > 0 && string(edits) != "{}" && string(edits) != "null" {
+		all[name] = edits
+	}
+	if len(all) == 0 {
+		delete(file, "edits")
+	} else {
+		b, err := json.Marshal(all)
+		if err != nil {
+			return fail(err)
+		}
+		file["edits"] = b
+	}
+	out, err := json.MarshalIndent(file, "", "  ")
+	if err != nil {
+		return fail(err)
+	}
+	if err := replace(path, append(out, '\n')); err != nil {
+		return fail(err)
+	}
+	return nil
+}
+
+// replace writes body over the file at path whole or not at all: to a
+// file beside it, flushed, then renamed over it.
+func replace(path string, body []byte) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".*")
+	if err != nil {
+		return err
+	}
+	name := tmp.Name()
+	_, err = tmp.Write(body)
+	if err == nil {
+		// Flushed before the rename, or a crash can leave the name on an
+		// empty file.
+		err = tmp.Sync()
+	}
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = os.Rename(name, path)
+	}
+	if err != nil {
+		_ = os.Remove(name)
+	}
+	return err
 }
 
 // Named is the theme with a name, and whether there is one. Case does

@@ -1,6 +1,8 @@
 package themes
 
 import (
+	"bytes"
+	"encoding/json"
 	"image/color"
 	"os"
 	"path/filepath"
@@ -517,5 +519,83 @@ func TestAStartFileCarriesTheFrameBlock(t *testing.T) {
 	}
 	if mine.Shape == nil || *mine.Shape.Corners != 0 {
 		t.Errorf("the copy's shape is %+v, want Phosphor's square corners", mine.Shape)
+	}
+}
+
+// The theme editor's changes are saved by the theme's name, read back
+// onto that theme, built in or not, and taken out again when emptied.
+// The user's own themes keep what they say, fields kakel does not know
+// too.
+func TestEditsAreSavedReadAndTakenOut(t *testing.T) {
+	path := filepath.Join(t.TempDir(), File)
+	mine := `{"version": 1, "themes": [{"name": "Mine", "fg": "#ffffff", "bg": "#000000",
+		"ansi": ["#000","#800","#080","#880","#008","#808","#088","#ccc","#888","#f00","#0f0","#ff0","#00f","#f0f","#0ff","#fff"],
+		"later": "kept"}]}`
+	if err := os.WriteFile(path, []byte(mine), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveEdits(path, "dark", json.RawMessage(`{"motion.caret":{"response":0,"damping":1}}`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveEdits(path, "Mine", json.RawMessage(`{"button.fill":"#336699"}`)); err != nil {
+		t.Fatal(err)
+	}
+	all, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edits := func(name string) string {
+		th, ok := Named(all, name)
+		if !ok {
+			t.Fatalf("no theme %s", name)
+		}
+		if len(th.Edits) == 0 {
+			return ""
+		}
+		var b bytes.Buffer
+		if err := json.Compact(&b, th.Edits); err != nil {
+			t.Fatal(err)
+		}
+		return b.String()
+	}
+	if got := edits("Dark"); got != `{"motion.caret":{"response":0,"damping":1}}` {
+		t.Fatalf("Dark's edits read back as %s", got)
+	}
+	if got := edits("Mine"); got != `{"button.fill":"#336699"}` {
+		t.Fatalf("Mine's edits read back as %s", got)
+	}
+	if got := edits("Paper"); got != "" {
+		t.Fatalf("Paper, never edited, has edits %s", got)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"later": "kept"`) {
+		t.Fatalf("saving the edits lost a field of the user's theme:\n%s", raw)
+	}
+
+	for _, name := range []string{"Dark", "Mine"} {
+		if err := SaveEdits(path, name, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if raw, _ = os.ReadFile(path); strings.Contains(string(raw), "edits") {
+		t.Fatalf("with every edit taken out, the file still has edits:\n%s", raw)
+	}
+}
+
+// Edits saved with no file yet make one that reads.
+func TestEditsSavedWithNoFileMakeOne(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "kakel", File)
+	if err := SaveEdits(path, "Dark", json.RawMessage(`{"motion.caret":{"response":0,"damping":1}}`)); err != nil {
+		t.Fatal(err)
+	}
+	all, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if th, _ := Named(all, "Dark"); len(th.Edits) == 0 {
+		t.Fatal("the edits saved with no file were not read back")
 	}
 }
