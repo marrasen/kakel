@@ -62,7 +62,8 @@ their side. The arrows walk the panes, `Tab` goes through them in turn,
 `Enter` goes to the one marked and `Escape` puts every window back as
 it was. A click goes straight there: the pane grows back into its
 window, which is in front, on that tab, once All Panes has gone.
-`Ctrl+Shift+A` again closes it. Where kakel cannot say where its
+`Ctrl+Shift+A` again closes it. The launcher (`Shift+Win+K`, or `Ctrl+Alt+K` on Linux) offers it
+too: type "all panes" and press `Enter`. Where kakel cannot say where its
 windows are, All Panes shows over the window it was asked in instead. The images are shrunk by the GPU rather than cell by
 cell, and a window with nothing happening in it still skips the frames
 it would have skipped anyway.

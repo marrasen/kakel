@@ -17,7 +17,8 @@ tabs with their splits as they stand, every pane live. Pick a pane and
 it grows back into its window, which comes to the front on that tab;
 `Escape` puts every window back. Drag a pane onto a pane to join it in
 a split, onto a window's card to move it there on a tab of its own, or
-onto empty room to give it a window of its own there.
+onto empty room to give it a window of its own there. The launcher
+offers it as All Panes, so it opens from any program.
 
 ## v0.12.0-beta.6
 

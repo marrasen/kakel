@@ -358,6 +358,10 @@ func (a *app) launchThings(ms []LaunchMachine) []LaunchThing {
 		out = append(out, LaunchThing{Title: c.Line, Note: where, Also: []string{"run", "command", "saved"}, Kind: "command",
 			Machine: machines.ID(c.HostID), Action: "saved:" + c.HostID + "\x00" + c.Line})
 	}
+	if a.overviewAlone() && len(a.st.Panes) > 0 {
+		out = append(out, LaunchThing{Title: "All Panes", Note: "kakel", Also: []string{"show all panes", "overview", "every pane", "windows", "mission control"},
+			Kind: "panes", Action: "app:panes"})
+	}
 	return append(out,
 		LaunchThing{Title: "Machines", Note: "kakel", Also: []string{"servers", "connections"}, Kind: "servers", Action: "app:servers"},
 		LaunchThing{Title: "Secrets", Note: "kakel", Also: []string{"passwords", "vault"}, Kind: "secrets", Action: "app:secrets"},
@@ -383,6 +387,15 @@ func (a *app) handleLaunch(in gunim.Intent) {
 		// next: not a window of kakel's, nor a command.
 		if in.Action == "terminal" || in.Action == "files" || in.Action == "log" || strings.HasPrefix(in.Action, "shell:") {
 			a.launch.last[in.Machine] = in.Action
+		}
+		if in.Action == "app:panes" {
+			// Over the screen, from the window worked in; not closed
+			// again when it is open already.
+			if a.over.c == nil {
+				a.front(a.work)
+				a.toggleOverview()
+			}
+			return
 		}
 		if in.Action == "app:window" {
 			// A window of its own: not first in the window worked in.

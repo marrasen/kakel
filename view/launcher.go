@@ -188,7 +188,7 @@ func (l *Launcher) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gu
 // thingIcons are the icons of the kinds of things the launcher finds.
 var thingIcons = map[string]*icon.Icon{
 	"terminal": icon.SquareTerminal, "files": icon.Folder, "log": icon.ScrollText, "command": icon.SquareChevronRight,
-	"servers": icon.Server, "secrets": icon.Lock, "window": icon.AppWindow,
+	"servers": icon.Server, "secrets": icon.Lock, "window": icon.AppWindow, "panes": icon.LayoutGrid,
 }
 
 // thing is found item i when it is one of the things rather than a

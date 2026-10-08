@@ -1,6 +1,7 @@
 package app
 
 import (
+	"slices"
 	"testing"
 	"time"
 
@@ -199,5 +200,33 @@ func TestAllPanesClosesOnQuitAndWhenAskedTwice(t *testing.T) {
 	a.leave()
 	if a.over.c != nil {
 		t.Fatal("quitting left All Panes open")
+	}
+}
+
+// The launcher offers All Panes, which opens it over the screen, and
+// leaves it open when it is open already.
+func TestTheLauncherOpensAllPanes(t *testing.T) {
+	a, _, two := twoWindowApp(t)
+	two.gw = gunimtest.New(t, geom.Sz(400, 300), nil)
+	a.monitors = func() []driver.Monitor { return []driver.Monitor{{Bounds: geom.Rc(0, 0, 1600, 1000), Primary: true}} }
+	ow := gunimtest.New(t, geom.Sz(1600, 1000), nil)
+	a.openOverview = func(driver.Monitor) (gunim.Client, *gunim.Window, error) { return ow.Client(), ow, nil }
+	things := a.launchThings(nil)
+	if !slices.ContainsFunc(things, func(l LaunchThing) bool { return l.Action == "app:panes" && slices.Contains(l.Also, "show all panes") }) {
+		t.Fatal("the launcher does not offer All Panes")
+	}
+	a.handleLaunch(Launch{Action: "app:panes"})
+	select {
+	case f := <-a.events:
+		f()
+	case <-time.After(5 * time.Second):
+		t.Fatal("All Panes did not open")
+	}
+	if a.over.c == nil {
+		t.Fatal("All Panes is not open")
+	}
+	a.handleLaunch(Launch{Action: "app:panes"})
+	if a.over.closing {
+		t.Fatal("asked from the launcher again, All Panes closes")
 	}
 }
