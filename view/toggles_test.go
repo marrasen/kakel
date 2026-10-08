@@ -44,7 +44,7 @@ func TestTheSwitcherShortcutClosesItAgain(t *testing.T) {
 	}
 }
 
-// The sidebar's shortcut opens and closes the Servers pane, in full
+// The sidebar's shortcut opens and closes the Machines pane, in full
 // screen too.
 func TestTheSidebarShortcutTogglesServers(t *testing.T) {
 	win, _, publish := windowStage(t)
@@ -133,16 +133,16 @@ func TestThePaletteTicksASwitchThatIsOn(t *testing.T) {
 				return win.palette.Items[i].Checked
 			}
 		}
-		t.Fatal("no Servers in the palette")
+		t.Fatal("no Machines in the palette")
 		return false
 	}
 	publish(app.State{AllPanes: []app.Pane{{ID: "ps", Kind: app.KindServers}}})
 	if !ticked() {
-		t.Fatal("with the Servers pane open, the palette leaves it unticked")
+		t.Fatal("with the Machines pane open, the palette leaves it unticked")
 	}
 	publish(app.State{})
 	if ticked() {
-		t.Fatal("with the Servers pane closed, the palette ticks it")
+		t.Fatal("with the Machines pane closed, the palette ticks it")
 	}
 }
 

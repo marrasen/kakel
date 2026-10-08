@@ -14,7 +14,7 @@ import (
 )
 
 // The Settings pane shows the sounds, the rings and the switches as
-// they are, a box ticked saves at once, and Settings… opens the pane.
+// they are, a box ticked saves at once, and Settings opens the pane.
 func TestTheSettingsPaneShowsAndSaves(t *testing.T) {
 	win, _, publish := windowStage(t)
 	st := app.State{Panes: []app.Pane{{ID: "s", Title: "Settings", Kind: app.KindSettings}}, Stage: &app.Box{Pane: "s"}, Focus: "s"}
@@ -60,10 +60,10 @@ func TestTheSettingsPaneShowsAndSaves(t *testing.T) {
 		t.Fatalf("ticking the sound of a lost connection sent %+v", in)
 	}
 	if !win.run("app.settings", lastUI) {
-		t.Fatal("Settings… was not taken")
+		t.Fatal("Settings was not taken")
 	}
-	if got := nextIntent(t); got != (app.OpenSettings{}) {
-		t.Fatalf("Settings… sent %#v", got)
+	if got := nextIntent(t); got != (app.ShowSettings{}) {
+		t.Fatalf("Settings sent %#v", got)
 	}
 }
 

@@ -37,7 +37,11 @@ func (w *Window) buildBar(refill bool) {
 	w.bar.Menus = w.bar.Menus[:0]
 	for _, m := range w.layout {
 		bm := widget.BarMenu{Title: m.title}
+		var first []int
 		for i, it := range m.items {
+			if it.keyFirst {
+				first = append(first, i)
+			}
 			hint := it.hint
 			if chord, ok := w.keys.ChordFor(it.id); ok && !it.caption && it.pane == "" {
 				hint = chordLabel(chord)
@@ -45,7 +49,7 @@ func (w *Window) buildBar(refill bool) {
 			bm.Items = append(bm.Items, widget.MenuItem{Label: it.title, Hint: hint, Icon: commandIcons[it.id],
 				Checked: it.on, Caption: it.caption, Break: it.group || (it.caption && i > 0)})
 		}
-		w.bar.Menus = append(w.bar.Menus, withAccessKeys(bm))
+		w.bar.Menus = append(w.bar.Menus, withAccessKeys(bm, first...))
 	}
 	if refill {
 		w.servers(w.saved)

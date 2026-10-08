@@ -63,10 +63,10 @@ type Window struct {
 	anim.Group
 	top *widget.Flex
 	bar *widget.Menubar
-	// serversView is the Servers pane, which holds list, the machines
+	// serversView is the Machines pane, which holds list, the machines
 	// and what is open on them; rows are the list's rows as last
 	// worked out, and lastWorked the pane last worked in here, other
-	// than the Servers pane, whose row is lit.
+	// than the Machines pane, whose row is lit.
 	serversView *serversPane
 	rows        []sideItem
 	lastWorked  string
@@ -86,7 +86,7 @@ type Window struct {
 	paneTitle string
 	// dock is where a tab dragged over the stage would join a split.
 	dock tabDock
-	// cards are the Servers pane's machines, a card each.
+	// cards are the Machines pane's machines, a card each.
 	cards *serverCards
 	stage *stage
 	// layout is the menus as the bar has them now: kakel's own, with the
@@ -277,7 +277,7 @@ type Window struct {
 	themeNow string
 	// ask is the dialog asking a connection's question askID, and
 	// saved are the saved servers; serverIDs and paletteIDs are the
-	// commands of the Servers menu's items and the palette's.
+	// commands of the Machines menu's items and the palette's.
 	ask        *widget.Dialog
 	askID      uint64
 	saved      []remote.Host
@@ -321,7 +321,7 @@ func NewWindow(sh *screen.Shells, keys *ui.Keymap, all []look.Themed) *Window {
 		id := ""
 		switch {
 		case m < 0 || m >= len(w.layout):
-		case w.layout[m].title == "Servers":
+		case w.layout[m].title == "Machines":
 			if i >= 0 && i < len(w.serverIDs) {
 				id = w.serverIDs[i]
 			}
@@ -342,7 +342,7 @@ func NewWindow(sh *screen.Shells, keys *ui.Keymap, all []look.Themed) *Window {
 	w.bar.OnPick = func(m, i int, u *gunim.UI) gunim.Intent {
 		switch {
 		case m >= len(w.layout) || m < 0:
-		case w.layout[m].title == "Servers":
+		case w.layout[m].title == "Machines":
 			if i < len(w.serverIDs) {
 				w.run(w.serverIDs[i], u)
 			}
@@ -501,7 +501,7 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 		w.updatesDialog(u)
 		return true
 	case "app.settings":
-		u.Send(w, app.OpenSettings{})
+		u.Send(w, app.ShowSettings{})
 		return true
 	case "tab.newWindow", "servers.window", "secrets.window":
 		// A little down and to the right of this window, as large.
@@ -519,7 +519,7 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 		row, ok := u.Focused().(*sideRow)
 		switch {
 		case !ok:
-			w.toasts.Show(widget.Toast{Title: "No row selected", Body: "Close Selected Row works on the row the Servers pane has the keyboard on."}, u)
+			w.toasts.Show(widget.Toast{Title: "No row selected", Body: "Close Selected Row works on the row the Machines pane has the keyboard on."}, u)
 		case row.closes == nil:
 			w.toasts.Show(widget.Toast{Title: "That row cannot be closed", Body: "A machine's heading goes with Disconnect, from its menu."}, u)
 		default:
@@ -530,7 +530,7 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 		m := w.machineOf(w.focused)
 		i := slices.IndexFunc(w.saved, func(h remote.Host) bool { return machines.ID(h.ID) == m })
 		if i < 0 {
-			w.toasts.Show(widget.Toast{Title: "This pane is on no saved server", Body: "Edit This Server works on a pane on a server from the Servers menu."}, u)
+			w.toasts.Show(widget.Toast{Title: "This pane is on no saved server", Body: "Edit This Server works on a pane on a server from the Machines menu."}, u)
 			return true
 		}
 		if id == "server.editThis" {
@@ -1165,7 +1165,7 @@ func askDialog(q app.Ask, from gunim.Node) *widget.Dialog {
 	return d
 }
 
-// servers fills the Servers menu and the palette: the window's own
+// servers fills the Machines menu and the palette: the window's own
 // commands, then the saved servers, each to connect to, and in the
 // palette to edit or remove too.
 func (w *Window) servers(saved []remote.Host) {
@@ -1178,7 +1178,7 @@ func (w *Window) servers(saved []remote.Host) {
 	}
 	// The saved servers first, under Connect To, then what is
 	// always there.
-	m := widget.BarMenu{Title: "Servers"}
+	m := widget.BarMenu{Title: "Machines"}
 	w.serverIDs = nil
 	if len(saved) > 0 {
 		m.Items = append(m.Items, widget.MenuItem{Label: "Connect To", Caption: true})
@@ -1196,7 +1196,7 @@ func (w *Window) servers(saved []remote.Host) {
 		widget.MenuItem{Label: "Import from SSH Config", Icon: icon.FileInput},
 		widget.MenuItem{Label: "Reload Server List", Icon: icon.RefreshCw})
 	w.serverIDs = append(w.serverIDs, "server.connect", "app.launcher", "server.add", "server.import", "server.reload")
-	if i := w.menuAt("Servers"); i >= 0 && i < len(w.bar.Menus) {
+	if i := w.menuAt("Machines"); i >= 0 && i < len(w.bar.Menus) {
 		// The lines always there first.
 		n := len(m.Items)
 		w.bar.Menus[i] = withAccessKeys(m, n-5, n-4, n-3, n-2, n-1)
@@ -1908,7 +1908,7 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 		// Published by hand, as in a test: this window's alone.
 		all = st.Panes
 	}
-	// The Servers pane lists the rest, not itself.
+	// The Machines pane lists the rest, not itself.
 	all = slices.DeleteFunc(slices.Clone(all), func(p app.Pane) bool { return p.Kind == app.KindServers })
 	rows := sidebarRows(all, st.Tunnels, st.Share, st.Windows, saved, w.named, st.Dropped...)
 	// The windows connected to this one, under this computer.
@@ -3239,7 +3239,7 @@ func (w *Window) focusRowsAway(from string, n int, u *gunim.UI) {
 	}
 }
 
-// focusSidebar gives the keyboard to the Servers pane's list: to the
+// focusSidebar gives the keyboard to the Machines pane's list: to the
 // row of the pane last worked in, or its first row, opening the pane
 // first, or going to it where it is.
 func (w *Window) focusSidebar(u *gunim.UI) {

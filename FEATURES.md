@@ -19,7 +19,7 @@ The whole list. The [README](README.md) has the short version.
   window with `Ctrl+Shift+N`.
 - **One kakel window working in another.** A window can serve itself
   on a port you opt into, and another window on another machine can take
-  it over: what it has open appears in the Servers pane under that
+  it over: what it has open appears in the Machines pane under that
   window's name, and a pane
   opened there is drawn here. Key authentication only, from a list of
   keys you add in the Serve dialog, pasted or picked from this
@@ -79,7 +79,7 @@ The whole list. The [README](README.md) has the short version.
   Let it go outside every window and it opens a window of its own.
 - **In the tray, and one kakel at a time.** kakel shows an icon in the
   system tray, whose menu lists this computer and every saved server,
-  each with Terminal, Files and the rest, and Servers, New Window,
+  each with Terminal, Files and the rest, and Machines, New Window,
   Secrets and Quit kakel. They work with no window open. Closing the
   last window leaves kakel running there; Exit, or Quit kakel, ends it.
   Starting kakel again, from a shortcut or a shell, hands its command
@@ -91,20 +91,20 @@ The whole list. The [README](README.md) has the short version.
   Ctrl+Alt+K on Linux under X11, opens a small window over everything
   that finds a machine by its name as you type, and once you type, the
   shells here by name (`cmd`, `wsl`, PowerShell), files on any machine
-  or in a WSL distribution, your saved commands, and the Servers,
+  or in a WSL distribution, your saved commands, and the Machines,
   Secrets and a new window. Enter on a machine opens what you
   opened there last since kakel started, a terminal at first, in the
   window you last worked in; Tab lists the rest, as Files and, while
   connected, the Connection Log, and Escape goes back and then closes
   it. Settings › General › Launcher key sets another key with Ctrl, Alt or Win in
   it, or none; kakel says so if another program has it. Open Launcher,
-  on the Servers menu and the tray's, opens it anywhere, and so does
+  on the Machines menu and the tray's, opens it anywhere, and so does
   `kakel -launcher`, for a key bound in the desktop's own settings
   where kakel can take none, as under Wayland.
-- **Tool windows.** View › Open Servers Window and Secrets › Open
+- **Tool windows.** View › Open Machines Window and Secrets › Open
   Secrets Window give those panes a window of their own. Tab › Tab to
   New Window does it for the tab in front. In a window that holds only
-  the Servers pane or the secrets, a pane you open opens in the window
+  the Machines pane or the secrets, a pane you open opens in the window
   you last worked in, and that window comes to the front. A pane you ask
   for again is shown where it is. A secret you type goes to the terminal
   you last used, in whichever window.
@@ -125,7 +125,7 @@ The whole list. The [README](README.md) has the short version.
   card, beside the file manager in front, or with Files in a New Window
   in a window of its own; a folder opened from Windows opens in one too.
   Its places are the machines: this computer's folders, and each saved
-  server under Servers, connected to when you go there. Its menus sit
+  server under Machines, connected to when you go there. Its menus sit
   behind the button left of Back. Copy, cut and paste work between
   folders and between machines, as kakel's background copies, and a drag
   does too, from Explorer or another program as well. Files on a machine
@@ -216,7 +216,7 @@ The whole list. The [README](README.md) has the short version.
   every remote forward, because where the far machine really binds it is
   the far machine's decision. The panel shows what each is carrying: how
   many streams, how fast, and how many failed.
-- **A Servers pane.** `Ctrl+Shift+L` opens it in a tab of its own, or
+- **A Machines pane.** `Ctrl+Shift+L` opens it in a tab of its own, or
   goes to it where it is; drag its tab out to give it a window of its
   own. It lists every terminal, file manager pane, tunnel and transfer, in every
   window, under the machine it is on with this one at the top. A click
@@ -232,7 +232,7 @@ The whole list. The [README](README.md) has the short version.
   anything is open on it. Nothing polls: the row is worked out afresh
   each frame from when the last byte went by, so an idle list redraws
   nothing at all. `Ctrl+Shift+B` opens and closes it.
-- **Servers are saved.** A machine you add gets a line on the Servers
+- **Machines are saved.** A machine you add gets a line on the Machines
   menu and an entry in the palette, kept in a JSON file under the OS
   configuration directory. It holds no secret and never will. A list
   that cannot be read is reported and is never written over, because a
@@ -341,7 +341,7 @@ install and no profile to edit.
   starts the shell and applies its own answer.
 
 A program can say things of its own through the same channel. A
-message (OSC 9) goes on the pane's row in the Servers pane, into the
+message (OSC 9) goes on the pane's row in the Machines pane, into the
 window's log, and up as a Windows notification, so one that arrives
 while you are looking elsewhere is still seen. How far along it is
 (OSC 9;4) goes on the row.

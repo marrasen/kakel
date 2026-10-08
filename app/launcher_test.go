@@ -170,7 +170,7 @@ func TestTheLauncherOffersShellsFilesAndWindows(t *testing.T) {
 	for _, th := range things {
 		titles[th.Title] = th
 	}
-	for _, want := range []string{"Command Prompt", "Ubuntu (WSL)", "Files in Ubuntu (WSL)", "Terminal on This computer", "Files on This computer", "Servers", "Secrets", "New Window"} {
+	for _, want := range []string{"Command Prompt", "Ubuntu (WSL)", "Files in Ubuntu (WSL)", "Terminal on This computer", "Files on This computer", "Machines", "Secrets", "New Window"} {
 		if _, ok := titles[want]; !ok {
 			t.Fatalf("the launcher offers no %q among %v", want, things)
 		}
@@ -183,10 +183,10 @@ func TestTheLauncherOffersShellsFilesAndWindows(t *testing.T) {
 	}
 	a.handleLaunch(Launch{Action: "app:servers"})
 	if a.serversPane() == "" || a.cur != two {
-		t.Fatalf("Servers did not open in the window worked in: %q in window %d", a.serversPane(), a.cur.id)
+		t.Fatalf("Machines did not open in the window worked in: %q in window %d", a.serversPane(), a.cur.id)
 	}
 	if ms := a.launchMachines(); ms[0].Default != 0 {
-		t.Fatal("opening Servers became what Enter opens on this computer")
+		t.Fatal("opening Machines became what Enter opens on this computer")
 	}
 }
 

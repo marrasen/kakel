@@ -20,7 +20,7 @@ import (
 // KAKEL_STRESS=1h works kakel hard for that long, to bring out a freeze
 // or a crash seen once and never again: workers that each, at random
 // intervals, fast and slow, open and close windows, split and close
-// panes, type commands into terminals, open Settings and the Servers
+// panes, type commands into terminals, open Settings and the Machines
 // pane, and change the theme and the font size, all at once. main adds
 // the windows of gunim's own: What's New and About, and file managers.
 // Should the windows stop answering, gunim writes where everything was
@@ -141,11 +141,11 @@ func (a *app) stress(ctx context.Context, d time.Duration) {
 				}
 			})
 		},
-		// Settings and the Servers pane, opened and gone to.
+		// Settings and the Machines pane, opened and gone to.
 		"tools": func() {
 			on(func() {
 				if rand.IntN(2) == 0 {
-					a.openSettings()
+					a.showSettings()
 				} else {
 					a.showServers()
 				}

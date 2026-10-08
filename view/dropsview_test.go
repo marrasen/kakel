@@ -39,7 +39,7 @@ func TestADropGoesToTheTerminalUnderItOrTheFocusedOne(t *testing.T) {
 		t.Fatalf("dropped on the terminal, it went to %q", in.Pane)
 	}
 	if in := drop(geom.Pt(20, 200)); in.Pane != "" {
-		t.Fatalf("dropped on the Servers pane, it went to %q, want the focused pane", in.Pane)
+		t.Fatalf("dropped on the Machines pane, it went to %q, want the focused pane", in.Pane)
 	}
 }
 

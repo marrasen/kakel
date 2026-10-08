@@ -59,7 +59,7 @@ func TestEveryMenuLineHasItsOwnAccessKey(t *testing.T) {
 
 // A & in a line's own text shows, and marks no key.
 func TestAnAmpersandInALineShows(t *testing.T) {
-	m := withAccessKeys(widget.BarMenu{Title: "Servers", Items: widget.Labels("R&D box")})
+	m := withAccessKeys(widget.BarMenu{Title: "Machines", Items: widget.Labels("R&D box")})
 	if got := shownText(m.Items[0].Label); got != "R&D box" {
 		t.Fatalf("the line shows as %q", got)
 	}
@@ -113,10 +113,10 @@ func TestMenuLinesThatCannotActAreGreyed(t *testing.T) {
 	}
 }
 
-// The lines always in the Servers menu keep their letters, whatever the
+// The lines always in the Machines menu keep their letters, whatever the
 // saved servers are called.
 func TestTheServersMenusOwnLinesKeepTheirLetters(t *testing.T) {
-	m := withAccessKeys(widget.BarMenu{Title: "Servers",
+	m := withAccessKeys(widget.BarMenu{Title: "Machines",
 		Items: widget.Labels("quark", "alpha", "rho", "Quick Connect…", "Add Server…", "Reload Server List")}, 3, 4, 5)
 	for i, want := range map[int]rune{3: 'q', 4: 'a', 5: 'r'} {
 		if k, _ := accessKeyOf(m.Items[i].Label); k != want {

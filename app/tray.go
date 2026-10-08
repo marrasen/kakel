@@ -191,7 +191,7 @@ func (a *app) trayMenu(gen int) ([]gunim.TrayItem, map[int]func()) {
 		return gunim.TrayItem{Title: title, Items: sub}
 	}
 	items := []gunim.TrayItem{
-		{Title: "Servers", ID: act(func() { a.toTray(a.showServers) }), Default: true},
+		{Title: "Machines", ID: act(func() { a.toTray(a.showServers) }), Default: true},
 		{Title: "Open Launcher", ID: act(a.openLauncher)},
 		{Separator: true},
 		machine(machines.Local, "This computer"),
@@ -211,7 +211,7 @@ func (a *app) trayMenu(gen int) ([]gunim.TrayItem, map[int]func()) {
 		gunim.TrayItem{Separator: true},
 		gunim.TrayItem{Title: "New Window", ID: act(func() { a.newWindow(func() { a.handle(NewTerminal{}) }) })},
 		gunim.TrayItem{Title: "Secrets", ID: act(func() { a.toTray(func() { a.showSecretsPane(func(string) {}) }) })},
-		gunim.TrayItem{Title: "Settings", ID: act(func() { a.toTray(a.openSettings) })},
+		gunim.TrayItem{Title: "Settings", ID: act(func() { a.toTray(a.showSettings) })},
 		gunim.TrayItem{Separator: true},
 		gunim.TrayItem{Title: "Quit kakel", ID: act(func() {
 			if len(a.whatIsOpen()) == 0 {

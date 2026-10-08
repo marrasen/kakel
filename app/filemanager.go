@@ -21,7 +21,7 @@ import (
 
 // The file manager: gunim's, in panes among kakel's terminals; see
 // fmpanes.go. Its places are the machines, this computer's folders under
-// This computer and each saved server under Servers.
+// This computer and each saved server under Machines.
 
 // FileWindows makes the file manager's panes and tells them their places
 // changed: gunim's filemanager.Hub.
@@ -242,7 +242,7 @@ func (a *app) notePlaces() {
 		case slices.Contains(connected, m) || windows[m]:
 			note = "Connected"
 		}
-		p := filemanager.Place{Name: h.Name, Kind: "drive", Group: "Servers", Note: note, FS: serverFS + h.ID,
+		p := filemanager.Place{Name: h.Name, Kind: "drive", Group: "Machines", Note: note, FS: serverFS + h.ID,
 			Lit: slices.Contains(connected, m) || windows[m]}
 		if fm := a.fmFiles[m]; fm != nil {
 			if fm.live() {

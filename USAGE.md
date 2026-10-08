@@ -16,8 +16,8 @@ Kakel comes with:
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | copy and paste |
 | middle click | paste |
 | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` | font size, from 8 to 96 pixels |
-| `Ctrl+Shift+B` | open or close the Servers pane |
-| `Ctrl+Shift+L` | go to the Servers pane |
+| `Ctrl+Shift+B` | open or close the Machines pane |
+| `Ctrl+Shift+L` | go to the Machines pane |
 | `Ctrl+Shift+N` | connect to a server |
 | `Shift+Win+K` on Windows, `Ctrl+Alt+K` on Linux | the launcher, from any program |
 | `Ctrl+Shift+A` | show every pane at once |
@@ -68,7 +68,7 @@ the pane is over it. Let it go outside every window and it opens a
 window of its own, where you let it go. A window's only pane stays
 where it is.
 
-Each window has its own panes and its own pane in front. The Servers
+Each window has its own panes and its own pane in front. The Machines
 pane lists the panes of every window, and clicking one in another
 window brings that window to the front.
 The pin in the title bar, before minimize, keeps a window above other
@@ -127,7 +127,7 @@ rather than on a key. "Serve This Window…" asks for the port and where
 to listen, and then shows the address and the host key's fingerprint to
 check. "Connect to Window…" asks for the address and the key file to
 offer. Connecting opens nothing over there: what
-that window has open lands in the Servers pane under its name, and the plus
+that window has open lands in the Machines pane under its name, and the plus
 on that heading opens a pane on it. The servers that window is
 connected to get headings of their own, and their plus opens things on
 them through it. Nothing listens until you ask it to,

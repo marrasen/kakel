@@ -9,7 +9,7 @@ import (
 	gi "github.com/marrasen/gunim/input"
 )
 
-// A click on the empty room under the Servers list leaves the window's
+// A click on the empty room under the Machines list leaves the window's
 // shortcuts working.
 func TestShortcutsWorkAfterAClickUnderTheServers(t *testing.T) {
 	win, _, publish := windowStage(t)
@@ -17,7 +17,7 @@ func TestShortcutsWorkAfterAClickUnderTheServers(t *testing.T) {
 	frames(30)
 	box, ok := lastUI.Bounds(win.serversView)
 	if !ok {
-		t.Fatal("the Servers pane is not drawn")
+		t.Fatal("the Machines pane is not drawn")
 	}
 	at := geom.Pt(box.Center().X, box.Max.Y-20)
 	lastWindow.Input(gi.PointerDown{Pos: at, Button: gi.ButtonPrimary, Clicks: 1})

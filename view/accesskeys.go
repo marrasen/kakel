@@ -14,7 +14,7 @@ import (
 // menuKeys are the menus' letters: each menu's first letter, and where
 // two menus start alike, the one that reads best after it.
 var menuKeys = map[string]rune{
-	"File": 'f', "Edit": 'e', "View": 'v', "Pane": 'p', "Machine": 'm', "Servers": 's',
+	"File": 'f', "Edit": 'e', "View": 'v', "Pane": 'p', "Machine": 'm', "Machines": 's',
 	"Share": 'a', "Secrets": 'c', "Options": 'o', "Font": 'n', "Help": 'h', "Go": 'g', "Tab": 't',
 }
 

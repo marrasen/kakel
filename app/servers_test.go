@@ -9,7 +9,7 @@ import (
 	"github.com/marrasen/kakel/screen"
 )
 
-// The Servers pane opens once, in a tab of its own; asked for again
+// The Machines pane opens once, in a tab of its own; asked for again
 // from another window, it stays where it is and its window comes to the
 // front.
 func TestTheServersPaneOpensOnce(t *testing.T) {
@@ -20,7 +20,7 @@ func TestTheServersPaneOpensOnce(t *testing.T) {
 	a.handle(ShowServers{})
 	id := a.serversPane()
 	if id == "" || a.winOf[id] != one.id || a.st.Focus != id {
-		t.Fatalf("the Servers pane is %q, in window %d; the focus is on %q", id, a.winOf[id], a.st.Focus)
+		t.Fatalf("the Machines pane is %q, in window %d; the focus is on %q", id, a.winOf[id], a.st.Focus)
 	}
 	if len(a.tabsOf(one)) != 3 {
 		t.Fatalf("the window has %d tabs, want 3", len(a.tabsOf(one)))
@@ -32,23 +32,23 @@ func TestTheServersPaneOpensOnce(t *testing.T) {
 	}
 }
 
-// Servers on the View menu opens the pane, and closes it again.
+// Machines on the View menu opens the pane, and closes it again.
 func TestToggleServersOpensAndCloses(t *testing.T) {
 	a, _, _ := twoWindowApp(t)
 	a.next = 100
 	a.handle(ToggleServers{})
 	id := a.serversPane()
 	if id == "" {
-		t.Fatal("the Servers pane did not open")
+		t.Fatal("the Machines pane did not open")
 	}
 	a.handle(ToggleServers{})
 	if a.has(id) && !a.closing[id] {
-		t.Fatal("the Servers pane stayed open")
+		t.Fatal("the Machines pane stayed open")
 	}
 }
 
 // Every window's panes are published to each, saying where each is,
-// for the Servers pane.
+// for the Machines pane.
 func TestEveryWindowSeesEveryPane(t *testing.T) {
 	a, one, two := twoWindowApp(t)
 	all := a.allPanes()
@@ -77,7 +77,7 @@ func TestPickingAPaneElsewhereRaisesItsWindow(t *testing.T) {
 	}
 }
 
-// toolWindows is a program with the Servers pane alone in a window of
+// toolWindows is a program with the Machines pane alone in a window of
 // its own, in front, and the window last worked in behind it holding
 // p1 and the jobs.
 func toolWindows(t *testing.T) (a *app, work, tool *ownWin, raised func() int) {
@@ -98,7 +98,7 @@ func toolWindows(t *testing.T) (a *app, work, tool *ownWin, raised func() int) {
 	return a, work, tool, w1.Offscreen().Raised
 }
 
-// What the Servers pane in a window of its own asks for happens in the
+// What the Machines pane in a window of its own asks for happens in the
 // window last worked in, which comes to the front: the tool window
 // takes no pane.
 func TestAToolWindowActsInTheWindowWorkedIn(t *testing.T) {
@@ -127,7 +127,7 @@ func (a *app) paneOfKindHere(kind string) string {
 	return ""
 }
 
-// The Servers toggle closes the pane only where it is being looked at;
+// The Machines toggle closes the pane only where it is being looked at;
 // elsewhere it brings it.
 func TestServersToggleClosesOnlyWhatIsSeen(t *testing.T) {
 	a, work, _, _ := toolWindows(t)
@@ -143,16 +143,16 @@ func TestServersToggleClosesOnlyWhatIsSeen(t *testing.T) {
 	}
 }
 
-// A window with the Servers pane alone closes without asking.
+// A window with the Machines pane alone closes without asking.
 func TestAToolWindowClosesWithoutAsking(t *testing.T) {
 	a, _, tool, _ := toolWindows(t)
 	a.closeWindow(tool)
 	if !tool.gone || len(a.st.Asks) != 0 || a.serversPane() != "" {
-		t.Fatalf("gone %v, %d questions, the Servers pane %q", tool.gone, len(a.st.Asks), a.serversPane())
+		t.Fatalf("gone %v, %d questions, the Machines pane %q", tool.gone, len(a.st.Asks), a.serversPane())
 	}
 }
 
-// Open Servers Window opens the Servers pane in a window of its own,
+// Open Machines Window opens the Machines pane in a window of its own,
 // and Move Tab to New Window moves the tab in front.
 func TestServersAndTabsGetWindowsOfTheirOwn(t *testing.T) {
 	a, one, _ := twoWindowApp(t)
@@ -162,9 +162,9 @@ func TestServersAndTabsGetWindowsOfTheirOwn(t *testing.T) {
 	}
 	a.front(one)
 	a.handle(ToolWindow{Kind: KindServers})
-	waitFor(t, a, "the Servers window", func() bool { return len(a.wins) == 3 })
+	waitFor(t, a, "the Machines window", func() bool { return len(a.wins) == 3 })
 	if id := a.serversPane(); !a.isTool(a.ownerOf(id)) {
-		t.Fatalf("the Servers pane is in window %d with %d panes", a.ownerOf(id).id, len(a.panesIn(a.ownerOf(id))))
+		t.Fatalf("the Machines pane is in window %d with %d panes", a.ownerOf(id).id, len(a.panesIn(a.ownerOf(id))))
 	}
 	a.front(one)
 	a.focus("p1")

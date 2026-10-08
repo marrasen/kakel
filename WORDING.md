@@ -83,7 +83,7 @@ what a saved key binding, a menu line and the shortcuts file refer to.
 Renaming one breaks whatever pointed at it. Titles are free to edit. If
 an ID ever has to move, `keys.Renamed` keeps the old one working.
 
-## Status text: a row in the Servers pane
+## Status text: a row in the Machines pane
 
 A row says what a connection **is**, now. It is scanned in a narrow
 column beside a dozen others rather than read, so it is written to be

@@ -253,7 +253,7 @@ func TestManyTabsKeepTheBarUsable(t *testing.T) {
 	}
 }
 
-// Out of the tree, the Servers pane's list keeps no frames coming for a
+// Out of the tree, the Machines pane's list keeps no frames coming for a
 // row it had last, and Escape in the list goes back to the pane last
 // worked in.
 func TestTheServersListRestsOffStage(t *testing.T) {
@@ -277,7 +277,7 @@ func TestTheServersListRestsOffStage(t *testing.T) {
 	}
 }
 
-// In a narrow pane the Servers pane's field and Add stay inside it,
+// In a narrow pane the Machines pane's field and Add stay inside it,
 // and the title makes room for them.
 func TestTheServersButtonsFitANarrowPane(t *testing.T) {
 	win, _, publish := windowStageOf(t, geom.Sz(300, 400))

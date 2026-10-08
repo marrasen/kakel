@@ -187,7 +187,7 @@ func TestAPaneSlidingInKeepsItsShellAUsableSize(t *testing.T) {
 
 // nextIntent is the next intent the window sends, or fails.
 // nextIntentPast returns the window's next intent other than the
-// keyboard coming into the Servers pane, which a click in it sends
+// keyboard coming into the Machines pane, which a click in it sends
 // first.
 func nextIntentPast(t *testing.T) gunim.Intent {
 	t.Helper()
@@ -225,9 +225,9 @@ func TestTheSidebarWorksFromTheKeyboard(t *testing.T) {
 	lastWindow.Input(gi.KeyPress{Key: gi.KeyL, Mods: gi.ModControl | gi.ModShift})
 	lastWindow.Frame(time.Second / 60)
 	if in := nextIntent(t); in != (app.ShowServers{}) {
-		t.Fatalf("Go to Servers sent %#v", in)
+		t.Fatalf("Go to Machines sent %#v", in)
 	}
-	// The program puts the Servers pane in front, and the keyboard goes
+	// The program puts the Machines pane in front, and the keyboard goes
 	// to the row of the pane last worked in.
 	st.Focus = "ps"
 	publish(st)
@@ -240,7 +240,7 @@ func TestTheSidebarWorksFromTheKeyboard(t *testing.T) {
 		return ""
 	}
 	if got := focused(); got != "p2" {
-		t.Fatalf("going to the Servers pane lit %q, want the row of the pane last worked in", got)
+		t.Fatalf("going to the Machines pane lit %q, want the row of the pane last worked in", got)
 	}
 	press(gi.KeyUp)
 	if got := focused(); got != "p1" {
@@ -335,7 +335,7 @@ func TestAMachinesPlusOpensWhatCanBeOpenedThere(t *testing.T) {
 	lastWindow.Input(gi.PointerDown{Pos: at, Button: gi.ButtonPrimary, Clicks: 1})
 	lastWindow.Input(gi.PointerUp{Pos: at, Button: gi.ButtonPrimary})
 	lastWindow.Frame(time.Second / 60)
-	// The program answers the keyboard coming into the Servers pane,
+	// The program answers the keyboard coming into the Machines pane,
 	// which leaves the keyboard in the menu.
 	st.Focus = "ps"
 	publish(st)
@@ -495,10 +495,10 @@ func twoPanes(focus string, jobs []app.Job) app.State {
 	}
 }
 
-// withServers puts the Servers pane, "ps", on stage in st, at the left
+// withServers puts the Machines pane, "ps", on stage in st, at the left
 // of what is there, where the sidebar was.
 func withServers(st app.State) app.State {
-	st.Panes = append(slices.Clone(st.Panes), app.Pane{ID: "ps", Title: "Servers", Kind: app.KindServers})
+	st.Panes = append(slices.Clone(st.Panes), app.Pane{ID: "ps", Title: "Machines", Kind: app.KindServers})
 	if st.Stage == nil {
 		st.Stage = &app.Box{Pane: "ps"}
 		return st

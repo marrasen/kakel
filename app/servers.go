@@ -6,24 +6,24 @@ import (
 	"github.com/marrasen/gunim/geom"
 )
 
-// The Servers pane lists every machine kakel knows, with how its
+// The Machines pane lists every machine kakel knows, with how its
 // connection is doing, and under each the panes open on it in every
 // window. It replaces the sidebar each window had: there is one, which
 // is a tab like any other pane, and can have a window of its own.
 // Picking a pane there brings that pane's window to the front.
 
-// KindServers is the Servers pane.
+// KindServers is the Machines pane.
 const KindServers = "servers"
 
-// Intents for the Servers pane.
+// Intents for the Machines pane.
 type (
-	// ShowServers opens the Servers pane in a tab of its own, or goes
+	// ShowServers opens the Machines pane in a tab of its own, or goes
 	// to it where it is, bringing its window to the front.
 	ShowServers struct{}
-	// ToggleServers opens the Servers pane, or closes it while it is
+	// ToggleServers opens the Machines pane, or closes it while it is
 	// open.
 	ToggleServers struct{}
-	// ToolWindow opens a tool pane, the Servers pane or the secrets by
+	// ToolWindow opens a tool pane, the Machines pane or the secrets by
 	// Kind, in a window of its own, opened at At, in the space of the
 	// window asking, and Size large. One alone in its window already is
 	// shown there.
@@ -32,11 +32,12 @@ type (
 		At   geom.Point
 		Size geom.Size
 	}
-	// OpenSettings opens the Settings pane, in a window of its own.
-	OpenSettings struct{}
+	// ShowSettings opens the Settings pane in a tab of its own, or goes
+	// to it where it is, bringing its window to the front.
+	ShowSettings struct{}
 )
 
-// handleServers carries out an intent about the Servers pane, and
+// handleServers carries out an intent about the Machines pane, and
 // reports whether it was one.
 func (a *app) handleServers(in any) bool {
 	switch in := in.(type) {
@@ -44,8 +45,8 @@ func (a *app) handleServers(in any) bool {
 		a.showServers()
 	case ToolWindow:
 		a.toolWindow(in)
-	case OpenSettings:
-		a.openSettings()
+	case ShowSettings:
+		a.showSettings()
 	case ToggleServers:
 		// Closed only where it is what the user is looking at; out of
 		// sight, the toggle brings it.
@@ -60,7 +61,7 @@ func (a *app) handleServers(in any) bool {
 	return true
 }
 
-// serversPane returns the Servers pane, or "" while it is closed.
+// serversPane returns the Machines pane, or "" while it is closed.
 func (a *app) serversPane() string {
 	for _, p := range a.st.Panes {
 		if p.Kind == KindServers && !a.closing[p.ID] {
@@ -70,7 +71,7 @@ func (a *app) serversPane() string {
 	return ""
 }
 
-// showServers goes to the Servers pane, opening it in the window in
+// showServers goes to the Machines pane, opening it in the window in
 // front when it is closed.
 func (a *app) showServers() {
 	if id := a.serversPane(); id != "" {
@@ -78,7 +79,7 @@ func (a *app) showServers() {
 		return
 	}
 	a.next++
-	a.addPane(Pane{ID: "p" + itoa(a.next), Title: "Servers", Kind: KindServers}, nil, Placement{})
+	a.addPane(Pane{ID: "p" + itoa(a.next), Title: "Machines", Kind: KindServers}, nil, Placement{})
 }
 
 // focusRaised gives pane id the keyboard, and brings its window to the
@@ -100,7 +101,7 @@ func (a *app) allPanes() []Pane {
 	return out
 }
 
-// A window holding only tool panes, the Servers pane and the secrets,
+// A window holding only tool panes, the Machines pane and the secrets,
 // is a tool window: a pane opened from there opens in the window last
 // worked in, and a pane asked for again is shown where it is, as a
 // toolbar's buttons work on the document under them. work is that
@@ -217,10 +218,6 @@ func (a *app) toolWindow(in ToolWindow) {
 // KindSettings is the Settings pane.
 const KindSettings = "settings"
 
-// settingsSize is the size the Settings pane opens at, in a window of
-// its own.
-var settingsSize = geom.Sz(880, 680)
-
 // paneOf returns the pane of kind open, or "".
 func (a *app) paneOf(kind string) string {
 	for _, p := range a.st.Panes {
@@ -240,9 +237,4 @@ func (a *app) showSettings() {
 	}
 	a.next++
 	a.addPane(Pane{ID: "p" + itoa(a.next), Title: "Settings", Kind: KindSettings}, nil, Placement{})
-}
-
-// openSettings opens the Settings pane in a window of its own.
-func (a *app) openSettings() {
-	a.toolWindow(ToolWindow{Kind: KindSettings, At: geom.Pt(60, 60), Size: settingsSize})
 }

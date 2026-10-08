@@ -7,6 +7,19 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
+## Unreleased
+
+### Changed
+
+**Servers is now called Machines**: the pane, the menu, the tray's
+line, the launcher's line and the file manager's group of places. It
+lists this computer and WSL as well as servers, so the old name fit
+badly.
+
+**Settings opens as a tab** in the window in front, as Machines does,
+where it opened in a window of its own. Asked for again, it goes to
+the tab where it is.
+
 ## v0.12.0-beta.2
 
 ### Changed

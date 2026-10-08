@@ -14,7 +14,7 @@ import (
 	"github.com/marrasen/gunim/widget"
 )
 
-// The Servers pane: every machine kakel knows, with how its connection
+// The Machines pane: every machine kakel knows, with how its connection
 // is doing, and under each what is open on it in every window, with
 // Quick Connect, Add Server and Connect to Window along the top. It is
 // what the sidebar was, in a tab of its own. A pane's row in another
@@ -51,7 +51,7 @@ var (
 func newServersPane(w *Window) *serversPane {
 	p := &serversPane{
 		w:      w,
-		head:   widget.NewLabel("Servers"),
+		head:   widget.NewLabel("Machines"),
 		search: widget.NewTextField(),
 		add:    widget.NewMenuButton("Add", addItems),
 		gear:   widget.NewIconButton(icon.Settings, "Settings (Ctrl+,)"),
@@ -167,7 +167,7 @@ func (p *serversPane) Paint(pt *paint.Painter, f gunim.Frame, box geom.Size, kid
 	}
 }
 
-// showServers brings the list up to date, while the Servers pane is
+// showServers brings the list up to date, while the Machines pane is
 // in this window: out of the tree, nothing can be added to it, and it
 // catches up as it comes back.
 func (w *Window) showServers(st app.State, u *gunim.UI) {
@@ -213,7 +213,7 @@ func windowNotes(rows []sideItem, all []app.Pane, own int) []sideItem {
 	return rows
 }
 
-// serversRow returns the row the keyboard goes to in the Servers pane:
+// serversRow returns the row the keyboard goes to in the Machines pane:
 // the one of the pane last worked in, or else the first that is not a
 // heading, or else the first; never one on its way out.
 func (w *Window) serversRow(u *gunim.UI) gunim.Node {

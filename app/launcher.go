@@ -359,7 +359,7 @@ func (a *app) launchThings(ms []LaunchMachine) []LaunchThing {
 			Machine: machines.ID(c.HostID), Action: "saved:" + c.HostID + "\x00" + c.Line})
 	}
 	return append(out,
-		LaunchThing{Title: "Servers", Note: "kakel", Also: []string{"machines", "connections"}, Kind: "servers", Action: "app:servers"},
+		LaunchThing{Title: "Machines", Note: "kakel", Also: []string{"servers", "connections"}, Kind: "servers", Action: "app:servers"},
 		LaunchThing{Title: "Secrets", Note: "kakel", Also: []string{"passwords", "vault"}, Kind: "secrets", Action: "app:secrets"},
 		LaunchThing{Title: "New Window", Note: "kakel", Also: []string{"terminal"}, Kind: "window", Action: "app:window"},
 	)

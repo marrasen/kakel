@@ -70,7 +70,7 @@ type State struct {
 	// Tabs are the window's tabs, in order.
 	Tabs []Tab
 	// AllPanes are every window's panes, each saying which window it is
-	// in, for the Servers pane to list, and Working the pane last worked
+	// in, for the Machines pane to list, and Working the pane last worked
 	// in, in whichever window, whose row it lights.
 	AllPanes []Pane
 	Working  string
@@ -271,7 +271,7 @@ const (
 	NoticeFailed
 )
 
-// Pane is one pane, as the Servers pane lists it.
+// Pane is one pane, as the Machines pane lists it.
 type Pane struct {
 	ID    string
 	Title string
@@ -1778,7 +1778,7 @@ func (a *app) openThen(machine machines.ID, at Placement, then func(id string, e
 			if a.machines.Get(machine).Conn == nil && a.machines.Get(machine).Window == nil {
 				// Connected, but by another name than this one: said,
 				// rather than connected to again and again.
-				err := errors.New("the connection was made under another name. Open a terminal on it from the Servers pane")
+				err := errors.New("the connection was made under another name. Open a terminal on it from the Machines pane")
 				a.failed("Couldn't open a shell on "+a.machines.Name(machine), words.UpperFirst(err.Error())+".")
 				then("", err)
 				return

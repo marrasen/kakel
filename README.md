@@ -97,7 +97,7 @@ kakel started again. Where there is no tray, a window opens at once.
 With `-ssh` the window opens first and connects in a pane, so it asks
 about an unknown host key in a dialog and keeps the account of how the
 machine was reached. A new pane or split opens on that machine too, and
-its heading in the Servers pane offers the rest: files, a command, a
+its heading in the Machines pane offers the rest: files, a command, a
 tunnel and the account.
 
 Text is drawn in Go Mono, compiled into the binary, until you pick an
@@ -162,8 +162,8 @@ kakel comes with:
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | copy and paste |
 | `Ctrl+Alt+V` | paste an image as a file, and type its path |
 | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` | font size |
-| `Ctrl+Shift+B` | open or close the Servers pane |
-| `Ctrl+Shift+L` | go to the Servers pane |
+| `Ctrl+Shift+B` | open or close the Machines pane |
+| `Ctrl+Shift+L` | go to the Machines pane |
 | `Ctrl+Shift+N` | connect to a server |
 | `Ctrl+Shift+H` | every command and shortcut |
 | `F10` | the menus |

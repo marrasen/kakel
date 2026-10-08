@@ -55,7 +55,7 @@ func (f *fakeFiles) NewPane(o filemanager.Options, host filemanager.PaneHost) (*
 func (f *fakeFiles) Refresh() { f.refreshed++ }
 
 // Files open in a file manager pane, beside the one in front, and the
-// servers are the file manager's places, under Servers, with how they
+// servers are the file manager's places, under Machines, with how they
 // are doing.
 func TestFilesOpenInAFileManagerPane(t *testing.T) {
 	a, _ := agentApp(t)
@@ -79,7 +79,7 @@ func TestFilesOpenInAFileManagerPane(t *testing.T) {
 		t.Fatal("a second file manager pane didn't open beside the one in front")
 	}
 	places, _ := files.opened[0].Places()
-	i := slices.IndexFunc(places, func(p filemanager.Place) bool { return p.Group == "Servers" })
+	i := slices.IndexFunc(places, func(p filemanager.Place) bool { return p.Group == "Machines" })
 	if i < 0 || places[i].Name != "web" || places[i].Note != "Not connected" || places[i].FS != serverFS+"s1" {
 		t.Fatalf("the places are %+v", places)
 	}

@@ -27,7 +27,7 @@ import (
 	"github.com/marrasen/gunim/widget"
 )
 
-// The Servers pane shows each machine as a card: a badge in its own
+// The Machines pane shows each machine as a card: a badge in its own
 // colour, its name, how its connection is doing, who and where it is,
 // buttons for what is opened there most, and under them what is open
 // on it in every window. The cards stand side by side as the pane is

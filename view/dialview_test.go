@@ -38,11 +38,11 @@ func TestSavedServersAreListedWithAWayToConnect(t *testing.T) {
 	if !slices.ContainsFunc(rows, func(r sideItem) bool { return r.key == "machine:desk" && r.heading }) {
 		t.Fatalf("a saved server has no heading: %+v", rows)
 	}
-	// One not saved is connected to from the Servers menu.
+	// One not saved is connected to from the Machines menu.
 	win, _, publish := windowStage(t)
 	publish(app.State{})
-	i := win.menuAt("Servers")
+	i := win.menuAt("Machines")
 	if i < 0 || !slices.ContainsFunc(win.bar.Menus[i].Items, func(it widget.MenuItem) bool { return shownText(it.Label) == "Quick Connect…" }) {
-		t.Fatal("the Servers menu has no Quick Connect")
+		t.Fatal("the Machines menu has no Quick Connect")
 	}
 }

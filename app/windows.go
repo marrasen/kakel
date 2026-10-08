@@ -131,7 +131,7 @@ func (a *app) reachWindow(in ConnectWindow, quiet bool, then func(error)) error 
 		// rather than a second connection under a second heading.
 		name = a.windowAt(addr)
 		// A saved one is dialled with its own key when none was typed,
-		// as it is from the Servers menu.
+		// as it is from the Machines menu.
 		if h, saved := a.machines.Saved(name); saved && strings.TrimSpace(in.KeyFile) == "" {
 			in.KeyFile = h.KeyFile()
 		}

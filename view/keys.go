@@ -79,11 +79,11 @@ var commands = []struct{ id, title string }{
 	{"tab.moveLeft", "Move Tab Left"},
 	{"tab.close", "Close Tab"},
 	{"tab.newWindow", "Move Tab to New Window"},
-	{"servers.window", "Open Servers Window"},
+	{"servers.window", "Open Machines Window"},
 	{"secrets.window", "Open Secrets Window"},
 	{"view.switcher", "All Panes"},
 	{"pane.rename", "Rename Pane"},
-	{"sidebar.toggle", "Servers"},
+	{"sidebar.toggle", "Machines"},
 	{"view.theme", "Choose Theme"},
 	{"font.increase", "Larger Font"},
 	{"font.decrease", "Smaller Font"},
@@ -119,7 +119,7 @@ var commands = []struct{ id, title string }{
 	{"pane.typeAll", "Type in All Panes"},
 	{"conn.command", "Run Command"},
 	{"pane.scrollback", "Find in Scrollback"},
-	{"sidebar.focus", "Go to Servers"},
+	{"sidebar.focus", "Go to Machines"},
 	{"sidebar.closeRow", "Close Selected Row"},
 	{"conn.clearFinished", "Clear Finished"},
 	{"server.editThis", "Edit This Server"},
@@ -308,7 +308,7 @@ var menus = []struct {
 	{"File", []menuItem{
 		{id: "conn.terminal", title: "New Terminal"},
 		{id: "files.manager", title: "Files in a New Window"},
-		{id: "app.settings", title: "Settings…", group: true},
+		{id: "app.settings", title: "Settings", group: true},
 		{title: "Close", caption: true}, {id: "pane.close", title: "Pane"},
 		{id: "app.exit", title: "Exit", group: true},
 	}},
@@ -319,8 +319,8 @@ var menus = []struct {
 		{id: "pane.scrollback", title: "Find in Scrollback…", group: true},
 	}},
 	{"View", []menuItem{
-		{id: "sidebar.toggle", title: "Servers"},
-		{id: "servers.window", title: "Open Servers Window"},
+		{id: "sidebar.toggle", title: "Machines"},
+		{id: "servers.window", title: "Open Machines Window"},
 		{id: "pane.titles", title: "Pane Titles"},
 		{id: "view.fullScreen", title: "Full Screen"},
 		{id: "view.pin", title: "Always on Top"},
@@ -335,9 +335,9 @@ var menus = []struct {
 		{id: "pane.splitRight", title: "Right"}, {id: "pane.splitDown", title: "Down"}, {id: "pane.popOut", title: "Pop Out"},
 		{title: "Go To", caption: true},
 		{id: "pane.nextInSidebar", title: "Next"}, {id: "pane.previousInSidebar", title: "Previous"},
-		{id: "view.switcher", title: "All Panes…"}, {id: "sidebar.focus", title: "Servers"},
+		{id: "view.switcher", title: "All Panes…"}, {id: "sidebar.focus", title: "Machines"},
 		{id: "pane.typeAll", title: "Type in All Panes", group: true},
-		{id: "pane.rename", title: "Rename…"},
+		{id: "pane.rename", title: "Rename…", keyFirst: true},
 		{id: "conn.clearFinished", title: "Clear Finished"},
 	}},
 	{"Tab", []menuItem{
@@ -361,8 +361,8 @@ var menus = []struct {
 		{id: "conn.disconnect", title: "Disconnect", group: true},
 		{id: "server.editThis", title: "Edit This Server…"}, {id: "server.forget", title: "Remove This Server…"},
 	}},
-	// The Servers menu is made from the saved servers.
-	{"Servers", nil},
+	// The Machines menu is made from the saved servers.
+	{"Machines", nil},
 	{"Share", []menuItem{
 		{title: "With an Agent", caption: true},
 		{id: "agent.share", title: "Share Panes…"}, {id: "agent.permissions", title: "Permissions…"},
@@ -488,6 +488,10 @@ type menuItem struct {
 	// of its menus, with hint its keys and on its tick.
 	pane, hint string
 	on         bool
+	// keyFirst picks the line's access key before the other lines of
+	// its menu do, for a line whose letters the lines above it would
+	// all take.
+	keyFirst bool
 }
 
 // chordLabel writes a chord the way a desktop menu does, as

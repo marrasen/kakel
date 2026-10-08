@@ -241,7 +241,7 @@ func (a *app) closeFilePane(id string) bool {
 		return false
 	}
 	// In front, so the question about what runs in it is seen, for one
-	// closed from elsewhere, as the Servers pane.
+	// closed from elsewhere, as the Machines pane.
 	a.focusRaised(id)
 	fp.w.Close()
 	return true

@@ -270,7 +270,7 @@ func TestAServersFileManagerOpensInAWindowOfItsOwn(t *testing.T) {
 	place := func() filemanager.Place {
 		places, _ := files.opened[0].Places()
 		for _, p := range places {
-			if p.Group == "Servers" {
+			if p.Group == "Machines" {
 				return p
 			}
 		}

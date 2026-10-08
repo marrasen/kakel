@@ -12,7 +12,7 @@ import (
 	gi "github.com/marrasen/gunim/input"
 )
 
-// cardsStage is a window with the Servers pane in front, two servers
+// cardsStage is a window with the Machines pane in front, two servers
 // saved, of size.
 func cardsStage(t *testing.T, size geom.Size) *Window {
 	t.Helper()
