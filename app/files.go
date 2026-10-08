@@ -1,7 +1,6 @@
 package app
 
 import (
-	"cmp"
 	"errors"
 	"fmt"
 	"io"
@@ -23,38 +22,8 @@ import (
 	"github.com/marrasen/kakel/vfs"
 )
 
-// File panes and readers, on the program's side: listing folders and
-// reading files happen on goroutines of their own, and what they find
-// is published for the window to show.
-
-// Browser is what a file pane shows: a folder and what is in it.
-type Browser struct {
-	Path    string
-	Entries []vfs.Entry
-	// Land names the entry the cursor goes to once the folder shows,
-	// as the folder just left, going up.
-	Land string
-	// Err says why the folder could not be read.
-	Err string
-	// WentTo is the last Go To answered, and GoToErr why it could not
-	// go there, empty when it went.
-	WentTo  int
-	GoToErr string
-	// Seq counts the listings, so the window knows a new one, and Top
-	// says Path is the top of its filesystem. Archive says Path is
-	// inside an archive, opened as a folder: read only.
-	Seq     int
-	Top     bool
-	Archive bool
-	// Volume names the volume Path is on, as a disk or a drive, for a
-	// drop to move within one and copy between two.
-	Volume string
-	// Roots are where the filesystem starts, such as each drive, Sep its
-	// separator, and Listed the folders last listed for Go To.
-	Roots  []string
-	Sep    string
-	Listed Listed
-}
+// Readers, on the program's side: reading files happens on goroutines
+// of their own, and what they find is published for the window to show.
 
 // Reader is what a reader pane shows: a file's lines.
 type Reader struct {
@@ -117,111 +86,20 @@ type (
 		Pane, Path string
 		Lines      []string
 	}
-)
-
-// Intents for files.
-type (
-	// OpenFiles opens a file pane where the focused pane is, at home.
+	// OpenFiles opens a file manager pane at home on the machine of the
+	// focused pane.
 	OpenFiles struct{}
-	// Browse shows path in a file pane, with the cursor on land.
-	Browse struct {
-		Pane, Path, Land string
-		// GoTo is the Go To it answers, and 0 for none.
-		GoTo int
-		// Again says the folder is listed again by itself, as a job
-		// ending does: one that fails is not said again.
-		Again bool
-	}
-	// ReadFile opens path in a reader beside the file pane, following
-	// it as it grows with Follow.
+	// ReadFile opens Path, on the machine Pane is on, in a reader beside
+	// Pane, following it as it grows with Follow.
 	ReadFile struct {
 		Pane, Path string
 		Follow     bool
 	}
-	// EnterEntry goes into a folder of a file pane, or opens a file in
-	// a reader.
-	EnterEntry struct{ Pane, Name string }
-	// GoUp shows the folder above a file pane's, with the cursor on the
-	// one it came from.
-	GoUp struct{ Pane string }
-	// GoTo shows a folder typed as a path, ~ standing for home.
-	GoTo struct {
-		Pane, Path string
-		// Ask numbers it, for the pane to hear how it went.
-		Ask int
-	}
-	// ViewFile reads the file named in a file pane's folder, following
-	// it as it grows with Follow.
-	ViewFile struct {
-		Pane, Name string
-		Follow     bool
-	}
 )
-
-// viewFile reads a file of a file pane's folder.
-func (a *app) viewFile(in ViewFile) {
-	b, ok := a.st.Browsers[in.Pane]
-	f := a.filesOf(in.Pane)
-	if !ok || f == nil {
-		return
-	}
-	a.readFile(ReadFile{Pane: in.Pane, Path: vfs.Join(f, b.Path, in.Name), Follow: in.Follow})
-}
-
-// goTo shows the folder typed.
-func (a *app) goTo(in GoTo) {
-	f := a.filesOf(in.Pane)
-	if f == nil {
-		return
-	}
-	path := strings.TrimSpace(in.Path)
-	if rest, ok := strings.CutPrefix(path, "~"); ok && (rest == "" || rest[0] == '/' || rest[0] == f.Sep()) {
-		home, err := f.Home()
-		if err != nil {
-			b := a.st.Browsers[in.Pane]
-			b.WentTo, b.GoToErr = in.Ask, "couldn't find home: "+err.Error()
-			a.setBrowser(in.Pane, b)
-			return
-		}
-		path = home + rest
-	}
-	a.browse(Browse{Pane: in.Pane, Path: path, GoTo: in.Ask})
-}
-
-// enter goes into the folder named name, or reads the file.
-func (a *app) enter(in EnterEntry) {
-	b, ok := a.st.Browsers[in.Pane]
-	f := a.filesOf(in.Pane)
-	if !ok || f == nil {
-		return
-	}
-	path := vfs.Join(f, b.Path, in.Name)
-	// A file is read, and a folder or a zip walked into. A link to a
-	// zip is walked into too, but not a zip inside a zip: only the
-	// outer one opens, and the inner one would show as an empty folder.
-	for _, e := range b.Entries {
-		if e.Name == in.Name && !e.IsDir() && !(e.IsLink() && vfs.IsArchive(e.Name)) {
-			a.readFile(ReadFile{Pane: in.Pane, Path: path})
-			return
-		}
-	}
-	a.browse(Browse{Pane: in.Pane, Path: path})
-}
-
-// goUp shows the folder above a file pane's.
-func (a *app) goUp(in GoUp) {
-	b, ok := a.st.Browsers[in.Pane]
-	f := a.filesOf(in.Pane)
-	if !ok || f == nil || vfs.IsTop(f, b.Path) {
-		return
-	}
-	a.browse(Browse{Pane: in.Pane, Path: vfs.Dir(f, b.Path), Land: vfs.Base(f, b.Path)})
-}
 
 // Pane kinds.
 const (
 	KindTerminal = ""
-	KindFiles    = "files"
 	KindReader   = "reader"
 )
 
@@ -237,38 +115,9 @@ func (a *app) fsFor(machine machines.ID) vfs.FS {
 	return a.machines.Get(machine).Files
 }
 
-// filesOf is what a file pane reads: its machine's files, with the
-// archives on them opened as folders. One wrapper for each pane, since
-// each holds the archive it is in, and two panes in two archives would
-// take turns throwing each other's out.
-func (a *app) filesOf(pane string) vfs.FS {
-	under := a.fsFor(a.filesKey(pane))
-	if under == nil {
-		return nil
-	}
-	if w, ok := a.paneFiles[pane]; ok && w.under == under {
-		return w.over
-	}
-	w := wrappedFiles{under: under, over: vfs.WithArchives(under)}
-	a.paneFiles[pane] = w
-	return w.over
-}
-
-// wrappedFiles is a pane's view of its machine's files.
-type wrappedFiles struct{ under, over vfs.FS }
-
-// openFiles opens a file pane at home on the focused pane's machine.
-func (a *app) openFiles() error { return a.openFilesWhere(a.filesKey(a.st.Focus), "") }
-
-// filesOn opens a file pane on machine, at path, or when path is empty
-// at the one folder saved for the machine, or else at home.
-func (a *app) filesOn(machine machines.ID, path string) error {
-	return a.withFiles(machine, func(f vfs.FS) {
-		if err := a.openFilesOn(machine, f, path); err != nil {
-			a.failed("Couldn't open the files on "+a.machines.Name(machine), err.Error())
-		}
-	})
-}
+// openFiles opens a file manager pane at home on the focused pane's
+// machine.
+func (a *app) openFiles() error { return a.filesOn(a.filesKey(a.st.Focus), "") }
 
 // KeptFarSep joins, in the kept form of a machine beyond a window, the
 // window as it is kept and the window's name for the machine: how
@@ -306,7 +155,7 @@ func (a *app) paneOn(key machines.ID, p Pane) Pane {
 
 // withFiles runs then with machine's files, on the program's goroutine,
 // opening them first when they are not open: over a server's
-// connection, or a window's, with SFTP, once for all its file panes.
+// connection, or a window's, with SFTP, once for everything on it.
 func (a *app) withFiles(machine machines.ID, then func(vfs.FS)) error {
 	return a.withFilesOr(machine, then, func() {})
 }
@@ -422,8 +271,8 @@ func (a *app) filesOpener(machine machines.ID) func() (vfs.FS, error) {
 	return nil
 }
 
-// keepFiles keeps f, a machine's files just opened, for its file panes
-// and its links, and returns what is kept: the files opened meanwhile,
+// keepFiles keeps f, a machine's files just opened, for its file
+// manager panes and its links, and returns what is kept: the files opened meanwhile,
 // when something else opened them first.
 func (a *app) keepFiles(machine machines.ID, f vfs.FS) vfs.FS {
 	if have := a.fsFor(machine); have != nil {
@@ -433,36 +282,6 @@ func (a *app) keepFiles(machine machines.ID, f vfs.FS) vfs.FS {
 	a.machines.At(machine).Files = f
 	a.fmBack(machine, f)
 	return f
-}
-
-// openFilesOn opens a file pane on a machine whose files are open, at
-// path, or when path is empty at the one folder saved for the machine,
-// or else at home.
-func (a *app) openFilesOn(machine machines.ID, f vfs.FS, path string) error {
-	if saved := a.savedFolders(machine); path == "" && len(saved) == 1 {
-		// One folder saved for the machine is where its files open,
-		// however they are asked for: it is the one the user wants.
-		path = saved[0]
-	}
-	if path == "" {
-		home, err := f.Home()
-		if err != nil {
-			return err
-		}
-		path = home
-	}
-	path = vfs.Spelled(f, path)
-	a.next++
-	id := "p" + itoa(a.next)
-	// Beside the file pane in front: two side by side is the way to
-	// copy between them.
-	at := Placement{}
-	if a.kindOfPane(a.st.Focus) == KindFiles {
-		at.Beside = a.st.Focus
-	}
-	a.addPane(a.paneOn(machine, Pane{ID: id, Title: vfs.Base(f, path), Kind: KindFiles}), nil, at)
-	a.browse(Browse{Pane: id, Path: path})
-	return nil
 }
 
 // savedFolders are the folders saved for machine: a server's
@@ -482,89 +301,15 @@ func (a *app) savedFolders(machine machines.ID) []string {
 	return a.favouritesOn(machine)
 }
 
-// browse lists a folder for a file pane, in the background.
-func (a *app) browse(in Browse) {
-	f := a.filesOf(in.Pane)
-	if f == nil {
-		return
-	}
-	in.Path = vfs.Spelled(f, in.Path)
-	a.listing[in.Pane]++
-	a.listingAt[in.Pane] = in
-	asked := a.listing[in.Pane]
-	go func() {
-		entries, err := f.ReadDir(in.Path)
-		// Asked here, off the program's goroutine: a disk that hangs
-		// hangs this listing, not every window.
-		archive, volume := vfs.InArchive(f, in.Path), vfs.VolumeOf(f, in.Path)
-		a.events <- func() {
-			if a.listing[in.Pane] != asked {
-				// A later listing was asked for: this one is old news.
-				return
-			}
-			delete(a.listingAt, in.Pane)
-			b := a.st.Browsers[in.Pane]
-			if err != nil {
-				b.Err = err.Error()
-				if b.Path == "" {
-					// Its first folder: named, though nothing is listed.
-					b.Path = in.Path
-				}
-				switch {
-				case in.GoTo != 0:
-					// Go To asks again, saying why, in its own dialog.
-					b.WentTo, b.GoToErr = in.GoTo, err.Error()
-				case in.Again:
-					// Said already, when it was asked for.
-				default:
-					// Said in a notice, kept in the Window Log, and
-					// echoed from the pane's own window.
-					a.failed("Couldn't open "+in.Path, err.Error())
-					a.pingsIn(a.ownerOf(in.Pane)).Problems++
-				}
-				a.setBrowser(in.Pane, b)
-				return
-			}
-			order(entries)
-			a.setBrowser(in.Pane, Browser{Path: in.Path, Entries: entries, Land: in.Land, Seq: b.Seq + 1, Top: vfs.IsTop(f, in.Path),
-				Archive: archive, Volume: volume, Roots: f.Roots(), Sep: sepOf(f), Listed: b.Listed, WentTo: max(b.WentTo, in.GoTo)})
-			a.retitleAs(in.Pane, vfs.Base(f, in.Path))
-		}
-	}()
-}
-
-// setBrowser replaces a file pane's state. The map is copied, so the
-// state the window holds is never changed under it.
-func (a *app) setBrowser(id string, b Browser) {
-	m := make(map[string]Browser, len(a.st.Browsers)+1)
-	for k, v := range a.st.Browsers {
-		m[k] = v
-	}
-	m[id] = b
-	a.st.Browsers = m
-}
-
-// readFile opens a file in a reader beside its file pane, and, to
+// readFile opens a file in a reader beside the pane that asked, and, to
 // follow it, reads it again each time it changes.
 func (a *app) readFile(in ReadFile) {
 	machine := a.filesKey(in.Pane)
-	// The pane's view, which reads inside an archive too.
-	f := a.filesOf(in.Pane)
+	f := a.fsFor(machine)
 	if f == nil {
 		return
 	}
-	id := a.readOn(machine, f, in.Path, in.Follow, 0, Placement{Beside: in.Pane})
-	// The size the listing says, for the reader to say how far it has
-	// got of it.
-	if b, ok := a.st.Browsers[in.Pane]; ok {
-		for _, e := range b.Entries {
-			if vfs.Join(f, b.Path, e.Name) == in.Path {
-				r := a.st.Readers[id]
-				r.Expect = e.Size
-				a.setReader(id, r)
-			}
-		}
-	}
+	a.readOn(machine, f, in.Path, in.Follow, 0, Placement{Beside: in.Pane})
 }
 
 // readOn opens path on a machine's files in a reader, at line when it
@@ -981,32 +726,6 @@ func freeName(typed string) string {
 		}
 	}
 	return typed
-}
-
-// order sorts a folder's entries: folders first, then by name, as a
-// person reads them, whatever their case.
-func order(entries []vfs.Entry) {
-	slices.SortFunc(entries, func(a, b vfs.Entry) int {
-		if a.IsDir() != b.IsDir() {
-			if a.IsDir() {
-				return -1
-			}
-			return 1
-		}
-		if n := cmp.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)); n != 0 {
-			return n
-		}
-		return cmp.Compare(a.Name, b.Name)
-	})
-}
-
-// retitleAs names a pane that has no name of the user's.
-func (a *app) retitleAs(id, title string) {
-	for i := range a.st.Panes {
-		if p := &a.st.Panes[i]; p.ID == id && !p.Named {
-			p.Title = title
-		}
-	}
 }
 
 // showScrollback opens what a terminal pane has kept in a reader

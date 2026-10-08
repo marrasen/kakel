@@ -119,8 +119,13 @@ func TestTheTabsAnswerTheMouse(t *testing.T) {
 		t.Fatalf("a click on the × sent %#v", in)
 	}
 	click(win.tabs.plus.Center().Add(r.Min), gi.ButtonPrimary)
-	if in, ok := nextIntent(t).(app.NewTerminal); !ok {
+	if in, ok := nextIntent(t).(app.NewTab); !ok {
 		t.Fatalf("a click on the + sent %#v", in)
+	}
+	// A right click offers a terminal or a file manager.
+	click(win.tabs.plus.Center().Add(r.Min), gi.ButtonSecondary)
+	if win.tabs.plusMenu == nil {
+		t.Fatal("a right click on the + opened no menu")
 	}
 }
 

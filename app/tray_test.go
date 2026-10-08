@@ -126,7 +126,7 @@ func TestAPaneWithNoWindowGetsOne(t *testing.T) {
 		}
 		a.letWindowGo(w)
 	}
-	a.addPane(Pane{ID: "late", Kind: KindFiles}, nil, Placement{})
+	a.addPane(Pane{ID: "late", Kind: KindFileManager}, nil, Placement{})
 	a.rehome()
 	waitFor(t, a, "a window for it", func() bool { a.rehome(); return a.ownerOf("late") != nil && !a.ownerOf("late").gone })
 	if w := a.ownerOf("late"); a.focusIn(w) != "late" {

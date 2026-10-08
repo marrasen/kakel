@@ -63,10 +63,10 @@ func TestPickingAPaneElsewhereRaisesItsWindow(t *testing.T) {
 	a := newApp(w1.Client(), screen.NewShells())
 	a.ctx = t.Context()
 	one := a.cur
-	a.addPane(Pane{ID: "p1", Kind: KindFiles}, nil, Placement{})
+	a.addPane(Pane{ID: "p1", Kind: KindFileManager}, nil, Placement{})
 	two := a.addWindow(w2.Client(), nil)
 	a.front(two)
-	a.addPane(Pane{ID: "p2", Kind: KindFiles}, nil, Placement{})
+	a.addPane(Pane{ID: "p2", Kind: KindFileManager}, nil, Placement{})
 	a.handle(FocusPane{Pane: "p2"})
 	if w2.Offscreen().Raised() != 0 {
 		t.Fatal("the window asking was raised")
@@ -87,7 +87,7 @@ func toolWindows(t *testing.T) (a *app, work, tool *ownWin, raised func() int) {
 	a.ctx = t.Context()
 	a.next = 100
 	work = a.cur
-	a.addPane(Pane{ID: "p1", Kind: KindFiles}, nil, Placement{})
+	a.addPane(Pane{ID: "p1", Kind: KindFileManager}, nil, Placement{})
 	a.showJobsPane()
 	a.focus("p1")
 	a.noteWork()
@@ -187,7 +187,7 @@ func TestAToolWindowSplitsWhereTheUserWorks(t *testing.T) {
 		t.Fatalf("p1's group is %+v, want a split", b)
 	}
 	a.front(tool)
-	a.addPane(Pane{ID: "late", Kind: KindFiles}, nil, Placement{})
+	a.addPane(Pane{ID: "late", Kind: KindFileManager}, nil, Placement{})
 	if raised() != 1 || a.winOf["late"] != work.id || !a.isTool(tool) {
 		t.Fatalf("a pane arriving by itself raised the window %d times, and is in window %d", raised(), a.winOf["late"])
 	}

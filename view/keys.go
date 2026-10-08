@@ -37,6 +37,7 @@ func Shortcuts() *ui.Keymap {
 		{Key: input.KeyV, Mods: input.ModCtrl | input.ModShift}:        "edit.paste",
 		{Key: input.KeyV, Mods: input.ModCtrl | input.ModAlt}:          "edit.pasteImage",
 		{Key: input.KeyC, Mods: input.ModCtrl | input.ModShift}:        "edit.copy",
+		{Key: input.KeyX, Mods: input.ModCtrl | input.ModShift}:        "edit.cut",
 		{Key: input.KeyInsert, Mods: input.ModCtrl}:                    "edit.copy",
 		{Key: input.KeyInsert, Mods: input.ModShift}:                   "edit.paste",
 		{Key: input.KeyPageUp, Mods: input.ModShift}:                   "view.scrollUp",
@@ -47,7 +48,6 @@ func Shortcuts() *ui.Keymap {
 		{Key: input.KeyL, Mods: input.ModCtrl | input.ModShift}:      "sidebar.focus",
 		{Key: input.KeyH, Mods: input.ModCtrl | input.ModShift}:      "help.shortcuts",
 		{Key: input.KeyPlus, Mods: input.ModCtrl}:                    "font.increase",
-		{Key: input.KeyG, Mods: input.ModCtrl | input.ModShift}:      "files.goTo",
 		{Key: input.KeyN, Mods: input.ModCtrl | input.ModShift}:      "server.connect",
 		{Key: input.KeyEquals, Mods: input.ModCtrl}:                  "font.increase",
 		{Key: input.KeyEquals, Mods: input.ModCtrl | input.ModShift}: "font.increase",
@@ -62,7 +62,7 @@ func Shortcuts() *ui.Keymap {
 // commands are what the palette offers, in gridterm's words.
 var commands = []struct{ id, title string }{
 	{"conn.terminal", "New Terminal"},
-	{"files.manager", "Open File Manager"},
+	{"files.manager", "Files in a New Window"},
 	{"shell.default", "New Terminal, Default Shell"},
 	{"pane.splitRight", "Split Right"},
 	{"pane.splitDown", "Split Down"},
@@ -72,6 +72,7 @@ var commands = []struct{ id, title string }{
 	{"pane.previous", "Previous Recent Pane"},
 	{"pane.nextInSidebar", "Next Pane"},
 	{"pane.previousInSidebar", "Previous Pane"},
+	{"tab.new", "New Tab"},
 	{"tab.next", "Next Tab"},
 	{"tab.previous", "Previous Tab"},
 	{"tab.moveRight", "Move Tab Right"},
@@ -91,8 +92,6 @@ var commands = []struct{ id, title string }{
 	{"server.add", "Add Server"},
 	{"server.import", "Import from SSH Config"},
 	{"conn.files", "Files Here"},
-	{"files.goTo", "Go to Directory"},
-	{"files.icons", "Icon View"},
 	{"secrets.open", "Show Secrets"},
 	{"secrets.pane", "Manage Secrets"},
 	{"secrets.use", "Use Secret"},
@@ -154,6 +153,7 @@ var commands = []struct{ id, title string }{
 	{"conn.log", "Connection Log"},
 	{"conn.tunnel", "Open Tunnel"},
 	{"conn.socks", "Open SOCKS Proxy"},
+	{"edit.cut", "Cut"},
 	{"edit.copy", "Copy"},
 	{"edit.selectAll", "Select All"},
 	{"edit.paste", "Paste"},
@@ -221,6 +221,8 @@ var commandIcons = map[string]*icon.Icon{
 	"app.exit":               icon.LogOut,
 	"menu.open":              icon.Menu,
 	"edit.copy":              icon.Copy,
+	"edit.cut":               icon.Scissors,
+	"tab.new":                icon.Plus,
 	"edit.selectAll":         icon.TextSelect,
 	"edit.paste":             icon.ClipboardPaste,
 	"edit.pasteImage":        icon.ImagePlus,
@@ -239,8 +241,6 @@ var commandIcons = map[string]*icon.Icon{
 	"conn.files":             icon.Folder,
 	"conn.tunnel":            icon.Cable,
 	"conn.socks":             icon.Network,
-	"files.goTo":             icon.FolderSearch,
-	"files.icons":            icon.LayoutGrid,
 	"files.copies":           icon.Bookmark,
 	"conn.log":               icon.ScrollText,
 	"shell.setup":            icon.Wrench,
@@ -307,13 +307,13 @@ var menus = []struct {
 }{
 	{"File", []menuItem{
 		{id: "conn.terminal", title: "New Terminal"},
-		{id: "files.manager", title: "Open File Manager"},
+		{id: "files.manager", title: "Files in a New Window"},
 		{id: "app.settings", title: "Settings…", group: true},
 		{title: "Close", caption: true}, {id: "pane.close", title: "Pane"},
 		{id: "app.exit", title: "Exit", group: true},
 	}},
 	{"Edit", []menuItem{
-		{id: "edit.copy", title: "Copy"}, {id: "edit.paste", title: "Paste"},
+		{id: "edit.cut", title: "Cut"}, {id: "edit.copy", title: "Copy"}, {id: "edit.paste", title: "Paste"},
 		{id: "edit.selectAll", title: "Select All"},
 		{id: "edit.pasteImage", title: "Paste Image as File"},
 		{id: "pane.scrollback", title: "Find in Scrollback…", group: true},
@@ -341,7 +341,7 @@ var menus = []struct {
 		{id: "conn.clearFinished", title: "Clear Finished"},
 	}},
 	{"Tab", []menuItem{
-		{id: "conn.terminal", title: "New Tab"},
+		{id: "tab.new", title: "New Tab"},
 		{title: "Go To", caption: true},
 		{id: "tab.next", title: "Next"}, {id: "tab.previous", title: "Previous"},
 		{title: "Move", caption: true},
@@ -355,9 +355,7 @@ var menus = []struct {
 		{id: "conn.terminal", title: "Terminal"}, {id: "conn.command", title: "Command…"},
 		{id: "conn.files", title: "Files"},
 		{id: "conn.tunnel", title: "Tunnel…"}, {id: "conn.socks", title: "SOCKS Proxy…"},
-		{id: "files.goTo", title: "Go to Directory…", group: true},
-		{id: "files.icons", title: "Icon View"},
-		{id: "files.copies", title: "Saved Copies…"},
+		{id: "files.copies", title: "Saved Copies…", group: true},
 		{id: "conn.log", title: "Connection Log"},
 		{id: "shell.setup", title: "Shell Setup"},
 		{id: "conn.disconnect", title: "Disconnect", group: true},
@@ -417,6 +415,8 @@ var commandAlso = map[string][]string{
 	"pane.splitDown":        {"horizontal"},
 	"pane.popOut":           {"unsplit", "detach", "take out of its split", "new tab", "tab"},
 	"tab.next":              {"switch", "right"},
+	"tab.new":               {"open", "add", "plus"},
+	"edit.cut":              {"move", "files"},
 	"tab.previous":          {"switch", "left"},
 	"tab.moveRight":         {"reorder", "shift"},
 	"tab.moveLeft":          {"reorder", "shift"},
@@ -467,8 +467,6 @@ var commandAlso = map[string][]string{
 	"conn.tunnel":           {"forward", "port", "local", "remote"},
 	"conn.socks":            {"tunnel", "dynamic"},
 	"conn.files":            {"file browser", "sftp", "folder", "directory"},
-	"files.goTo":            {"folder", "path", "cd", "drive"},
-	"files.icons":           {"thumbnails", "pictures", "grid", "tiles", "details", "list", "view as"},
 	"conn.disconnect":       {"close the connection", "machine", "server", "log out"},
 	"conn.log":              {"how this was reached", "route", "hops"},
 	"help.shortcuts":        {"keys", "keyboard", "help"},
@@ -486,6 +484,10 @@ type menuItem struct {
 	id, title string
 	group     bool
 	caption   bool
+	// pane is the command of the pane in front a line runs, for a line
+	// of its menus, with hint its keys and on its tick.
+	pane, hint string
+	on         bool
 }
 
 // chordLabel writes a chord the way a desktop menu does, as
@@ -514,6 +516,8 @@ func commandIntent(id string) (gunim.Intent, bool) {
 		return app.ClosePane{}, true
 	case "edit.pasteImage":
 		return app.PasteImageAsFile{}, true
+	case "tab.new":
+		return app.NewTab{}, true
 	case "tab.next":
 		return app.NextTab{}, true
 	case "tab.previous":

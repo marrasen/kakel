@@ -25,7 +25,7 @@ import (
 )
 
 // The window's help: every command with its shortcut and its name in
-// the shortcuts file, the keys of the file pane and the reader, what
+// the shortcuts file, the reader's keys, what
 // this build is, and where its files are.
 
 // everyCommand is every command the window has, by id, with its title,
@@ -55,7 +55,7 @@ func everyCommand() [][2]string {
 
 // helpPane lists every command in a table: its title, its shortcut and
 // its name in the shortcuts file, under the menu it is on. The keys no
-// menu shows follow, then the file pane's and the reader's, from
+// menu shows follow, then the reader's, from
 // kakel's own lists. Typing finds one by its title.
 type helpPane struct {
 	w     *Window
@@ -102,7 +102,7 @@ type helpSection struct {
 
 // helpSections groups the commands as the menus do, the palette's
 // words for each, then puts the commands no menu has under a heading of
-// their own, then the file pane's and the reader's keys.
+// their own, then the reader's keys.
 func helpSections(chord func(id string) string) []helpSection {
 	titles := map[string]string{}
 	for _, c := range commands {
@@ -133,15 +133,6 @@ func helpSections(chord func(id string) string) []helpSection {
 	if len(rest.lines) > 0 {
 		out = append(out, rest)
 	}
-	browser := helpSection{title: "The file pane's keys, which the shortcuts file leaves as they are"}
-	for _, k := range files.BrowserKeys() {
-		browser.lines = append(browser.lines, [3]string{k.Title, k.Shown, ""})
-	}
-	browser.lines = append(browser.lines,
-		[3]string{"Up a folder", "Backspace", ""},
-		[3]string{"Mark", "Space", ""},
-		[3]string{"Find by name", "type the name", ""},
-	)
 	reader := helpSection{title: "The reader's keys, which the shortcuts file leaves as they are"}
 	for _, k := range files.ReaderKeys() {
 		reader.lines = append(reader.lines, [3]string{k.Title, k.Shown, ""})
@@ -152,7 +143,7 @@ func helpSections(chord func(id string) string) []helpSection {
 		[3]string{"Copy what is picked out", files.CopyKey().Shown, ""},
 		[3]string{"Drop what is picked out", "Esc", ""},
 	)
-	return append(out, browser, reader)
+	return append(out, reader)
 }
 
 // fill takes the rows from the window's commands and keys, as they are
@@ -252,18 +243,7 @@ func (w *Window) applyShortcuts(changes []keys.Change, u *gunim.UI) bool {
 	}
 	w.keys.Become(next)
 	// The menus and the palette say the new chords.
-	for m := range menus {
-		for i, it := range menus[m].items {
-			if it.caption || i >= len(w.bar.Menus[m].Items) {
-				continue
-			}
-			w.bar.Menus[m].Items[i].Hint = ""
-			if ch, ok := w.keys.ChordFor(it.id); ok {
-				w.bar.Menus[m].Items[i].Hint = chordLabel(ch)
-			}
-		}
-	}
-	w.servers(w.saved)
+	w.buildBar(true)
 	if w.help != nil {
 		w.help.show(w, u)
 	}

@@ -121,7 +121,7 @@ func TestTheFileManagerKeepsFavouritesInTheSettings(t *testing.T) {
 	if err := os.WriteFile(a.settings.Path(), []byte("{"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_ = a.settings.PutFilesInWindow(true)
+	_ = a.settings.PutPaneTitles(true)
 	if got, err := store.Load(); err == nil {
 		t.Fatalf("with the settings unreadable, the favourites load as %+v", got)
 	}

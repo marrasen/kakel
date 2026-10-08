@@ -25,6 +25,7 @@ import (
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/anim"
+	"github.com/marrasen/gunim/filemanager"
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/icon"
 	"github.com/marrasen/gunim/input"
@@ -73,9 +74,6 @@ type Window struct {
 	// the keyboard came into, asked to be the one in front.
 	listShown bool
 	entering  string
-	// thumbsMade is how many thumbnails had been made, as last
-	// published.
-	thumbsMade uint64
 	// tabs is the tab bar, and titleRow the title bar it sits in, after
 	// barBox, which holds the menu button.
 	tabs     *tabBar
@@ -89,17 +87,23 @@ type Window struct {
 	// dock is where a tab dragged over the stage would join a split.
 	dock tabDock
 	// cards are the Servers pane's machines, a card each.
-	cards  *serverCards
-	stage  *stage
-	status *statusLine
-	shells *screen.Shells
-	keys   *ui.Keymap
-	terms  map[string]*term
+	cards *serverCards
+	stage *stage
+	// layout is the menus as the bar has them now: kakel's own, with the
+	// lines of the pane in front.
+	layout []barMenu
+	// fmHosts are the places of the file manager panes, on stage or in
+	// parked while their tabs are not showing.
+	fmHosts map[string]*fmHost
+	parked  *parking
+	status  *statusLine
+	shells  *screen.Shells
+	keys    *ui.Keymap
+	terms   map[string]*term
 	// termPads hold the terminals, by pane, a little in from the pane's
 	// edges.
 	termPads map[string]*termPad
-	// browsers and readers are the file panes and readers, by pane.
-	browsers map[string]*browser
+	// readers are the readers, by pane.
 	readers  map[string]*reader
 	choosers map[string]*chooser
 	// groups are how each pane is arranged, by pane, for the switcher.
@@ -203,10 +207,9 @@ type Window struct {
 	title string
 	// dropped are the machines whose connection went by itself.
 	dropped []machines.ID
-	// dialing are the servers being connected to, fileClip what the
-	// file clipboard holds, and keyFiles the key files kept.
+	// dialing are the servers being connected to, and keyFiles the key
+	// files kept.
 	dialing  []machines.ID
-	fileClip app.FileClip
 	keyFiles []string
 	// fonts are the families on the Font menu, and font the one the
 	// terminals are drawn in.
@@ -293,12 +296,12 @@ func NewWindow(sh *screen.Shells, keys *ui.Keymap, all []look.Themed) *Window {
 		keys:        keys,
 		terms:       map[string]*term{},
 		termPads:    map[string]*termPad{},
-		browsers:    map[string]*browser{},
 		readers:     map[string]*reader{},
 		choosers:    map[string]*chooser{},
 		tunnelPanes: map[string]*tunnelPane{},
 		splits:      map[string]*widget.Split{},
 		captions:    map[string]*captioned{},
+		fmHosts:     map[string]*fmHost{},
 		dropLit:     anim.NewFloat(0),
 	}
 	w.Add(w.dropLit)
@@ -312,45 +315,47 @@ func NewWindow(sh *screen.Shells, keys *ui.Keymap, all []look.Themed) *Window {
 	// The menus behind one button, leaving the bar to move the window.
 	w.bar.Compact = true
 	w.bar.Title = app.ProgramName
-	for _, m := range menus {
-		bm := widget.BarMenu{Title: m.title}
-		for i, it := range m.items {
-			hint := ""
-			if chord, ok := keys.ChordFor(it.id); ok && !it.caption {
-				hint = chordLabel(chord)
-			}
-			bm.Items = append(bm.Items, widget.MenuItem{Label: it.title, Hint: hint, Icon: commandIcons[it.id],
-				Caption: it.caption, Break: it.group || (it.caption && i > 0)})
-		}
-		w.bar.Menus = append(w.bar.Menus, withAccessKeys(bm))
-	}
+	w.layout = baseLayout()
+	w.buildBar(false)
 	w.bar.OnHighlight = func(m, i int, u *gunim.UI) gunim.Intent {
 		id := ""
 		switch {
-		case m < 0 || i < 0:
-		case menus[m].title == "Servers":
-			if i < len(w.serverIDs) {
+		case m < 0 || m >= len(w.layout):
+		case w.layout[m].title == "Servers":
+			if i >= 0 && i < len(w.serverIDs) {
 				id = w.serverIDs[i]
 			}
-		case menus[m].title == "Font":
-		case i < len(menus[m].items):
-			id = menus[m].items[i].id
+		case w.layout[m].title == "Font":
+		case i >= 0 && i < len(w.layout[m].items):
+			id = w.layout[m].items[i].id
+		}
+		if m >= 0 && i < 0 {
+			// A menu opening: the ticks of the pane's lines as it is now.
+			w.tickPaneMenus(u)
+		}
+		if i < 0 {
+			id = ""
 		}
 		w.status.setHint(w.fullTitle(id, m, i), u)
 		return nil
 	}
 	w.bar.OnPick = func(m, i int, u *gunim.UI) gunim.Intent {
 		switch {
-		case m < len(menus) && menus[m].title == "Servers":
+		case m >= len(w.layout) || m < 0:
+		case w.layout[m].title == "Servers":
 			if i < len(w.serverIDs) {
 				w.run(w.serverIDs[i], u)
 			}
-		case m < len(menus) && menus[m].title == "Font":
+		case w.layout[m].title == "Font":
 			if i < len(w.fonts) {
 				return app.PickFont{Name: w.fonts[i]}
 			}
-		case m < len(menus) && i < len(menus[m].items):
-			w.run(menus[m].items[i].id, u)
+		case i < len(w.layout[m].items):
+			if it := w.layout[m].items[i]; it.pane != "" {
+				w.runPane(it.pane, u)
+				return nil
+			}
+			w.run(w.layout[m].items[i].id, u)
 		}
 		return nil
 	}
@@ -479,12 +484,6 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 		return true
 	case "sidebar.focus":
 		w.focusSidebar(u)
-		return true
-	case "files.icons":
-		if b, ok := w.browsers[w.focused]; ok {
-			b.setIcons(!b.icons, u)
-			w.tickSwitch(id, b.icons)
-		}
 		return true
 	case "app.launcherKey":
 		w.launcherKeyDialog(u)
@@ -635,11 +634,14 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 	case "conn.tunnel", "conn.socks":
 		w.tunnelDialog(id == "conn.socks", u)
 		return true
-	case "files.goTo":
-		if b, ok := w.browsers[w.focused]; ok {
-			b.askGoTo(u)
+	case "edit.cut", "edit.copy", "edit.paste", "edit.selectAll":
+		if _, ok := w.fmHosts[w.focused]; ok {
+			// The file manager's own, on the files selected.
+			filemanager.Run(u, app.FilePaneViews(w.focused), fileCommands[id])
+			return true
 		}
-		return true
+	}
+	switch id {
 	case "edit.paste":
 		if t, ok := w.terms[w.focused]; ok {
 			t.pasteClipboard(u)
@@ -796,7 +798,7 @@ func (w *Window) showFonts(st app.State) {
 		m.Items = append(m.Items, widget.MenuItem{Label: name,
 			Checked: app.FontCommandID(name) == app.FontCommandID(st.Font.Name), Break: i == 1})
 	}
-	if i := menuAt("Font"); i >= 0 && i < len(w.bar.Menus) {
+	if i := w.menuAt("Font"); i >= 0 && i < len(w.bar.Menus) {
 		w.bar.Menus[i] = withAccessKeys(m)
 	}
 }
@@ -1194,7 +1196,7 @@ func (w *Window) servers(saved []remote.Host) {
 		widget.MenuItem{Label: "Import from SSH Config", Icon: icon.FileInput},
 		widget.MenuItem{Label: "Reload Server List", Icon: icon.RefreshCw})
 	w.serverIDs = append(w.serverIDs, "server.connect", "app.launcher", "server.add", "server.import", "server.reload")
-	if i := menuAt("Servers"); i >= 0 && i < len(w.bar.Menus) {
+	if i := w.menuAt("Servers"); i >= 0 && i < len(w.bar.Menus) {
 		// The lines always there first.
 		n := len(m.Items)
 		w.bar.Menus[i] = withAccessKeys(m, n-5, n-4, n-3, n-2, n-1)
@@ -1586,26 +1588,6 @@ func (w *Window) filesKeyOf(id string) machines.ID {
 	return ""
 }
 
-// nextFilePane is the file pane after id, or before it with back, in
-// the sidebar's order, and empty when id is the only one.
-func (w *Window) nextFilePane(id string, back bool) string {
-	var files []string
-	for _, p := range w.panes {
-		if p.Kind == app.KindFiles {
-			files = append(files, p.ID)
-		}
-	}
-	at := slices.Index(files, id)
-	if at < 0 || len(files) < 2 {
-		return ""
-	}
-	step := 1
-	if back {
-		step = -1
-	}
-	return files[(at+step+len(files))%len(files)]
-}
-
 // foldersOn are the folders offered for a machine: its favourites, the
 // ones a window saved for a machine beyond it, and on this computer
 // each WSL distribution's, which Windows serves on a share of its own.
@@ -1830,8 +1812,8 @@ func (w *Window) Handle(e input.Event, u *gunim.UI) bool {
 		return true
 	}
 	if d, ok := e.(input.Drop); ok && len(d.Paths) > 0 {
-		// Dropped somewhere that is no terminal: the sidebar, a file
-		// pane, the menu bar. The focused pane is what the user is
+		// Dropped somewhere that is no terminal: the sidebar, a pane
+		// that is no terminal, the menu bar. The focused pane is what the user is
 		// working in, and is where the files are wanted.
 		u.Send(w, app.DropFiles{Paths: d.Paths})
 		return true
@@ -2003,7 +1985,6 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 	w.remoteWindows = st.Windows
 	w.dialing = st.Dialing
 	w.dropped = st.Dropped
-	w.fileClip = st.FileClip
 	w.keyFiles = st.KeyFiles
 	if renamed || !slices.Equal(st.Connected, w.connected) {
 		w.connected = st.Connected
@@ -2048,7 +2029,9 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 	}
 
 	keep := map[string]bool{}
+	w.placeFilePanes(st, u)
 	w.stage.show(w.build(st.Stage, keep, u), u)
+	w.parkFilePanes(leavesOf(st.Stage, map[string]bool{}), u)
 	// After the panes are built, so one made now shows the state too.
 	if w.settings != nil && u.Presence(w.settings) != gunim.Exiting {
 		w.settings.show(st, u)
@@ -2061,13 +2044,6 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 	open := map[string]bool{}
 	for _, p := range st.Panes {
 		open[p.ID] = true
-	}
-	for id, b := range w.browsers {
-		if !open[id] {
-			delete(w.browsers, id)
-			continue
-		}
-		b.show(st.Browsers[id], u)
 	}
 	for id, r := range w.readers {
 		if !open[id] {
@@ -2097,11 +2073,6 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 	}
 	if w.secrets != nil && u.Presence(w.secrets) != gunim.Exiting {
 		w.secrets.show(st.Secrets, u)
-	}
-	if st.ThumbsMade != w.thumbsMade {
-		// Thumbnails have arrived for the icon views to draw.
-		w.thumbsMade = st.ThumbsMade
-		u.Invalidate()
 	}
 	w.listShown = slices.ContainsFunc(boxLeaves(st.Stage, nil), func(id string) bool { return w.kindOf(id) == app.KindServers }) &&
 		u.Presence(w.cards.grid) != gunim.Exiting
@@ -2214,13 +2185,19 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 		}
 		w.toasts.Show(widget.Toast{Title: n.Title, Body: n.Body, Kind: toastKinds[n.Kind], Action: n.Action, OnClick: widget.Sends(n.On)}, u)
 	}
-	// The menus and the palette tick a switch while it is on, such as
-	// the sidebar while it shows.
-	for m := range menus {
-		if len(menus[m].items) == 0 {
+	// The menus take the pane in front's lines, and tick a switch while
+	// it is on, such as the sidebar while it shows.
+	w.layoutMenus(u)
+	for m := range w.layout {
+		if len(w.layout[m].items) == 0 {
 			continue
 		}
-		for i, it := range menus[m].items {
+		for i, it := range w.layout[m].items {
+			if it.pane != "" {
+				w.bar.Menus[m].Items[i].Checked = it.on
+				w.bar.Menus[m].Items[i].Disabled = false
+				continue
+			}
 			if on, isSwitch := w.switchOn(it.id, st, u); isSwitch {
 				w.bar.Menus[m].Items[i].Checked = on
 			}
@@ -2247,12 +2224,13 @@ func (w *Window) applies(id string) bool {
 	case "pane.scrollback":
 		k := w.kindOf(w.focused)
 		return w.focused != "" && (k == app.KindTerminal || k == app.KindLog)
-	case "files.goTo", "files.icons":
-		_, ok := w.browsers[w.focused]
-		return ok
 	case "edit.copy", "edit.paste", "edit.selectAll":
-		_, ok := w.terms[w.focused]
-		return ok
+		_, term := w.terms[w.focused]
+		_, files := w.fmHosts[w.focused]
+		return term || files
+	case "edit.cut":
+		_, files := w.fmHosts[w.focused]
+		return files
 	case "view.scrollUp", "view.scrollDown":
 		_, term := w.terms[w.focused]
 		rd, reader := w.readers[w.focused]
@@ -2280,8 +2258,8 @@ func (w *Window) applies(id string) bool {
 // at once, for a switch the window turns itself, which no new state
 // follows.
 func (w *Window) tickSwitch(id string, on bool) {
-	for m := range menus {
-		for i, it := range menus[m].items {
+	for m := range w.layout {
+		for i, it := range w.layout[m].items {
 			if it.id == id {
 				w.bar.Menus[m].Items[i].Checked = on
 			}
@@ -2310,9 +2288,6 @@ func (w *Window) switchOn(id string, st app.State, u *gunim.UI) (on, isSwitch bo
 		return u.Pinned(), true
 	case "shell.setup":
 		return st.ShellSetup, true
-	case "files.icons":
-		b, ok := w.browsers[st.Focus]
-		return ok && b.icons, true
 	case "app.tray":
 		return st.InTray, true
 	case "app.autostart":
@@ -2391,8 +2366,8 @@ func (w *Window) paneNode(id string) gunim.Node {
 }
 
 // captionOf is the line over pane p while panes show their titles:
-// where it runs, and its title. A file pane's is where it runs alone:
-// the path under it names the folder already.
+// where it runs, and its title. A file manager pane's is where it runs
+// alone: the file manager names the folder already.
 func (w *Window) captionOf(p app.Pane) string {
 	where := w.nameOf(p.Machine)
 	switch {
@@ -2401,7 +2376,7 @@ func (w *Window) captionOf(p app.Pane) string {
 	case p.On != "":
 		where = w.nameOf(machines.FarID(p.Machine, p.On))
 	}
-	if p.Kind == app.KindFiles {
+	if p.Kind == app.KindFileManager {
 		return where
 	}
 	return where + ": " + p.Title
@@ -2410,15 +2385,16 @@ func (w *Window) captionOf(p app.Pane) string {
 // bareNode returns the node that shows pane id, made on first use.
 func (w *Window) bareNode(id string) gunim.Node {
 	switch w.kindOf(id) {
+	case app.KindFileManager:
+		h, ok := w.fmHosts[id]
+		if !ok {
+			// Placed before the stage is built; this one came since.
+			h = &fmHost{w: w, id: id}
+			w.fmHosts[id] = h
+		}
+		return h
 	case app.KindServers:
 		return w.serversView
-	case app.KindFiles:
-		b, ok := w.browsers[id]
-		if !ok {
-			b = newBrowser(w, id)
-			w.browsers[id] = b
-		}
-		return b
 	case app.KindCopies:
 		if w.copies == nil {
 			w.copies = newCopiesPane(w)
@@ -2514,8 +2490,8 @@ func (w *Window) focusNode(id string, u *gunim.UI) gunim.Node {
 	if t, ok := w.terms[id]; ok {
 		return t
 	}
-	if b, ok := w.browsers[id]; ok {
-		return b.focusable()
+	if _, ok := w.fmHosts[id]; ok {
+		return filemanager.FocusIn(u, app.FilePaneViews(id))
 	}
 	if r, ok := w.readers[id]; ok {
 		return r
@@ -3447,9 +3423,7 @@ func (w *Window) openMachineMenu(r *sideRow, u *gunim.UI) {
 		}
 		add(ic, f.Label(), send(app.OpenFilesOn{Machine: m, Path: f.Path}))
 	}
-	// Where they open, kept for the next time.
-	add(icon.AppWindow, "Files in a Window", send(app.OpenFileManager{Machine: m}))
-	add(icon.PanelsTopLeft, "Files in a Pane", send(app.FilesInPane{Machine: m}))
+	add(icon.AppWindow, "Files in a New Window", send(app.OpenFileManager{Machine: m}))
 	if m != "" {
 		heading("Forward")
 		add(icon.Cable, "Tunnel…", func(u *gunim.UI) { w.tunnelDialogOn(m, false, u) })
@@ -3533,12 +3507,12 @@ func (w *Window) keepDrawings(st app.State, u *gunim.UI) {
 func (w *Window) madeNode(id string) gunim.Node {
 	var n gunim.Node
 	switch w.kindOf(id) {
+	case app.KindFileManager:
+		if h, ok := w.fmHosts[id]; ok {
+			n = h
+		}
 	case app.KindServers:
 		n = w.serversView
-	case app.KindFiles:
-		if b, ok := w.browsers[id]; ok {
-			n = b
-		}
 	case app.KindCopies:
 		if w.copies != nil {
 			n = w.copies

@@ -18,11 +18,11 @@ func twoWindowApp(t *testing.T) (a *app, one, two *ownWin) {
 	a = newApp(gunimtest.New(t, geom.Sz(400, 300), nil).Client(), screen.NewShells())
 	a.ctx = t.Context()
 	one = a.cur
-	a.addPane(Pane{ID: "p1", Title: "one", Kind: KindFiles}, nil, Placement{})
-	a.addPane(Pane{ID: "p2", Title: "two", Kind: KindFiles}, nil, Placement{})
+	a.addPane(Pane{ID: "p1", Title: "one", Kind: KindFileManager}, nil, Placement{})
+	a.addPane(Pane{ID: "p2", Title: "two", Kind: KindFileManager}, nil, Placement{})
 	two = a.addWindow(gunimtest.New(t, geom.Sz(400, 300), nil).Client(), nil)
 	a.front(two)
-	a.addPane(Pane{ID: "p3", Title: "three", Kind: KindFiles}, nil, Placement{})
+	a.addPane(Pane{ID: "p3", Title: "three", Kind: KindFileManager}, nil, Placement{})
 	return a, one, two
 }
 
@@ -143,7 +143,7 @@ func TestAWindowLeftEmptyGoes(t *testing.T) {
 // Closing a window with panes asks first, there, and closes them.
 func TestClosingAWindowAsksAndClosesItsPanes(t *testing.T) {
 	a, one, two := twoWindowApp(t)
-	a.addPane(Pane{ID: "p4", Title: "four", Kind: KindFiles}, nil, Placement{})
+	a.addPane(Pane{ID: "p4", Title: "four", Kind: KindFileManager}, nil, Placement{})
 	a.handle(CloseWindow{})
 	if len(a.st.Asks) != 1 || a.st.Asks[0].win != two.id {
 		t.Fatalf("closing asked %+v", a.st.Asks)
@@ -180,7 +180,7 @@ func TestAClosedWindowIsLetGo(t *testing.T) {
 func TestTheLastWindowClosesAsExitDoes(t *testing.T) {
 	a := newApp(gunimtest.New(t, geom.Sz(400, 300), nil).Client(), screen.NewShells())
 	a.ctx = t.Context()
-	a.addPane(Pane{ID: "p1", Title: "one", Kind: KindFiles}, nil, Placement{})
+	a.addPane(Pane{ID: "p1", Title: "one", Kind: KindFileManager}, nil, Placement{})
 	a.handle(CloseWindow{})
 	if !a.leaving {
 		t.Fatal("closing the last window did not ask to exit")

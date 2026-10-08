@@ -6,6 +6,9 @@ import (
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/kakel/app"
+	"github.com/marrasen/kakel/internal/sessiontest"
+	"github.com/marrasen/kakel/screen"
+	"github.com/marrasen/kakel/vt"
 
 	"github.com/marrasen/gunim/geom"
 	gi "github.com/marrasen/gunim/input"
@@ -18,8 +21,8 @@ import (
 // images, and Escape gives the half back.
 func TestSplitPutsAChooserInTheNewHalf(t *testing.T) {
 	win, _, publish := windowStage(t)
-	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "left", Kind: app.KindFiles}, {ID: "p2", Title: "right", Kind: app.KindFiles}},
-		Stage: &app.Box{Pane: "p1"}, Focus: "p1", Browsers: map[string]app.Browser{"p1": {Path: "/"}, "p2": {Path: "/"}}}
+	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "left", Kind: app.KindFileManager}, {ID: "p2", Title: "right", Kind: app.KindFileManager}},
+		Stage: &app.Box{Pane: "p1"}, Focus: "p1"}
 	publish(st)
 	for len(lastWindow.Client().Intents()) > 0 {
 		<-lastWindow.Client().Intents()
@@ -71,9 +74,8 @@ func TestSplitPutsAChooserInTheNewHalf(t *testing.T) {
 // arrives as an image, one retitled is renamed, one closed leaves.
 func TestAChooserFollowsThePanes(t *testing.T) {
 	win, _, publish := windowStage(t)
-	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "left", Kind: app.KindFiles}, {ID: "c1", Title: "Split", Kind: app.KindChooser, SplitFrom: "p1"}},
-		Stage: &app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "c1"}, Share: 0.5}, Focus: "c1",
-		Browsers: map[string]app.Browser{"p1": {Path: "/"}}}
+	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "left", Kind: app.KindFileManager}, {ID: "c1", Title: "Split", Kind: app.KindChooser, SplitFrom: "p1"}},
+		Stage: &app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "c1"}, Share: 0.5}, Focus: "c1"}
 	publish(st)
 	frames := func() {
 		for range 5 {
@@ -85,8 +87,7 @@ func TestAChooserFollowsThePanes(t *testing.T) {
 	if len(c.thumbs) != 0 {
 		t.Fatalf("with no other pane, the chooser offers %d", len(c.thumbs))
 	}
-	st.Panes = append(st.Panes, app.Pane{ID: "p2", Title: "two", Kind: app.KindFiles}, app.Pane{ID: "p3", Title: "three", Kind: app.KindFiles})
-	st.Browsers = map[string]app.Browser{"p1": {Path: "/"}, "p2": {Path: "/"}, "p3": {Path: "/"}}
+	st.Panes = append(st.Panes, app.Pane{ID: "p2", Title: "two", Kind: app.KindFileManager}, app.Pane{ID: "p3", Title: "three", Kind: app.KindFileManager})
 	publish(st)
 	frames()
 	if len(c.thumbs) != 2 {
@@ -107,11 +108,15 @@ func TestAChooserFollowsThePanes(t *testing.T) {
 // The chooser is one stop for Tab, which rings all of it; its arrows
 // walk what it offers, which lights as it is reached, with no ring.
 func TestAChoosersArrowsLightWhatTheyReach(t *testing.T) {
-	win, _, publish := windowStage(t)
-	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "left", Kind: app.KindFiles}, {ID: "p2", Title: "two", Kind: app.KindFiles},
+	win, sh, publish := windowStage(t)
+	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
+	for _, id := range []string{"p1", "p2"} {
+		sh.Set(id, screen.Open(sessiontest.New(), vt.DefaultPalette(), quiet))
+		t.Cleanup(func() { _ = sh.Get(id).T.Close() })
+	}
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "left"}, {ID: "p2", Title: "two"},
 		{ID: "c1", Title: "Split", Kind: app.KindChooser, SplitFrom: "p1"}},
-		Stage: &app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "c1"}, Share: 0.5}, Focus: "c1",
-		Browsers: map[string]app.Browser{"p1": {Path: "/"}, "p2": {Path: "/"}}})
+		Stage: &app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "c1"}, Share: 0.5}, Focus: "c1"})
 	run := func() {
 		for range 20 {
 			lastWindow.Frame(time.Second / 60)
@@ -128,7 +133,7 @@ func TestAChoosersArrowsLightWhatTheyReach(t *testing.T) {
 		t.Fatalf("Right put the keyboard on %T, lit %v, the chooser's ring at %v", lastUI.Focused(), pic.walked.Value(), c.ring.Value())
 	}
 	// Tab out, which shows the rings, and back in by gunim's Tab order
-	// (the file pane beside takes Tab itself, to go to the next pane):
+	// (the terminal beside takes Tab itself, as typed):
 	// the chooser rings, and the image it left from is lit again.
 	lastWindow.Input(gi.KeyPress{Key: gi.KeyTab, Time: time.Now()})
 	run()
@@ -147,9 +152,8 @@ func TestAChoosersArrowsLightWhatTheyReach(t *testing.T) {
 // lit, so what Enter presses shows before any arrow key is pressed.
 func TestAChooserShowsWhereTheKeyboardIsAsItOpens(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "left", Kind: app.KindFiles}, {ID: "c1", Title: "Split", Kind: app.KindChooser, SplitFrom: "p1"}},
-		Stage: &app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "c1"}, Share: 0.5}, Focus: "c1",
-		Browsers: map[string]app.Browser{"p1": {Path: "/"}}})
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "left", Kind: app.KindFileManager}, {ID: "c1", Title: "Split", Kind: app.KindChooser, SplitFrom: "p1"}},
+		Stage: &app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "c1"}, Share: 0.5}, Focus: "c1"})
 	for range 30 {
 		lastWindow.Frame(time.Second / 60)
 	}

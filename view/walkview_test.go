@@ -110,10 +110,15 @@ func TestAWalkEndsWhenTheWindowLosesTheKeyboard(t *testing.T) {
 // Walking to a pane that sits in a split rings it, the ring sliding from
 // the pane left, and the ring goes once Ctrl is let go of.
 func TestCtrlTabRingsAPaneInASplit(t *testing.T) {
-	win, _, publish := windowStage(t)
-	panes := []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFiles}, {ID: "p2", Title: "b", Kind: app.KindFiles}}
+	win, sh, publish := windowStage(t)
+	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
+	for _, id := range []string{"p1", "p2"} {
+		sh.Set(id, screen.Open(sessiontest.New(), vt.DefaultPalette(), quiet))
+		t.Cleanup(func() { _ = sh.Get(id).T.Close() })
+	}
+	panes := []app.Pane{{ID: "p1", Title: "a"}, {ID: "p2", Title: "b"}}
 	split := &app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "p2"}, Share: 0.5}
-	st := app.State{Panes: panes, Stage: split, Focus: "p1", Browsers: map[string]app.Browser{"p1": {Path: "/", Seq: 1}, "p2": {Path: "/", Seq: 1}}}
+	st := app.State{Panes: panes, Stage: split, Focus: "p1"}
 	publish(st)
 	st.Focus = "p2"
 	publish(st)

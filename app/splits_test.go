@@ -7,16 +7,14 @@ import (
 
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/gunimtest"
-
-	"github.com/marrasen/kakel/vfs"
 )
 
 // A pane open on a stage of its own moves into a split beside another.
 func TestAPaneMovesIntoASplit(t *testing.T) {
 	w := gunimtest.New(t, geom.Sz(400, 300), nil)
 	a := newApp(w.Client(), screen.NewShells())
-	a.addPane(Pane{ID: "p1", Title: "one", Kind: KindFiles}, nil, Placement{})
-	a.addPane(Pane{ID: "p2", Title: "two", Kind: KindFiles}, nil, Placement{})
+	a.addPane(Pane{ID: "p1", Title: "one", Kind: KindFileManager}, nil, Placement{})
+	a.addPane(Pane{ID: "p2", Title: "two", Kind: KindFileManager}, nil, Placement{})
 	if a.groupOf["p1"] == a.groupOf["p2"] {
 		t.Fatal("the panes began together")
 	}
@@ -33,33 +31,13 @@ func TestAPaneMovesIntoASplit(t *testing.T) {
 	}
 }
 
-// Files opened from a file pane opens beside it, for the two side by
-// side a copy goes between.
-func TestFilesFromAFilePaneOpenBesideIt(t *testing.T) {
-	w := gunimtest.New(t, geom.Sz(400, 300), nil)
-	a := newApp(w.Client(), screen.NewShells())
-	a.ctx = t.Context()
-	local := vfs.NewLocal()
-	dir := t.TempDir()
-	if err := a.openFilesOn("", local, dir); err != nil {
-		t.Fatal(err)
-	}
-	first := a.st.Focus
-	if err := a.openFilesOn("", local, dir); err != nil {
-		t.Fatal(err)
-	}
-	if second := a.st.Focus; second == first || a.groupOf[second] != a.groupOf[first] {
-		t.Fatalf("the second file pane, %s, is in group %d, and the first, %s, in %d", second, a.groupOf[second], first, a.groupOf[first])
-	}
-}
-
 // A split puts a chooser beside the pane at once. A pane picked in it
 // moves into the chooser's place, and the chooser goes.
 func TestAPanePickedInASplitsChooserTakesItsPlace(t *testing.T) {
 	w := gunimtest.New(t, geom.Sz(400, 300), nil)
 	a := newApp(w.Client(), screen.NewShells())
-	a.addPane(Pane{ID: "f1", Title: "one", Kind: KindFiles}, nil, Placement{})
-	a.addPane(Pane{ID: "f2", Title: "two", Kind: KindFiles}, nil, Placement{})
+	a.addPane(Pane{ID: "f1", Title: "one", Kind: KindFileManager}, nil, Placement{})
+	a.addPane(Pane{ID: "f2", Title: "two", Kind: KindFileManager}, nil, Placement{})
 	a.focus("f1")
 	a.handle(ChooseSplit{Vertical: true})
 	chooser := a.st.Focus
@@ -102,14 +80,14 @@ func TestANewShellPickedInASplitsChooserTakesItsPlace(t *testing.T) {
 func TestASecondPickInAChooserLandsBesideItsPane(t *testing.T) {
 	w := gunimtest.New(t, geom.Sz(400, 300), nil)
 	a := newApp(w.Client(), screen.NewShells())
-	a.addPane(Pane{ID: "f1", Title: "one", Kind: KindFiles}, nil, Placement{})
-	a.addPane(Pane{ID: "f2", Title: "two", Kind: KindFiles}, nil, Placement{})
-	a.addPane(Pane{ID: "f3", Title: "three", Kind: KindFiles}, nil, Placement{})
+	a.addPane(Pane{ID: "f1", Title: "one", Kind: KindFileManager}, nil, Placement{})
+	a.addPane(Pane{ID: "f2", Title: "two", Kind: KindFileManager}, nil, Placement{})
+	a.addPane(Pane{ID: "f3", Title: "three", Kind: KindFileManager}, nil, Placement{})
 	a.focus("f1")
 	a.handle(ChooseSplit{})
 	chooser := a.st.Focus
 	a.handle(MovePane{Pane: "f2", Instead: chooser})
-	a.addPane(Pane{ID: "f4", Title: "four", Kind: KindFiles}, nil, Placement{Instead: chooser})
+	a.addPane(Pane{ID: "f4", Title: "four", Kind: KindFileManager}, nil, Placement{Instead: chooser})
 	if a.groupOf["f4"] != a.groupOf["f1"] {
 		t.Fatalf("the second pick went to group %d, the split is %d", a.groupOf["f4"], a.groupOf["f1"])
 	}
@@ -120,9 +98,9 @@ func TestASecondPickInAChooserLandsBesideItsPane(t *testing.T) {
 func TestEveryPanesGroupIsPublished(t *testing.T) {
 	w := gunimtest.New(t, geom.Sz(400, 300), nil)
 	a := newApp(w.Client(), screen.NewShells())
-	a.addPane(Pane{ID: "f1", Title: "one", Kind: KindFiles}, nil, Placement{})
-	a.addPane(Pane{ID: "f2", Title: "two", Kind: KindFiles}, nil, Placement{Beside: "f1"})
-	a.addPane(Pane{ID: "f3", Title: "three", Kind: KindFiles}, nil, Placement{})
+	a.addPane(Pane{ID: "f1", Title: "one", Kind: KindFileManager}, nil, Placement{})
+	a.addPane(Pane{ID: "f2", Title: "two", Kind: KindFileManager}, nil, Placement{Beside: "f1"})
+	a.addPane(Pane{ID: "f3", Title: "three", Kind: KindFileManager}, nil, Placement{})
 	st := a.stateFor(a.cur, a.st)
 	if g := st.Groups["f1"]; g == nil || g != st.Groups["f2"] || g.A == nil || g.B == nil {
 		t.Fatalf("f1 and f2 are in %+v and %+v", st.Groups["f1"], st.Groups["f2"])

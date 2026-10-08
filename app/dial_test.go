@@ -387,13 +387,13 @@ func TestTheStatusSaysJobsAndDialsTogether(t *testing.T) {
 // what said it takes it away.
 func TestTheStatusKeepsWhatElseItSaysWhileAJobRuns(t *testing.T) {
 	a := newApp(gunimtest.New(t, geom.Sz(400, 300), nil).Client(), screen.NewShells())
-	a.say("clip", "Ready to copy 2 items; paste in a folder with F7 or Ctrl+V.")
+	a.say("files srv", "Opening the files on srv…")
 	a.jobLines = []string{"Copying 1 item to x, 10%"}
 	a.showStatus()
-	if a.st.Status != "Ready to copy 2 items; paste in a folder with F7 or Ctrl+V.  ·  Copying 1 item to x, 10%" {
+	if a.st.Status != "Opening the files on srv…  ·  Copying 1 item to x, 10%" {
 		t.Fatalf("the status says %q", a.st.Status)
 	}
-	a.say("clip", "")
+	a.say("files srv", "")
 	if a.st.Status != "Copying 1 item to x, 10%" {
 		t.Fatalf("taken away, the status says %q", a.st.Status)
 	}

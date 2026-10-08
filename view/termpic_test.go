@@ -75,7 +75,7 @@ func TestTheWindowIsNamedAfterThePaneInFront(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	panes := []app.Pane{{ID: "p1", Title: "Windows PowerShell"}, {ID: "p2", Title: "files", Kind: app.KindFiles}}
+	panes := []app.Pane{{ID: "p1", Title: "Windows PowerShell"}, {ID: "p2", Title: "files", Kind: app.KindFileManager}}
 	publish(app.State{Panes: panes, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
 	if got := lastWindow.Offscreen().Title(); got != "kakel — Windows PowerShell" {
 		t.Fatalf("the window is called %q", got)
@@ -85,6 +85,6 @@ func TestTheWindowIsNamedAfterThePaneInFront(t *testing.T) {
 	}
 	publish(app.State{Panes: panes, Stage: &app.Box{Pane: "p2"}, Focus: "p2"})
 	if got := lastWindow.Offscreen().Title(); got != "kakel — files" {
-		t.Fatalf("on a file pane, the window is called %q", got)
+		t.Fatalf("on a file manager pane, the window is called %q", got)
 	}
 }

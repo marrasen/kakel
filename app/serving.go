@@ -582,7 +582,7 @@ func servedKind(kind string) string {
 	switch kind {
 	case KindTerminal:
 		return "Terminal"
-	case KindFiles:
+	case KindFileManager:
 		return "Files"
 	case KindReader:
 		return "Reader"

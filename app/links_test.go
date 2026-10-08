@@ -145,9 +145,9 @@ func TestTheScrollbackOpensInAReaderToSearch(t *testing.T) {
 	}
 }
 
-// A path in a pane on a server is found and opened with no file pane
-// open there: the server's files are opened for it.
-func TestAPathOnAServerOpensWithNoFilePaneThere(t *testing.T) {
+// A path in a pane on a server is found and opened with nothing open
+// on its files: the server's files are opened for it.
+func TestAPathOnAServerOpensWithItsFilesNotOpen(t *testing.T) {
 	a, answering := dialApp(t)
 	a.handle(OpenOn{Machine: "srv"})
 	waitFor(t, a, "a shell on the server", func() bool { answering(); return oneShell(a) })

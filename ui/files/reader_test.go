@@ -12,6 +12,28 @@ import (
 	"github.com/marrasen/kakel/ui"
 )
 
+// press sends one key to a widget that takes keys.
+func press(t *testing.T, w ui.KeyHandler, key input.Key) {
+	t.Helper()
+	if _, err := w.HandleKey(input.Event{Kind: input.KeyPress, Key: key}); err != nil {
+		t.Fatalf("key %v: %v", key, err)
+	}
+}
+
+// rowText reads one row of a grid back as a string.
+func rowText(g *grid.Grid, y, cols int) string {
+	var b strings.Builder
+	for x := range cols {
+		c := g.At(x, y)
+		if c.Rune == 0 {
+			b.WriteByte(' ')
+			continue
+		}
+		b.WriteRune(c.Rune)
+	}
+	return b.String()
+}
+
 // readerStyle is colours a test can tell apart.
 func readerStyle() Style {
 	return Style{

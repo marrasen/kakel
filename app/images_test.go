@@ -2,10 +2,12 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"image"
 	"image/png"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -199,21 +201,37 @@ func TestAPaneOnAServerAWindowReachedWorksOnThatServer(t *testing.T) {
 	}
 
 	// Its files are the server's, filed under the window.
+	files := newFakeFiles(t)
+	b.files = files
 	b.st.Focus = id
 	b.handle(OpenFiles{})
-	pumpBoth(t, a, b, "the server's files", func() bool {
-		if len(b.st.Panes) < 3 {
-			return false
-		}
-		for _, e := range b.st.Browsers[b.st.Panes[2].ID].Entries {
-			if e.Name == pasted.DirName {
-				return true
+	pumpBoth(t, a, b, "the server's files", func() bool { return len(b.st.Panes) == 3 })
+	if p := b.st.Panes[2]; p.Kind != KindFileManager || p.Machine != b.st.Windows[0].Name || p.On != "srv" {
+		t.Fatalf("the file manager pane is %+v, want one on srv through the window", p)
+	}
+	fsys := files.opened[0].FS
+	listed := make(chan []string, 1)
+	go func() {
+		var names []string
+		if home, err := fsys.Home(); err == nil {
+			entries, _ := fsys.ReadDir(context.Background(), home)
+			for _, e := range entries {
+				names = append(names, e.Name())
 			}
 		}
-		return false
+		listed <- names
+	}()
+	var names []string
+	pumpBoth(t, a, b, "the server's folder listed", func() bool {
+		select {
+		case names = <-listed:
+			return true
+		default:
+			return false
+		}
 	})
-	if p := b.st.Panes[2]; p.Machine != b.st.Windows[0].Name || p.On != "srv" {
-		t.Fatalf("the file pane is on %q, %q, want srv through the window", p.Machine, p.On)
+	if !slices.Contains(names, pasted.DirName) {
+		t.Fatalf("the file manager lists %q, not the server's folder", names)
 	}
 }
 

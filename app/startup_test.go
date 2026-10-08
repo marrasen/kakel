@@ -30,7 +30,7 @@ func TestAFirstPaneThatFailsLeavesTheWindowSaying(t *testing.T) {
 	if a.emptyAndIdle() {
 		t.Fatal("with the first pane failed, the window leaves")
 	}
-	a.addPane(Pane{ID: "p1", Title: "one", Kind: KindFiles}, nil, Placement{})
+	a.addPane(Pane{ID: "p1", Title: "one", Kind: KindFileManager}, nil, Placement{})
 	a.remove("p1")
 	if !a.emptyAndIdle() {
 		t.Fatal("once a pane has been opened and closed, the window stays")

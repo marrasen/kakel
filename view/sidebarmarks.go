@@ -240,22 +240,23 @@ func paintCross(p *paint.Painter, r geom.Rect, c color.NRGBA) {
 // command, a folder, a page, a log, a tunnel, a lock, a window, and one
 // for each kind of file work.
 var kindIcons = map[string]*icon.Icon{
-	"files":    icon.Folder,
-	"reader":   icon.FileText,
-	"log":      icon.ScrollText,
-	"tunnel":   icon.Cable,
-	"secrets":  icon.Lock,
-	"jobs":     icon.Files,
-	"copy":     icon.Copy,
-	"move":     icon.FileInput,
-	"delete":   icon.Trash2,
-	"window":   icon.AppWindow,
-	"served":   icon.ScreenShare,
-	"command":  icon.SquareChevronRight,
-	"terminal": icon.SquareTerminal,
-	"split":    icon.Columns2,
-	"servers":  icon.Server,
-	"settings": icon.Settings,
+	"files":       icon.Folder,
+	"filemanager": icon.Folder,
+	"reader":      icon.FileText,
+	"log":         icon.ScrollText,
+	"tunnel":      icon.Cable,
+	"secrets":     icon.Lock,
+	"jobs":        icon.Files,
+	"copy":        icon.Copy,
+	"move":        icon.FileInput,
+	"delete":      icon.Trash2,
+	"window":      icon.AppWindow,
+	"served":      icon.ScreenShare,
+	"command":     icon.SquareChevronRight,
+	"terminal":    icon.SquareTerminal,
+	"split":       icon.Columns2,
+	"servers":     icon.Server,
+	"settings":    icon.Settings,
 }
 
 // paintIcon draws the little image for a kind of row in r.
@@ -395,7 +396,7 @@ func (w *Window) markRows(rows []sideItem, st app.State) []sideItem {
 // paneKindIcon is the icon for a pane.
 func paneKindIcon(p app.Pane) string {
 	switch p.Kind {
-	case app.KindFiles:
+	case app.KindFileManager:
 		return "files"
 	case app.KindReader:
 		return "reader"

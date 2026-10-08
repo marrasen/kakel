@@ -42,7 +42,9 @@ type tabBar struct {
 	// the tabs and the + end.
 	boxes []geom.Rect
 	plus  geom.Rect
-	end   float32
+	// plusMenu is the menu a right click on the + opens, while it is.
+	plusMenu *gunim.Popup
+	end      float32
 	// hot is the tab under the pointer, and pressed the one the pointer
 	// went down on, at pressAt, on its × with onCross; -1 for none.
 	hot, pressed int
@@ -540,13 +542,16 @@ func (b *tabBar) Handle(e input.Event, u *gunim.UI) bool {
 		case e.Button == input.ButtonMiddle && i >= 0:
 			u.Send(b.w, app.CloseTab{Group: b.tabs[i].Group})
 			return true
+		case e.Button == input.ButtonSecondary && b.plus.Inset(geom.Uniform(-2)).Contains(e.Pos):
+			b.openPlusMenu(u)
+			return true
 		case e.Button != input.ButtonPrimary:
 			return false
 		case i >= 0:
 			b.pressed, b.pressAt = i, e.Pos
 			b.pressedCross = b.onCross(i, e.Pos)
 			return true
-		case b.plus.Inset(geom.Uniform(-2)).Contains(e.Pos):
+		case b.plus.Inset(geom.Uniform(-2)).Contains(e.Pos) && e.Button == input.ButtonPrimary:
 			b.plusPressed = true
 			return true
 		}
@@ -555,7 +560,8 @@ func (b *tabBar) Handle(e input.Event, u *gunim.UI) bool {
 		if b.plusPressed {
 			b.plusPressed = false
 			if b.shown() && b.plus.Inset(geom.Uniform(-2)).Contains(e.Pos) {
-				u.Send(b.w, app.NewTerminal{})
+				// Like the tab in front: a file manager where one is.
+				u.Send(b.w, app.NewTab{})
 			}
 			return true
 		}
@@ -952,4 +958,38 @@ func (b *tabBar) AccessAct(r access.Request, u *gunim.UI) bool {
 	}
 	u.Send(b.w, app.ShowTab{Group: b.tabs[r.Part].Group})
 	return true
+}
+
+// openPlusMenu offers what a new tab can hold, on the machine of the
+// pane in front: a terminal, or a file manager.
+func (b *tabBar) openPlusMenu(u *gunim.UI) {
+	b.closePlusMenu()
+	m := b.w.machineOf(b.w.focused)
+	menu := widget.NewMenu([]widget.MenuItem{
+		{Label: "New Terminal", Icon: icon.SquareTerminal},
+		{Label: "New File Manager", Icon: icon.Folder},
+	})
+	menu.OnPick = func(i int, u *gunim.UI) gunim.Intent {
+		b.closePlusMenu()
+		switch i {
+		case 0:
+			return app.OpenOn{Machine: m}
+		case 1:
+			return app.OpenFilesOn{Machine: m, NewTab: true}
+		}
+		return nil
+	}
+	b.plusMenu = u.OpenPopup(b, menu, gunim.PopupOptions{
+		Anchor:  b.plus,
+		Max:     geom.Sz(280, 200),
+		Dismiss: func(*gunim.UI) { b.closePlusMenu() },
+	})
+}
+
+// closePlusMenu closes the +'s menu, if it is open.
+func (b *tabBar) closePlusMenu() {
+	if b.plusMenu != nil {
+		b.plusMenu.Close()
+		b.plusMenu = nil
+	}
 }

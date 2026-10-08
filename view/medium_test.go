@@ -17,9 +17,9 @@ import (
 // connects first, and a command in its place.
 func TestAChooserOffersServersNotConnectedAndACommand(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "one", Kind: app.KindFiles}, {ID: "c1", Title: "Split", Kind: app.KindChooser, SplitFrom: "p1"}},
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "one", Kind: app.KindFileManager}, {ID: "c1", Title: "Split", Kind: app.KindChooser, SplitFrom: "p1"}},
 		Stage: &app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "c1"}, Share: 0.5}, Focus: "c1",
-		Browsers: map[string]app.Browser{"p1": {Path: "/"}}, Saved: []remote.Host{{ID: "far", Name: "far", Address: "far.example"}}})
+		Saved: []remote.Host{{ID: "far", Name: "far", Address: "far.example"}}})
 	var labels []string
 	for _, b := range win.choosers["c1"].buttons {
 		labels = append(labels, b.Label)
@@ -28,39 +28,6 @@ func TestAChooserOffersServersNotConnectedAndACommand(t *testing.T) {
 		if !slices.Contains(labels, want) {
 			t.Fatalf("the chooser offers %q, and not %q", labels, want)
 		}
-	}
-}
-
-// A folder Go To could not go to asks again, with what was typed and
-// why.
-func TestGoToAsksAgainWhenTheFolderCannotBeRead(t *testing.T) {
-	win, _, publish := windowStage(t)
-	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "one", Kind: app.KindFiles}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1",
-		Browsers: map[string]app.Browser{"p1": {Path: "/", Seq: 1}}}
-	publish(st)
-	b := win.browsers["p1"]
-	b.askGoToWith("/nowhere", "", lastUI)
-	for range 20 {
-		lastWindow.Frame(time.Second / 60)
-	}
-	lastWindow.Input(gi.KeyPress{Key: gi.KeyEnter})
-	lastWindow.Frame(time.Second / 60)
-	var went app.GoTo
-	for went.Path == "" {
-		if in, ok := nextIntent(t).(app.GoTo); ok {
-			went = in
-		}
-	}
-	for range 30 {
-		lastWindow.Frame(time.Second / 60)
-	}
-	st.Browsers = map[string]app.Browser{"p1": {Path: "/", Seq: 1, Err: "no such folder", WentTo: went.Ask, GoToErr: "no such folder"}}
-	publish(st)
-	for range 30 {
-		lastWindow.Frame(time.Second / 60)
-	}
-	if b.goTo == nil || b.goTo.Text() != "/nowhere" || win.dialog == nil {
-		t.Fatal("Go To did not ask again with what was typed")
 	}
 }
 

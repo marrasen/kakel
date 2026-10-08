@@ -9,12 +9,50 @@ change how something behaves.
 
 ## Unreleased
 
+### Changed
+
+**One menu bar that follows the pane in front.** The file manager's
+own menu button is gone: while a file manager is in front, its lines
+join kakel's File, Edit and View menus, a Go menu comes after View, and
+the lines for a terminal alone leave. Edit's Cut, Copy, Paste and
+Select All act on the files, and `Ctrl+Shift+X` cuts.
+
+**The + on the tab bar opens a tab like the one in front**: a file
+manager at the same folder, or a terminal. A right click offers either.
+
+## v0.12.0-beta.1
+
+A beta: the file manager as a pane, for those who take betas to try
+before it is a release.
+
+### Changed
+
+**The file manager is a pane.** It splits beside a terminal, goes in a
+tab, docks, and moves between windows like any pane, and it takes
+kakel's theme. Its menus are behind a button left of Back. Its dialogs
+cover the pane alone, so the terminal beside it keeps working.
+
+**It replaces the old file pane and the file manager's own windows.**
+Files opens a file manager pane, beside the one in front. Files in a
+New Window, and a folder opened from Windows, open a kakel window
+holding one. The setting that chose between a window and a pane is
+gone.
+
 ### Added
 
 **Beta releases.** Settings › General › Beta releases has updates take
 betas too. A beta takes the next beta by itself, until told otherwise.
 `install.ps1` and `install.sh` install the newest beta with
 `KAKEL_BETA=1`.
+
+**View in Reader and Follow in Reader** on a file's menu in the file
+manager open it in kakel's reader beside the pane, as F3 and F4 did in
+the old file pane.
+
+### Removed
+
+**The old file pane, with its key bar, Go To (`Ctrl+Shift+G`) and zip
+files opened as folders.** The file manager does what the rest did.
 
 ## v0.11.1
 

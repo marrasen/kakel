@@ -27,8 +27,7 @@ Kakel comes with:
 
 These are the ones you need most. "Shortcuts and Commands" on the Help
 menu, or `Ctrl+Shift+H`, lists every command, the key that runs it, and
-the name the shortcuts file calls it by, then the keys of the file pane
-and the reader.
+the name the shortcuts file calls it by, then the keys of the reader.
 
 ## Changing a shortcut
 
@@ -153,8 +152,30 @@ gridterm's old directories: `gridterm` becomes `kakel`, and
 
 ## The file manager
 
-In the file manager: `Tab` and `Shift+Tab` move between panes, `Enter`
-opens, `Backspace` goes up and `Space` marks. `F5` or `Ctrl+C` copies,
-`F6` or `Ctrl+X` cuts, and `F7` or `Ctrl+V` pastes. `F3` views a file,
-`F4` follows one as it grows, and `Ctrl+D` closes the pane. The bar
-along the bottom shows the rest, and clicking a key on it runs that key.
+The file manager is a pane, like a terminal: split it, put it in a tab,
+or drag it to another window. Files on a server's card, or the Files
+command, opens one beside the file manager in front; Files in a New
+Window opens one in a window of its own. Opening a folder from Windows,
+once kakel opens folders, opens a window with one.
+
+kakel's menus are its menus. While a file manager is in front, its
+lines join kakel's File, Edit and View menus, a Go menu comes after
+View, and the lines for a terminal alone leave. Edit's Cut, Copy, Paste
+and Select All act on the files, File › Files in a New Window opens
+another in a window of its own, and Close Pane closes it. `Enter` opens,
+`Backspace` or `Alt+Left` goes back, `Alt+Up` goes up, and `Ctrl+L`
+types a path. `Ctrl+C`, `Ctrl+X` and `Ctrl+V` copy, cut and paste, also
+between machines, `F2` renames and `Delete` moves to the trash.
+`Ctrl+F` filters the folder, `Ctrl+P` finds a file, `Ctrl+1` and
+`Ctrl+2` switch between details and icons, and `Space` shows a picture.
+`Ctrl+W` closes the pane. Keys with `Ctrl+Shift` stay kakel's, as
+`Ctrl+Shift+D` to split and `Ctrl+Shift+C` to copy, except
+`Ctrl+Shift+N`, a new folder. Copy path is on a file's menu.
+
+The `+` at the end of the tabs opens a tab like the one in front: a
+file manager at the same folder, or a terminal. Right-click it to pick
+one.
+
+Right-click a file for View in Reader, which opens it in kakel's
+reader beside the pane, or Follow in Reader, which follows it as it
+grows.

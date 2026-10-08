@@ -274,12 +274,11 @@ func (o Options) bare() bool {
 }
 
 // StartsHidden reports whether this kakel's first window opens hidden:
-// one that starts in the tray, and one started for a folder, which opens
-// in a file manager window of its own.
-func (o Options) StartsHidden() bool { return o.StartsInTray() || o.filesSet }
+// one that starts in the tray.
+func (o Options) StartsHidden() bool { return o.StartsInTray() }
 
 // OpensFolder reports whether this kakel was started for a folder, and
-// which: a file manager window there, and nothing else.
+// which: a window holding a file manager pane there, and nothing else.
 func (o Options) OpensFolder() (string, bool) { return o.files, o.filesSet }
 
 // Trays reports whether this kakel shows itself in the tray: one of
