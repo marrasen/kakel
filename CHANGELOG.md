@@ -7,6 +7,18 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
+## v0.12.0-beta.6
+
+### Added
+
+**A theme editor.** Edit Theme, in Settings › Appearance or the
+palette, opens it in a tab, on the theme the window is drawn in. The
+cursor comes first: it glides along a line, or jumps. Then the motion,
+the accent and other colours, the corners and the text size; All
+values lists every value of the theme, to search. A change shows as it
+is made, and is kept in `themes.json` under the theme's name, built-in
+themes too.
+
 ## v0.12.0-beta.5
 
 ### Changed
