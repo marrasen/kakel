@@ -176,6 +176,14 @@ func TestAPaneSlidingInKeepsItsShellAUsableSize(t *testing.T) {
 		}
 		s.mu.Unlock()
 	}
+	// The new pane slid in: its shell was narrower on the way than where it came to rest. The first size is the one
+	// the shell opened at, before its pane was laid out.
+	s := got[1]
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if n := len(s.seen); n < 3 || s.seen[1][0] >= s.seen[n-1][0] {
+		t.Fatalf("the new shell was given %v, want it growing as its pane slides in", s.seen)
+	}
 }
 
 // nextIntent is the next intent the window sends, or fails.

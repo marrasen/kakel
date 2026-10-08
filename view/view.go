@@ -2351,12 +2351,10 @@ func (w *Window) build(b *app.Box, keep map[string]bool, u *gunim.UI) gunim.Node
 	}
 	id := b.ID
 	sp.OnCommit = func(v float32, u *gunim.UI) gunim.Intent { return app.SplitMoved{Split: id, Share: v} }
+	sp.SetShare(b.Share, nil)
 	if b.Opening {
 		// The new pane, second, slides in from the edge.
-		sp.SetShare(1, nil)
-		sp.SetShare(b.Share, u)
-	} else {
-		sp.SetShare(b.Share, nil)
+		sp.SlideFrom(1)
 	}
 	w.splits[b.ID] = sp
 	return sp
