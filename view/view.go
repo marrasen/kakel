@@ -198,7 +198,14 @@ type Window struct {
 	// drawings keep what each pane's node drew last, by pane, and drawn
 	// is that node, for the switcher to show a pane of any kind, and one
 	// off the stage as it was last seen.
-	drawings    map[string]*gunim.Drawing
+	drawings map[string]*gunim.Drawing
+	// sharedAt is when the window last left a copy of what its panes
+	// drew for All Panes in another window.
+	sharedAt time.Time
+	// overWins and allPanes are every window and every pane, as All
+	// Panes shows them.
+	overWins    []app.OverWindow
+	allPanes    []app.Pane
 	themePicker *widget.Palette
 	// keyPicker lists the saved keys, to remove one from the list.
 	keyPicker *widget.Palette
@@ -747,6 +754,7 @@ func (w *Window) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids guni
 	for k := range kids.All {
 		k.Paint(p)
 	}
+	w.shareDrawings(f.Now)
 	w.paintDropLit(p, f, box)
 	w.paintDock(p, f)
 }
@@ -1766,7 +1774,9 @@ func (w *Window) openSwitcher(u *gunim.UI) {
 	if w.sw != nil || len(w.panes) == 0 {
 		return
 	}
-	w.sw = newSwitcher(w, w.panes, w.focused, u)
+	w.sw = newSwitcher(w, w.overWins, w.allPanes, w.focused, u)
+	overviews.Add(1)
+	u.Send(w, app.OverviewShown{On: true})
 	u.Insert(w, w.sw)
 	u.Focus(w.sw)
 	w.sw.light(w.sw.hot, u)
@@ -1781,6 +1791,8 @@ func (w *Window) closeSwitcher(back bool, u *gunim.UI) {
 	}
 	u.Remove(w.sw)
 	w.sw = nil
+	overviews.Add(-1)
+	u.Send(w, app.OverviewShown{})
 	if n := w.focusNode(w.focused, u); n != nil && back {
 		u.Focus(n)
 		return
@@ -1899,6 +1911,7 @@ func (w *Window) refreshKey(k input.KeyPress, u *gunim.UI) bool {
 func (w *Window) Update(st app.State, u *gunim.UI) {
 	w.panes = st.Panes
 	w.groups = st.Groups
+	w.overWins, w.allPanes = overviewOf(st)
 	w.machineList = st.Machines
 	w.winID, w.behind = st.Window, st.Behind
 	if st.Theme != w.themeNow {
@@ -2127,6 +2140,11 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 	}
 	w.glow(u)
 	w.keepDrawings(st, u)
+	if st.AllPanes != nil {
+		forgetShared(func(id string) bool {
+			return slices.ContainsFunc(st.AllPanes, func(p app.Pane) bool { return p.ID == id })
+		})
+	}
 	w.showTabs(st, u)
 	w.showTitle(st, u)
 	if id := w.afterUnlock; id != "" && st.Secrets.Open {
@@ -2237,6 +2255,10 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 		if on, isSwitch := w.switchOn(id, st, u); isSwitch && i < len(w.palette.Items) {
 			w.palette.Items[i].Checked = on
 		}
+	}
+	// All Panes, open, shows the panes where they are now.
+	if w.sw != nil {
+		w.sw.sync(w.overWins, w.allPanes, u)
 	}
 	u.Invalidate()
 }
@@ -2607,6 +2629,8 @@ type stage struct {
 	// neither. What came clears from that side first.
 	cover *anim.Float
 	from  float32
+	// said is the size the program was last told the stage is.
+	said geom.Size
 }
 
 func newStage() *stage {
@@ -2644,7 +2668,13 @@ func (s *stage) show(n gunim.Node, u *gunim.UI) {
 }
 
 // Layout implements [gunim.Node].
-func (s *stage) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children) geom.Size {
+func (s *stage) Layout(c gunim.Constraints, f gunim.Frame, kids gunim.Children) geom.Size {
+	if c.Max != s.said {
+		// All Panes in the other windows draws this one's tabs this
+		// shape.
+		s.said = c.Max
+		f.Send(s, app.StageSized{Size: c.Max})
+	}
 	for k := range kids.All {
 		k.Layout(gunim.Tight(c.Max))
 		k.Place(geom.Point{})

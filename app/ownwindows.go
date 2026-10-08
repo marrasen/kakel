@@ -36,6 +36,10 @@ type ownWin struct {
 	// the bells rung in its panes.
 	pings Pings
 	bells uint64
+	// stage is the size of its stage, as it last said, and overview
+	// says All Panes is open in it.
+	stage    geom.Size
+	overview bool
 }
 
 // windowIn is an intent from one of the windows, or word that it

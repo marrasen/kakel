@@ -5,6 +5,9 @@ import (
 	"time"
 
 	"github.com/marrasen/kakel/app"
+	"github.com/marrasen/kakel/internal/sessiontest"
+	"github.com/marrasen/kakel/screen"
+	"github.com/marrasen/kakel/vt"
 
 	"github.com/marrasen/gunim/geom"
 	gi "github.com/marrasen/gunim/input"
@@ -90,8 +93,9 @@ func TestATileLetGoOutsideAsksForAWindow(t *testing.T) {
 	if !ok || in.Pane != "p2" || in.At != geom.Pt(1200, 300).Sub(sw.grab) || in.Size != sw.size {
 		t.Fatalf("let go outside, the switcher sent %#v", in)
 	}
-	if len(sw.tiles) != 2 {
-		t.Fatalf("%d tiles are left, want 2", len(sw.tiles))
+	// It stays until the program says where the pane went.
+	if len(sw.tiles) != 3 || sw.carried != nil {
+		t.Fatalf("%d tiles are left, want 3", len(sw.tiles))
 	}
 }
 
@@ -113,16 +117,48 @@ func TestATileLetGoOverItsWindowGoesBack(t *testing.T) {
 	}
 }
 
-// A tile another window took leaves the switcher.
-func TestATileTakenByAnotherWindowLeaves(t *testing.T) {
-	win := switcherStage(t)
+// A tile another window took moves to that window's card once the
+// program says the pane is there.
+func TestATileTakenByAnotherWindowMoves(t *testing.T) {
+	win, sh, publish := windowStage(t)
+	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
+	for _, id := range []string{"p1", "p2", "p3"} {
+		sh.Set(id, screen.Open(sessiontest.New(), vt.DefaultPalette(), quiet))
+		t.Cleanup(func() { _ = sh.Get(id).T.Close() })
+	}
+	all := []app.Pane{{ID: "p1", Title: "a"}, {ID: "p2", Title: "b"}, {ID: "p3", Title: "c", Window: 2}}
+	st := app.State{Window: 1, Panes: all[:2], AllPanes: all, Stage: &app.Box{Pane: "p1"}, Focus: "p1",
+		Overview: []app.OverWindow{
+			{ID: 1, Tabs: []app.OverTab{{Group: 1, Box: &app.Box{Pane: "p1"}, Pane: "p1"}, {Group: 2, Box: &app.Box{Pane: "p2"}, Pane: "p2"}}, Front: 1},
+			{ID: 2, Tabs: []app.OverTab{{Group: 3, Box: &app.Box{Pane: "p3"}, Pane: "p3"}}, Front: 3},
+		}}
+	publish(st)
+	win.run("view.switcher", lastUI)
+	for range 60 {
+		lastWindow.Frame(time.Second / 60)
+	}
 	sw := win.sw
-	at := sw.tiles[2].box.Value().Center()
+	if len(sw.cards) != 2 || len(sw.tiles) != 3 {
+		t.Fatalf("%d cards and %d tiles, want 2 and 3", len(sw.cards), len(sw.tiles))
+	}
+	at := sw.tileOf("p2").box.Value().Center()
 	lastWindow.Input(gi.PointerDown{Pos: at, Button: gi.ButtonPrimary})
 	lastWindow.Input(gi.PointerMove{Pos: at.Add(geom.Pt(30, 0))})
 	lastWindow.Frame(time.Second / 60)
 	sw.Handle(gi.DragEnd{Taken: true}, lastUI)
-	if len(sw.tiles) != 2 || sw.tiles[0].id != "p1" || sw.tiles[1].id != "p2" {
-		t.Fatalf("the tiles left are %d", len(sw.tiles))
+	// The program moves it into window 2.
+	all[1].Window = 2
+	st.Panes, st.AllPanes = all[:1], all
+	st.Overview = []app.OverWindow{
+		{ID: 1, Tabs: []app.OverTab{{Group: 1, Box: &app.Box{Pane: "p1"}, Pane: "p1"}}, Front: 1},
+		{ID: 2, Tabs: []app.OverTab{{Group: 3, Box: &app.Box{Pane: "p3"}, Pane: "p3"}, {Group: 2, Box: &app.Box{Pane: "p2"}, Pane: "p2"}}, Front: 2},
+	}
+	publish(st)
+	for range 60 {
+		lastWindow.Frame(time.Second / 60)
+	}
+	p2 := sw.tileOf("p2")
+	if p2 == nil || p2.win != 2 || !sw.cards[1].box.Value().Contains(p2.box.Value().Center()) {
+		t.Fatalf("p2 is not in window 2's card")
 	}
 }

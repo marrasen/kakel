@@ -7,6 +7,17 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
+## Unreleased
+
+### Changed
+
+**All Panes shows every window.** `Ctrl+Shift+A` shows a card for each
+kakel window, holding its tabs with their splits as they stand, every
+pane live. Pick a pane in another window and that window comes to the
+front with it. Drag a pane onto a pane to join it in a split, onto a
+window's card to move it there on a tab of its own, or onto empty room
+to give it a window of its own.
+
 ## v0.12.0-beta.6
 
 ### Added

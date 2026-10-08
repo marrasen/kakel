@@ -258,7 +258,7 @@ func TestAPanePickedInASplitGrowsIntoItsPlace(t *testing.T) {
 	stage, _ := lastUI.Bounds(win.stage)
 	s.pick(1, lastUI)
 	half := func(id string) geom.Rect {
-		r, _ := placeIn(split, id, stage, lastUI)
+		r, _ := placeIn(split, id, stage, lastUI.Theme())
 		return r
 	}
 	if got := s.tiles[1].box.Target(); got != half("p2") || got.Size().W >= stage.Size().W {

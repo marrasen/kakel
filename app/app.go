@@ -74,6 +74,8 @@ type State struct {
 	// in, in whichever window, whose row it lights.
 	AllPanes []Pane
 	Working  string
+	// Overview is every window, with its tabs, for All Panes.
+	Overview []OverWindow
 	// InTray says kakel is to show its icon in the system tray, and run
 	// on there once its last window closes, where there is a tray.
 	InTray bool
@@ -771,6 +773,16 @@ func (a *app) tellOutput() {
 		told[w] = true
 		_ = w.c.Patch(WindowTopic, OutputArrived{})
 	}
+	if len(panes) == 0 {
+		return
+	}
+	// All Panes draws every window's panes.
+	for _, w := range a.liveWins() {
+		if w.overview && !told[w] {
+			told[w] = true
+			_ = w.c.Patch(WindowTopic, OutputArrived{})
+		}
+	}
 }
 
 func newApp(c gunim.Client, sh *screen.Shells) *app {
@@ -950,6 +962,9 @@ func (a *app) run(ctx context.Context) error {
 			if a.gone || in.w.gone {
 				// On its way out: nothing more is done.
 				continue
+			}
+			if a.overviewIn(in.w, in.env.Intent) {
+				break
 			}
 			a.front(in.w)
 			a.handleFrom(in.env.Intent)
@@ -1185,6 +1200,7 @@ func (a *app) publish() {
 	st := a.st
 	st.Panes = slices.Clone(a.st.Panes)
 	st.AllPanes = a.allPanes()
+	st.Overview = a.overview()
 	a.noteWork()
 	if !a.gone {
 		a.showTray()
@@ -1241,7 +1257,7 @@ func clearOpening(b *Box) {
 }
 
 func (a *app) handle(in gunim.Intent) {
-	if a.handleTab(in) || a.handleServers(in) {
+	if a.handleTab(in) || a.handleOverview(in) || a.handleServers(in) {
 		return
 	}
 	var err error

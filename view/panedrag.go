@@ -38,60 +38,251 @@ const movesHere = "moves here"
 func (s *switcher) carry(at geom.Point, u *gunim.UI) {
 	t := s.pressed
 	s.carried = t
+	s.dropped = false
 	r := t.box.Value()
 	s.grab = at.Sub(r.Min)
 	t.fade.Animate(0.25, widget.Quick.Get(u.Theme()))
 	g := &paneGhost{s: s, t: t, size: r.Size(), lit: anim.NewFloat(0)}
 	g.Add(g.lit)
-	u.StartDrag(s, app.PaneDrag{Pane: t.id, Window: s.w.winID}, g, s.grab)
+	u.StartDrag(s, app.PaneDrag{Pane: t.id, Window: t.win}, g, s.grab)
 	u.Invalidate()
 }
 
-// dragEnded hears how the drag of a tile ended: taken by another
-// window, which has the pane now; let go outside every window, which
-// opens one for it; or neither, and the tile goes back to its place.
+// dragEnded hears how the drag of a tile ended: let go over the
+// switcher, which asked for the pane to go where it was let go; taken
+// by another window, which has the pane now; let go outside every
+// window, which opens one for it; or none of these, and the tile goes
+// back to its place. Wherever the pane goes, the switcher shows it there
+// once the program says it is.
 func (s *switcher) dragEnded(e input.DragEnd, u *gunim.UI) {
 	t := s.carried
 	s.pressed, s.carried = nil, nil
+	s.drop = overDrop{}
+	s.lit.Animate(0, widget.Quick.Get(u.Theme()))
+	for _, c := range s.cards {
+		c.lit.Animate(0, widget.Quick.Get(u.Theme()))
+	}
 	if t == nil {
 		return
 	}
 	switch {
+	case s.dropped:
+		// It goes from where it was let go to where it lands.
+		t.box.Jump(geom.Rect{Min: e.At.Sub(s.grab), Max: e.At.Sub(s.grab).Add(t.box.Value().Size().Point())})
 	case e.Taken:
-		s.lose(t, u)
-	case e.Out && len(s.tiles) > 1:
+	case e.Out && s.alone(t) == "":
 		// The pane's top left corner where the image's was, and the
 		// window as large as this one.
 		u.Send(s, app.PaneToNewWindow{Pane: t.id, At: e.At.Sub(s.grab), Size: s.size})
-		s.lose(t, u)
-	default:
-		// Let go over this window, or outside it with nothing else
-		// here to leave behind: it goes back.
-		t.fade.Animate(1, widget.Settle.Get(u.Theme()))
-		u.Invalidate()
 	}
+	s.dropped = false
+	t.fade.Animate(1, widget.Settle.Get(u.Theme()))
+	u.Invalidate()
 }
 
-// lose takes tile t off the switcher, the rest closing up. With none
-// left, the switcher closes.
-func (s *switcher) lose(t *tile, u *gunim.UI) {
-	i := -1
-	for k, o := range s.tiles {
-		if o == t {
-			i = k
+// alone says why tile t's pane cannot leave its window for one of its
+// own: it is the window's only pane, which is where it is wanted
+// already. It is "" when it can.
+func (s *switcher) alone(t *tile) string {
+	for _, o := range s.tiles {
+		if o != t && o.win == t.win {
+			return ""
 		}
 	}
-	if i < 0 {
-		return
+	return "its window's only pane"
+}
+
+// overDrop is where a pane carried over the switcher would go, let go
+// there.
+type overDrop struct {
+	kind dropKind
+	// beside, vertical and first say the pane it would join in a split,
+	// and on which side, which is lit at lit.
+	beside          string
+	vertical, first bool
+	lit             geom.Rect
+	// card is the window's card it would move to.
+	card *card
+}
+
+// dropKind is what a drop over the switcher does.
+type dropKind uint8
+
+// What a drop does.
+const (
+	// dropNone leaves the pane where it is.
+	dropNone dropKind = iota
+	// dropDock joins it with the pane under it, in a split.
+	dropDock
+	// dropTab moves it onto a tab of its own, in the window of the card
+	// under it.
+	dropTab
+	// dropWindow opens a window of its own for it, where it is let go.
+	dropWindow
+)
+
+// opensWindow is what the switcher answers a pane dragged over room
+// with no window's card: a drop there opens one for it.
+const opensWindow = "opens a window"
+
+// dropAt is where pane d, carried to p, would go.
+func (s *switcher) dropAt(p geom.Point, d app.PaneDrag) overDrop {
+	carried := s.tileOf(d.Pane)
+	if i := s.tileAt(p); i >= 0 {
+		t := s.tiles[i]
+		if t.id == d.Pane {
+			return overDrop{}
+		}
+		r := t.box.Value()
+		sz := r.Size()
+		if sz.W <= 0 || sz.H <= 0 {
+			return overDrop{}
+		}
+		fx, fy := (p.X-r.Min.X)/sz.W, (p.Y-r.Min.Y)/sz.H
+		dk := overDrop{kind: dropDock, beside: t.id}
+		switch min(fx, 1-fx, fy, 1-fy) {
+		case fx:
+			dk.first, dk.lit = true, geom.Rc(r.Min.X, r.Min.Y, sz.W/2, sz.H)
+		case 1 - fx:
+			dk.lit = geom.Rc(r.Min.X+sz.W/2, r.Min.Y, sz.W/2, sz.H)
+		case fy:
+			dk.vertical, dk.first, dk.lit = true, true, geom.Rc(r.Min.X, r.Min.Y, sz.W, sz.H/2)
+		default:
+			dk.vertical, dk.lit = true, geom.Rc(r.Min.X, r.Min.Y+sz.H/2, sz.W, sz.H/2)
+		}
+		return dk
 	}
-	s.tiles = append(s.tiles[:i:i], s.tiles[i+1:]...)
-	s.panes = append(s.panes[:i:i], s.panes[i+1:]...)
-	if len(s.tiles) == 0 {
-		s.cancel(u)
-		return
+	if c := s.cardAt(p); c != nil {
+		// Into another window, or out of its split onto a tab of its own
+		// in its own.
+		if carried == nil || c.win != carried.win || s.inSplit(carried) {
+			return overDrop{kind: dropTab, card: c}
+		}
+		return overDrop{}
 	}
-	s.light(min(s.hot, len(s.tiles)-1), u)
+	if carried != nil && s.alone(carried) != "" {
+		return overDrop{}
+	}
+	return overDrop{kind: dropWindow}
+}
+
+// tileOf returns pane id's tile, or nil.
+func (s *switcher) tileOf(id string) *tile {
+	for _, t := range s.tiles {
+		if t.id == id {
+			return t
+		}
+	}
+	return nil
+}
+
+// inSplit reports whether tile t's pane shares its tab with another.
+func (s *switcher) inSplit(t *tile) bool {
+	for _, o := range s.tiles {
+		if o != t && o.win == t.win && o.group == t.group {
+			return true
+		}
+	}
+	return false
+}
+
+// dropHere takes a pane dragged over the switcher, its own or another
+// window's: it lights where it would go, and a drop sends it there.
+func (s *switcher) dropHere(e input.Event, u *gunim.UI) bool {
+	quick := widget.Quick.Get(u.Theme())
+	switch e := e.(type) {
+	case input.DragOver:
+		d, ok := e.Data.(app.PaneDrag)
+		if !ok || s.picked >= 0 {
+			return false
+		}
+		s.showDrop(s.dropAt(e.Pos, d), u)
+		switch s.drop.kind {
+		case dropDock:
+			u.AnswerDrag(docksHere)
+		case dropTab:
+			u.AnswerDrag(movesHere)
+		case dropWindow:
+			u.AnswerDrag(opensWindow)
+		case dropNone:
+		}
+		return true
+	case input.DragLeave:
+		s.showDrop(overDrop{}, u)
+		return false
+	case input.Drop:
+		d, ok := e.Data.(app.PaneDrag)
+		if !ok || s.picked >= 0 {
+			return false
+		}
+		drop := s.dropAt(e.Pos, d)
+		s.showDrop(overDrop{}, u)
+		s.lit.Animate(0, quick)
+		switch drop.kind {
+		case dropDock:
+			u.Send(s, app.DockPane{Pane: d.Pane, Beside: drop.beside, Vertical: drop.vertical, First: drop.first})
+		case dropTab:
+			u.Send(s, app.PaneToTab{Pane: d.Pane, Window: drop.card.win})
+		case dropWindow:
+			size := s.size
+			if t := s.tileOf(d.Pane); t != nil {
+				for _, ow := range s.wins {
+					if ow.ID == t.win && ow.Stage.W > 0 {
+						size = ow.Stage
+					}
+				}
+			}
+			u.Send(s, app.PaneToNewWindow{Pane: d.Pane, At: e.Pos.Sub(s.grab), Size: size})
+		case dropNone:
+			return true
+		}
+		s.dropped = true
+		return true
+	}
+	return false
+}
+
+// showDrop lights where d says a pane let go would go.
+func (s *switcher) showDrop(d overDrop, u *gunim.UI) {
+	quick := widget.Quick.Get(u.Theme())
+	if d.kind == dropDock {
+		if s.drop.kind != dropDock {
+			s.lit.Jump(0)
+		}
+		s.lit.Animate(1, quick)
+	} else {
+		s.lit.Animate(0, quick)
+	}
+	for _, c := range s.cards {
+		to := float32(0)
+		if d.kind == dropTab && d.card == c {
+			to = 1
+		}
+		c.lit.Animate(to, quick)
+	}
+	if d.kind == dropDock || s.drop.kind != dropDock {
+		s.drop = d
+	} else {
+		// The half lit fades where it was.
+		s.drop.kind = dropNone
+	}
 	u.Invalidate()
+}
+
+// paintDrop lights the half of a pane a pane carried over it would
+// take.
+func (s *switcher) paintDrop(p *paint.Painter, f gunim.Frame) {
+	on := min(max(s.lit.Value(), 0), 1)
+	if on < 0.01 || s.drop.lit.Empty() {
+		return
+	}
+	c := switcherRing.Get(f.Theme)
+	tint := c
+	tint.A = uint8(0x44 * on)
+	c.A = uint8(float32(c.A) * on)
+	r := s.drop.lit.Inset(geom.Uniform(2))
+	p.RRect(r, 4, paint.Solid(tint))
+	p.RRectStroke(r, 4, paint.Fill{}, paint.Stroke{Width: 2, Color: c})
 }
 
 // paneGhost is the image of a pane that follows the pointer while it

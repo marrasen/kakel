@@ -53,20 +53,30 @@ The file browser's own keys are not in the file.
 
 ## Every pane at once
 
-Pane → Go To → All Panes…, or `Ctrl+Shift+A`, draws every pane at
-once on a grid, each one live and shrunk to fit. The arrows walk them,
-`Enter` goes to the one marked and `Escape` leaves you where you were. A
-click goes straight there. `Ctrl+Shift+A` again closes it. The images are shrunk by the GPU rather
-than cell by cell, and a window with nothing happening in it still skips
-the frames it would have skipped anyway.
+Pane → Go To → All Panes…, or `Ctrl+Shift+A`, shows every pane of
+every kakel window at once, each one live and shrunk. Each window is a
+card, and each of its tabs sits in the card the shape of the window,
+its splits as they stand. The arrows walk the panes, `Tab` goes
+through them in turn, `Enter` goes to the one marked and `Escape`
+leaves you where you were. A click goes straight there; a pane in
+another window brings that window to the front with it. `Ctrl+Shift+A`
+again closes it. The images are shrunk by the GPU rather than cell by
+cell, and a window with nothing happening in it still skips the frames
+it would have skipped anyway.
 
 ## More than one window
 
-In All Panes, drag a pane's tile out to put it in another window. Let it go over
-another kakel window and it moves there; that window lights up while
-the pane is over it. Let it go outside every window and it opens a
-window of its own, where you let it go. A window's only pane stays
-where it is.
+In All Panes, drag a pane to move it:
+
+- onto a pane, and it joins it in a split, on the side of it you let
+  go nearest; the half it would take lights up.
+- onto another window's card, and it moves there on a tab of its own.
+  Onto its own window's card, it leaves its split for a tab of its own.
+- onto room no card covers, or outside every window, and it opens a
+  window of its own where you let it go. A window's only pane stays
+  where it is.
+- over another kakel window, and it moves there; that window lights up
+  while the pane is over it.
 
 Each window has its own panes and its own pane in front. The Machines
 pane lists the panes of every window, and clicking one in another

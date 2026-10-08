@@ -2,7 +2,6 @@ package app
 
 import (
 	"slices"
-	"strconv"
 
 	"github.com/marrasen/gunim/geom"
 
@@ -329,30 +328,7 @@ func (a *app) tabBeside(w *ownWin, g int) int {
 // dockTab takes a tab's panes into a split beside a pane of another
 // tab, in the window in front.
 func (a *app) dockTab(in DockTab) {
-	to, ok := a.groupOf[in.Beside]
-	// Only beside a pane of the window the tab was dropped on.
-	if !ok || a.groups[in.Group] == nil || to == in.Group || !a.movable(in.Group) || a.closing[in.Beside] || a.ownerOf(in.Beside) != a.cur {
-		return
-	}
-	a.groupToWindow(in.Group, a.cur)
-	moved := a.groups[in.Group]
-	a.splits++
-	box := &Box{
-		ID: "s" + strconv.Itoa(a.splits), Vertical: in.Vertical, Share: 0.5, Opening: true,
-		A: &Box{Pane: in.Beside}, B: moved,
-	}
-	if in.First {
-		box.A, box.B = moved, box.A
-	}
-	a.groups[to] = a.groups[to].replace(in.Beside, box)
-	pane := a.tabPane(in.Group)
-	for _, id := range moved.leaves(nil) {
-		a.groupOf[id] = to
-	}
-	delete(a.groups, in.Group)
-	delete(a.groupFocus, in.Group)
-	a.sortTabs()
-	a.focus(pane)
+	a.dockGroup(in.Group, in.Beside, in.Vertical, in.First, a.cur)
 }
 
 // tabToNewWindow opens a window at in.At and moves a tab into it.
