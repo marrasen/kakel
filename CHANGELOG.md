@@ -7,7 +7,7 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
-## Unreleased
+## v0.12.0-beta.9
 
 ### Added
 
@@ -17,6 +17,18 @@ pane, with Paste and Cancel. Change it there: `Enter` pastes,
 `Shift+Enter` starts a new line, `Escape` cancels. Where the program
 treats each line break as `Enter`, the dialog says so. Settings ›
 Terminal › Show before pasting turns it off.
+
+### Changed
+
+**Number fields drag.** The theme editor's numbers and Settings' font
+size change as you drag them up or down: finer with `Shift`, faster
+with `Ctrl`. The serving port stays a field you type in.
+
+### Fixed
+
+**Text no longer flickers after saving a theme's edits.** The text in
+Settings dipped toward black and back on every update after the theme
+editor's changes were saved.
 
 ## v0.12.0-beta.8
 
