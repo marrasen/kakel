@@ -11,6 +11,7 @@ import (
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/input"
 	"github.com/marrasen/gunim/paint"
+	"github.com/marrasen/gunim/text"
 	"github.com/marrasen/gunim/widget"
 )
 
@@ -43,8 +44,8 @@ func (s *switcher) carry(at geom.Point, u *gunim.UI) {
 	r := t.box.Value()
 	s.grab = at.Sub(r.Min)
 	t.fade.Animate(0.25, widget.Quick.Get(u.Theme()))
-	g := &paneGhost{s: s, t: t, size: r.Size(), lit: anim.NewFloat(0)}
-	g.Add(g.lit)
+	g := &paneGhost{s: s, t: t, size: r.Size(), lit: anim.NewFloat(0), thin: anim.NewFloat(0)}
+	g.Add(g.lit, g.thin)
 	u.StartDrag(s, app.PaneDrag{Pane: t.id, Window: t.win, Grab: s.grab}, g, s.grab)
 	u.Invalidate()
 }
@@ -177,10 +178,12 @@ func (s *switcher) dropAt(p geom.Point, d app.PaneDrag) overDrop {
 		}
 		return overDrop{}
 	}
-	if carried != nil && s.alone(carried) != "" {
+	if carried == nil || s.alone(carried) != "" {
 		return overDrop{}
 	}
-	return overDrop{kind: dropWindow}
+	// Where the window would open, as large as it would be.
+	at := p.Sub(d.Grab)
+	return overDrop{kind: dropWindow, lit: geom.Rect{Min: at, Max: at.Add(s.windowSize(carried).Point())}}
 }
 
 // tileOf returns pane id's tile, or nil.
@@ -258,8 +261,9 @@ func (s *switcher) dropHere(e input.Event, u *gunim.UI) bool {
 // showDrop lights where d says a pane let go would go.
 func (s *switcher) showDrop(d overDrop, u *gunim.UI) {
 	quick := widget.Quick.Get(u.Theme())
-	if d.kind == dropDock {
-		if s.drop.kind != dropDock {
+	lights := d.kind == dropDock || d.kind == dropWindow
+	if lights {
+		if s.drop.kind != d.kind || s.drop.beside != d.beside {
 			s.lit.Jump(0)
 		}
 		s.lit.Animate(1, quick)
@@ -273,17 +277,17 @@ func (s *switcher) showDrop(d overDrop, u *gunim.UI) {
 		}
 		c.lit.Animate(to, quick)
 	}
-	if d.kind == dropDock || s.drop.kind != dropDock {
+	if lights || s.drop.kind != dropDock && s.drop.kind != dropWindow {
 		s.drop = d
 	} else {
-		// The half lit fades where it was.
+		// What was lit fades where it was.
 		s.drop.kind = dropNone
 	}
 	u.Invalidate()
 }
 
 // paintDrop lights the half of a pane a pane carried over it would
-// take.
+// take, or the window it would open in, where it would open.
 func (s *switcher) paintDrop(p *paint.Painter, f gunim.Frame) {
 	on := min(max(s.lit.Value(), 0), 1)
 	if on < 0.01 || s.drop.lit.Empty() {
@@ -294,6 +298,22 @@ func (s *switcher) paintDrop(p *paint.Painter, f gunim.Frame) {
 	tint.A = uint8(0x44 * on)
 	c.A = uint8(float32(c.A) * on)
 	r := s.drop.lit.Inset(geom.Uniform(2))
+	if s.drop.kind == dropWindow || s.drop.beside == "" {
+		// A window to be: faint, rounded, named.
+		tint.A = uint8(0x18 * on)
+		p.RRect(r, 10, paint.Solid(tint))
+		p.RRectStroke(r, 10, paint.Fill{}, paint.Stroke{Width: 2, Color: c})
+		name := text.Default().Shape("New window", 14)
+		ink := widget.Ink.Get(f.Theme)
+		ink.A = uint8(float32(ink.A) * on)
+		// In the middle of what of it shows.
+		seen := r
+		seen.Min = geom.Pt(max(seen.Min.X, 0), max(seen.Min.Y, 0))
+		seen.Max = geom.Pt(min(seen.Max.X, s.size.W), min(seen.Max.Y, s.size.H))
+		c := seen.Center()
+		name.Paint(p, geom.Pt(c.X-name.Advance/2, c.Y-name.Height()/2), ink)
+		return
+	}
 	p.RRect(r, 4, paint.Solid(tint))
 	p.RRectStroke(r, 4, paint.Fill{}, paint.Stroke{Width: 2, Color: c})
 }
@@ -306,6 +326,9 @@ type paneGhost struct {
 	t    *tile
 	size geom.Size
 	lit  *anim.Float
+	// thin is how far it fades, over a place in the overview it would
+	// go, so what lights there shows through it.
+	thin *anim.Float
 }
 
 // Layout implements [gunim.Node].
@@ -313,18 +336,22 @@ func (g *paneGhost) Layout(gunim.Constraints, gunim.Frame, gunim.Children) geom.
 
 // Paint implements [gunim.Node].
 func (g *paneGhost) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, _ gunim.Children) {
-	g.s.paintPane(p, f, g.t, geom.Rect{Max: box.Point()}, 0.92, 1, g.lit.Value())
+	g.s.paintPane(p, f, g.t, geom.Rect{Max: box.Point()}, 0.92-0.4*min(max(g.thin.Value(), 0), 1), 1, g.lit.Value())
 }
 
 // Handle implements [gunim.Handler]: the window under the pointer says
 // whether it takes the pane.
 func (g *paneGhost) Handle(e input.Event, u *gunim.UI) bool {
 	if a, ok := e.(input.DragAnswer); ok {
-		to := float32(0)
-		if a.Answer == movesHere {
+		to, thin := float32(0), float32(0)
+		switch a.Answer {
+		case movesHere:
 			to = 1
+		case docksHere, opensWindow:
+			thin = 1
 		}
 		g.lit.Animate(to, widget.Quick.Get(u.Theme()))
+		g.thin.Animate(thin, widget.Quick.Get(u.Theme()))
 		u.Invalidate()
 		return true
 	}

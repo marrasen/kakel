@@ -63,12 +63,15 @@ func overviewStage(t *testing.T) (*gunim.Window, *Overview, app.OverState) {
 }
 
 // overviewIntent is the next intent All Panes' own window sends, past
-// those of type skip.
+// word that it is leaving.
 func overviewIntent(t *testing.T, w *gunim.Window) gunim.Intent {
 	t.Helper()
 	for {
 		select {
 		case env := <-w.Client().Intents():
+			if _, ok := env.Intent.(app.OverviewLeaving); ok {
+				continue
+			}
 			return env.Intent
 		case <-time.After(2 * time.Second):
 			t.Fatal("All Panes sent nothing")
@@ -160,3 +163,21 @@ var overviewUI *gunim.UI
 
 // lastTheme is the theme the window overviewStage made last draws in.
 func lastTheme(*gunim.Window) *theme.Live { return overviewUI.Theme() }
+
+// Asked to close before it has shown, All Panes is done at once.
+func TestAllPanesAskedToCloseFirstIsDone(t *testing.T) {
+	w := gunimtest.New(t, geom.Sz(800, 600), nil)
+	gunim.RegisterView(w, "overview", func(app.OverState) *Overview { return NewOverview(screen.NewShells(), Shortcuts()) },
+		func(o *Overview, st app.OverState, u *gunim.UI) { o.Update(st, u) })
+	c := w.Client()
+	if err := c.Mount(gunim.Root, "overview", "overview", app.OverState{}, app.OverviewTopic); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Publish(app.OverviewTopic, app.OverState{Windows: []app.OverWindow{{ID: 1}}, Close: true}); err != nil {
+		t.Fatal(err)
+	}
+	w.Frame(time.Second / 60)
+	if in, ok := overviewIntent(t, w).(app.OverviewDone); !ok {
+		t.Fatalf("All Panes sent %#v", in)
+	}
+}

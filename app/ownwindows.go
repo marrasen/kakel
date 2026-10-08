@@ -41,6 +41,9 @@ type ownWin struct {
 	stage    geom.Rect
 	size     geom.Size
 	overview bool
+	// fresh says it opened while All Panes was over the screen, and
+	// has not shown yet.
+	fresh bool
 }
 
 // windowIn is an intent from one of the windows, or word that it
@@ -287,11 +290,9 @@ func (a *app) openWindowFrom(gw *gunim.Window, at geom.Point, size geom.Size, th
 				return
 			}
 			a.front(w)
-			if a.over.c != nil {
-				// Opened from All Panes, which keeps the keyboard while it
-				// is over the screen.
-				a.over.c.ToFront()
-			}
+			// Opened from All Panes, which takes the keyboard back once
+			// the window has shown.
+			w.fresh = a.over.c != nil
 		}
 	}()
 }

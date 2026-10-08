@@ -49,6 +49,10 @@ func (o *Overview) Update(st app.OverState, u *gunim.UI) {
 	}
 	env := overEnv{shells: o.shells, keys: o.keys, fontSize: st.FontSize, faces: st.Font.Faces, titles: st.PaneTitles, machines: st.Machines}
 	switch {
+	case !o.shown && st.Close:
+		// Asked to close before it showed.
+		o.shown = true
+		u.Send(o, app.OverviewDone{})
 	case !o.shown && len(st.Windows) == 0:
 		// Mounted, before the program has said what there is.
 	case !o.shown:
@@ -66,7 +70,7 @@ func (o *Overview) Update(st app.OverState, u *gunim.UI) {
 	case o.sw != nil:
 		o.sw.env = env
 		o.sw.sync(st.Windows, st.Panes, u)
-		if st.Close {
+		if st.Close && o.sw != nil {
 			o.sw.cancel(u)
 		}
 	}
@@ -84,6 +88,8 @@ func (o *Overview) closeSwitcher(u *gunim.UI) {
 	u.Remove(o.sw)
 	o.sw = nil
 	o.dark.Animate(0, widget.Settle.Get(u.Theme()))
+	// The program closes it anyway, should it never finish going.
+	u.Send(o, app.OverviewLeaving{})
 }
 
 // Layout implements [gunim.Node]: the switcher covers the window.

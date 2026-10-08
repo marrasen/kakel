@@ -2,6 +2,7 @@ package app
 
 import (
 	"strconv"
+	"time"
 
 	"github.com/marrasen/kakel/keys"
 	"github.com/marrasen/kakel/machines"
@@ -56,8 +57,9 @@ type (
 	// screen the window it came from is on, or closes it.
 	ToggleOverview struct{}
 	// OverviewDone says All Panes' own window has finished, and may
-	// close.
-	OverviewDone struct{}
+	// close, and OverviewLeaving that it is on its way.
+	OverviewDone    struct{}
+	OverviewLeaving struct{}
 	// OverviewShown says All Panes opened, or closed with On false, in
 	// the window it came from. While it is open the window hears of
 	// output from every window's panes, not only its own.
@@ -84,6 +86,14 @@ type (
 func (a *app) overviewIn(w *ownWin, in any) bool {
 	switch in := in.(type) {
 	case StageSized:
+		if w.fresh {
+			// A window opened from All Panes has shown, and taken the
+			// keyboard: All Panes, over it, takes it back.
+			w.fresh = false
+			if a.over.c != nil && !a.over.closing {
+				a.over.c.ToFront()
+			}
+		}
 		if w.stage == in.At && w.size == in.Window {
 			a.quiet = true
 			return true
@@ -258,12 +268,13 @@ type OverState struct {
 type OverviewOpener func(m driver.Monitor) (gunim.Client, *gunim.Window, error)
 
 // overState is All Panes' own window, while it is open: its client and
-// window, the monitor it covers, and the window to put in front once it
-// has gone.
+// window, the monitor it covers and where on it it stands, and the
+// window to put in front once it has gone.
 type overState struct {
 	c       *gunim.Client
 	gw      *gunim.Window
 	mon     driver.Monitor
+	at      geom.Rect
 	opening bool
 	closing bool
 	raise   *ownWin
@@ -272,14 +283,20 @@ type overState struct {
 // overviewAlone reports whether All Panes opens in a window of its own:
 // where kakel can open one and say where its windows are.
 func (a *app) overviewAlone() bool {
-	return a.openOverview != nil && a.monitors != nil && a.cur != nil && a.cur.gw != nil
+	return a.openOverview != nil && a.monitors != nil && a.cur != nil && a.cur.gw != nil && len(a.monitors()) > 0
 }
 
 // toggleOverview opens All Panes' own window over the monitor the
 // window in front is on, or has it close.
 func (a *app) toggleOverview() {
 	if a.over.c != nil {
+		if a.over.closing {
+			// Asked twice: it goes now.
+			a.closeOverview()
+			return
+		}
 		a.over.closing = true
+		a.closeOverviewSoon()
 		return
 	}
 	if a.over.opening || !a.overviewAlone() {
@@ -303,7 +320,12 @@ func (a *app) toggleOverview() {
 				c.Close()
 				return
 			}
-			a.over = overState{c: &c, gw: gw, mon: mon}
+			a.over = overState{c: &c, gw: gw, mon: mon, at: mon.Bounds}
+			if p, ok := gw.Placement(); ok {
+				// Where it is: the system may have kept it off the task
+				// bar.
+				a.over.at = p.Bounds
+			}
 			_ = c.SetTheme(a.st.Theme)
 			a.publishOverview()
 			c.ToFront()
@@ -339,19 +361,55 @@ func (a *app) handleOverviewWin(in any) {
 	case PaneToTab, DockPane:
 		a.handleOverview(in)
 	case PaneToNewWindow:
-		a.paneToNewWindowFrom(in, a.over.gw)
+		var space *gunim.Window
+		if !a.over.closing {
+			space = a.over.gw
+		}
+		a.paneToNewWindowFrom(in, space)
+	case OverviewLeaving:
+		a.over.closing = true
+		a.closeOverviewSoon()
 	case OverviewDone:
-		a.over.c.Close()
-		a.overviewGone()
+		a.closeOverview()
 	}
 }
 
+// overviewWait is the longest All Panes' own window may take going
+// before it is closed anyway, as when it draws no frames to go by.
+const overviewWait = 3 * time.Second
+
+// closeOverviewSoon closes All Panes' own window once overviewWait has
+// passed, unless it has gone by then.
+func (a *app) closeOverviewSoon() {
+	c := a.over.c
+	go func() {
+		time.Sleep(overviewWait)
+		a.events <- func() {
+			if a.over.c == c {
+				a.closeOverview()
+			}
+		}
+	}()
+}
+
+// closeOverview closes All Panes' own window, if it is open.
+func (a *app) closeOverview() {
+	if a.over.c == nil {
+		return
+	}
+	a.over.c.Close()
+	a.overviewGone()
+}
+
 // overviewGone forgets All Panes' own window, gone, and puts the window
-// of the pane picked there in front.
+// of the pane picked there in front, or the window in front again.
 func (a *app) overviewGone() {
 	raise := a.over.raise
 	a.over = overState{}
-	if raise != nil && !raise.gone {
+	if raise == nil {
+		raise = a.cur
+	}
+	if raise != nil && !raise.gone && !a.gone {
 		raise.c.ToFront()
 	}
 }
@@ -364,13 +422,18 @@ func (a *app) publishOverview() {
 	}
 	mons := a.monitors()
 	wins := a.overview()
+	if len(wins) == 0 {
+		// Nothing left to show.
+		a.closeOverview()
+		return
+	}
 	for i := range wins {
 		w := a.winByID(wins[i].ID)
 		if w == nil || w.gw == nil {
 			continue
 		}
 		if p, ok := w.gw.Placement(); ok {
-			wins[i].Home = inSpaceOf(screenRect(p, mons), a.over.mon)
+			wins[i].Home = inSpaceOf(screenRect(p, mons), a.over.at.Min, a.over.mon)
 		}
 	}
 	_ = a.over.c.Publish(OverviewTopic, OverState{
@@ -429,14 +492,14 @@ func screenRect(p driver.Placement, mons []driver.Monitor) geom.Rect {
 }
 
 // inSpaceOf is r, in screen coordinates, in the logical space of a
-// window covering monitor m.
-func inSpaceOf(r geom.Rect, m driver.Monitor) geom.Rect {
+// window on monitor m with its top left corner at origin.
+func inSpaceOf(r geom.Rect, origin geom.Point, m driver.Monitor) geom.Rect {
 	k := m.CoordsPerLogical
 	if k <= 0 {
 		k = 1
 	}
 	at := func(p geom.Point) geom.Point {
-		return geom.Pt((p.X-m.Bounds.Min.X)/k, (p.Y-m.Bounds.Min.Y)/k)
+		return geom.Pt((p.X-origin.X)/k, (p.Y-origin.Y)/k)
 	}
 	return geom.Rect{Min: at(r.Min), Max: at(r.Max)}
 }

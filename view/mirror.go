@@ -45,7 +45,9 @@ func newMirror(sh *screen.Shell) *mirror {
 // window's.
 func (m *mirror) sync() {
 	m.sh.Peek(func(g *grid.Grid, draws uint64) {
-		if m.copied && draws == m.draws {
+		if draws == 0 || m.copied && draws == m.draws {
+			// Never drawn by its window, as a tab not yet shown: nothing
+			// to copy.
 			return
 		}
 		m.draws, m.copied = draws, true

@@ -124,7 +124,7 @@ func TestAWindowStandsInTheOverviewWhereItIsOnTheScreen(t *testing.T) {
 	if got := screenRect(driver.Placement{Bounds: geom.Rc(10, 20, 300, 200)}, mons); got != geom.Rc(10, 20, 300, 200) {
 		t.Fatalf("it stands at %v", got)
 	}
-	if got := inSpaceOf(geom.Rc(2120, 100, 400, 200), mons[1]); got != geom.Rc(100, 50, 200, 100) {
+	if got := inSpaceOf(geom.Rc(2120, 100, 400, 200), mons[1].Bounds.Min, mons[1]); got != geom.Rc(100, 50, 200, 100) {
 		t.Fatalf("on the second monitor, it is at %v in the overview", got)
 	}
 	if got := monitorAt(geom.Pt(5000, 5000), mons); got.Bounds != mons[1].Bounds {
@@ -181,5 +181,23 @@ func TestAllPanesAskedAgainCloses(t *testing.T) {
 	a.handle(ToggleOverview{})
 	if !a.over.closing {
 		t.Fatal("All Panes was not told to close")
+	}
+}
+
+// Quitting closes All Panes' own window, and so does asking twice.
+func TestAllPanesClosesOnQuitAndWhenAskedTwice(t *testing.T) {
+	a, _, _ := twoWindowApp(t)
+	ow := gunimtest.New(t, geom.Sz(1600, 1000), nil)
+	c := ow.Client()
+	a.over = overState{c: &c, gw: ow}
+	a.handle(ToggleOverview{})
+	a.handle(ToggleOverview{})
+	if a.over.c != nil {
+		t.Fatal("asked twice, All Panes is still open")
+	}
+	a.over = overState{c: &c, gw: ow}
+	a.leave()
+	if a.over.c != nil {
+		t.Fatal("quitting left All Panes open")
 	}
 }

@@ -89,6 +89,9 @@ type switcher struct {
 	// left says it has gone, and told its host, and ready that it has
 	// started.
 	left, ready bool
+	// names number the windows as they were when it opened, and as
+	// they came since, so a card keeps its name while others go.
+	names map[int]int
 	// pointed says the pointer has moved over it: before, it may only
 	// seem to, as the tiles move under it.
 	pointed bool
@@ -340,7 +343,15 @@ func (s *switcher) sync(wins []app.OverWindow, panes []app.Pane, u *gunim.UI) {
 		cards[c.win] = c
 	}
 	var order []*card
-	for n, ow := range wins {
+	if s.names == nil {
+		s.names = map[int]int{}
+	}
+	for _, ow := range wins {
+		if s.names[ow.ID] == 0 {
+			s.names[ow.ID] = len(s.names) + 1
+		}
+	}
+	for _, ow := range wins {
 		c := cards[ow.ID]
 		if c == nil {
 			c = &card{win: ow.ID, box: anim.NewRect(geom.Rect{}), fade: anim.NewFloat(0), lit: anim.NewFloat(0)}
@@ -348,7 +359,7 @@ func (s *switcher) sync(wins []app.OverWindow, panes []app.Pane, u *gunim.UI) {
 		}
 		delete(cards, ow.ID)
 		c.own, c.gone = s.w != nil && ow.ID == s.here, false
-		name := "Window " + strconv.Itoa(n+1)
+		name := "Window " + strconv.Itoa(s.names[ow.ID])
 		if c.own {
 			name = "This window"
 		}
@@ -499,7 +510,7 @@ func paintElsewhere(p *paint.Painter, f gunim.Frame, t *tile, r geom.Rect) bool 
 	var nat geom.Size
 	var draw func()
 	switch d, ok := sharedOf(t.id); {
-	case t.mirror != nil:
+	case t.mirror != nil && t.mirror.copied:
 		nat = t.mirror.natural(f)
 		draw = func() { t.mirror.cells.Paint(p, f, nat, gunim.Children{}) }
 	case ok:
@@ -728,7 +739,7 @@ func (s *switcher) moving() bool {
 // Layout implements [gunim.Node]: the overview covers the window.
 func (s *switcher) Layout(c gunim.Constraints, f gunim.Frame, _ gunim.Children) geom.Size {
 	s.size = c.Max
-	again := false
+	again, shared := false, false
 	for _, t := range s.tiles {
 		if t.mirror != nil {
 			t.mirror.sync()
@@ -736,11 +747,14 @@ func (s *switcher) Layout(c gunim.Constraints, f gunim.Frame, _ gunim.Children) 
 			again = again || t.mirror.busy(f.Now)
 		} else if !s.drawsLive(t) {
 			// A copy of what it drew, which its window makes again.
-			again = true
+			shared = true
 		}
 	}
-	if again {
+	switch {
+	case again:
 		f.RedrawAt(f.Now.Add(redrawEvery))
+	case shared:
+		f.RedrawAt(f.Now.Add(shareEvery))
 	}
 	if s.picked < 0 {
 		s.place(f)
