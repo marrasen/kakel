@@ -26,12 +26,12 @@ func (w *Window) servingDialog(s app.Serving, u *gunim.UI) {
 	form := widget.NewForm().Add("", widget.NewLabel("A connected window can open shells here, use the ones running, and read and write files as you."))
 	addAllowed(form, s)
 	port := widget.NewTextField()
-	port.SetText(strconv.Itoa(s.Port))
+	port.SetText(strconv.Itoa(s.Port), nil)
 	port.Placeholder = "0 picks a free port"
-	where := widget.NewDropdown("This machine only", "All networks")
+	where := widget.NewDropdown(widget.Labels("This machine only", "All networks"))
 	where.Label = "Listen on"
 	if s.Anywhere {
-		where.Selected = 1
+		where.SetSelected(1, nil)
 	}
 	// Said beside the field, as the field opens with a port in it and
 	// a placeholder would never show.
@@ -50,13 +50,13 @@ func (w *Window) servingDialog(s app.Serving, u *gunim.UI) {
 		}
 		return ""
 	}
-	d.OnAccept = func() gunim.Intent {
+	d.OnAccept = func(u *gunim.UI) gunim.Intent {
 		// Shown once it is served: the host key, to check from the
 		// other end. Nothing, if serving did not start.
 		w.servingAsked, w.servingTries = true, s.Tries
-		return app.StartServing{Port: port.Text(), Anywhere: where.Selected == 1}
+		return app.StartServing{Port: port.Text(), Anywhere: where.Selected() == 1}
 	}
-	d.Dismiss = app.DialogClosed{}
+	d.OnDismiss = widget.Sends(app.DialogClosed{})
 	w.openDialog(d, u)
 }
 
@@ -72,9 +72,9 @@ func (w *Window) servedDialog(s app.Serving, u *gunim.UI) {
 	d.Body = form
 	d.SetButtons("Done", "")
 	w.keyActions(d, s)
-	d.AddButton("Disconnect All", func() gunim.Intent { return app.DisconnectClients{} })
-	d.AddButton("Stop Serving", func() gunim.Intent { return app.StopServing{} })
-	d.Accept, d.Dismiss = app.DialogClosed{}, app.DialogClosed{}
+	d.AddButton("Disconnect All", func(u *gunim.UI) gunim.Intent { return app.DisconnectClients{} })
+	d.AddButton("Stop Serving", func(u *gunim.UI) gunim.Intent { return app.StopServing{} })
+	d.OnAccept, d.OnDismiss = widget.Sends(app.DialogClosed{}), widget.Sends(app.DialogClosed{})
 	w.served = &servedShown{d: d, who: who}
 	w.openDialog(d, u)
 }
@@ -114,14 +114,16 @@ func (w *Window) keyActions(d *widget.Dialog, s app.Serving) {
 	if s.Problem != "" {
 		return
 	}
-	d.AddAction("Add Key…", func(u *gunim.UI) {
+	d.AddAction("Add Key…", func(u *gunim.UI) gunim.Intent {
 		d.Close(u)
 		w.addKeyDialogFrom(s, true, u)
+		return nil
 	})
 	if len(s.Keys) > 0 {
-		d.AddAction("Remove Key…", func(u *gunim.UI) {
+		d.AddAction("Remove Key…", func(u *gunim.UI) gunim.Intent {
 			d.Close(u)
 			w.removeKeyPickerFrom(s, true, u)
+			return nil
 		})
 	}
 }
@@ -136,7 +138,7 @@ func (w *Window) addKeyDialogFrom(s app.Serving, again bool, u *gunim.UI) {
 	for _, k := range s.Here {
 		choices = append(choices, k.Name)
 	}
-	pick := widget.NewDropdown(choices...)
+	pick := widget.NewDropdown(widget.Labels(choices...))
 	pick.Label = "Key"
 	pick.Disabled = len(s.Here) == 0
 	here := slices.Clone(s.Here)
@@ -148,19 +150,19 @@ func (w *Window) addKeyDialogFrom(s app.Serving, again bool, u *gunim.UI) {
 	d.Body = form
 	d.SetButtons("Add", "Cancel")
 	d.Check = func() string {
-		if pick.Selected == 0 && strings.TrimSpace(text.Text()) == "" {
+		if pick.Selected() == 0 && strings.TrimSpace(text.Text()) == "" {
 			return "Paste a public key, or pick one on this machine."
 		}
 		return ""
 	}
-	d.OnAccept = func() gunim.Intent {
+	d.OnAccept = func(u *gunim.UI) gunim.Intent {
 		w.keysAsked, w.keysEdits = again, w.serving.Edits
-		if i := pick.Selected - 1; i >= 0 && i < len(here) {
+		if i := pick.Selected() - 1; i >= 0 && i < len(here) {
 			return app.AllowKey{Path: here[i].Path}
 		}
 		return app.AllowKey{Text: text.Text()}
 	}
-	d.Dismiss = app.DialogClosed{}
+	d.OnDismiss = widget.Sends(app.DialogClosed{})
 	w.openDialog(d, u)
 }
 
@@ -172,9 +174,10 @@ func (w *Window) removeKeyPickerFrom(s app.Serving, again bool, u *gunim.UI) {
 	for _, k := range keys {
 		p.Items = append(p.Items, widget.PaletteItem{Title: k.Name, Hint: k.Type + "  " + k.Fingerprint, Icon: icon.KeyRound})
 	}
-	p.Pick = func(i int, u *gunim.UI) {
+	p.OnPick = func(i int, u *gunim.UI) gunim.Intent {
 		w.keysAsked, w.keysEdits = again, w.serving.Edits
 		u.Send(w, app.DisallowKey{Fingerprint: keys[i].Fingerprint})
+		return nil
 	}
 	w.keyPicker = p
 	p.Open(w, geom.Rc(0, 48, w.size.W, 0), u)
@@ -216,7 +219,7 @@ func (w *Window) showServed(s app.Serving, u *gunim.UI) {
 			w.served = nil
 			sh.d.Close(u)
 		default:
-			sh.who.SetText(connectedSays(s))
+			sh.who.Text = connectedSays(s)
 			u.Invalidate()
 		}
 	}
@@ -254,7 +257,7 @@ func (w *Window) connectWindowDialog(u *gunim.UI) {
 		}
 		return ""
 	}
-	d.OnAccept = func() gunim.Intent { return app.ConnectWindow{Addr: addr.Text(), KeyFile: key.Text()} }
-	d.Dismiss = app.DialogClosed{}
+	d.OnAccept = func(u *gunim.UI) gunim.Intent { return app.ConnectWindow{Addr: addr.Text(), KeyFile: key.Text()} }
+	d.OnDismiss = widget.Sends(app.DialogClosed{})
 	w.openDialog(d, u)
 }

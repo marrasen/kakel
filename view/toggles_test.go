@@ -319,7 +319,7 @@ func TestAlwaysOnTopPinsTheWindow(t *testing.T) {
 	for m := range menus {
 		for i, it := range menus[m].items {
 			if it.id == "view.pin" {
-				ticked = win.bar.Menus[m].Checked[i]
+				ticked = win.bar.Menus[m].Items[i].Checked
 			}
 		}
 	}

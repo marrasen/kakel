@@ -37,7 +37,7 @@ func TestTheSecretsPaneFindsAndShowsWholly(t *testing.T) {
 	if row := p.keys.Row("SHA256:0123456789abcdefghijklmnopqrstuvwxyzABCDEFG"); row.Cells[1] != "on this machine" || row.Cells[2] != "SHA256:0123456789abcdefghijklmnopqrstuvwxyzABCDEFG" {
 		t.Fatalf("the key's row is %q", row.Cells)
 	}
-	p.find.SetText("wor")
+	p.find.SetText("wor", nil)
 	p.show(st.Secrets, lastUI)
 	if k, ok := p.table.Cursor(); !ok || k != "2" {
 		t.Fatalf("finding, the cursor is on %q, %v", k, ok)
@@ -124,15 +124,15 @@ func TestANewKeyWhereOneIsStaysOpenSayingSo(t *testing.T) {
 			path = f
 		}
 	}
-	path.SetText(at)
+	path.SetText(at, nil)
 	if said := win.dialog.Check(); !strings.Contains(said, "is already there") {
 		t.Fatalf("with a key there, the dialog says %q", said)
 	}
-	path.SetText(filepath.Join(t.TempDir(), "new_ed25519"))
+	path.SetText(filepath.Join(t.TempDir(), "new_ed25519"), nil)
 	if said := win.dialog.Check(); said != "" {
 		t.Fatalf("with nothing there, the dialog says %q", said)
 	}
-	path.SetText(filepath.Join("keys", "new_ed25519"))
+	path.SetText(filepath.Join("keys", "new_ed25519"), nil)
 	if said := win.dialog.Check(); !strings.Contains(said, "is not a full path") {
 		t.Fatalf("with a path that is not full, the dialog says %q", said)
 	}

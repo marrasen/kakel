@@ -36,10 +36,10 @@ func (w *Window) shareDialog(st app.Share, u *gunim.UI) {
 		shared[p.Pane] = true
 		mays[p.Pane] = settings.AgentMay(p.May)
 	}
-	host := widget.NewDropdown(agenthost.Names()...)
+	host := widget.NewDropdown(widget.Labels(agenthost.Names()...))
 	host.Label = "Agent"
-	host.Selected = max(0, slices.Index(agenthost.Names(), st.Host))
-	hostName := func() string { return agenthost.Names()[max(0, min(host.Selected, len(agenthost.All)-1))] }
+	host.SetSelected(max(0, slices.Index(agenthost.Names(), st.Host)), nil)
+	hostName := func() string { return agenthost.Names()[max(0, min(host.Selected(), len(agenthost.All)-1))] }
 	code := widget.NewLabel(st.Code)
 	// Picked out and copied as it is, for an agent set up by hand.
 	code.Selectable = true
@@ -59,29 +59,31 @@ func (w *Window) shareDialog(st app.Share, u *gunim.UI) {
 			label += mayWords(mays[p.ID])
 		}
 		box := widget.NewCheckbox(label)
-		box.On = shared[p.ID]
+		box.SetChecked(shared[p.ID], nil)
 		id := p.ID
-		box.OnFlip(func(on bool, u *gunim.UI) {
+		box.OnChange = func(on bool, u *gunim.UI) gunim.Intent {
 			if on {
 				u.Send(w, app.SharePane{Pane: id})
 			} else {
 				u.Send(w, app.UnsharePane{Pane: id})
 			}
-		})
+			return nil
+		}
 		form.Add("", box)
 	}
 	d := widget.NewDialog("Agent Share")
 	d.Body = form
 	d.SetButtons("Done", "")
-	d.AddAction("Copy Prompt", func(u *gunim.UI) { u.Send(w, app.CopyAgentPrompt{Host: hostName()}) })
-	d.AddAction("Copy Code", func(u *gunim.UI) {
+	d.AddAction("Copy Prompt", func(u *gunim.UI) gunim.Intent { u.Send(w, app.CopyAgentPrompt{Host: hostName()}); return nil })
+	d.AddAction("Copy Code", func(u *gunim.UI) gunim.Intent {
 		u.SetClipboard(st.Code)
 		w.toasts.Show(widget.Toast{Title: "Code copied", Kind: widget.ToastSuccess}, u)
+		return nil
 	})
-	d.AddAction("Setup…", func(u *gunim.UI) { w.setupDialog(agenthost.Named(hostName()), u) })
-	d.AddAction("Write Skill", func(u *gunim.UI) { u.Send(w, app.WriteSkill{Host: hostName()}) })
-	d.AddButton("Stop Sharing", func() gunim.Intent { return app.StopSharing{} })
-	d.Accept, d.Dismiss = app.DialogClosed{}, app.DialogClosed{}
+	d.AddAction("Setup…", func(u *gunim.UI) gunim.Intent { w.setupDialog(agenthost.Named(hostName()), u); return nil })
+	d.AddAction("Write Skill", func(u *gunim.UI) gunim.Intent { u.Send(w, app.WriteSkill{Host: hostName()}); return nil })
+	d.AddButton("Stop Sharing", func(u *gunim.UI) gunim.Intent { return app.StopSharing{} })
+	d.OnAccept, d.OnDismiss = widget.Sends(app.DialogClosed{}), widget.Sends(app.DialogClosed{})
 	w.openDialog(d, u)
 }
 
@@ -106,19 +108,20 @@ func (w *Window) permissionsDialog(st app.Share, u *gunim.UI) {
 		{agent.BoxRestart, &may.Restart},
 	} {
 		box := widget.NewCheckbox(b.label)
-		box.On = *b.on
+		box.SetChecked(*b.on, nil)
 		on := b.on
-		box.OnFlip(func(v bool, u *gunim.UI) {
+		box.OnChange = func(v bool, u *gunim.UI) gunim.Intent {
 			*on = v
 			u.Send(w, app.SetAgentMay{Pane: id, May: settings.AgentMay(may)})
-		})
+			return nil
+		}
 		form.Add("", box)
 	}
 	d := widget.NewDialog("Agent Permissions")
 	d.Body = form
 	d.SetButtons("Done", "")
-	d.AddButton("Take Back", func() gunim.Intent { return app.UnsharePane{Pane: id} })
-	d.Accept, d.Dismiss = app.DialogClosed{}, app.DialogClosed{}
+	d.AddButton("Take Back", func(u *gunim.UI) gunim.Intent { return app.UnsharePane{Pane: id} })
+	d.OnAccept, d.OnDismiss = widget.Sends(app.DialogClosed{}), widget.Sends(app.DialogClosed{})
 	w.openDialog(d, u)
 }
 
@@ -139,8 +142,8 @@ func (w *Window) setupDialog(host agenthost.Host, u *gunim.UI) {
 	d := widget.NewDialog("Set Up " + host.Called)
 	d.Body = widget.NewForm().Add("", widget.NewLabel(what)).Add("", widget.NewLabel(line))
 	d.SetButtons("Close", "")
-	d.AddAction(copyTitle, func(u *gunim.UI) { u.Send(w, app.CopyAgentSetup{Host: host.Name}) })
-	d.Accept, d.Dismiss = app.DialogClosed{}, app.DialogClosed{}
+	d.AddAction(copyTitle, func(u *gunim.UI) gunim.Intent { u.Send(w, app.CopyAgentSetup{Host: host.Name}); return nil })
+	d.OnAccept, d.OnDismiss = widget.Sends(app.DialogClosed{}), widget.Sends(app.DialogClosed{})
 	w.openDialog(d, u)
 }
 

@@ -53,7 +53,7 @@ func newJobsPane() *jobsPane {
 	}
 	p.head.Size = widget.DialogTitleSize
 	p.empty.Color = look.Faint
-	p.clear.On = app.ClearJobs{}
+	p.clear.OnClick = widget.Sends(app.ClearJobs{})
 	p.body = widget.NewScroll(widget.NewPad(p.list))
 	return p
 }
@@ -128,9 +128,9 @@ func newJobCard(j app.Job) *jobCard {
 	c.title.MaxLines, c.detail.MaxLines = 1, 1
 	c.detail.Size, c.detail.Color = smallText, look.Faint
 	c.names.Size = smallText
-	c.cancel.On, c.repeat.On = app.CancelJob{ID: j.ID}, app.RepeatJob{ID: j.ID}
+	c.cancel.OnClick, c.repeat.OnClick = widget.Sends(app.CancelJob{ID: j.ID}), widget.Sends(app.RepeatJob{ID: j.ID})
 	id := j.ID
-	c.save.OnChange = func(on bool) gunim.Intent { return app.SaveCopy{ID: id, On: on} }
+	c.save.OnChange = func(on bool, u *gunim.UI) gunim.Intent { return app.SaveCopy{ID: id, On: on} }
 	c.acts = c.want(j)
 	c.fill(j)
 	return c
@@ -149,8 +149,8 @@ func (c *jobCard) want(j app.Job) []gunim.Node {
 
 // fill says j on the card.
 func (c *jobCard) fill(j app.Job) {
-	c.title.SetText(j.Title)
-	c.detail.SetText(j.Detail)
+	c.title.Text = j.Title
+	c.detail.Text = j.Detail
 	c.detail.Color = look.Faint
 	if j.Failed {
 		c.detail.Color = widget.DialogProblem
@@ -163,8 +163,8 @@ func (c *jobCard) fill(j app.Job) {
 	}
 	c.sampled = j.Sampled
 	c.graph.SetRunning(!j.Done)
-	c.save.On = j.Saved
-	c.names.SetText(namesLines(j))
+	c.save.SetChecked(j.Saved, nil)
+	c.names.Text = namesLines(j)
 }
 
 // namesLines lists what a job works on, the one it is on marked and
@@ -196,7 +196,7 @@ func namesLines(j app.Job) string {
 func (c *jobCard) show(j app.Job, u *gunim.UI) {
 	c.bar.Indeterminate = j.Share < 0 && !j.Done
 	if j.Share >= 0 {
-		c.bar.Set(j.Share, u)
+		c.bar.SetValue(j.Share, u)
 	}
 	c.fill(j)
 	want := c.want(j)
@@ -295,7 +295,7 @@ func newCopiesPane(w *Window) *copiesPane {
 		c := p.kept[k]
 		return widget.TableRow{Cells: []string{app.CopiedWhat(c), app.CopiedWhere(c, p.w.nameOf)}}
 	}
-	p.table.OnActivate = func(k widget.Key, u *gunim.UI) { u.Send(p.table, app.RunSavedCopy{Saved: p.kept[k]}) }
+	p.table.OnActivate = func(k widget.Key, u *gunim.UI) gunim.Intent { return app.RunSavedCopy{Saved: p.kept[k]} }
 	p.col = widget.Column(p.table, p.bar).Grow(p.table, 1)
 	p.col.Cross, p.col.Gap = widget.CrossStretch, noGap
 	return p

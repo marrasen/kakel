@@ -28,7 +28,7 @@ func newButtonBar() *buttonBar {
 // set says text, beside buttons: those new to the bar arrive, and
 // those it had and has no more go.
 func (b *buttonBar) set(text string, u *gunim.UI, buttons ...*widget.Button) {
-	b.label.SetText(text)
+	b.label.Text = text
 	want := make([]gunim.Node, len(buttons))
 	for i, x := range buttons {
 		want[i] = x

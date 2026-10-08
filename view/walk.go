@@ -216,7 +216,7 @@ func (l *walkList) show(titles []string, at int) {
 	}
 	l.labels = l.labels[:len(titles)]
 	for i, t := range titles {
-		l.labels[i].SetText(t)
+		l.labels[i].Text = t
 	}
 	l.at = at
 }

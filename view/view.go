@@ -319,19 +319,12 @@ func NewWindow(sh *screen.Shells, keys *ui.Keymap, all []look.Themed) *Window {
 			if chord, ok := keys.ChordFor(it.id); ok && !it.caption {
 				hint = chordLabel(chord)
 			}
-			bm.Items, bm.Hints = append(bm.Items, it.title), append(bm.Hints, hint)
-			bm.Icons = append(bm.Icons, commandIcons[it.id])
-			bm.Checked = append(bm.Checked, false)
-			if it.caption {
-				bm.Captions = append(bm.Captions, i)
-			}
-			if it.group || (it.caption && i > 0) {
-				bm.Breaks = append(bm.Breaks, i)
-			}
+			bm.Items = append(bm.Items, widget.MenuItem{Label: it.title, Hint: hint, Icon: commandIcons[it.id],
+				Caption: it.caption, Break: it.group || (it.caption && i > 0)})
 		}
 		w.bar.Menus = append(w.bar.Menus, withAccessKeys(bm))
 	}
-	w.bar.OnHighlight = func(m, i int, u *gunim.UI) {
+	w.bar.OnHighlight = func(m, i int, u *gunim.UI) gunim.Intent {
 		id := ""
 		switch {
 		case m < 0 || i < 0:
@@ -344,8 +337,9 @@ func NewWindow(sh *screen.Shells, keys *ui.Keymap, all []look.Themed) *Window {
 			id = menus[m].items[i].id
 		}
 		w.status.setHint(w.fullTitle(id, m, i), u)
+		return nil
 	}
-	w.bar.Pick = func(m, i int, u *gunim.UI) {
+	w.bar.OnPick = func(m, i int, u *gunim.UI) gunim.Intent {
 		switch {
 		case m < len(menus) && menus[m].title == "Servers":
 			if i < len(w.serverIDs) {
@@ -353,13 +347,14 @@ func NewWindow(sh *screen.Shells, keys *ui.Keymap, all []look.Themed) *Window {
 			}
 		case m < len(menus) && menus[m].title == "Font":
 			if i < len(w.fonts) {
-				u.Send(w, app.PickFont{Name: w.fonts[i]})
+				return app.PickFont{Name: w.fonts[i]}
 			}
 		case m < len(menus) && i < len(menus[m].items):
 			w.run(menus[m].items[i].id, u)
 		}
+		return nil
 	}
-	w.toasts = &widget.Toasts{}
+	w.toasts = widget.NewToasts()
 	w.chips = newChipBar()
 	// The pin before minimize keeps the window above the others.
 	controls := widget.NewWindowControls()
@@ -373,10 +368,11 @@ func NewWindow(sh *screen.Shells, keys *ui.Keymap, all []look.Themed) *Window {
 	w.barShade = newShade(bar)
 	w.top = widget.Column(w.barShade, main).Grow(main, 1)
 	w.top.Cross, w.top.Gap = widget.CrossStretch, noGap
-	w.palette = &widget.Palette{Placeholder: "Type a command", Pick: func(i int, u *gunim.UI) {
+	w.palette = &widget.Palette{Placeholder: "Type a command", OnPick: func(i int, u *gunim.UI) gunim.Intent {
 		if i < len(w.paletteIDs) {
 			w.run(w.paletteIDs[i], u)
 		}
+		return nil
 	}}
 	// Its shortcut again closes it: the keys typed in the palette reach
 	// the palette alone, which hands on the ones it does not use.
@@ -796,12 +792,9 @@ func (w *Window) showFonts(st app.State) {
 	w.servers(w.saved)
 	m := widget.BarMenu{Title: "Font"}
 	for i, name := range st.Fonts {
-		m.Items = append(m.Items, name)
-		m.Checked = append(m.Checked, app.FontCommandID(name) == app.FontCommandID(st.Font.Name))
-		if i == 1 {
-			// A line under Go Mono.
-			m.Breaks = append(m.Breaks, i)
-		}
+		// A line under Go Mono.
+		m.Items = append(m.Items, widget.MenuItem{Label: name,
+			Checked: app.FontCommandID(name) == app.FontCommandID(st.Font.Name), Break: i == 1})
 	}
 	if i := menuAt("Font"); i >= 0 && i < len(w.bar.Menus) {
 		w.bar.Menus[i] = withAccessKeys(m)
@@ -895,7 +888,8 @@ func (w *Window) secretsCommand(id string, u *gunim.UI) {
 // chooseFrom offers items in a palette, and runs then with the one
 // picked.
 func (w *Window) chooseFrom(placeholder string, items []widget.PaletteItem, then func(i int, u *gunim.UI), u *gunim.UI) {
-	p := &widget.Palette{Placeholder: placeholder, Pick: then, Items: items}
+	p := &widget.Palette{Placeholder: placeholder, Items: items}
+	p.OnPick = func(i int, u *gunim.UI) gunim.Intent { then(i, u); return nil }
 	p.Open(w, geom.Rc(0, 48, w.size.W, 0), u)
 }
 
@@ -910,22 +904,23 @@ func (w *Window) pickTheme(u *gunim.UI) {
 		p.Items = append(p.Items, widget.PaletteItem{Title: name, Hint: hint})
 	}
 	names := w.themes
-	p.Pick = func(i int, u *gunim.UI) { u.Send(w, app.PickTheme{Name: names[i]}) }
+	p.OnPick = func(i int, u *gunim.UI) gunim.Intent { u.Send(w, app.PickTheme{Name: names[i]}); return nil }
 	// The theme the highlight is on shows at once, the window and the
 	// terminals in it, from the first move: the highlight the palette
 	// opens with is not one the user put there. Closed with nothing
 	// picked, the theme in use comes back.
 	opened := false
-	p.Hot = func(i int, u *gunim.UI) {
+	p.OnHighlight = func(i int, u *gunim.UI) gunim.Intent {
 		if !opened {
 			opened = true
-			return
+			return nil
 		}
 		if i >= 0 && i < len(names) {
 			u.Send(w, app.PreviewTheme{Name: names[i]})
 		}
+		return nil
 	}
-	p.Cancel = func(u *gunim.UI) { u.Send(w, app.PreviewTheme{}) }
+	p.OnCancel = func(u *gunim.UI) gunim.Intent { u.Send(w, app.PreviewTheme{}); return nil }
 	w.themePicker = p
 	p.Open(w, geom.Rc(0, 48, w.size.W, 0), u)
 }
@@ -942,7 +937,7 @@ func (w *Window) removeSavedKey(u *gunim.UI) {
 	for _, f := range files {
 		p.Items = append(p.Items, widget.PaletteItem{Title: f, Icon: icon.KeyRound})
 	}
-	p.Pick = func(i int, u *gunim.UI) { u.Send(w, app.RemoveSavedKey{Path: files[i]}) }
+	p.OnPick = func(i int, u *gunim.UI) gunim.Intent { u.Send(w, app.RemoveSavedKey{Path: files[i]}); return nil }
 	w.keyPicker = p
 	p.Open(w, geom.Rc(0, 48, w.size.W, 0), u)
 }
@@ -969,13 +964,14 @@ func (w *Window) addSavedKey(u *gunim.UI) {
 		return []widget.PaletteItem{{Title: "Add " + typed, Icon: icon.FileInput}}
 	}
 	// An index past the keys is the path typed.
-	p.Pick = func(i int, u *gunim.UI) {
+	p.OnPick = func(i int, u *gunim.UI) gunim.Intent {
 		switch {
 		case i >= 0 && i < len(files):
 			u.Send(w, app.AddSavedKey{Path: files[i]})
 		case i == len(files) && typed != "":
 			u.Send(w, app.AddSavedKey{Path: typed})
 		}
+		return nil
 	}
 	w.keyPicker = p
 	p.Open(w, geom.Rc(0, 48, w.size.W, 0), u)
@@ -989,7 +985,7 @@ func (w *Window) connectDialog(u *gunim.UI) {
 	d := widget.NewDialog("Quick Connect")
 	d.Body = widget.NewForm().Add("Server", target)
 	d.SetButtons("Connect", "Cancel")
-	d.OnAccept = func() gunim.Intent {
+	d.OnAccept = func(u *gunim.UI) gunim.Intent {
 		typed := strings.TrimSpace(target.Text())
 		for _, h := range w.saved {
 			if strings.EqualFold(h.Name, typed) {
@@ -998,7 +994,7 @@ func (w *Window) connectDialog(u *gunim.UI) {
 		}
 		return app.ConnectTo{Target: typed}
 	}
-	d.Dismiss = app.DialogClosed{}
+	d.OnDismiss = widget.Sends(app.DialogClosed{})
 	w.openDialog(d, u)
 }
 
@@ -1081,9 +1077,9 @@ func askDialog(q app.Ask, from gunim.Node) *widget.Dialog {
 	// would be typed, and there is nothing typed to keep.
 	var saved *widget.Dropdown
 	if len(q.Saved) > 0 {
-		saved = widget.NewDropdown(append([]string{"None, type it"}, q.Saved...)...)
+		saved = widget.NewDropdown(widget.Labels(append([]string{"None, type it"}, q.Saved...)...))
 		saved.Label = "Saved secret"
-		saved.OnPick(func(i int, u *gunim.UI) {
+		saved.OnChange = func(i int, u *gunim.UI) gunim.Intent {
 			for _, f := range fields {
 				f.Disabled = i > 0
 			}
@@ -1091,7 +1087,8 @@ func askDialog(q app.Ask, from gunim.Node) *widget.Dialog {
 				also.Disabled = i > 0
 			}
 			u.Invalidate()
-		})
+			return nil
+		}
 		form.Add("Or use", saved)
 	}
 	if also != nil {
@@ -1102,10 +1099,10 @@ func askDialog(q app.Ask, from gunim.Node) *widget.Dialog {
 	for _, act := range q.Actions {
 		if act == "Copy" {
 			copied := q.Copy
-			d.AddAction(act, func(u *gunim.UI) { u.SetClipboard(copied) })
+			d.AddAction(act, func(u *gunim.UI) gunim.Intent { u.SetClipboard(copied); return nil })
 			continue
 		}
-		d.AddAction(act, func(u *gunim.UI) { u.Send(from, app.AskAction{ID: q.ID, Action: act}) })
+		d.AddAction(act, func(u *gunim.UI) gunim.Intent { u.Send(from, app.AskAction{ID: q.ID, Action: act}); return nil })
 	}
 	d.Body = form
 	id := q.ID
@@ -1119,13 +1116,13 @@ func askDialog(q app.Ask, from gunim.Node) *widget.Dialog {
 		}
 		if also != nil {
 			yes := ""
-			if also.On {
+			if also.Checked() {
 				yes = "yes"
 			}
 			answers = append(answers, yes)
 		}
 		if saved != nil {
-			answers = append(answers, strconv.Itoa(saved.Selected-1))
+			answers = append(answers, strconv.Itoa(saved.Selected()-1))
 		}
 		return app.AskAnswered{ID: id, Yes: true, Answers: answers}
 	}
@@ -1138,24 +1135,25 @@ func askDialog(q app.Ask, from gunim.Node) *widget.Dialog {
 		// Where the first choice is the safe one, such as Leave It
 		// beside Replace, Tab from the fields reaches it first.
 		d.DefaultFirst = q.FirstIsSafe
-		d.OnAccept = func() gunim.Intent { return answer(q.Choose[0]) }
+		d.OnAccept = func(u *gunim.UI) gunim.Intent { return answer(q.Choose[0]) }
 		for _, c := range q.Choose[1:] {
-			d.AddButton(c, func() gunim.Intent { return answer(c) })
+			d.AddButton(c, func(u *gunim.UI) gunim.Intent { return answer(c) })
 		}
 	} else {
 		d.SetButtons(q.Yes, no)
-		d.OnAccept = func() gunim.Intent { return answer("") }
+		d.OnAccept = func(u *gunim.UI) gunim.Intent { return answer("") }
 	}
-	d.Dismiss = app.AskAnswered{ID: id}
+	d.OnDismiss = widget.Sends(app.AskAnswered{ID: id})
 	if also != nil {
 		// No says whether the box was ticked too, for a box that goes
 		// with either answer, such as Don't ask again.
-		also.OnFlip(func(on bool, _ *gunim.UI) {
-			d.Dismiss = app.AskAnswered{ID: id}
+		also.OnChange = func(on bool, _ *gunim.UI) gunim.Intent {
+			d.OnDismiss = widget.Sends(app.AskAnswered{ID: id})
 			if on {
-				d.Dismiss = app.AskAnswered{ID: id, Answers: []string{"yes"}}
+				d.OnDismiss = widget.Sends(app.AskAnswered{ID: id, Answers: []string{"yes"}})
 			}
-		})
+			return nil
+		}
 	}
 	d.Danger, d.Careful = q.Danger, q.Careful
 	d.Icon = askIcons[q.Icon]
@@ -1181,21 +1179,20 @@ func (w *Window) servers(saved []remote.Host) {
 	m := widget.BarMenu{Title: "Servers"}
 	w.serverIDs = nil
 	if len(saved) > 0 {
-		m.Captions = []int{0}
-		m.Items, m.Hints = append(m.Items, "Connect To"), append(m.Hints, "")
-		m.Icons = append(m.Icons, nil)
+		m.Items = append(m.Items, widget.MenuItem{Label: "Connect To", Caption: true})
 		w.serverIDs = append(w.serverIDs, "")
 		for _, h := range saved {
 			id := "server.open." + remote.CommandName(h.Name)
-			m.Items, m.Hints = append(m.Items, h.Name), append(m.Hints, hint(id))
-			m.Icons = append(m.Icons, icon.Server)
+			m.Items = append(m.Items, widget.MenuItem{Label: h.Name, Hint: hint(id), Icon: icon.Server})
 			w.serverIDs = append(w.serverIDs, id)
 		}
-		m.Breaks = []int{len(m.Items)}
 	}
-	m.Items = append(m.Items, "Quick Connect…", "Open Launcher", "Add Server…", "Import from SSH Config", "Reload Server List")
-	m.Hints = append(m.Hints, hint("server.connect"), "", "", "", "")
-	m.Icons = append(m.Icons, icon.Plug, icon.Search, icon.Plus, icon.FileInput, icon.RefreshCw)
+	m.Items = append(m.Items,
+		widget.MenuItem{Label: "Quick Connect…", Hint: hint("server.connect"), Icon: icon.Plug, Break: len(saved) > 0},
+		widget.MenuItem{Label: "Open Launcher", Icon: icon.Search},
+		widget.MenuItem{Label: "Add Server…", Icon: icon.Plus},
+		widget.MenuItem{Label: "Import from SSH Config", Icon: icon.FileInput},
+		widget.MenuItem{Label: "Reload Server List", Icon: icon.RefreshCw})
 	w.serverIDs = append(w.serverIDs, "server.connect", "app.launcher", "server.add", "server.import", "server.reload")
 	if i := menuAt("Servers"); i >= 0 && i < len(w.bar.Menus) {
 		// The lines always there first.
@@ -1416,45 +1413,47 @@ func (w *Window) serverForm(old *remote.Host, u *gunim.UI) {
 			ids = append(ids, h.ID)
 		}
 	}
-	via := widget.NewDropdown(through...)
+	via := widget.NewDropdown(widget.Labels(through...))
 	via.Label = "Through"
-	kind := widget.NewDropdown("Server", remote.WindowKind)
+	kind := widget.NewDropdown(widget.Labels("Server", remote.WindowKind))
 	kind.Label = "Type"
 	// The key files kept, so one is a pick away rather than a path to
 	// remember.
 	var kept *widget.Dropdown
 	if len(w.keyFiles) > 0 {
-		kept = widget.NewDropdown(append([]string{"Choose a saved key"}, w.keyFiles...)...)
+		kept = widget.NewDropdown(widget.Labels(append([]string{"Choose a saved key"}, w.keyFiles...)...))
 		kept.Label = "Saved keys"
 		files := w.keyFiles
-		kept.OnPick(func(i int, u *gunim.UI) {
+		kept.OnChange = func(i int, u *gunim.UI) gunim.Intent {
 			if i > 0 {
-				key.SetText(files[i-1])
+				key.SetText(files[i-1], nil)
 				u.Invalidate()
 			}
-		})
+			return nil
+		}
 	}
 	setup := widget.NewCheckbox("Teach its shell to say what it is doing")
 	forward := widget.NewCheckbox("Forward this machine's SSH agent to it")
 	title, under := "Add a server", ""
 	if old != nil {
 		title, under = "Edit "+old.Name, old.Name
-		name.SetText(old.Name)
-		addr.SetText(old.Address)
+		name.SetText(old.Name, nil)
+		addr.SetText(old.Address, nil)
 		if old.Port != 0 {
-			port.SetText(strconv.Itoa(old.Port))
+			port.SetText(strconv.Itoa(old.Port), nil)
 		}
-		user.SetText(old.User)
+		user.SetText(old.User, nil)
 		if len(old.Identities) > 0 {
-			key.SetText(old.Identities[0])
+			key.SetText(old.Identities[0], nil)
 		}
 		if old.Window {
-			kind.Selected = 1
+			kind.SetSelected(1, nil)
 		}
-		setup.On, forward.On = old.Setup, old.ForwardAgent
+		setup.SetChecked(old.Setup, nil)
+		forward.SetChecked(old.ForwardAgent, nil)
 		for i, id := range ids {
 			if id != "" && id == old.Via {
-				via.Selected = i
+				via.SetSelected(i, nil)
 			}
 		}
 	}
@@ -1486,8 +1485,8 @@ func (w *Window) serverForm(old *remote.Host, u *gunim.UI) {
 				h.Identities = append(h.Identities, r)
 			}
 		}
-		h.Via = ids[max(0, min(via.Selected, len(ids)-1))]
-		h.Window = kind.Selected == 1
+		h.Via = ids[max(0, min(via.Selected(), len(ids)-1))]
+		h.Window = kind.Selected() == 1
 		if old != nil {
 			// Folders saved before favourites stay until they are moved.
 			h.Folders = old.Folders
@@ -1496,7 +1495,7 @@ func (w *Window) serverForm(old *remote.Host, u *gunim.UI) {
 		// back to a server brings it back. Not its route: a window
 		// naming a jump host would keep that host from being removed,
 		// for a route it never takes.
-		h.Setup, h.ForwardAgent = setup.On, forward.On
+		h.Setup, h.ForwardAgent = setup.Checked(), forward.Checked()
 		if h.Window {
 			h.Via = ""
 		}
@@ -1512,12 +1511,12 @@ func (w *Window) serverForm(old *remote.Host, u *gunim.UI) {
 	// carry an agent over: those are greyed out while the type says
 	// window, rather than taken and dropped.
 	applies := func() {
-		window := kind.Selected == 1
+		window := kind.Selected() == 1
 		via.Disabled = window || len(ids) <= 1
 		forward.Disabled = window
 	}
 	applies()
-	kind.OnPick(func(int, *gunim.UI) { applies() })
+	kind.OnChange = func(int, *gunim.UI) gunim.Intent { applies(); return nil }
 	form := widget.NewForm().Add("Name", name).Add("Type", kind).Add("Address", addr).Add("Port", port).Add("User", user).
 		Add("Through", via).Add("Key file", key)
 	if kept != nil {
@@ -1527,20 +1526,21 @@ func (w *Window) serverForm(old *remote.Host, u *gunim.UI) {
 	d.Body = form.Add("", setup).Add("", forward)
 	d.SetButtons("Save", "Cancel")
 	if old != nil {
-		d.AddAction("Remove…", func(u *gunim.UI) {
+		d.AddAction("Remove…", func(u *gunim.UI) gunim.Intent {
 			d.Close(u)
 			w.confirmRemove(machines.ID(old.ID), u)
+			return nil
 		})
 	}
 	d.Check = func() string {
 		_, problem := host()
 		return problem
 	}
-	d.OnAccept = func() gunim.Intent {
+	d.OnAccept = func(u *gunim.UI) gunim.Intent {
 		h, _ := host()
 		return app.SaveServer{Host: h, Under: under}
 	}
-	d.Dismiss = app.DialogClosed{}
+	d.OnDismiss = widget.Sends(app.DialogClosed{})
 	w.openDialog(d, u)
 }
 
@@ -1554,8 +1554,8 @@ func (w *Window) confirmFarDisconnect(m machines.ID, u *gunim.UI) {
 		", and everything open on it there and on any server reached through it, for anyone working in that window too.")
 	d.SetButtons("Disconnect", "Cancel")
 	d.Danger = true
-	d.Accept = app.Disconnect{Machine: m}
-	d.Dismiss = app.DialogClosed{}
+	d.OnAccept = widget.Sends(app.Disconnect{Machine: m})
+	d.OnDismiss = widget.Sends(app.DialogClosed{})
 	w.openDialog(d, u)
 }
 
@@ -1567,8 +1567,8 @@ func (w *Window) confirmRemove(id machines.ID, u *gunim.UI) {
 	}
 	d.SetButtons("Remove", "Cancel")
 	d.Danger = true
-	d.Accept = app.RemoveServer{ID: id}
-	d.Dismiss = app.DialogClosed{}
+	d.OnAccept = widget.Sends(app.RemoveServer{ID: id})
+	d.OnDismiss = widget.Sends(app.DialogClosed{})
 	w.openDialog(d, u)
 }
 
@@ -1693,13 +1693,13 @@ func (w *Window) rename(u *gunim.UI) {
 		return
 	}
 	name := widget.NewTextField()
-	name.SetText(current)
+	name.SetText(current, nil)
 	name.Placeholder = "The shell's own title"
 	d := widget.NewDialog("Rename the pane")
 	d.Body = widget.NewForm().Add("Name", name)
 	d.SetButtons("Rename", "Cancel")
-	d.OnAccept = func() gunim.Intent { return app.RenamePane{Pane: id, Title: name.Text()} }
-	d.Dismiss = app.DialogClosed{}
+	d.OnAccept = func(u *gunim.UI) gunim.Intent { return app.RenamePane{Pane: id, Title: name.Text()} }
+	d.OnDismiss = widget.Sends(app.DialogClosed{})
 	w.openDialog(d, u)
 }
 
@@ -2048,7 +2048,7 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 	}
 
 	keep := map[string]bool{}
-	w.stage.show(w.build(st.Stage, keep), u)
+	w.stage.show(w.build(st.Stage, keep, u), u)
 	// After the panes are built, so one made now shows the state too.
 	if w.settings != nil && u.Presence(w.settings) != gunim.Exiting {
 		w.settings.show(st, u)
@@ -2212,7 +2212,7 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 				})
 			}
 		}
-		w.toasts.Show(widget.Toast{Title: n.Title, Body: n.Body, Kind: toastKinds[n.Kind], Action: n.Action, On: n.On}, u)
+		w.toasts.Show(widget.Toast{Title: n.Title, Body: n.Body, Kind: toastKinds[n.Kind], Action: n.Action, OnClick: widget.Sends(n.On)}, u)
 	}
 	// The menus and the palette tick a switch while it is on, such as
 	// the sidebar while it shows.
@@ -2220,14 +2220,12 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 		if len(menus[m].items) == 0 {
 			continue
 		}
-		off := make([]bool, len(menus[m].items))
 		for i, it := range menus[m].items {
 			if on, isSwitch := w.switchOn(it.id, st, u); isSwitch {
-				w.bar.Menus[m].Checked[i] = on
+				w.bar.Menus[m].Items[i].Checked = on
 			}
-			off[i] = !it.caption && !w.applies(it.id)
+			w.bar.Menus[m].Items[i].Disabled = !it.caption && !w.applies(it.id)
 		}
-		w.bar.Menus[m].Disabled = off
 	}
 	for i, id := range w.paletteIDs {
 		if on, isSwitch := w.switchOn(id, st, u); isSwitch && i < len(w.palette.Items) {
@@ -2285,7 +2283,7 @@ func (w *Window) tickSwitch(id string, on bool) {
 	for m := range menus {
 		for i, it := range menus[m].items {
 			if it.id == id {
-				w.bar.Menus[m].Checked[i] = on
+				w.bar.Menus[m].Items[i].Checked = on
 			}
 		}
 	}
@@ -2330,31 +2328,33 @@ func (w *Window) switchOn(id string, st app.State, u *gunim.UI) (on, isSwitch bo
 // is kept while its panes stay the same, and made afresh once they
 // change, so a change anywhere makes a new tree above it, which the
 // stage swaps in whole.
-func (w *Window) build(b *app.Box, keep map[string]bool) gunim.Node {
+func (w *Window) build(b *app.Box, keep map[string]bool, u *gunim.UI) gunim.Node {
 	switch {
 	case b == nil:
 		return nil
 	case b.Pane != "":
 		return w.paneNode(b.Pane)
 	}
-	a, c := w.build(b.A, keep), w.build(b.B, keep)
+	a, c := w.build(b.A, keep, u), w.build(b.B, keep, u)
 	keep[b.ID] = true
 	if sp, ok := w.splits[b.ID]; ok {
 		if first, second := sp.Panes(); first == a && second == c {
 			if !sp.Held() && sp.Share() != b.Share {
-				sp.SetShare(b.Share, widget.Settle.Default())
+				sp.SetShare(b.Share, u)
 			}
 			return sp
 		}
 	}
 	sp := widget.NewSplit(a, c)
-	sp.Vertical = b.Vertical
+	if b.Vertical {
+		sp.Axis = widget.Vertical
+	}
 	id := b.ID
-	sp.OnMove = func(v float32) gunim.Intent { return app.SplitMoved{Split: id, Share: v} }
+	sp.OnCommit = func(v float32, u *gunim.UI) gunim.Intent { return app.SplitMoved{Split: id, Share: v} }
 	if b.Opening {
 		// The new pane, second, slides in from the edge.
 		sp.SetShare(1, nil)
-		sp.SetShare(b.Share, widget.Settle.Default())
+		sp.SetShare(b.Share, u)
 	} else {
 		sp.SetShare(b.Share, nil)
 	}
@@ -2386,7 +2386,7 @@ func (w *Window) paneNode(id string) gunim.Node {
 	}
 	for _, p := range w.panes {
 		if p.ID == id {
-			c.label.SetText(w.captionOf(p))
+			c.label.Text = w.captionOf(p)
 		}
 	}
 	return c
@@ -2881,7 +2881,7 @@ func (r *sideRow) showNote(now time.Time) {
 		text = ""
 	}
 	if r.note.Text != text {
-		r.note.SetText(text)
+		r.note.Text = text
 	}
 }
 
@@ -2900,7 +2900,7 @@ func (w *Window) newSideRow(it sideItem) *sideRow {
 
 // set shows it on the row.
 func (r *sideRow) set(it sideItem) {
-	r.title.SetText(it.text)
+	r.title.Text = it.text
 	if it.note != r.said {
 		r.said, r.saidAt = it.note, time.Now()
 	}
@@ -3144,7 +3144,7 @@ func (s *statusLine) setHint(text string, u *gunim.UI) {
 		return
 	}
 	s.hinted = text
-	s.hint.SetText(text)
+	s.hint.Text = text
 	u.Invalidate()
 }
 
@@ -3154,7 +3154,7 @@ func (s *statusLine) set(text string, u *gunim.UI) {
 	}
 	s.text = text
 	if text != "" {
-		s.label.SetText(text)
+		s.label.Text = text
 	}
 	s.fold(u)
 }
@@ -3221,7 +3221,7 @@ func (w *Window) fullTitle(id string, menu, item int) string {
 	if at := slices.Index(w.paletteIDs, id); id != "" && at >= 0 {
 		return w.palette.Items[at].Title
 	}
-	return shownText(w.bar.Menus[menu].Items[item])
+	return shownText(w.bar.Menus[menu].Items[item].Label)
 }
 
 // focusRow gives the keyboard to the row step rows from the one keyed
@@ -3295,21 +3295,23 @@ func (w *Window) machines() []machines.ID {
 // an item with no act is a caption over the group under it.
 func (w *Window) showMachineMenu(r *sideRow, items []string, icons []*icon.Icon, acts []func(*gunim.UI), u *gunim.UI) {
 	r.closeMenu(u)
-	menu := widget.NewMenu(items...)
-	menu.Icons = icons
-	for i, act := range acts {
-		if act == nil {
-			menu.Captions = append(menu.Captions, i)
-			if i > 0 {
-				menu.Breaks = append(menu.Breaks, i)
-			}
+	lines := make([]widget.MenuItem, len(items))
+	for i, label := range items {
+		lines[i].Label = label
+		if i < len(icons) {
+			lines[i].Icon = icons[i]
+		}
+		if i < len(acts) && acts[i] == nil {
+			lines[i].Caption, lines[i].Break = true, i > 0
 		}
 	}
-	menu.Pick = func(i int, u *gunim.UI) {
+	menu := widget.NewMenu(lines)
+	menu.OnPick = func(i int, u *gunim.UI) gunim.Intent {
 		r.closeMenu(u)
 		if i >= 0 && i < len(acts) && acts[i] != nil {
 			acts[i](u)
 		}
+		return nil
 	}
 	box, _ := u.Bounds(r)
 	r.menu = menu

@@ -29,9 +29,9 @@ func TestTheSettingsPaneShowsAndSaves(t *testing.T) {
 	if p == nil {
 		t.Fatal("no Settings pane")
 	}
-	if !p.tray.On || !p.autostart.On || !p.titleBar.On || p.updates.Selected != 1 || p.theme.Selected != 1 || p.size.Value() != 17 {
+	if !p.tray.Checked() || !p.autostart.Checked() || !p.titleBar.Checked() || p.updates.Selected() != 1 || p.theme.Selected() != 1 || p.size.Value() != 17 {
 		t.Fatalf("the pane shows tray %v, autostart %v, title bar %v, updates %d, theme %d, size %v",
-			p.tray.On, p.autostart.On, p.titleBar.On, p.updates.Selected, p.theme.Selected, p.size.Value())
+			p.tray.Checked(), p.autostart.Checked(), p.titleBar.Checked(), p.updates.Selected(), p.theme.Selected(), p.size.Value())
 	}
 	boxes := []*widget.Checkbox{p.iface}
 	for i := range p.sounds {
@@ -39,7 +39,7 @@ func TestTheSettingsPaneShowsAndSaves(t *testing.T) {
 	}
 	on := make([]bool, len(boxes))
 	for i, b := range boxes {
-		on[i] = b.On
+		on[i] = b.Checked()
 	}
 	want := []bool{false, false, true, false, true, false, true, true, true, false, true}
 	for i := range want {
@@ -50,7 +50,7 @@ func TestTheSettingsPaneShowsAndSaves(t *testing.T) {
 	for len(lastWindow.Client().Intents()) > 0 {
 		<-lastWindow.Client().Intents()
 	}
-	p.tabs.Select(3, lastUI)
+	p.tabs.SetSelected(3, lastUI)
 	lastWindow.Frame(time.Second / 60)
 	lastUI.Focus(p.sounds[1])
 	lastWindow.Input(gi.KeyPress{Key: gi.KeySpace})

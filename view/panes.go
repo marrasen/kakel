@@ -90,24 +90,24 @@ func newBrowser(w *Window, id string) *browser {
 		widget.TableColumn{Title: "Modified", Width: 150},
 	)
 	b.table.Row = b.row
-	b.table.OnActivate = func(k widget.Key, u *gunim.UI) {
+	b.table.OnActivate = func(k widget.Key, u *gunim.UI) gunim.Intent {
 		if k == up {
-			u.Send(b.table, app.GoUp{Pane: b.id})
-			return
+			return app.GoUp{Pane: b.id}
 		}
-		u.Send(b.table, app.EnterEntry{Pane: b.id, Name: string(k)})
+		return app.EnterEntry{Pane: b.id, Name: string(k)}
 	}
-	b.table.OnSort = func(col int, desc bool, u *gunim.UI) {
+	b.table.OnSort = func(col int, desc bool, u *gunim.UI) gunim.Intent {
 		b.sortBy, b.descending = col, desc
 		b.list(u)
+		return nil
 	}
 	b.table.SetSorted(0, false)
 	b.table.DragRows = b.dragRows
 	b.newGrid()
 	b.drop = widget.NewDropZone(&filesBody{b: b})
 	b.drop.Spot = b.dropSpot
-	b.drop.OnDrop = func(widget.DropSpot, gi.Drop) gunim.Intent { return b.plan }
-	b.drop.OnOpen = func(s widget.DropSpot) gunim.Intent {
+	b.drop.OnDrop = func(widget.DropSpot, gi.Drop, *gunim.UI) gunim.Intent { return b.plan }
+	b.drop.OnOpen = func(s widget.DropSpot, u *gunim.UI) gunim.Intent {
 		if s.Key == up {
 			return app.GoUp{Pane: b.id}
 		}
@@ -305,8 +305,8 @@ func (b *browser) confirmDelete(u *gunim.UI) {
 	d.Body = widget.NewLabel("From " + from + ". This can't be undone.")
 	d.SetButtons("Delete", "Cancel")
 	d.Danger = true
-	d.Accept = app.DeleteFiles{Pane: b.id, Names: names}
-	d.Dismiss = app.DialogClosed{}
+	d.OnAccept = widget.Sends(app.DeleteFiles{Pane: b.id, Names: names})
+	d.OnDismiss = widget.Sends(app.DialogClosed{})
 	b.w.openDialog(d, u)
 }
 
@@ -316,15 +316,15 @@ func (b *browser) askRename(u *gunim.UI) {
 		return
 	}
 	name := widget.NewTextField()
-	name.SetText(string(k))
+	name.SetText(string(k), nil)
 	d := widget.NewDialog("Rename " + string(k))
 	d.Body = widget.NewForm().Add("New name", name)
 	d.SetButtons("Rename", "Cancel")
 	d.Check = func() string { return b.nameProblem(name.Text()) }
-	d.OnAccept = func() gunim.Intent {
+	d.OnAccept = func(u *gunim.UI) gunim.Intent {
 		return app.RenameFile{Pane: b.id, From: string(k), To: strings.TrimSpace(name.Text())}
 	}
-	d.Dismiss = app.DialogClosed{}
+	d.OnDismiss = widget.Sends(app.DialogClosed{})
 	b.w.openDialog(d, u)
 }
 
@@ -335,22 +335,23 @@ func (b *browser) askGoTo(u *gunim.UI) { b.askGoToWith(b.st.Path, "", u) }
 // why the last one typed could not be gone to when why is set.
 func (b *browser) askGoToWith(text, why string, u *gunim.UI) {
 	path := widget.NewTextField()
-	path.SetText(text)
+	path.SetText(text, nil)
 	// The rest of a folder's name, suggested as it is typed, from the
 	// folder the text is in.
-	path.OnEdit = func(text string, u *gunim.UI) { b.complete(text, u) }
+	path.OnChange = func(text string, u *gunim.UI) gunim.Intent { b.complete(text, u); return nil }
 	b.goTo = path
 	form := widget.NewForm()
 	if len(b.st.Roots) > 1 {
 		// Where this filesystem starts, such as each drive, one pick
 		// away rather than a letter to remember.
-		places := widget.NewDropdown(append([]string{b.st.Path}, b.st.Roots...)...)
-		places.OnPick(func(i int, u *gunim.UI) {
+		places := widget.NewDropdown(widget.Labels(append([]string{b.st.Path}, b.st.Roots...)...))
+		places.OnChange = func(i int, u *gunim.UI) gunim.Intent {
 			if i > 0 {
-				path.SetText(b.st.Roots[i-1])
+				path.SetText(b.st.Roots[i-1], nil)
 				u.Invalidate()
 			}
-		})
+			return nil
+		}
 		form.Add("Places", places)
 	}
 	form.Add("Folder", path)
@@ -368,7 +369,7 @@ func (b *browser) askGoToWith(text, why string, u *gunim.UI) {
 		}
 		return ""
 	}
-	d.OnAccept = func() gunim.Intent {
+	d.OnAccept = func(u *gunim.UI) gunim.Intent {
 		// Asked again, with what was typed, if it cannot be gone to.
 		// Past any the program has answered, for a pane made again in
 		// another window.
@@ -376,7 +377,7 @@ func (b *browser) askGoToWith(text, why string, u *gunim.UI) {
 		b.goingTo, b.goToAsk = path.Text(), b.asks
 		return app.GoTo{Pane: b.id, Path: path.Text(), Ask: b.asks}
 	}
-	d.Dismiss = app.DialogClosed{}
+	d.OnDismiss = widget.Sends(app.DialogClosed{})
 	b.w.openDialog(d, u)
 }
 
@@ -400,8 +401,10 @@ func (b *browser) askFolder(u *gunim.UI) {
 	d.Body = widget.NewForm().Add("Name", name)
 	d.SetButtons("Make", "Cancel")
 	d.Check = func() string { return b.nameProblem(name.Text()) }
-	d.OnAccept = func() gunim.Intent { return app.MakeFolder{Pane: b.id, Name: strings.TrimSpace(name.Text())} }
-	d.Dismiss = app.DialogClosed{}
+	d.OnAccept = func(u *gunim.UI) gunim.Intent {
+		return app.MakeFolder{Pane: b.id, Name: strings.TrimSpace(name.Text())}
+	}
+	d.OnDismiss = widget.Sends(app.DialogClosed{})
 	b.w.openDialog(d, u)
 }
 
@@ -419,7 +422,7 @@ func (b *browser) show(st app.Browser, u *gunim.UI) {
 		text = "Reading " + st.Path + "…"
 	}
 	moved := b.path.Text != text
-	b.path.SetText(text)
+	b.path.Text = text
 	if st.Seq == b.shown {
 		return
 	}

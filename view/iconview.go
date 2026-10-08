@@ -60,7 +60,7 @@ func (fb *filesBody) Paint(p *paint.Painter, _ gunim.Frame, _ geom.Size, kids gu
 func (b *browser) newGrid() {
 	g := widget.NewTileGrid(tileSize)
 	g.Tile = func(i int) gunim.Node { return &fileTile{b: b, i: i} }
-	g.OnActivate = func(i int) gunim.Intent {
+	g.OnActivate = func(i int, u *gunim.UI) gunim.Intent {
 		if i < 0 || i >= len(b.order) {
 			return nil
 		}
@@ -69,7 +69,7 @@ func (b *browser) newGrid() {
 		}
 		return app.GoUp{Pane: b.id}
 	}
-	g.OnView = func(first, count int) gunim.Intent {
+	g.OnView = func(first, count int, u *gunim.UI) gunim.Intent {
 		// Kept, to ask again for a folder listed in the same place;
 		// hidden, the grid asks for nothing.
 		b.inView = [2]int{first, count}

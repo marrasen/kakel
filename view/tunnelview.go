@@ -40,14 +40,14 @@ func (w *Window) tunnelDialogOn(machine machines.ID, socks bool, u *gunim.UI) {
 	listen, target := widget.NewTextField(), widget.NewTextField()
 	listen.Placeholder, target.Placeholder = "[address:]port", "host:port"
 	called := w.nameOf(machine)
-	way := widget.NewDropdown("Local — listen here", "Remote — listen on "+called)
+	way := widget.NewDropdown(widget.Labels("Local — listen here", "Remote — listen on "+called))
 	way.Label = "Direction"
 	keep := widget.NewCheckbox("Save this tunnel")
 	form := widget.NewForm()
 	title := "Tunnel via " + called
 	if socks {
 		title = "SOCKS proxy via " + called
-		listen.SetText("1080")
+		listen.SetText("1080", nil)
 		note := widget.NewLabel("A SOCKS port here. Connections go out from " + called + ".")
 		form.Add("", note).Add("Listen on", listen)
 	} else {
@@ -74,22 +74,23 @@ func (w *Window) tunnelDialogOn(machine machines.ID, socks bool, u *gunim.UI) {
 				names = append(names, tu.String())
 			}
 		}
-		pick := widget.NewDropdown(names...)
+		pick := widget.NewDropdown(widget.Labels(names...))
 		pick.Label = "Saved"
-		pick.OnPick(func(i int, u *gunim.UI) {
+		pick.OnChange = func(i int, u *gunim.UI) gunim.Intent {
 			if i == 0 || i > len(kept) {
-				return
+				return nil
 			}
 			t := kept[i-1]
-			listen.SetText(t.Listen)
-			target.SetText(t.Target)
-			way.Selected = 0
+			listen.SetText(t.Listen, nil)
+			target.SetText(t.Target, nil)
+			way.SetSelected(0, nil)
 			if t.Kind == remote.RemoteForward.String() {
-				way.Selected = 1
+				way.SetSelected(1, nil)
 			}
-			keep.SetOn(true, u)
+			keep.SetChecked(true, u)
 			u.Invalidate()
-		})
+			return nil
+		}
 		form.Add("Saved", pick)
 	}
 	form.Add("", keep)
@@ -102,7 +103,7 @@ func (w *Window) tunnelDialogOn(machine machines.ID, socks bool, u *gunim.UI) {
 		switch {
 		case socks:
 			t.Kind, t.Target = remote.DynamicForward, ""
-		case way.Selected == 1:
+		case way.Selected() == 1:
 			t.Kind = remote.RemoteForward
 		}
 		return t
@@ -116,8 +117,10 @@ func (w *Window) tunnelDialogOn(machine machines.ID, socks bool, u *gunim.UI) {
 		}
 		return ""
 	}
-	d.OnAccept = func() gunim.Intent { return app.OpenTunnel{Machine: machine, Tunnel: tunnel(), Keep: keep.On} }
-	d.Dismiss = app.DialogClosed{}
+	d.OnAccept = func(u *gunim.UI) gunim.Intent {
+		return app.OpenTunnel{Machine: machine, Tunnel: tunnel(), Keep: keep.Checked()}
+	}
+	d.OnDismiss = widget.Sends(app.DialogClosed{})
 	w.openDialog(d, u)
 }
 
@@ -207,14 +210,14 @@ func newTunnelBar() *tunnelBar {
 func (b *tunnelBar) show(t app.Tunnel, ok bool, u *gunim.UI) {
 	switch {
 	case ok && t.Live:
-		b.watch.Label, b.watch.Icon, b.watch.On = "Watch the Traffic", icon.Activity, app.WatchTunnel{ID: t.ID, On: true}
+		b.watch.Label, b.watch.Icon, b.watch.OnClick = "Watch the Traffic", icon.Activity, widget.Sends(app.WatchTunnel{ID: t.ID, On: true})
 		if t.Watching {
-			b.watch.Label, b.watch.Icon, b.watch.On = "Stop Watching", icon.EyeOff, app.WatchTunnel{ID: t.ID}
+			b.watch.Label, b.watch.Icon, b.watch.OnClick = "Stop Watching", icon.EyeOff, widget.Sends(app.WatchTunnel{ID: t.ID})
 		}
-		b.close.Label, b.close.Icon, b.close.On = "Close Tunnel", icon.Unplug, app.CloseTunnel{ID: t.ID}
+		b.close.Label, b.close.Icon, b.close.OnClick = "Close Tunnel", icon.Unplug, widget.Sends(app.CloseTunnel{ID: t.ID})
 		b.bar.set(t.Label+" · "+t.Note, u, b.watch, b.close)
 	case ok:
-		b.close.Label, b.close.Icon, b.close.On = "Clear", icon.X, app.CloseTunnel{ID: t.ID}
+		b.close.Label, b.close.Icon, b.close.OnClick = "Clear", icon.X, widget.Sends(app.CloseTunnel{ID: t.ID})
 		b.bar.set(t.Label+" · stopped", u, b.close)
 	default:
 		b.bar.set("This tunnel has closed.", u)

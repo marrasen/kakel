@@ -61,34 +61,35 @@ func (w *Window) commandDialogAt(machine machines.ID, at app.Placement, u *gunim
 			}
 			names = append(names, c.Line+" (on "+on+")")
 		}
-		pick := widget.NewDropdown(names...)
+		pick := widget.NewDropdown(widget.Labels(names...))
 		pick.Label = "Saved"
-		pick.OnPick(func(i int, u *gunim.UI) {
+		pick.OnChange = func(i int, u *gunim.UI) gunim.Intent {
 			if i == 0 || i > len(kept) {
-				return
+				return nil
 			}
 			c := kept[i-1]
-			line.SetText(c.Line)
+			line.SetText(c.Line, nil)
 			// The folder only when this machine's, and only over one
 			// typed by nobody: a folder elsewhere is nothing here.
 			mine := i-1 < here
 			switch {
 			case mine && (dir.Text() == "" || dir.Text() == filled):
-				dir.SetText(c.Dir)
+				dir.SetText(c.Dir, nil)
 				filled = c.Dir
 			case !mine && dir.Text() == filled:
 				// A folder a pick here put in is nothing to a command
 				// saved elsewhere.
-				dir.SetText("")
+				dir.SetText("", nil)
 				filled = ""
 			}
 			picked = ""
 			if mine {
 				picked = c.Line
 			}
-			keep.SetOn(mine, u)
+			keep.SetChecked(mine, u)
 			u.Invalidate()
-		})
+			return nil
+		}
 		form.Add("Saved", pick)
 	}
 	form.Add("", keep)
@@ -101,14 +102,14 @@ func (w *Window) commandDialogAt(machine machines.ID, at app.Placement, u *gunim
 		}
 		return ""
 	}
-	d.OnAccept = func() gunim.Intent {
+	d.OnAccept = func(u *gunim.UI) gunim.Intent {
 		forget := ""
-		if !keep.On && picked != "" && strings.Join(strings.Fields(line.Text()), " ") == picked {
+		if !keep.Checked() && picked != "" && strings.Join(strings.Fields(line.Text()), " ") == picked {
 			forget = picked
 		}
-		return app.RunCommand{Machine: machine, Line: line.Text(), Dir: dir.Text(), Keep: keep.On, Forget: forget, Beside: at.Beside, Vertical: at.Vertical, Instead: at.Instead}
+		return app.RunCommand{Machine: machine, Line: line.Text(), Dir: dir.Text(), Keep: keep.Checked(), Forget: forget, Beside: at.Beside, Vertical: at.Vertical, Instead: at.Instead}
 	}
-	d.Dismiss = app.DialogClosed{}
+	d.OnDismiss = widget.Sends(app.DialogClosed{})
 	w.openDialog(d, u)
 }
 
@@ -179,32 +180,33 @@ func (w *Window) setSavedCommands(saved []settings.SavedCommand) {
 // called.
 func (w *Window) termProgramDialog(u *gunim.UI) {
 	called := widget.NewTextField()
-	called.SetText(w.termProgram)
+	called.SetText(w.termProgram, nil)
 	called.Placeholder = "kakel"
-	known := widget.NewDropdown(append([]string{"kakel"}, app.KnownTerminals...)...)
+	known := widget.NewDropdown(widget.Labels(append([]string{"kakel"}, app.KnownTerminals...)...))
 	known.Label = "Known terminals"
-	known.OnPick(func(i int, u *gunim.UI) {
+	known.OnChange = func(i int, u *gunim.UI) gunim.Intent {
 		if i == 0 {
-			called.SetText("")
+			called.SetText("", nil)
 		} else {
-			called.SetText(app.KnownTerminals[i-1])
+			called.SetText(app.KnownTerminals[i-1], nil)
 		}
 		u.Invalidate()
-	})
+		return nil
+	}
 	d := widget.NewDialog("Terminal Identity")
 	d.Body = widget.NewForm().
 		Add("", widget.NewLabel("Programs read TERM_PROGRAM to identify the terminal. Blank reports kakel. Another name can turn on features such as images, and can also bring sequences that show as text. It applies to new panes.")).
 		Add("TERM_PROGRAM", called).Add("Known", known)
 	d.SetButtons("Save", "Cancel")
-	d.OnAccept = func() gunim.Intent { return app.SetTermProgram{Called: called.Text()} }
-	d.Dismiss = app.DialogClosed{}
+	d.OnAccept = func(u *gunim.UI) gunim.Intent { return app.SetTermProgram{Called: called.Text()} }
+	d.OnDismiss = widget.Sends(app.DialogClosed{})
 	w.openDialog(d, u)
 }
 
 // launcherKeyDialog asks for the launcher's key.
 func (w *Window) launcherKeyDialog(u *gunim.UI) {
 	key := widget.NewTextField()
-	key.SetText(w.launcherKey)
+	key.SetText(w.launcherKey, nil)
 	key.Placeholder = app.DefaultLauncherKey
 	d := widget.NewDialog("Launcher Key")
 	d.Body = widget.NewForm().
@@ -221,8 +223,8 @@ func (w *Window) launcherKeyDialog(u *gunim.UI) {
 		}
 		return ""
 	}
-	d.OnAccept = func() gunim.Intent { return app.SetLauncherKey{Key: key.Text()} }
-	d.Dismiss = app.DialogClosed{}
+	d.OnAccept = func(u *gunim.UI) gunim.Intent { return app.SetLauncherKey{Key: key.Text()} }
+	d.OnDismiss = widget.Sends(app.DialogClosed{})
 	w.openDialog(d, u)
 }
 
@@ -236,10 +238,10 @@ func (w *Window) installDialog(u *gunim.UI) {
 		Add("", widget.NewLabel("For you alone, with a Start menu entry. No administrator needed.")).
 		Add("", desk).Add("", start).Add("", auto)
 	d.SetButtons("Install", "Cancel")
-	d.OnAccept = func() gunim.Intent {
-		return app.InstallKakel{Desktop: desk.On, Autostart: start.On, AutoUpdate: auto.On}
+	d.OnAccept = func(u *gunim.UI) gunim.Intent {
+		return app.InstallKakel{Desktop: desk.Checked(), Autostart: start.Checked(), AutoUpdate: auto.Checked()}
 	}
-	d.Dismiss = app.DialogClosed{}
+	d.OnDismiss = widget.Sends(app.DialogClosed{})
 	w.openDialog(d, u)
 }
 
@@ -259,18 +261,18 @@ func (w *Window) updatesDialog(u *gunim.UI) {
 			at = i
 		}
 	}
-	pick := widget.NewDropdown(titles...)
-	pick.Selected = at
+	pick := widget.NewDropdown(widget.Labels(titles...))
+	pick.SetSelected(at, nil)
 	d := widget.NewDialog("Updates")
 	d.Body = widget.NewForm().
 		Add("New releases", pick).
 		Add("", widget.NewLabel("Installed, an update starts the next time kakel does."))
 	d.SetButtons("Save", "Cancel")
-	d.AddAction("Check Now", func(u *gunim.UI) { d.Close(u); u.Send(w, app.CheckUpdates{}) })
-	d.OnAccept = func() gunim.Intent {
-		return app.SetUpdates{What: updateChoices[max(0, min(pick.Selected, len(updateChoices)-1))].value}
+	d.AddAction("Check Now", func(u *gunim.UI) gunim.Intent { d.Close(u); u.Send(w, app.CheckUpdates{}); return nil })
+	d.OnAccept = func(u *gunim.UI) gunim.Intent {
+		return app.SetUpdates{What: updateChoices[max(0, min(pick.Selected(), len(updateChoices)-1))].value}
 	}
-	d.Dismiss = app.DialogClosed{}
+	d.OnDismiss = widget.Sends(app.DialogClosed{})
 	w.openDialog(d, u)
 }
 
@@ -280,16 +282,16 @@ func (w *Window) updatesDialog(u *gunim.UI) {
 func (w *Window) thisComputerDialog(u *gunim.UI) {
 	start := widget.NewTextField()
 	start.Placeholder = "your home folder"
-	start.SetText(w.thisComputer.StartFolder)
+	start.SetText(w.thisComputer.StartFolder, nil)
 	titles, ids := []string{"Your default shell"}, []string{""}
 	for _, sh := range w.shellChoices {
 		titles = append(titles, sh.Title)
 		ids = append(ids, sh.ID)
 	}
-	shell := widget.NewDropdown(titles...)
+	shell := widget.NewDropdown(widget.Labels(titles...))
 	shell.Label = "Shell"
 	if i := slices.Index(ids, w.chosenShell); i > 0 {
-		shell.Selected = i
+		shell.SetSelected(i, nil)
 	}
 	d := widget.NewDialog("This Computer")
 	d.Body = widget.NewForm().
@@ -305,12 +307,12 @@ func (w *Window) thisComputerDialog(u *gunim.UI) {
 		}
 		return ""
 	}
-	d.OnAccept = func() gunim.Intent {
+	d.OnAccept = func(u *gunim.UI) gunim.Intent {
 		return app.SaveThisComputer{
 			StartFolder: strings.TrimSpace(start.Text()),
-			Shell:       ids[max(0, min(shell.Selected, len(ids)-1))],
+			Shell:       ids[max(0, min(shell.Selected(), len(ids)-1))],
 		}
 	}
-	d.Dismiss = app.DialogClosed{}
+	d.OnDismiss = widget.Sends(app.DialogClosed{})
 	w.openDialog(d, u)
 }

@@ -39,7 +39,12 @@ type serversPane struct {
 
 // addItems are the Add menu's lines, and addCommands what each runs.
 var (
-	addItems    = []string{"Add Server…", "Quick Connect…", "Connect to Window…", "Import from SSH Config"}
+	addItems = []widget.MenuItem{
+		{Label: "Add Server…", Icon: icon.Server},
+		{Label: "Quick Connect…", Icon: icon.Zap},
+		{Label: "Connect to Window…", Icon: icon.Plug},
+		{Label: "Import from SSH Config", Icon: icon.FileInput},
+	}
 	addCommands = []string{"server.add", "server.connect", "serve.attach", "server.import"}
 )
 
@@ -48,17 +53,16 @@ func newServersPane(w *Window) *serversPane {
 		w:      w,
 		head:   widget.NewLabel("Servers"),
 		search: widget.NewTextField(),
-		add:    widget.NewMenuButton("Add", addItems...),
+		add:    widget.NewMenuButton("Add", addItems),
 		gear:   widget.NewIconButton(icon.Settings, "Settings (Ctrl+,)"),
 	}
-	p.gear.OnActivate(func(u *gunim.UI) { w.run("app.settings", u) })
+	p.gear.OnClick = func(u *gunim.UI) gunim.Intent { w.run("app.settings", u); return nil }
 	p.head.Size = widget.DialogTitleSize
 	p.search.Icon = icon.Search
 	p.search.Placeholder = "Find a machine, or user@host  ( / )"
-	p.search.OnEdit = func(text string, u *gunim.UI) { w.cards.find(text, u) }
+	p.search.OnChange = func(text string, u *gunim.UI) gunim.Intent { w.cards.find(text, u); return nil }
 	p.add.Icon = icon.Plus
-	p.add.Icons = []*icon.Icon{icon.Server, icon.Zap, icon.Plug, icon.FileInput}
-	p.add.Picked = func(i int, u *gunim.UI) { w.run(addCommands[i], u) }
+	p.add.OnPick = func(i int, u *gunim.UI) gunim.Intent { w.run(addCommands[i], u); return nil }
 	p.body = widget.NewScroll(w.cards.grid)
 	return p
 }
@@ -106,7 +110,7 @@ func (p *serversPane) Handle(e gi.Event, u *gunim.UI) bool {
 				return true
 			}
 		case inSearch && e.Key == gi.KeyEscape && p.search.Text() != "":
-			p.search.SetText("")
+			p.search.SetText("", nil)
 			p.w.cards.find("", u)
 			return true
 		}

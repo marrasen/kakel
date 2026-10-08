@@ -39,7 +39,7 @@ func TestTheCommandDialogOffersEverySavedCommand(t *testing.T) {
 			keep = f
 		}
 	}
-	if pick == nil || !slices.Equal(pick.Items, []string{"A new one", "top", "make deploy (on srv)"}) {
+	if pick == nil || !slices.Equal(pick.Items(), widget.Labels("A new one", "top", "make deploy (on srv)")) {
 		t.Fatalf("the saved commands offered are %+v", pick)
 	}
 	line, dir := fields[0], fields[1]
@@ -51,30 +51,30 @@ func TestTheCommandDialogOffersEverySavedCommand(t *testing.T) {
 			lastWindow.Frame(time.Second / 60)
 		}
 		press(gi.KeyEnter)
-		for range i - pick.Selected {
+		for range i - pick.Selected() {
 			press(gi.KeyDown)
 		}
-		for range pick.Selected - i {
+		for range pick.Selected() - i {
 			press(gi.KeyUp)
 		}
 		press(gi.KeyEnter)
-		if pick.Selected != i {
-			t.Fatalf("picked %d, want %d", pick.Selected, i)
+		if pick.Selected() != i {
+			t.Fatalf("picked %d, want %d", pick.Selected(), i)
 		}
 	}
 	choose(1)
-	if line.Text() != "top" || dir.Text() != "/home/me" || !keep.On {
-		t.Fatalf("picked top, the dialog holds %q in %q, kept %v", line.Text(), dir.Text(), keep.On)
+	if line.Text() != "top" || dir.Text() != "/home/me" || !keep.Checked() {
+		t.Fatalf("picked top, the dialog holds %q in %q, kept %v", line.Text(), dir.Text(), keep.Checked())
 	}
 	choose(2)
-	if line.Text() != "make deploy" || dir.Text() != "" || keep.On {
-		t.Fatalf("picked one from srv, the dialog holds %q in %q, kept %v", line.Text(), dir.Text(), keep.On)
+	if line.Text() != "make deploy" || dir.Text() != "" || keep.Checked() {
+		t.Fatalf("picked one from srv, the dialog holds %q in %q, kept %v", line.Text(), dir.Text(), keep.Checked())
 	}
 	// Unticked with the spacing changed, the pick is still forgotten.
 	choose(1)
-	line.SetText("  top ")
-	keep.SetOn(false, lastUI)
-	if in, ok := win.dialog.OnAccept().(app.RunCommand); !ok || in.Forget != "top" || !strings.Contains(in.Line, "top") {
+	line.SetText("  top ", nil)
+	keep.SetChecked(false, lastUI)
+	if in, ok := win.dialog.OnAccept(lastUI).(app.RunCommand); !ok || in.Forget != "top" || !strings.Contains(in.Line, "top") {
 		t.Fatalf("run, the dialog sent %+v", in)
 	}
 }
