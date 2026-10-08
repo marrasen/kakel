@@ -55,7 +55,7 @@ func TestTheServerCardsTakeTheKeyboard(t *testing.T) {
 	drain()
 	lastWindow.Input(gi.KeyPress{Key: gi.KeyEnter})
 	frames(2)
-	if second.head.menu == nil || second.head.menu.Items[1] != "New Terminal" {
+	if second.head.menu == nil || second.head.menu.Items()[1].Label != "New Terminal" {
 		t.Fatalf("Enter on a card opened %+v", second.head.menu)
 	}
 	lastWindow.Input(gi.KeyPress{Key: gi.KeyDown})

@@ -31,7 +31,7 @@ func TestAQuestionOffersSavedSecrets(t *testing.T) {
 	if win.ask == nil {
 		t.Fatal("the question did not open")
 	}
-	in, ok := win.ask.OnAccept().(app.AskAnswered)
+	in, ok := win.ask.OnAccept(lastUI).(app.AskAnswered)
 	if !ok || len(in.Answers) != 3 || in.Answers[1] != "" || in.Answers[2] != "-1" {
 		t.Fatalf("answered %#v, want the password, the box, then -1", in)
 	}

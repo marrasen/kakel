@@ -102,7 +102,7 @@ func TestAFileManagerPaneShowsInItsPlace(t *testing.T) {
 		for m, bm := range win.layout {
 			for i, it := range bm.items {
 				if it.pane == filemanager.CmdHidden {
-					return m, i, win.bar.Menus[m].Checked[i]
+					return m, i, win.bar.Menus[m].Items[i].Checked
 				}
 			}
 		}
@@ -112,7 +112,7 @@ func TestAFileManagerPaneShowsInItsPlace(t *testing.T) {
 	if m < 0 || win.layout[m].title != "View" || on {
 		t.Fatalf("Show hidden files is in menu %d, ticked %v", m, on)
 	}
-	win.bar.Pick(m, i, lastUI)
+	win.bar.OnPick(m, i, lastUI)
 	framesUntil(t, "the tick follows the pick", func() bool {
 		// The program's part: the file manager's intents go to it.
 		for len(lastWindow.Client().Intents()) > 0 {

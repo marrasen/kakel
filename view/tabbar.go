@@ -965,16 +965,19 @@ func (b *tabBar) AccessAct(r access.Request, u *gunim.UI) bool {
 func (b *tabBar) openPlusMenu(u *gunim.UI) {
 	b.closePlusMenu()
 	m := b.w.machineOf(b.w.focused)
-	menu := widget.NewMenu("New Terminal", "New File Manager")
-	menu.Icons = []*icon.Icon{icon.SquareTerminal, icon.Folder}
-	menu.Pick = func(i int, u *gunim.UI) {
+	menu := widget.NewMenu([]widget.MenuItem{
+		{Label: "New Terminal", Icon: icon.SquareTerminal},
+		{Label: "New File Manager", Icon: icon.Folder},
+	})
+	menu.OnPick = func(i int, u *gunim.UI) gunim.Intent {
 		b.closePlusMenu()
 		switch i {
 		case 0:
-			u.Send(b.w, app.OpenOn{Machine: m})
+			return app.OpenOn{Machine: m}
 		case 1:
-			u.Send(b.w, app.OpenFilesOn{Machine: m, NewTab: true})
+			return app.OpenFilesOn{Machine: m, NewTab: true}
 		}
+		return nil
 	}
 	b.plusMenu = u.OpenPopup(b, menu, gunim.PopupOptions{
 		Anchor:  b.plus,

@@ -53,8 +53,8 @@ func TestDisconnectingAFarMachineAsksFirst(t *testing.T) {
 	if win.dialog == nil || win.dialog.Title != "Disconnect db on laptop?" || !win.dialog.Danger {
 		t.Fatalf("the question is %+v", win.dialog)
 	}
-	if in, ok := win.dialog.Accept.(app.Disconnect); !ok || in.Machine != far {
-		t.Fatalf("yes sends %#v", win.dialog.Accept)
+	if in, ok := win.dialog.OnAccept(lastUI).(app.Disconnect); !ok || in.Machine != far {
+		t.Fatalf("yes sends %#v", in)
 	}
 }
 

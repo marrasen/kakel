@@ -42,15 +42,8 @@ func (w *Window) buildBar(refill bool) {
 			if chord, ok := w.keys.ChordFor(it.id); ok && !it.caption && it.pane == "" {
 				hint = chordLabel(chord)
 			}
-			bm.Items, bm.Hints = append(bm.Items, it.title), append(bm.Hints, hint)
-			bm.Icons = append(bm.Icons, commandIcons[it.id])
-			bm.Checked = append(bm.Checked, it.on)
-			if it.caption {
-				bm.Captions = append(bm.Captions, i)
-			}
-			if it.group || (it.caption && i > 0) {
-				bm.Breaks = append(bm.Breaks, i)
-			}
+			bm.Items = append(bm.Items, widget.MenuItem{Label: it.title, Hint: hint, Icon: commandIcons[it.id],
+				Checked: it.on, Caption: it.caption, Break: it.group || (it.caption && i > 0)})
 		}
 		w.bar.Menus = append(w.bar.Menus, withAccessKeys(bm))
 	}
@@ -148,8 +141,8 @@ func (w *Window) tickPaneMenus(u *gunim.UI) {
 	}
 	for m := range next {
 		for i, it := range next[m].items {
-			if it.pane != "" && m < len(w.bar.Menus) && i < len(w.bar.Menus[m].Checked) {
-				w.bar.Menus[m].Checked[i] = it.on
+			if it.pane != "" && m < len(w.bar.Menus) && i < len(w.bar.Menus[m].Items) {
+				w.bar.Menus[m].Items[i].Checked = it.on
 			}
 		}
 	}

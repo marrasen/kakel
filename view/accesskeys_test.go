@@ -44,26 +44,26 @@ func TestEveryMenuLineHasItsOwnAccessKey(t *testing.T) {
 		}
 		titles[k] = m.Title
 		lines := map[rune]string{}
-		for i, it := range m.Items {
-			if isCaption(m, i) {
+		for _, it := range m.Items {
+			if it.Caption {
 				continue
 			}
-			k, ok := accessKeyOf(it)
+			k, ok := accessKeyOf(it.Label)
 			if !ok || lines[k] != "" {
-				t.Errorf("in %q, %q has access key %q, which %q has too", shownText(m.Title), it, k, lines[k])
+				t.Errorf("in %q, %q has access key %q, which %q has too", shownText(m.Title), it.Label, k, lines[k])
 			}
-			lines[k] = it
+			lines[k] = it.Label
 		}
 	}
 }
 
 // A & in a line's own text shows, and marks no key.
 func TestAnAmpersandInALineShows(t *testing.T) {
-	m := withAccessKeys(widget.BarMenu{Title: "Servers", Items: []string{"R&D box"}})
-	if got := shownText(m.Items[0]); got != "R&D box" {
+	m := withAccessKeys(widget.BarMenu{Title: "Servers", Items: widget.Labels("R&D box")})
+	if got := shownText(m.Items[0].Label); got != "R&D box" {
 		t.Fatalf("the line shows as %q", got)
 	}
-	if k, _ := accessKeyOf(m.Items[0]); k != 'r' {
+	if k, _ := accessKeyOf(m.Items[0].Label); k != 'r' {
 		t.Fatalf("its access key is %q", k)
 	}
 }
@@ -95,7 +95,7 @@ func TestMenuLinesThatCannotActAreGreyed(t *testing.T) {
 		for m := range menus {
 			for i, it := range menus[m].items {
 				if it.id == id {
-					return win.bar.Menus[m].Disabled[i]
+					return win.bar.Menus[m].Items[i].Disabled
 				}
 			}
 		}
@@ -117,10 +117,10 @@ func TestMenuLinesThatCannotActAreGreyed(t *testing.T) {
 // saved servers are called.
 func TestTheServersMenusOwnLinesKeepTheirLetters(t *testing.T) {
 	m := withAccessKeys(widget.BarMenu{Title: "Servers",
-		Items: []string{"quark", "alpha", "rho", "Quick Connect…", "Add Server…", "Reload Server List"}}, 3, 4, 5)
+		Items: widget.Labels("quark", "alpha", "rho", "Quick Connect…", "Add Server…", "Reload Server List")}, 3, 4, 5)
 	for i, want := range map[int]rune{3: 'q', 4: 'a', 5: 'r'} {
-		if k, _ := accessKeyOf(m.Items[i]); k != want {
-			t.Errorf("%q has access key %q, want %q", shownText(m.Items[i]), k, want)
+		if k, _ := accessKeyOf(m.Items[i].Label); k != want {
+			t.Errorf("%q has access key %q, want %q", shownText(m.Items[i].Label), k, want)
 		}
 	}
 }

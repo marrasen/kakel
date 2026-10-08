@@ -151,7 +151,7 @@ func TestTheLauncherFindsShellsAndFiles(t *testing.T) {
 	if in := next(t, w); in != (app.Launch{Action: "shell:wsl:Ubuntu"}) {
 		t.Fatalf("wsl and Enter sent %#v", in)
 	}
-	l.field.SetText("")
+	l.field.SetText("", nil)
 	typeIn("files on b")
 	if in := next(t, w); in != (app.Launch{Machine: "b", Action: "files"}) {
 		t.Fatalf("files on b and Enter sent %#v", in)

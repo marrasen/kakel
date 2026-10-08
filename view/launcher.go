@@ -60,7 +60,7 @@ func NewLauncher() *Launcher {
 	l := &Launcher{field: widget.NewTextField(), machine: -1}
 	l.field.Icon = icon.Search
 	// What is typed lights the best of what it finds.
-	l.field.OnEdit = func(string, *gunim.UI) { l.hot, l.first = 0, 0; l.find() }
+	l.field.OnChange = func(string, *gunim.UI) gunim.Intent { l.hot, l.first = 0, 0; l.find(); return nil }
 	return l
 }
 
@@ -74,7 +74,7 @@ func (l *Launcher) Update(st app.LaunchState, u *gunim.UI) {
 	if st.Opened != l.opened {
 		l.opened = st.Opened
 		l.machine, l.hot, l.first = -1, 0, 0
-		l.field.SetText("")
+		l.field.SetText("", nil)
 		u.Focus(l.field)
 	}
 	l.find()
@@ -282,7 +282,7 @@ func (l *Launcher) key(e input.KeyPress, u *gunim.UI) bool {
 		}
 		l.machine, l.hot = l.found[l.hot], 0
 		l.machineID = l.st.Machines[l.machine].ID
-		l.field.SetText("")
+		l.field.SetText("", nil)
 		l.find()
 	case input.KeyLeft, input.KeyEscape:
 		if l.machine < 0 {
@@ -294,7 +294,7 @@ func (l *Launcher) key(e input.KeyPress, u *gunim.UI) bool {
 		}
 		was := l.machine
 		l.machine = -1
-		l.field.SetText("")
+		l.field.SetText("", nil)
 		l.find()
 		for k, i := range l.found {
 			if i == was {

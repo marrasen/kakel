@@ -88,7 +88,7 @@ func newHelpPane(w *Window) *helpPane {
 		}
 		return widget.TableRow{Cells: r[:], Faint: r[2] == ""}
 	}
-	p.table.OnSort = func(int, bool, *gunim.UI) {}
+	p.table.OnSort = func(int, bool, *gunim.UI) gunim.Intent { return nil }
 	p.fill(w)
 	return p
 }
@@ -279,13 +279,14 @@ func (w *Window) fileLocationsDialog(u *gunim.UI) {
 	// reading, and a second press would copy over the first.
 	if own, beside, err := conf.CarriesItsOwn(); err == nil && !own {
 		if made, err := conf.IsDir(beside); err == nil && !made {
-			d.AddAction("Make Portable", func(u *gunim.UI) {
+			d.AddAction("Make Portable", func(u *gunim.UI) gunim.Intent {
 				d.Close(u)
 				u.Send(w, app.MakePortable{})
+				return nil
 			})
 		}
 	}
-	d.Accept, d.Dismiss = app.DialogClosed{}, app.DialogClosed{}
+	d.OnAccept, d.OnDismiss = widget.Sends(app.DialogClosed{}), widget.Sends(app.DialogClosed{})
 	w.openDialog(d, u)
 }
 

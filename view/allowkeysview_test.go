@@ -43,17 +43,17 @@ func TestTheServingDialogAddsAndRemovesKeys(t *testing.T) {
 			pick = d
 		}
 	}
-	if pick == nil || !slices.Equal(pick.Items, []string{"Paste one below", "me@desk"}) {
+	if pick == nil || !slices.Equal(pick.Items(), widget.Labels("Paste one below", "me@desk")) {
 		t.Fatalf("the keys offered are %+v", pick)
 	}
 	if got := win.dialog.Check(); !strings.Contains(got, "Paste a public key") {
 		t.Fatalf("with nothing pasted, the dialog says %q", got)
 	}
-	pick.Selected = 1
+	pick.SetSelected(1, nil)
 	if got := win.dialog.Check(); got != "" {
 		t.Fatalf("with a key picked, the dialog says %q", got)
 	}
-	if in := win.dialog.OnAccept(); in != (app.AllowKey{Path: "/home/me/.ssh/id_ed25519.pub"}) || !win.keysAsked {
+	if in := win.dialog.OnAccept(lastUI); in != (app.AllowKey{Path: "/home/me/.ssh/id_ed25519.pub"}) || !win.keysAsked {
 		t.Fatalf("Add sends %+v, asked %v", in, win.keysAsked)
 	}
 	win.dialog.Close(lastUI)
