@@ -9,6 +9,7 @@ import (
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/filemanager"
+	gi "github.com/marrasen/gunim/input"
 
 	"github.com/marrasen/kakel/app"
 )
@@ -143,5 +144,33 @@ func TestAFileManagerPaneShowsInItsPlace(t *testing.T) {
 	}
 	if _, ok := win.fmHosts["p1"]; ok || lastUI.Mounted(app.FilePaneHost("p1")) != nil {
 		t.Fatal("the place of a pane that left stayed")
+	}
+}
+
+// F5 and Ctrl+R list the folder of the file manager in front again,
+// with the keyboard on nothing, as after a click on its tab.
+func TestF5RefreshesTheFileManagerInFrontWithTheKeyboardElsewhere(t *testing.T) {
+	_, _, publish := windowStage(t)
+	filemanager.RegisterViews(lastWindow)
+	fw := filePane(t, "p1")
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "dir", Kind: app.KindFileManager}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
+	fw.Attach(lastWindow.Client(), app.FilePaneHost("p1"))
+	framesUntil(t, "the file manager shows", func() bool { return filemanager.FocusIn(lastUI, app.FilePaneViews("p1")) != nil })
+	for _, k := range []gi.KeyPress{{Key: gi.KeyF5}, {Key: gi.KeyR, Mods: gi.ModControl}} {
+		lastUI.Focus(nil)
+		for len(lastWindow.Client().Intents()) > 0 {
+			<-lastWindow.Client().Intents()
+		}
+		lastWindow.Input(k)
+		lastWindow.Frame(time.Second / 60)
+		refreshed := false
+		for len(lastWindow.Client().Intents()) > 0 {
+			if c, ok := (<-lastWindow.Client().Intents()).Intent.(filemanager.Command); ok && c.Name == filemanager.CmdRefresh {
+				refreshed = true
+			}
+		}
+		if !refreshed {
+			t.Fatalf("%v with the keyboard on nothing did not refresh the file manager", k)
+		}
 	}
 }

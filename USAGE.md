@@ -165,7 +165,9 @@ and Select All act on the files, File › New File Manager Window opens
 another in a window of its own, and Close Pane closes it. `Enter` opens,
 `Backspace` or `Alt+Left` goes back, `Alt+Up` goes up, and `Ctrl+L`
 types a path. `Ctrl+C`, `Ctrl+X` and `Ctrl+V` copy, cut and paste, also
-between machines, `F2` renames and `Delete` moves to the trash.
+between machines, `F2` renames and `Delete` moves to the trash. `F5`
+or `Ctrl+R` lists the folder again, even with the keyboard elsewhere
+in the window.
 `Ctrl+F` filters the folder, `Ctrl+P` finds a file, `Ctrl+1` and
 `Ctrl+2` switch between details and icons, and `Space` shows a picture.
 `Ctrl+W` closes the pane. Keys with `Ctrl+Shift` stay kakel's, as

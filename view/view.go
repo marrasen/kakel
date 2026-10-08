@@ -1868,11 +1868,25 @@ func (w *Window) shortcut(e input.Event, u *gunim.UI) bool {
 	}
 	id, ok := w.keys.Lookup(ui.ChordOf(ev))
 	if !ok {
-		return false
+		return w.refreshKey(k, u)
 	}
 	w.keyMods = k.Mods
 	defer func() { w.keyMods = 0 }()
 	return w.run(id, u)
+}
+
+// refreshKey lists the folder of the file manager in front again for
+// F5 or Ctrl+R, which reached the window: the keyboard is elsewhere, as
+// on the sidebar or on nothing, after a click on a tab.
+func (w *Window) refreshKey(k input.KeyPress, u *gunim.UI) bool {
+	if _, ok := w.fmHosts[w.focused]; !ok {
+		return false
+	}
+	if k.Key != input.KeyF5 && (k.Key != input.KeyR || k.Mods != input.ModControl) {
+		return false
+	}
+	w.runPane(filemanager.CmdRefresh, u)
+	return true
 }
 
 // Update shows st.
