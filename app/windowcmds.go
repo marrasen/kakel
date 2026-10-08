@@ -38,6 +38,13 @@ type (
 	// WriteThemeFile writes a themes file holding a copy of the theme
 	// the window is drawn in, for the user to start from.
 	WriteThemeFile struct{}
+	// SaveThemeEdits keeps the theme editor's changes to the theme called
+	// Theme, gunim's theme values as JSON, and draws the window with them.
+	// Empty Edits take them all out.
+	SaveThemeEdits struct {
+		Theme string
+		Edits []byte
+	}
 	// CheckUpdates asks whether a newer kakel is out.
 	CheckUpdates struct{}
 	// MakePortable makes the folder beside the program and copies the
@@ -112,9 +119,30 @@ func (a *app) writeThemeFile() error {
 	return nil
 }
 
+// saveThemeEdits keeps the theme editor's changes, and reads the themes
+// again to draw with them, with no word: the editor shows them already.
+func (a *app) saveThemeEdits(in SaveThemeEdits) error {
+	dir, err := settings.Dir()
+	if err != nil {
+		return err
+	}
+	if err := themes.SaveEdits(themes.Path(dir), in.Theme, in.Edits); err != nil {
+		return err
+	}
+	a.readThemes()
+	return nil
+}
+
 // reloadThemes reads the themes again, and draws the window in the one
 // it is drawn in when it is still there.
 func (a *app) reloadThemes() {
+	a.readThemes()
+	a.worked("Themes read again", strings.Join(a.st.Themes, ", "), "")
+}
+
+// readThemes reads the themes again, and draws the window in the one it
+// is drawn in when it is still there.
+func (a *app) readThemes() {
 	all, err := look.LoadSaying()
 	if err != nil {
 		a.failed("Couldn't read all the themes", err.Error())
@@ -130,12 +158,12 @@ func (a *app) reloadThemes() {
 		contents[t.Name] = t.Content
 	}
 	a.st.Contents = contents
+	a.st.Looks = slices.Clone(a.themes)
 	name := a.st.Theme
 	if !slices.Contains(a.st.Themes, name) && len(a.themes) > 0 {
 		name = a.themes[0].Name
 	}
 	a.pickTheme(name)
-	a.worked("Themes read again", strings.Join(a.st.Themes, ", "), "")
 }
 
 // checkUpdates asks, in the background, whether a newer kakel is

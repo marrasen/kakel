@@ -124,7 +124,11 @@ type Window struct {
 	// terminal pane that last had the keyboard.
 	secrets  *secretsPane
 	settings *settingsPane
-	lastTerm string
+	// themeEditor is the theme editor's pane, made as it first opens,
+	// and looks the themes whole, each with its edits, for it.
+	themeEditor *themePane
+	looks       map[string]look.Themed
+	lastTerm    string
 	// share is the agent share as last published, and sharing says the
 	// user just asked for one, so its dialog opens once it has a code.
 	share app.Share
@@ -393,8 +397,10 @@ func NewWindow(sh *screen.Shells, keys *ui.Keymap, all []look.Themed) *Window {
 		return false
 	}
 	w.servers(nil)
+	w.looks = map[string]look.Themed{}
 	for _, t := range all {
 		w.contents[t.Name] = t.Content
+		w.looks[t.Name] = t
 	}
 	return w
 }
@@ -1986,6 +1992,15 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 			w.toasts.Show(widget.Toast{Title: "Shortcuts reloaded"}, u)
 		}
 	}
+	if st.Looks != nil {
+		w.looks = map[string]look.Themed{}
+		for _, t := range st.Looks {
+			w.looks[t.Name] = t
+		}
+	}
+	if w.themeEditor != nil {
+		w.themeEditor.follow(w.looks[st.Theme], u)
+	}
 	if st.Contents != nil {
 		w.contents = st.Contents
 		if c, ok := w.contents[st.Theme]; ok {
@@ -2429,6 +2444,11 @@ func (w *Window) bareNode(id string) gunim.Node {
 			w.settings = newSettingsPane(w)
 		}
 		return w.settings
+	case app.KindThemeEditor:
+		if w.themeEditor == nil {
+			w.themeEditor = newThemePane(w)
+		}
+		return w.themeEditor
 	case app.KindJobs:
 		if w.jobs == nil {
 			w.jobs = newJobsPane()
@@ -3593,6 +3613,10 @@ func (w *Window) madeNode(id string) gunim.Node {
 	case app.KindSettings:
 		if w.settings != nil {
 			n = w.settings
+		}
+	case app.KindThemeEditor:
+		if w.themeEditor != nil {
+			n = w.themeEditor
 		}
 	case app.KindJobs:
 		if w.jobs != nil {

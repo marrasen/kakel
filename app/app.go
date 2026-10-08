@@ -168,9 +168,12 @@ type State struct {
 	// See Shortcuts.
 	ShortcutsAgain bool
 	Contents       map[string]theme.Theme
-	ShellSetup     bool
-	TermProgram    string
-	Bells          uint64
+	// Looks are the themes whole, when they were read again: for the
+	// theme editor, each with its edits.
+	Looks       []look.Themed
+	ShellSetup  bool
+	TermProgram string
+	Bells       uint64
 	// Pings counts what the window sends an echo out for, past its
 	// edges.
 	Pings        Pings
@@ -1491,6 +1494,8 @@ func (a *app) handle(in gunim.Intent) {
 		a.reloadThemes()
 	case WriteThemeFile:
 		err = a.writeThemeFile()
+	case SaveThemeEdits:
+		err = a.saveThemeEdits(in)
 	case CheckUpdates:
 		a.checkUpdates()
 	case AllowKey:

@@ -332,7 +332,8 @@ func (p *settingsPane) appearance() gunim.Node {
 	size.Cross, size.Gap = widget.CrossCenter, settingsButtons
 	return settingsPage(
 		settingsSection("Theme",
-			settingRow("Theme", "The colours of the windows and of the terminals in them.", p.theme)),
+			settingRow("Theme", "The colours of the windows and of the terminals in them.", p.theme),
+			settingRow("Edit theme", "How this theme moves and looks, the cursor too, changed as you watch.", p.settingButton("Edit Theme…", "view.editTheme"))),
 		settingsSection("Terminal text",
 			settingRow("Font", "The monospaced families installed, and those kakel carries.", p.font),
 			settingRow("Size", "Ctrl and the wheel, or Ctrl+= and Ctrl+-, change it too.", size)),

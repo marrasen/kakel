@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"image/color"
+	"log"
 	"math"
 	"strings"
 
@@ -53,6 +54,10 @@ type Themed struct {
 	Palette vt.Palette
 	// Source is the kakel theme it came from, for writing a copy.
 	Source themes.Theme
+	// Edits are the theme editor's changes, laid over Theme and Content
+	// already. Plain and PlainContent are Theme and Content without
+	// them: what the editor starts from.
+	Edits, Plain, PlainContent theme.Theme
 }
 
 // luminance is how bright c looks, from 0 to 1.
@@ -332,7 +337,24 @@ func Of(t themes.Theme) (Themed, error) {
 		theme.Set(widget.MenuFill, mix(bg, fg, 8)),
 		theme.Set(Faint, mix(fg, bg, 45)),
 	)...)
-	return Themed{Name: t.Name, Theme: th, Content: content, Palette: pal, Source: t}, nil
+	edits := EditsOf(t)
+	return Themed{Name: t.Name, Theme: edits.Over(th), Content: edits.Over(content), Palette: pal, Source: t,
+		Edits: edits, Plain: th, PlainContent: content}, nil
+}
+
+// EditsOf are the theme editor's changes saved for t. A value this kakel
+// cannot read, as one for a token since gone, is left out and said in
+// the log: the rest still apply, and the theme does too.
+func EditsOf(t themes.Theme) theme.Theme {
+	none := theme.Make(t.Name + " edits")
+	if len(t.Edits) == 0 {
+		return none
+	}
+	edits, err := theme.UnmarshalValues(none, t.Edits)
+	if err != nil {
+		log.Printf("The theme %s keeps the edits kakel could read: %v", t.Name, err)
+	}
+	return edits
 }
 
 // Register names kakel's themes to the window, for the program

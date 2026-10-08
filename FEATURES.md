@@ -265,6 +265,13 @@ The whole list. The [README](README.md) has the short version.
 - **Drawn by gunim.** The window is drawn on the GPU by gunim, a
   pure-Go GUI framework by the same author. It loads OpenGL at run time,
   and presents through DXGI on Windows.
+- **A theme editor.** Edit Theme, in Settings › Appearance or the
+  palette, opens gunim's theme editor in a tab, on the theme the window
+  is drawn in. The cursor comes first: it glides along a line, or jumps.
+  Then the motion, the accent and other colours, and how round things
+  are; All values lists every value gunim and kakel theme, to search.
+  A change shows as it is made, and is kept in `themes.json` under the
+  theme's name, built-in themes too.
 - **The window opens where it was.** Its place and size, and whether it
   was maximized, are kept from the last run. A window whose screen has
   gone opens on one that is there.

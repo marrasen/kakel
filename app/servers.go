@@ -35,6 +35,9 @@ type (
 	// ShowSettings opens the Settings pane in a tab of its own, or goes
 	// to it where it is, bringing its window to the front.
 	ShowSettings struct{}
+	// ShowThemeEditor opens the theme editor in a tab of its own, or
+	// goes to it where it is.
+	ShowThemeEditor struct{}
 )
 
 // handleServers carries out an intent about the Machines pane, and
@@ -47,6 +50,8 @@ func (a *app) handleServers(in any) bool {
 		a.toolWindow(in)
 	case ShowSettings:
 		a.showSettings()
+	case ShowThemeEditor:
+		a.showThemeEditor()
 	case ToggleServers:
 		// Closed only where it is what the user is looking at; out of
 		// sight, the toggle brings it.
@@ -109,7 +114,7 @@ func (a *app) allPanes() []Pane {
 
 // isToolKind reports whether a pane of kind is a tool pane.
 func isToolKind(kind string) bool {
-	return kind == KindServers || kind == KindSecrets || kind == KindSettings
+	return kind == KindServers || kind == KindSecrets || kind == KindSettings || kind == KindThemeEditor
 }
 
 // isTool reports whether w holds tool panes and nothing else.
@@ -215,8 +220,12 @@ func (a *app) toolWindow(in ToolWindow) {
 	}
 }
 
-// KindSettings is the Settings pane.
-const KindSettings = "settings"
+// KindSettings is the Settings pane, and KindThemeEditor the theme
+// editor's.
+const (
+	KindSettings    = "settings"
+	KindThemeEditor = "themeedit"
+)
 
 // paneOf returns the pane of kind open, or "".
 func (a *app) paneOf(kind string) string {
@@ -237,4 +246,15 @@ func (a *app) showSettings() {
 	}
 	a.next++
 	a.addPane(Pane{ID: "p" + itoa(a.next), Title: "Settings", Kind: KindSettings}, nil, Placement{})
+}
+
+// showThemeEditor goes to the theme editor, opening it in the window in
+// front when it is closed.
+func (a *app) showThemeEditor() {
+	if id := a.paneOf(KindThemeEditor); id != "" {
+		a.focusRaised(id)
+		return
+	}
+	a.next++
+	a.addPane(Pane{ID: "p" + itoa(a.next), Title: "Theme", Kind: KindThemeEditor}, nil, Placement{})
 }

@@ -86,6 +86,7 @@ var commands = []struct{ id, title string }{
 	{"pane.rename", "Rename Pane"},
 	{"sidebar.toggle", "Machines"},
 	{"view.theme", "Choose Theme"},
+	{"view.editTheme", "Edit Theme"},
 	{"font.increase", "Larger Font"},
 	{"font.decrease", "Smaller Font"},
 	{"font.reset", "Reset Font Size"},
@@ -218,6 +219,7 @@ var commandIcons = map[string]*icon.Icon{
 	"sidebar.toggle":         icon.PanelLeft,
 	"sidebar.focus":          icon.PanelLeftOpen,
 	"view.theme":             icon.Palette,
+	"view.editTheme":         icon.Paintbrush,
 	"app.exit":               icon.LogOut,
 	"menu.open":              icon.Menu,
 	"edit.copy":              icon.Copy,
@@ -453,6 +455,7 @@ var commandAlso = map[string][]string{
 	"agent.share":           {"show the share", "code", "prompt", "skill", "setup"},
 	"agent.typed":           {"what the agent typed", "input", "sent"},
 	"view.theme":            {"colour", "color", "colors", "scheme"},
+	"view.editTheme":        {"theme editor", "cursor", "glide", "animation", "motion", "colour", "color", "corners"},
 	"view.themesReload":     {"colour", "color", "colors", "reread"},
 	"view.themesStart":      {"colour", "color", "colors", "write", "create", "edit"},
 	"pane.titles":           {"show", "hide", "toggle", "names", "line"},
@@ -559,6 +562,8 @@ func commandIntent(id string) (gunim.Intent, bool) {
 		return app.Exit{}, true
 	case "conn.files":
 		return app.OpenFiles{}, true
+	case "view.editTheme":
+		return app.ShowThemeEditor{}, true
 	case "view.jobs":
 		return app.ShowJobs{}, true
 	case "files.copies":
