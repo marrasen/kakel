@@ -31,7 +31,7 @@ type themePane struct {
 // themeSections are the values the editor puts first, in kakel's words.
 func themeSections() []themeedit.Section {
 	return []themeedit.Section{
-		{Title: "Cursor", Fields: []themeedit.Field{{
+		{Title: "Terminal", Fields: []themeedit.Field{{
 			Key: widget.Caret.Key(), Label: "Cursor", Detail: "How a terminal's cursor moves along a line.",
 			Presets: []themeedit.Preset{{Label: "Glides", Value: widget.Caret.Default()}, {Label: "Jumps", Value: themeedit.Instant}},
 		}}},
