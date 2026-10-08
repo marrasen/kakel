@@ -7,7 +7,7 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
-## Unreleased
+## v0.12.0-beta.7
 
 ### Changed
 
@@ -19,6 +19,12 @@ it grows back into its window, which comes to the front on that tab;
 a split, onto a window's card to move it there on a tab of its own, or
 onto empty room to give it a window of its own there. The launcher
 offers it as All Panes, so it opens from any program.
+
+**The theme editor is laid out like Settings.** Its values sit in
+cards and keep the theme as it was, while a preview beside them shows
+the changes and plays each motion. A motion is Instant, Snappy, Gentle,
+Bouncy or Custom, with Speed and Bounce, and only a changed value shows
+a mark and a reset.
 
 ## v0.12.0-beta.6
 
