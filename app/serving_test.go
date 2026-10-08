@@ -118,9 +118,11 @@ func TestAnotherWindowWorksInAPaneHere(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, a, "the other window to see what it typed run", func() bool { return said.has(want) })
-	if !strings.Contains(a.terminal(a.st.Panes[0].ID).Text(), want) {
-		t.Fatal("what the other window typed did not reach the pane here")
-	}
+	// The pane here reads the shell's output on its own, and on Windows
+	// can be a moment behind the other window.
+	waitFor(t, a, "what the other window typed to reach the pane here", func() bool {
+		return strings.Contains(a.terminal(a.st.Panes[0].ID).Text(), want)
+	})
 	if size := a.terminal(a.st.Panes[0].ID).Size(); size.Cols != 70 || size.Rows != 20 {
 		t.Fatalf("watched, the pane is %dx%d, want the watcher's 70x20", size.Cols, size.Rows)
 	}
