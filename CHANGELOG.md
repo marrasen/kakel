@@ -7,6 +7,18 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
+## Unreleased
+
+### Changed
+
+**One set of menus for the file manager's common commands.** kakel's
+Edit menu cuts, copies and pastes files, and selects them all, in a
+file manager pane, and its file manager's own menu no longer repeats
+them, nor New window and Close. `Ctrl+Shift+X` cuts.
+
+**The + on the tab bar opens a tab like the one in front**: a file
+manager at the same folder, or a terminal. A right click offers either.
+
 ## v0.12.0-beta.1
 
 A beta: the file manager as a pane, for those who take betas to try

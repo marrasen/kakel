@@ -633,6 +633,14 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 	case "conn.tunnel", "conn.socks":
 		w.tunnelDialog(id == "conn.socks", u)
 		return true
+	case "edit.cut", "edit.copy", "edit.paste", "edit.selectAll":
+		if _, ok := w.fmHosts[w.focused]; ok {
+			// The file manager's own, on the files selected.
+			filemanager.Run(u, app.FilePaneViews(w.focused), fileCommands[id])
+			return true
+		}
+	}
+	switch id {
 	case "edit.paste":
 		if t, ok := w.terms[w.focused]; ok {
 			t.pasteClipboard(u)
@@ -2208,8 +2216,12 @@ func (w *Window) applies(id string) bool {
 		k := w.kindOf(w.focused)
 		return w.focused != "" && (k == app.KindTerminal || k == app.KindLog)
 	case "edit.copy", "edit.paste", "edit.selectAll":
-		_, ok := w.terms[w.focused]
-		return ok
+		_, term := w.terms[w.focused]
+		_, files := w.fmHosts[w.focused]
+		return term || files
+	case "edit.cut":
+		_, files := w.fmHosts[w.focused]
+		return files
 	case "view.scrollUp", "view.scrollDown":
 		_, term := w.terms[w.focused]
 		rd, reader := w.readers[w.focused]

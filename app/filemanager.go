@@ -33,10 +33,12 @@ type FileWindows interface {
 // Intents for the file manager.
 type (
 	// OpenFilesOn opens a file manager pane on Machine, at Path or at
-	// home, in the window in front.
+	// home, in the window in front: beside the file manager in front, or
+	// in a tab of its own with NewTab.
 	OpenFilesOn struct {
 		Machine machines.ID
 		Path    string
+		NewTab  bool
 	}
 	// OpenFileManager opens a window of its own holding a file manager
 	// pane on Machine, at Path or at home.

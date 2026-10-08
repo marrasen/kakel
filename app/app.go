@@ -390,6 +390,9 @@ func (b *Box) replace(pane string, with *Box) *Box {
 type (
 	// NewTerminal opens a shell in a pane of its own.
 	NewTerminal struct{}
+	// NewTab opens a tab like the one in front: a file manager at the
+	// folder a file manager there shows, and otherwise a terminal.
+	NewTab struct{}
 	// SplitPane splits the focused pane, and opens a shell in the new
 	// half: to the right, or below with Vertical. The shell is on the
 	// focused pane's machine, or on Machine with Elsewhere; Shell names
@@ -1242,6 +1245,10 @@ func (a *app) handle(in gunim.Intent) {
 	switch in := in.(type) {
 	case NewTerminal:
 		err = a.openTerminal()
+	case NewTab:
+		if !a.newFilePaneLike(a.st.Focus) {
+			err = a.openTerminal()
+		}
 	case SplitPane:
 		err = a.split(in)
 	case ChooseSplit:
@@ -1469,7 +1476,11 @@ func (a *app) handle(in gunim.Intent) {
 	case FilesOn:
 		err = a.filesOn(in.Machine, in.Path)
 	case OpenFilesOn:
-		err = a.filesOn(in.Machine, in.Path)
+		if in.NewTab {
+			err = a.filePaneOn(in.Machine, in.Path, Placement{}, false)
+		} else {
+			err = a.filesOn(in.Machine, in.Path)
+		}
 	case OpenFileManager:
 		err = a.openFileManager(in.Machine, in.Path)
 	case ReloadShortcuts:

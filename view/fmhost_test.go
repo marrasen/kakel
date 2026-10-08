@@ -83,6 +83,16 @@ func TestAFileManagerPaneShowsInItsPlace(t *testing.T) {
 	publish(app.State{Panes: both, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
 	framesUntil(t, "the listing has the keyboard", func() bool { return lastUI.Focused() == listing })
 
+	// Kakel's Edit menu works on its files, Cut too.
+	for _, id := range []string{"edit.cut", "edit.copy", "edit.paste", "edit.selectAll"} {
+		if !win.applies(id) {
+			t.Fatalf("%s doesn't apply to a file manager pane", id)
+		}
+	}
+	if !filemanager.Run(lastUI, app.FilePaneViews("p1"), fileCommands["edit.selectAll"]) || !win.run("edit.selectAll", lastUI) {
+		t.Fatal("Select All didn't reach the file manager")
+	}
+
 	// Gone from the window, its place goes too.
 	publish(app.State{Panes: both[1:], Stage: &app.Box{Pane: "p2"}, Focus: "p2"})
 	for range 60 {

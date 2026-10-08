@@ -2,12 +2,23 @@ package view
 
 import (
 	"github.com/marrasen/gunim"
+	"github.com/marrasen/gunim/filemanager"
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/input"
 	"github.com/marrasen/gunim/paint"
 
 	"github.com/marrasen/kakel/app"
 )
+
+// fileCommands are the file manager's commands kakel's Edit menu runs
+// in a file manager pane, by kakel's command, and which the pane's own
+// menus leave to it.
+var fileCommands = map[string]string{
+	"edit.cut":       filemanager.CmdCut,
+	"edit.copy":      filemanager.CmdCopy,
+	"edit.paste":     filemanager.CmdPaste,
+	"edit.selectAll": filemanager.CmdSelectAll,
+}
 
 // fmHost is the place a file manager pane has in the window: the file
 // manager mounts its views in it, under the ID app.FilePaneHost gives.

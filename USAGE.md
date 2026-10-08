@@ -158,15 +158,22 @@ command, opens one beside the file manager in front; Files in a New
 Window opens one in a window of its own. Opening a folder from Windows,
 once kakel opens folders, opens a window with one.
 
-Its menus are behind the button left of Back. `Enter` opens,
+kakel's own menus work on it: Edit's Cut, Copy, Paste and Select All
+act on the files, File › Files in a New Window opens another in a
+window of its own, and Close Pane closes it. Its own menus, behind the
+button left of Back, hold the rest. `Enter` opens,
 `Backspace` or `Alt+Left` goes back, `Alt+Up` goes up, and `Ctrl+L`
 types a path. `Ctrl+C`, `Ctrl+X` and `Ctrl+V` copy, cut and paste, also
 between machines, `F2` renames and `Delete` moves to the trash.
 `Ctrl+F` filters the folder, `Ctrl+P` finds a file, `Ctrl+1` and
 `Ctrl+2` switch between details and icons, and `Space` shows a picture.
 `Ctrl+W` closes the pane. Keys with `Ctrl+Shift` stay kakel's, as
-`Ctrl+Shift+D` to split, except `Ctrl+Shift+N`, a new folder, and
-`Ctrl+Shift+C`, which copies the paths of the files selected.
+`Ctrl+Shift+D` to split and `Ctrl+Shift+C` to copy, except
+`Ctrl+Shift+N`, a new folder. Copy path is on a file's menu.
+
+The `+` at the end of the tabs opens a tab like the one in front: a
+file manager at the same folder, or a terminal. Right-click it to pick
+one.
 
 Right-click a file for View in Reader, which opens it in kakel's
 reader beside the pane, or Follow in Reader, which follows it as it

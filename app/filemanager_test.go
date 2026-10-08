@@ -178,3 +178,34 @@ func TestAFileManagerPaneFollowsItsPaneToAnotherWindow(t *testing.T) {
 		t.Fatal("an intent of kakel's window went to the file manager")
 	}
 }
+
+// New Tab, as the tab bar's + asks, opens a file manager at the folder
+// of the file manager in front, in a tab of its own, and a terminal
+// where a terminal is in front.
+func TestNewTabIsLikeTheTabInFront(t *testing.T) {
+	a, _ := agentApp(t)
+	a.settings = mustSettings(t)
+	files := newFakeFiles(t)
+	a.files = files
+	term := a.st.Focus
+	dir := t.TempDir()
+	if err := a.filesOn(machines.Local, dir); err != nil {
+		t.Fatal(err)
+	}
+	first := a.st.Focus
+	a.handle(NewTab{})
+	waitFor(t, a, "a second file manager opens", func() bool { return len(a.fmPanes) == 2 })
+	second := a.st.Focus
+	if second == first || a.kindOfPane(second) != KindFileManager || a.groupOf[second] == a.groupOf[first] {
+		t.Fatalf("New Tab opened %q, beside %q", second, first)
+	}
+	if got := files.opened[len(files.opened)-1].Dir; got != dir {
+		t.Fatalf("the new file manager opened at %q, want %q", got, dir)
+	}
+	a.focus(term)
+	panes := len(a.st.Panes)
+	a.handle(NewTab{})
+	if len(a.st.Panes) != panes+1 || a.kindOfPane(a.st.Focus) != KindTerminal {
+		t.Fatal("New Tab on a terminal didn't open a terminal")
+	}
+}

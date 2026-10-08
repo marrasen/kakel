@@ -37,6 +37,7 @@ func Shortcuts() *ui.Keymap {
 		{Key: input.KeyV, Mods: input.ModCtrl | input.ModShift}:        "edit.paste",
 		{Key: input.KeyV, Mods: input.ModCtrl | input.ModAlt}:          "edit.pasteImage",
 		{Key: input.KeyC, Mods: input.ModCtrl | input.ModShift}:        "edit.copy",
+		{Key: input.KeyX, Mods: input.ModCtrl | input.ModShift}:        "edit.cut",
 		{Key: input.KeyInsert, Mods: input.ModCtrl}:                    "edit.copy",
 		{Key: input.KeyInsert, Mods: input.ModShift}:                   "edit.paste",
 		{Key: input.KeyPageUp, Mods: input.ModShift}:                   "view.scrollUp",
@@ -71,6 +72,7 @@ var commands = []struct{ id, title string }{
 	{"pane.previous", "Previous Recent Pane"},
 	{"pane.nextInSidebar", "Next Pane"},
 	{"pane.previousInSidebar", "Previous Pane"},
+	{"tab.new", "New Tab"},
 	{"tab.next", "Next Tab"},
 	{"tab.previous", "Previous Tab"},
 	{"tab.moveRight", "Move Tab Right"},
@@ -151,6 +153,7 @@ var commands = []struct{ id, title string }{
 	{"conn.log", "Connection Log"},
 	{"conn.tunnel", "Open Tunnel"},
 	{"conn.socks", "Open SOCKS Proxy"},
+	{"edit.cut", "Cut"},
 	{"edit.copy", "Copy"},
 	{"edit.selectAll", "Select All"},
 	{"edit.paste", "Paste"},
@@ -218,6 +221,8 @@ var commandIcons = map[string]*icon.Icon{
 	"app.exit":               icon.LogOut,
 	"menu.open":              icon.Menu,
 	"edit.copy":              icon.Copy,
+	"edit.cut":               icon.Scissors,
+	"tab.new":                icon.Plus,
 	"edit.selectAll":         icon.TextSelect,
 	"edit.paste":             icon.ClipboardPaste,
 	"edit.pasteImage":        icon.ImagePlus,
@@ -308,7 +313,7 @@ var menus = []struct {
 		{id: "app.exit", title: "Exit", group: true},
 	}},
 	{"Edit", []menuItem{
-		{id: "edit.copy", title: "Copy"}, {id: "edit.paste", title: "Paste"},
+		{id: "edit.cut", title: "Cut"}, {id: "edit.copy", title: "Copy"}, {id: "edit.paste", title: "Paste"},
 		{id: "edit.selectAll", title: "Select All"},
 		{id: "edit.pasteImage", title: "Paste Image as File"},
 		{id: "pane.scrollback", title: "Find in Scrollback…", group: true},
@@ -336,7 +341,7 @@ var menus = []struct {
 		{id: "conn.clearFinished", title: "Clear Finished"},
 	}},
 	{"Tab", []menuItem{
-		{id: "conn.terminal", title: "New Tab"},
+		{id: "tab.new", title: "New Tab"},
 		{title: "Go To", caption: true},
 		{id: "tab.next", title: "Next"}, {id: "tab.previous", title: "Previous"},
 		{title: "Move", caption: true},
@@ -410,6 +415,8 @@ var commandAlso = map[string][]string{
 	"pane.splitDown":        {"horizontal"},
 	"pane.popOut":           {"unsplit", "detach", "take out of its split", "new tab", "tab"},
 	"tab.next":              {"switch", "right"},
+	"tab.new":               {"open", "add", "plus"},
+	"edit.cut":              {"move", "files"},
 	"tab.previous":          {"switch", "left"},
 	"tab.moveRight":         {"reorder", "shift"},
 	"tab.moveLeft":          {"reorder", "shift"},
@@ -505,6 +512,8 @@ func commandIntent(id string) (gunim.Intent, bool) {
 		return app.ClosePane{}, true
 	case "edit.pasteImage":
 		return app.PasteImageAsFile{}, true
+	case "tab.new":
+		return app.NewTab{}, true
 	case "tab.next":
 		return app.NextTab{}, true
 	case "tab.previous":

@@ -64,6 +64,10 @@ func (a *app) newFilePane(machine machines.ID, fsys filemanager.FS, path string,
 			a.fmTitleMu.Unlock()
 			a.later(func() { a.retitleFilePane(id) })
 		},
+		// Kakel's menus offer these for the pane: its Edit menu, Files in
+		// a New Window and Close Pane.
+		Commands: []string{filemanager.CmdCut, filemanager.CmdCopy, filemanager.CmdPaste,
+			filemanager.CmdSelectAll, filemanager.CmdNewWindow, filemanager.CmdCloseApp},
 		Open: func(o filemanager.Options) error {
 			a.later(func() { a.openFilePaneLike(o) })
 			return nil
@@ -154,6 +158,21 @@ func (a *app) filePaneOf(w *filemanager.Window) string {
 		}
 	}
 	return ""
+}
+
+// newFilePaneLike opens another file manager pane, in a tab of its own,
+// like file manager pane id: on its file system, at the folder it shows.
+// It reports false where id is no file manager pane.
+func (a *app) newFilePaneLike(id string) bool {
+	fp := a.fmPanes[id]
+	if fp == nil || fp.done {
+		return false
+	}
+	// As its own New window does: it hands its options, at its folder,
+	// to openFilePaneLike.
+	go fp.w.Deliver(gunim.Envelope{From: gunim.ID(FilePaneViews(id) + "/browser"),
+		Intent: filemanager.Command{Name: filemanager.CmdNewWindow}})
+	return true
 }
 
 // openFilePaneLike opens another file manager pane with o's file system
