@@ -72,13 +72,13 @@ func (b *chipBar) Children() []gunim.Node {
 
 // chipPad and chipGap are a chip's room, and chipCross the room its ×
 // takes.
-const chipPad, chipGap, chipHeight, chipCross = 10, 6, 28, 14
+const chipPad, chipGap, chipCross = 10, 6, 14
 
 // Layout implements [gunim.Node]: the chips side by side, as wide as
 // they need.
-func (b *chipBar) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children) geom.Size {
-	// No taller than the menu bar beside it, which sets the row.
-	h := float32(chipHeight)
+func (b *chipBar) Layout(c gunim.Constraints, f gunim.Frame, kids gunim.Children) geom.Size {
+	// As tall as the tab bar beside it, so the two share a middle.
+	h := widget.MenubarHeight.Get(f.Theme)
 	if c.Max.H > 0 {
 		h = min(h, c.Max.H)
 	}
@@ -96,10 +96,13 @@ func (b *chipBar) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children
 		if b.chips[i-1].off != nil {
 			w += chipCross
 		}
-		// The pill and its words share one middle: the bar's.
-		bh := min(s.H+8, h)
-		box := geom.Rc(x, (h-bh)/2, w, bh)
-		k.Place(geom.Pt(x+chipPad, (h-s.H)/2))
+		// The pill and its words share one middle: the tabs', which
+		// start a little below the top of the bar, so the chip's words
+		// sit on the line the tabs' titles do.
+		bh := min(s.H+8, h-tabTop)
+		mid := (h + tabTop) / 2
+		box := geom.Rc(x, mid-bh/2, w, bh)
+		k.Place(geom.Pt(x+chipPad, mid-s.H/2))
 		b.boxes = append(b.boxes, box)
 		x += box.Size().W + chipGap
 	}
