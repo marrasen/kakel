@@ -7,6 +7,34 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
+## v0.12.0-beta.4
+
+### Changed
+
+**A pane in another kakel window shows that it is.** Its tab has the
+window icon in place of the terminal icon, so it is not taken for a
+shell on this computer.
+
+**Focus rings fade in place**, and the echo after a click sends one
+soft wave. An update starts with a glow round the icon.
+
+### Fixed
+
+**A pane in another kakel window has that window's name for it.** A
+Command Prompt there was called `C:\WINDOWS\system32\cmd.exe` here; now
+it is called Command Prompt, as it is there.
+
+**The Serving chip sits on the line of the tab titles**, where it sat
+about 3 pixels above them.
+
+**The installer's last lines stay clear of its buttons.** With all of
+kakel's offers, "For you alone…" and "Or run it without installing"
+ran into the Update button. The icon now shrinks to make room.
+
+**Updating over a copy that never recorded its version** said "From
+to 0.12.0-beta.4". It now says "To 0.12.0-beta.4, in place of the copy
+installed".
+
 ## v0.12.0-beta.3
 
 ### Changed
