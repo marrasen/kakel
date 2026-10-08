@@ -11,10 +11,11 @@ change how something behaves.
 
 ### Changed
 
-**One set of menus for the file manager's common commands.** kakel's
-Edit menu cuts, copies and pastes files, and selects them all, in a
-file manager pane, and its file manager's own menu no longer repeats
-them, nor New window and Close. `Ctrl+Shift+X` cuts.
+**One menu bar that follows the pane in front.** The file manager's
+own menu button is gone: while a file manager is in front, its lines
+join kakel's File, Edit and View menus, a Go menu comes after View, and
+the lines for a terminal alone leave. Edit's Cut, Copy, Paste and
+Select All act on the files, and `Ctrl+Shift+X` cuts.
 
 **The + on the tab bar opens a tab like the one in front**: a file
 manager at the same folder, or a terminal. A right click offers either.

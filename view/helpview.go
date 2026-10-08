@@ -243,18 +243,7 @@ func (w *Window) applyShortcuts(changes []keys.Change, u *gunim.UI) bool {
 	}
 	w.keys.Become(next)
 	// The menus and the palette say the new chords.
-	for m := range menus {
-		for i, it := range menus[m].items {
-			if it.caption || i >= len(w.bar.Menus[m].Hints) {
-				continue
-			}
-			w.bar.Menus[m].Hints[i] = ""
-			if ch, ok := w.keys.ChordFor(it.id); ok {
-				w.bar.Menus[m].Hints[i] = chordLabel(ch)
-			}
-		}
-	}
-	w.servers(w.saved)
+	w.buildBar(true)
 	if w.help != nil {
 		w.help.show(w, u)
 	}

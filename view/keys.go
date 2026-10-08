@@ -484,6 +484,10 @@ type menuItem struct {
 	id, title string
 	group     bool
 	caption   bool
+	// pane is the command of the pane in front a line runs, for a line
+	// of its menus, with hint its keys and on its tick.
+	pane, hint string
+	on         bool
 }
 
 // chordLabel writes a chord the way a desktop menu does, as

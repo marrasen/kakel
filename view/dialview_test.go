@@ -39,7 +39,7 @@ func TestSavedServersAreListedWithAWayToConnect(t *testing.T) {
 	// One not saved is connected to from the Servers menu.
 	win, _, publish := windowStage(t)
 	publish(app.State{})
-	i := menuAt("Servers")
+	i := win.menuAt("Servers")
 	if i < 0 || !slices.ContainsFunc(win.bar.Menus[i].Items, func(s string) bool { return shownText(s) == "Quick Connect…" }) {
 		t.Fatal("the Servers menu has no Quick Connect")
 	}

@@ -25,7 +25,7 @@ func filePane(t *testing.T, id string) *filemanager.Window {
 	ctx, cancel := context.WithCancel(context.Background())
 	fw, err := filemanager.NewHub(ctx, nil).NewPane(
 		filemanager.Options{Dir: dir, PrefsPath: filepath.Join(root, "files.json"), Poll: -1},
-		filemanager.PaneHost{ID: app.FilePaneViews(id)})
+		filemanager.PaneHost{ID: app.FilePaneViews(id), Commands: app.FilePaneCommands, HostMenus: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,6 +91,49 @@ func TestAFileManagerPaneShowsInItsPlace(t *testing.T) {
 	}
 	if !filemanager.Run(lastUI, app.FilePaneViews("p1"), fileCommands["edit.selectAll"]) || !win.run("edit.selectAll", lastUI) {
 		t.Fatal("Select All didn't reach the file manager")
+	}
+
+	// Its menus are kakel's, while it is in front: Go of its own, and its
+	// lines in File, Edit and View, ticked as it is.
+	if win.menuAt("Go") < 0 {
+		t.Fatal("no Go menu with a file manager in front")
+	}
+	hidden := func() (m, i int, on bool) {
+		for m, bm := range win.layout {
+			for i, it := range bm.items {
+				if it.pane == filemanager.CmdHidden {
+					return m, i, win.bar.Menus[m].Checked[i]
+				}
+			}
+		}
+		return -1, -1, false
+	}
+	m, i, on := hidden()
+	if m < 0 || win.layout[m].title != "View" || on {
+		t.Fatalf("Show hidden files is in menu %d, ticked %v", m, on)
+	}
+	win.bar.Pick(m, i, lastUI)
+	framesUntil(t, "the tick follows the pick", func() bool {
+		// The program's part: the file manager's intents go to it.
+		for len(lastWindow.Client().Intents()) > 0 {
+			fw.Deliver(<-lastWindow.Client().Intents())
+		}
+		win.tickPaneMenus(lastUI)
+		_, _, on := hidden()
+		return on
+	})
+	for _, bm := range win.layout {
+		for _, it := range bm.items {
+			if it.pane == filemanager.CmdCopy || it.pane == filemanager.CmdCloseApp {
+				t.Fatalf("the file manager's %q is in the menus beside kakel's own", it.pane)
+			}
+		}
+	}
+
+	// The help in front, the menus are kakel's alone again.
+	publish(app.State{Panes: both, Stage: &app.Box{Pane: "p2"}, Focus: "p2"})
+	if win.menuAt("Go") >= 0 {
+		t.Fatal("the Go menu stayed with the help in front")
 	}
 
 	// Gone from the window, its place goes too.

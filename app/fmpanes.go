@@ -30,6 +30,12 @@ func FilePaneViews(id string) string { return "fm:" + id }
 // id, which its views mount under.
 func FilePaneHost(id string) gunim.ID { return gunim.ID("fmhost:" + id) }
 
+// FilePaneCommands are the file manager's commands kakel's menus offer
+// for a file manager pane, which its own menus leave out: kakel's Edit
+// menu, Files in a New Window and Close Pane.
+var FilePaneCommands = []string{filemanager.CmdCut, filemanager.CmdCopy, filemanager.CmdPaste,
+	filemanager.CmdSelectAll, filemanager.CmdNewWindow, filemanager.CmdCloseApp}
+
 // errNoFileManager says this kakel has no file manager, as in a test.
 var errNoFileManager = errors.New("the file manager can't open here")
 
@@ -53,6 +59,8 @@ func (a *app) newFilePane(machine machines.ID, fsys filemanager.FS, path string,
 	id := "p" + itoa(a.next)
 	fw, err := a.files.NewPane(a.fileManagerOptions(fsys, path), filemanager.PaneHost{
 		ID: FilePaneViews(id),
+		// Its menus join kakel's, as the window shows them.
+		HostMenus: true,
 		Title: func(fs, folder string) {
 			// The newest is kept, and taken whenever the program gets to
 			// it: the goroutines that hand it over may come in any order.
@@ -64,10 +72,7 @@ func (a *app) newFilePane(machine machines.ID, fsys filemanager.FS, path string,
 			a.fmTitleMu.Unlock()
 			a.later(func() { a.retitleFilePane(id) })
 		},
-		// Kakel's menus offer these for the pane: its Edit menu, Files in
-		// a New Window and Close Pane.
-		Commands: []string{filemanager.CmdCut, filemanager.CmdCopy, filemanager.CmdPaste,
-			filemanager.CmdSelectAll, filemanager.CmdNewWindow, filemanager.CmdCloseApp},
+		Commands: FilePaneCommands,
 		Open: func(o filemanager.Options) error {
 			a.later(func() { a.openFilePaneLike(o) })
 			return nil

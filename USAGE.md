@@ -158,10 +158,11 @@ command, opens one beside the file manager in front; Files in a New
 Window opens one in a window of its own. Opening a folder from Windows,
 once kakel opens folders, opens a window with one.
 
-kakel's own menus work on it: Edit's Cut, Copy, Paste and Select All
-act on the files, File › Files in a New Window opens another in a
-window of its own, and Close Pane closes it. Its own menus, behind the
-button left of Back, hold the rest. `Enter` opens,
+kakel's menus are its menus. While a file manager is in front, its
+lines join kakel's File, Edit and View menus, a Go menu comes after
+View, and the lines for a terminal alone leave. Edit's Cut, Copy, Paste
+and Select All act on the files, File › Files in a New Window opens
+another in a window of its own, and Close Pane closes it. `Enter` opens,
 `Backspace` or `Alt+Left` goes back, `Alt+Up` goes up, and `Ctrl+L`
 types a path. `Ctrl+C`, `Ctrl+X` and `Ctrl+V` copy, cut and paste, also
 between machines, `F2` renames and `Delete` moves to the trash.

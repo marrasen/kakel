@@ -15,12 +15,12 @@ import (
 // two menus start alike, the one that reads best after it.
 var menuKeys = map[string]rune{
 	"File": 'f', "Edit": 'e', "View": 'v', "Pane": 'p', "Machine": 'm', "Servers": 's',
-	"Share": 'a', "Secrets": 'c', "Options": 'o', "Font": 'n', "Help": 'h',
+	"Share": 'a', "Secrets": 'c', "Options": 'o', "Font": 'n', "Help": 'h', "Go": 'g', "Tab": 't',
 }
 
 // menuAt is the place of the menu titled title on the bar, or -1.
-func menuAt(title string) int {
-	for i, m := range menus {
+func (w *Window) menuAt(title string) int {
+	for i, m := range w.layout {
 		if m.title == title {
 			return i
 		}

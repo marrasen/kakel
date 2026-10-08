@@ -89,6 +89,9 @@ type Window struct {
 	// cards are the Servers pane's machines, a card each.
 	cards *serverCards
 	stage *stage
+	// layout is the menus as the bar has them now: kakel's own, with the
+	// lines of the pane in front.
+	layout []barMenu
 	// fmHosts are the places of the file manager panes, on stage or in
 	// parked while their tabs are not showing.
 	fmHosts map[string]*fmHost
@@ -312,51 +315,46 @@ func NewWindow(sh *screen.Shells, keys *ui.Keymap, all []look.Themed) *Window {
 	// The menus behind one button, leaving the bar to move the window.
 	w.bar.Compact = true
 	w.bar.Title = app.ProgramName
-	for _, m := range menus {
-		bm := widget.BarMenu{Title: m.title}
-		for i, it := range m.items {
-			hint := ""
-			if chord, ok := keys.ChordFor(it.id); ok && !it.caption {
-				hint = chordLabel(chord)
-			}
-			bm.Items, bm.Hints = append(bm.Items, it.title), append(bm.Hints, hint)
-			bm.Icons = append(bm.Icons, commandIcons[it.id])
-			bm.Checked = append(bm.Checked, false)
-			if it.caption {
-				bm.Captions = append(bm.Captions, i)
-			}
-			if it.group || (it.caption && i > 0) {
-				bm.Breaks = append(bm.Breaks, i)
-			}
-		}
-		w.bar.Menus = append(w.bar.Menus, withAccessKeys(bm))
-	}
+	w.layout = baseLayout()
+	w.buildBar(false)
 	w.bar.OnHighlight = func(m, i int, u *gunim.UI) {
 		id := ""
 		switch {
-		case m < 0 || i < 0:
-		case menus[m].title == "Servers":
-			if i < len(w.serverIDs) {
+		case m < 0 || m >= len(w.layout):
+		case w.layout[m].title == "Servers":
+			if i >= 0 && i < len(w.serverIDs) {
 				id = w.serverIDs[i]
 			}
-		case menus[m].title == "Font":
-		case i < len(menus[m].items):
-			id = menus[m].items[i].id
+		case w.layout[m].title == "Font":
+		case i >= 0 && i < len(w.layout[m].items):
+			id = w.layout[m].items[i].id
+		}
+		if m >= 0 && i < 0 {
+			// A menu opening: the ticks of the pane's lines as it is now.
+			w.tickPaneMenus(u)
+		}
+		if i < 0 {
+			id = ""
 		}
 		w.status.setHint(w.fullTitle(id, m, i), u)
 	}
 	w.bar.Pick = func(m, i int, u *gunim.UI) {
 		switch {
-		case m < len(menus) && menus[m].title == "Servers":
+		case m >= len(w.layout) || m < 0:
+		case w.layout[m].title == "Servers":
 			if i < len(w.serverIDs) {
 				w.run(w.serverIDs[i], u)
 			}
-		case m < len(menus) && menus[m].title == "Font":
+		case w.layout[m].title == "Font":
 			if i < len(w.fonts) {
 				u.Send(w, app.PickFont{Name: w.fonts[i]})
 			}
-		case m < len(menus) && i < len(menus[m].items):
-			w.run(menus[m].items[i].id, u)
+		case i < len(w.layout[m].items):
+			if it := w.layout[m].items[i]; it.pane != "" {
+				w.runPane(it.pane, u)
+				return
+			}
+			w.run(w.layout[m].items[i].id, u)
 		}
 	}
 	w.toasts = &widget.Toasts{}
@@ -800,7 +798,7 @@ func (w *Window) showFonts(st app.State) {
 			m.Breaks = append(m.Breaks, i)
 		}
 	}
-	if i := menuAt("Font"); i >= 0 && i < len(w.bar.Menus) {
+	if i := w.menuAt("Font"); i >= 0 && i < len(w.bar.Menus) {
 		w.bar.Menus[i] = withAccessKeys(m)
 	}
 }
@@ -1194,7 +1192,7 @@ func (w *Window) servers(saved []remote.Host) {
 	m.Hints = append(m.Hints, hint("server.connect"), "", "", "", "")
 	m.Icons = append(m.Icons, icon.Plug, icon.Search, icon.Plus, icon.FileInput, icon.RefreshCw)
 	w.serverIDs = append(w.serverIDs, "server.connect", "app.launcher", "server.add", "server.import", "server.reload")
-	if i := menuAt("Servers"); i >= 0 && i < len(w.bar.Menus) {
+	if i := w.menuAt("Servers"); i >= 0 && i < len(w.bar.Menus) {
 		// The lines always there first.
 		n := len(m.Items)
 		w.bar.Menus[i] = withAccessKeys(m, n-5, n-4, n-3, n-2, n-1)
@@ -2180,14 +2178,19 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 		}
 		w.toasts.Show(widget.Toast{Title: n.Title, Body: n.Body, Kind: toastKinds[n.Kind], Action: n.Action, On: n.On}, u)
 	}
-	// The menus and the palette tick a switch while it is on, such as
-	// the sidebar while it shows.
-	for m := range menus {
-		if len(menus[m].items) == 0 {
+	// The menus take the pane in front's lines, and tick a switch while
+	// it is on, such as the sidebar while it shows.
+	w.layoutMenus(u)
+	for m := range w.layout {
+		if len(w.layout[m].items) == 0 {
 			continue
 		}
-		off := make([]bool, len(menus[m].items))
-		for i, it := range menus[m].items {
+		off := make([]bool, len(w.layout[m].items))
+		for i, it := range w.layout[m].items {
+			if it.pane != "" {
+				w.bar.Menus[m].Checked[i] = it.on
+				continue
+			}
 			if on, isSwitch := w.switchOn(it.id, st, u); isSwitch {
 				w.bar.Menus[m].Checked[i] = on
 			}
@@ -2249,8 +2252,8 @@ func (w *Window) applies(id string) bool {
 // at once, for a switch the window turns itself, which no new state
 // follows.
 func (w *Window) tickSwitch(id string, on bool) {
-	for m := range menus {
-		for i, it := range menus[m].items {
+	for m := range w.layout {
+		for i, it := range w.layout[m].items {
 			if it.id == id {
 				w.bar.Menus[m].Checked[i] = on
 			}
