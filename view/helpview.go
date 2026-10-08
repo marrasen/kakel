@@ -21,6 +21,7 @@ import (
 	"github.com/marrasen/kakel/serve"
 	"github.com/marrasen/kakel/settings"
 	"github.com/marrasen/kakel/themes"
+	"github.com/marrasen/kakel/ui"
 	"github.com/marrasen/kakel/ui/files"
 )
 
@@ -204,6 +205,23 @@ func (p *helpPane) Paint(pt *paint.Painter, f gunim.Frame, box geom.Size, kids g
 // keys kakel comes with, and reports whether it did. A file naming a
 // command there is none of changes nothing, and says which.
 func (w *Window) applyShortcuts(changes []keys.Change, u *gunim.UI) bool {
+	next, unknown := keymapOf(changes)
+	if len(unknown) > 0 {
+		w.toasts.Show(widget.Toast{Title: "The shortcuts file names commands this window lacks", Body: strings.Join(unknown, "; ") + ". None of it was used; Shortcuts and Commands lists every command's name."}, u)
+		return false
+	}
+	w.keys.Become(next)
+	// The menus and the palette say the new chords.
+	w.buildBar(true)
+	if w.help != nil {
+		w.help.show(w, u)
+	}
+	return true
+}
+
+// keymapOf is the keys kakel comes with, changed as changes say, and
+// what of changes names no command there is.
+func keymapOf(changes []keys.Change) (next *ui.Keymap, unknown []string) {
 	known := map[string]bool{}
 	for _, c := range everyCommand() {
 		known[c[0]] = true
@@ -214,8 +232,7 @@ func (w *Window) applyShortcuts(changes []keys.Change, u *gunim.UI) bool {
 	for alias := range aliases {
 		known[alias] = true
 	}
-	next := Shortcuts()
-	var unknown []string
+	next = Shortcuts()
 	for _, c := range changes {
 		// An id that has been renamed is followed to its new name, so a
 		// file written before the rename goes on working.
@@ -237,17 +254,7 @@ func (w *Window) applyShortcuts(changes []keys.Change, u *gunim.UI) bool {
 			}
 		}
 	}
-	if len(unknown) > 0 {
-		w.toasts.Show(widget.Toast{Title: "The shortcuts file names commands this window lacks", Body: strings.Join(unknown, "; ") + ". None of it was used; Shortcuts and Commands lists every command's name."}, u)
-		return false
-	}
-	w.keys.Become(next)
-	// The menus and the palette say the new chords.
-	w.buildBar(true)
-	if w.help != nil {
-		w.help.show(w, u)
-	}
-	return true
+	return next, unknown
 }
 
 // fileLocationsDialog says where the window keeps its files.

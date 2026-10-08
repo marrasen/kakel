@@ -3,6 +3,11 @@ package app
 import (
 	"strconv"
 
+	"github.com/marrasen/kakel/keys"
+	"github.com/marrasen/kakel/machines"
+
+	"github.com/marrasen/gunim"
+	"github.com/marrasen/gunim/driver"
 	"github.com/marrasen/gunim/geom"
 )
 
@@ -18,9 +23,16 @@ type OverWindow struct {
 	// front.
 	Tabs  []OverTab
 	Front int
-	// Stage is the size of its stage, as it last said, in logical
-	// pixels; zero before it has.
-	Stage geom.Size
+	// Stage is the size of its stage, and StageAt where the stage is in
+	// the window, and Size the window's own size, as it last said, in
+	// its logical pixels; zero before it has.
+	Stage   geom.Size
+	StageAt geom.Rect
+	Size    geom.Size
+	// Home is where the window is on the screen, in the space of All
+	// Panes' own window; empty where that cannot be said, and in the
+	// windows' own state.
+	Home geom.Rect
 }
 
 // OverTab is one tab of a window, how its panes are arranged, and Pane
@@ -33,9 +45,19 @@ type OverTab struct {
 
 // Intents for All Panes.
 type (
-	// StageSized says how large the stage of the window it came from
-	// is, for All Panes in the others to draw its tabs that shape.
-	StageSized struct{ Size geom.Size }
+	// StageSized says where the stage of the window it came from is in
+	// it, and how large the window is, for All Panes to draw its tabs
+	// that shape, and the window as it stands.
+	StageSized struct {
+		At     geom.Rect
+		Window geom.Size
+	}
+	// ToggleOverview opens All Panes in a window of its own, over the
+	// screen the window it came from is on, or closes it.
+	ToggleOverview struct{}
+	// OverviewDone says All Panes' own window has finished, and may
+	// close.
+	OverviewDone struct{}
 	// OverviewShown says All Panes opened, or closed with On false, in
 	// the window it came from. While it is open the window hears of
 	// output from every window's panes, not only its own.
@@ -62,11 +84,11 @@ type (
 func (a *app) overviewIn(w *ownWin, in any) bool {
 	switch in := in.(type) {
 	case StageSized:
-		if w.stage == in.Size {
+		if w.stage == in.At && w.size == in.Window {
 			a.quiet = true
 			return true
 		}
-		w.stage = in.Size
+		w.stage, w.size = in.At, in.Window
 		// Worth showing only where All Panes is open.
 		a.quiet = !a.overviewOpen()
 	case OverviewShown:
@@ -85,14 +107,20 @@ func (a *app) handleOverview(in any) bool {
 		a.paneToTab(in)
 	case DockPane:
 		a.dockPane(in)
+	case ToggleOverview:
+		a.toggleOverview()
 	default:
 		return false
 	}
 	return true
 }
 
-// overviewOpen reports whether All Panes is open in some window.
+// overviewOpen reports whether All Panes is open, in a window of its
+// own or over one of the windows.
 func (a *app) overviewOpen() bool {
+	if a.over.c != nil {
+		return true
+	}
 	for _, w := range a.liveWins() {
 		if w.overview {
 			return true
@@ -105,7 +133,7 @@ func (a *app) overviewOpen() bool {
 func (a *app) overview() []OverWindow {
 	var out []OverWindow
 	for _, w := range a.liveWins() {
-		ow := OverWindow{ID: w.id, Stage: w.stage}
+		ow := OverWindow{ID: w.id, Stage: w.stage.Size(), StageAt: w.stage, Size: w.size}
 		if g, ok := a.groupOf[a.focusIn(w)]; ok {
 			ow.Front = g
 		}
@@ -195,4 +223,220 @@ func (a *app) dockGroup(g int, beside string, vertical, first bool, to *ownWin) 
 		return
 	}
 	a.setFocusIn(to, pane)
+}
+
+// OverviewTopic is the key All Panes' own window's state is published
+// under.
+const OverviewTopic = "overview"
+
+// OverState is what All Panes shows in a window of its own.
+type OverState struct {
+	// Windows are kakel's windows, each saying where it stands, and
+	// Panes their panes.
+	Windows []OverWindow
+	Panes   []Pane
+	// Front numbers the window in front, and Focus is its pane with the
+	// keyboard, which has the ring as All Panes opens.
+	Front int
+	Focus string
+	// FontSize and Font are what the terminals are drawn in, PaneTitles
+	// says panes show a line naming them, and Machines name the machines
+	// on those lines.
+	FontSize   float32
+	Font       Font
+	PaneTitles bool
+	Machines   []machines.Info
+	// Shortcuts are the changes the shortcuts file makes to the keys,
+	// one of which closes it.
+	Shortcuts []keys.Change
+	// Close asks it to close, as its key does in a window it covers.
+	Close bool
+}
+
+// OverviewOpener opens All Panes' own window over monitor m, and
+// returns its client and the window. It runs on a goroutine of its own.
+type OverviewOpener func(m driver.Monitor) (gunim.Client, *gunim.Window, error)
+
+// overState is All Panes' own window, while it is open: its client and
+// window, the monitor it covers, and the window to put in front once it
+// has gone.
+type overState struct {
+	c       *gunim.Client
+	gw      *gunim.Window
+	mon     driver.Monitor
+	opening bool
+	closing bool
+	raise   *ownWin
+}
+
+// overviewAlone reports whether All Panes opens in a window of its own:
+// where kakel can open one and say where its windows are.
+func (a *app) overviewAlone() bool {
+	return a.openOverview != nil && a.monitors != nil && a.cur != nil && a.cur.gw != nil
+}
+
+// toggleOverview opens All Panes' own window over the monitor the
+// window in front is on, or has it close.
+func (a *app) toggleOverview() {
+	if a.over.c != nil {
+		a.over.closing = true
+		return
+	}
+	if a.over.opening || !a.overviewAlone() {
+		return
+	}
+	mon, ok := a.monitorOf(a.cur)
+	if !ok {
+		return
+	}
+	a.over.opening = true
+	open := a.openOverview
+	go func() {
+		c, gw, err := open(mon)
+		a.events <- func() {
+			a.over.opening = false
+			if err != nil {
+				a.failed("Couldn't open All Panes", err.Error())
+				return
+			}
+			if a.gone {
+				c.Close()
+				return
+			}
+			a.over = overState{c: &c, gw: gw, mon: mon}
+			_ = c.SetTheme(a.st.Theme)
+			a.publishOverview()
+			c.ToFront()
+			go func() {
+				for env := range c.Intents() {
+					a.events <- func() {
+						// Only this one's, not a closed one's late word.
+						if a.over.c != nil && *a.over.c == c {
+							a.handleOverviewWin(env.Intent)
+						}
+					}
+				}
+				a.events <- func() {
+					if a.over.c != nil && *a.over.c == c {
+						a.overviewGone()
+					}
+				}
+			}()
+		}
+	}()
+}
+
+// handleOverviewWin carries out what All Panes' own window asks for.
+func (a *app) handleOverviewWin(in any) {
+	switch in := in.(type) {
+	case FocusPane:
+		// Its window comes to the front once All Panes has gone, which
+		// is over it until then.
+		if a.has(in.Pane) {
+			a.focus(in.Pane)
+			a.over.raise = a.ownerOf(in.Pane)
+		}
+	case PaneToTab, DockPane:
+		a.handleOverview(in)
+	case PaneToNewWindow:
+		a.paneToNewWindowFrom(in, a.over.gw)
+	case OverviewDone:
+		a.over.c.Close()
+		a.overviewGone()
+	}
+}
+
+// overviewGone forgets All Panes' own window, gone, and puts the window
+// of the pane picked there in front.
+func (a *app) overviewGone() {
+	raise := a.over.raise
+	a.over = overState{}
+	if raise != nil && !raise.gone {
+		raise.c.ToFront()
+	}
+}
+
+// publishOverview shows All Panes' own window every window, where each
+// stands on the screen.
+func (a *app) publishOverview() {
+	if a.over.c == nil {
+		return
+	}
+	mons := a.monitors()
+	wins := a.overview()
+	for i := range wins {
+		w := a.winByID(wins[i].ID)
+		if w == nil || w.gw == nil {
+			continue
+		}
+		if p, ok := w.gw.Placement(); ok {
+			wins[i].Home = inSpaceOf(screenRect(p, mons), a.over.mon)
+		}
+	}
+	_ = a.over.c.Publish(OverviewTopic, OverState{
+		Windows: wins, Panes: a.allPanes(), Front: a.frontID(), Focus: a.st.Focus,
+		FontSize: a.st.FontSize, Font: a.st.Font, PaneTitles: a.st.PaneTitles, Machines: a.st.Machines,
+		Shortcuts: a.st.Shortcuts, Close: a.over.closing,
+	})
+}
+
+// monitorOf returns the monitor window w is on: the one holding the
+// middle of it, or the primary one where it cannot say.
+func (a *app) monitorOf(w *ownWin) (driver.Monitor, bool) {
+	mons := a.monitors()
+	if len(mons) == 0 {
+		return driver.Monitor{}, false
+	}
+	if w != nil && w.gw != nil {
+		if p, ok := w.gw.Placement(); ok {
+			return monitorAt(screenRect(p, mons).Center(), mons), true
+		}
+	}
+	for _, m := range mons {
+		if m.Primary {
+			return m, true
+		}
+	}
+	return mons[0], true
+}
+
+// monitorAt returns the monitor holding point at, or the nearest.
+func monitorAt(at geom.Point, mons []driver.Monitor) driver.Monitor {
+	best, far := mons[0], float32(-1)
+	for _, m := range mons {
+		if m.Bounds.Contains(at) {
+			return m
+		}
+		c := m.Bounds.Center().Sub(at)
+		if d := c.X*c.X + c.Y*c.Y; far < 0 || d < far {
+			best, far = m, d
+		}
+	}
+	return best
+}
+
+// screenRect is where a window placed at p stands on the screen: its
+// bounds, or the work area of its monitor while it is maximized.
+func screenRect(p driver.Placement, mons []driver.Monitor) geom.Rect {
+	if !p.Maximized || len(mons) == 0 {
+		return p.Bounds
+	}
+	m := monitorAt(p.Bounds.Center(), mons)
+	if !m.WorkArea.Empty() {
+		return m.WorkArea
+	}
+	return m.Bounds
+}
+
+// inSpaceOf is r, in screen coordinates, in the logical space of a
+// window covering monitor m.
+func inSpaceOf(r geom.Rect, m driver.Monitor) geom.Rect {
+	k := m.CoordsPerLogical
+	if k <= 0 {
+		k = 1
+	}
+	at := func(p geom.Point) geom.Point {
+		return geom.Pt((p.X-m.Bounds.Min.X)/k, (p.Y-m.Bounds.Min.Y)/k)
+	}
+	return geom.Rect{Min: at(r.Min), Max: at(r.Max)}
 }

@@ -2,9 +2,9 @@ package view
 
 import (
 	"sync"
-	"sync/atomic"
 	"time"
 
+	"github.com/marrasen/kakel/app"
 	"github.com/marrasen/kakel/grid"
 	"github.com/marrasen/kakel/look"
 	"github.com/marrasen/kakel/screen"
@@ -26,9 +26,9 @@ type mirror struct {
 	sh    *screen.Shell
 	cells *widget.CellGrid
 	row   []widget.Cell
-	// wrote is when the shell had last written as the screen was
+	// draws is how many times the screen had been drawn as it was
 	// copied, and copied that it has been.
-	wrote  time.Time
+	draws  uint64
 	copied bool
 }
 
@@ -39,16 +39,16 @@ func newMirror(sh *screen.Shell) *mirror {
 	return &mirror{sh: sh, cells: g}
 }
 
-// sync copies the screen, when the shell has written since it last did.
-// It copies every row and leaves the rows marked changed as they are:
-// the window the pane is in copies those, and must still find them.
+// sync copies the screen as the window it is in last drew it, when that
+// window has drawn it since it last did. It copies every row, and leaves
+// the terminal and the rows marked changed as they are: they are that
+// window's.
 func (m *mirror) sync() {
-	at := m.sh.Wrote()
-	if m.copied && at.Equal(m.wrote) {
-		return
-	}
-	m.wrote, m.copied = at, true
-	m.sh.Drawn(func(g *grid.Grid) {
+	m.sh.Peek(func(g *grid.Grid, draws uint64) {
+		if m.copied && draws == m.draws {
+			return
+		}
+		m.draws, m.copied = draws, true
 		cols, rows := g.Size()
 		m.cells.Resize(cols, rows)
 		for y := range rows {
@@ -59,21 +59,17 @@ func (m *mirror) sync() {
 			m.cells.SetRow(y, m.row)
 		}
 	})
-	if m.sh.T.Dirty() {
-		// Still being written: copied again next time.
-		m.copied = false
-	}
 }
+
+// busy reports whether the shell wrote lately, so the window it is in
+// is still drawing what it wrote.
+func (m *mirror) busy(now time.Time) bool { return now.Sub(m.sh.Wrote()) < time.Second }
 
 // natural lays the grid out at its own size in f, and returns that
 // size: the cells at the size they are drawn in.
 func (m *mirror) natural(f gunim.Frame) geom.Size {
 	return m.cells.Layout(gunim.Constraints{}, f, gunim.Children{})
 }
-
-// overviews counts All Panes open, in any window: while it is, each
-// window leaves a copy of what its panes drew for the others.
-var overviews atomic.Int32
 
 // shared holds the copies, by pane.
 var shared = struct {
@@ -94,8 +90,14 @@ const shareEvery = 250 * time.Millisecond
 
 // shareDrawings leaves a copy of what each of w's panes last drew, for
 // All Panes in another window, at most every shareEvery.
-func (w *Window) shareDrawings(now time.Time) {
-	if overviews.Load() == 0 || now.Sub(w.sharedAt) < shareEvery {
+func (w *Window) shareDrawings(f gunim.Frame) {
+	now := f.Now
+	if !w.overviewing {
+		return
+	}
+	if next := w.sharedAt.Add(shareEvery); now.Before(next) {
+		// Shared again once it may, with what it draws now.
+		f.RedrawAt(next)
 		return
 	}
 	w.sharedAt = now
@@ -133,4 +135,20 @@ func forgetShared(live func(id string) bool) {
 			delete(shared.drawn, id)
 		}
 	}
+}
+
+// sayStage tells the program where the stage is in the window, and how
+// large the window is, box, when either has changed: All Panes draws
+// the window's tabs that shape, and the window as it stands.
+func (w *Window) sayStage(f gunim.Frame, box geom.Size) {
+	u := f.UI()
+	if u == nil {
+		return
+	}
+	r, ok := u.Bounds(w.stage)
+	if !ok || r == w.stageSaid && box == w.sizeSaid {
+		return
+	}
+	w.stageSaid, w.sizeSaid = r, box
+	f.Send(w, app.StageSized{At: r, Window: box})
 }

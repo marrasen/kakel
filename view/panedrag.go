@@ -2,6 +2,7 @@ package view
 
 import (
 	"math"
+	"time"
 
 	"github.com/marrasen/kakel/app"
 
@@ -44,7 +45,7 @@ func (s *switcher) carry(at geom.Point, u *gunim.UI) {
 	t.fade.Animate(0.25, widget.Quick.Get(u.Theme()))
 	g := &paneGhost{s: s, t: t, size: r.Size(), lit: anim.NewFloat(0)}
 	g.Add(g.lit)
-	u.StartDrag(s, app.PaneDrag{Pane: t.id, Window: t.win}, g, s.grab)
+	u.StartDrag(s, app.PaneDrag{Pane: t.id, Window: t.win, Grab: s.grab}, g, s.grab)
 	u.Invalidate()
 }
 
@@ -67,17 +68,33 @@ func (s *switcher) dragEnded(e input.DragEnd, u *gunim.UI) {
 	}
 	switch {
 	case s.dropped:
-		// It goes from where it was let go to where it lands.
+		// It goes from where it was let go to where it lands, once the
+		// program says where that is.
 		t.box.Jump(geom.Rect{Min: e.At.Sub(s.grab), Max: e.At.Sub(s.grab).Add(t.box.Value().Size().Point())})
+		t.heldUntil = time.Now().Add(holdDrop)
 	case e.Taken:
 	case e.Out && s.alone(t) == "":
-		// The pane's top left corner where the image's was, and the
-		// window as large as this one.
-		u.Send(s, app.PaneToNewWindow{Pane: t.id, At: e.At.Sub(s.grab), Size: s.size})
+		// The pane's top left corner where the image's was.
+		u.Send(s, app.PaneToNewWindow{Pane: t.id, At: e.At.Sub(s.grab), Size: s.windowSize(t)})
 	}
 	s.dropped = false
 	t.fade.Animate(1, widget.Settle.Get(u.Theme()))
 	u.Invalidate()
+}
+
+// holdDrop is how long a tile let go over the switcher waits where it
+// was let go for the program to say where it went.
+const holdDrop = 700 * time.Millisecond
+
+// windowSize is the size of a window of its own for tile t's pane: as
+// large as the window it is in, or as the switcher.
+func (s *switcher) windowSize(t *tile) geom.Size {
+	for _, ow := range s.wins {
+		if ow.ID == t.win && ow.Size.W > 0 && ow.Size.H > 0 {
+			return ow.Size
+		}
+	}
+	return s.size
 }
 
 // alone says why tile t's pane cannot leave its window for one of its
@@ -226,13 +243,9 @@ func (s *switcher) dropHere(e input.Event, u *gunim.UI) bool {
 		case dropWindow:
 			size := s.size
 			if t := s.tileOf(d.Pane); t != nil {
-				for _, ow := range s.wins {
-					if ow.ID == t.win && ow.Stage.W > 0 {
-						size = ow.Stage
-					}
-				}
+				size = s.windowSize(t)
 			}
-			u.Send(s, app.PaneToNewWindow{Pane: d.Pane, At: e.Pos.Sub(s.grab), Size: size})
+			u.Send(s, app.PaneToNewWindow{Pane: d.Pane, At: e.Pos.Sub(d.Grab), Size: size})
 		case dropNone:
 			return true
 		}

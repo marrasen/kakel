@@ -200,8 +200,16 @@ type Window struct {
 	// off the stage as it was last seen.
 	drawings map[string]*gunim.Drawing
 	// sharedAt is when the window last left a copy of what its panes
-	// drew for All Panes in another window.
-	sharedAt time.Time
+	// drew for All Panes in another window, while overviewing says All
+	// Panes is open somewhere; overviewAlone says it opens in a window
+	// of its own.
+	sharedAt      time.Time
+	overviewing   bool
+	overviewAlone bool
+	// stageSaid is where the program was last told the stage is, and
+	// sizeSaid how large the window is.
+	stageSaid geom.Rect
+	sizeSaid  geom.Size
 	// overWins and allPanes are every window and every pane, as All
 	// Panes shows them.
 	overWins    []app.OverWindow
@@ -438,6 +446,11 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 		w.bar.Open(0, u)
 		return true
 	case "view.switcher":
+		if w.overviewAlone && w.sw == nil {
+			// Over the whole screen, in a window of its own.
+			u.Send(w, app.ToggleOverview{})
+			return true
+		}
 		w.openSwitcher(u)
 		return true
 	case "pane.nextInSidebar", "pane.previousInSidebar":
@@ -754,7 +767,8 @@ func (w *Window) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids guni
 	for k := range kids.All {
 		k.Paint(p)
 	}
-	w.shareDrawings(f.Now)
+	w.shareDrawings(f)
+	w.sayStage(f, box)
 	w.paintDropLit(p, f, box)
 	w.paintDock(p, f)
 }
@@ -1701,14 +1715,17 @@ func (w *Window) rename(u *gunim.UI) {
 
 // nameOf is what machine id is called, as the program says: a saved
 // server's name, a quick connection's address, "this computer" for "".
-func (w *Window) nameOf(id machines.ID) string {
+func (w *Window) nameOf(id machines.ID) string { return nameIn(w.machineList, id) }
+
+// nameIn is what list calls machine id.
+func nameIn(list []machines.Info, id machines.ID) string {
 	if win, _, far := id.Far(); far {
-		return w.farHostName(id) + " through " + w.nameOf(win)
+		return farNameIn(list, id) + " through " + nameIn(list, win)
 	}
 	if id == "" {
 		return "this computer"
 	}
-	for _, m := range w.machineList {
+	for _, m := range list {
 		if m.ID == id {
 			return m.Name
 		}
@@ -1718,8 +1735,11 @@ func (w *Window) nameOf(id machines.ID) string {
 
 // farHostName is what a window calls the machine beyond it that key,
 // window and the window's own key for it joined by farSep, names.
-func (w *Window) farHostName(key machines.ID) string {
-	for _, m := range w.machineList {
+func (w *Window) farHostName(key machines.ID) string { return farNameIn(w.machineList, key) }
+
+// farNameIn is farHostName, from list.
+func farNameIn(list []machines.Info, key machines.ID) string {
+	for _, m := range list {
 		if m.ID == key {
 			return m.Name
 		}
@@ -1774,8 +1794,11 @@ func (w *Window) openSwitcher(u *gunim.UI) {
 	if w.sw != nil || len(w.panes) == 0 {
 		return
 	}
-	w.sw = newSwitcher(w, w.overWins, w.allPanes, w.focused, u)
-	overviews.Add(1)
+	sw := newSwitcher(w, w.overWins, w.allPanes, w.focused, u)
+	if len(sw.tiles) == 0 {
+		return
+	}
+	w.sw = sw
 	u.Send(w, app.OverviewShown{On: true})
 	u.Insert(w, w.sw)
 	u.Focus(w.sw)
@@ -1791,7 +1814,6 @@ func (w *Window) closeSwitcher(back bool, u *gunim.UI) {
 	}
 	u.Remove(w.sw)
 	w.sw = nil
-	overviews.Add(-1)
 	u.Send(w, app.OverviewShown{})
 	if n := w.focusNode(w.focused, u); n != nil && back {
 		u.Focus(n)
@@ -1912,6 +1934,11 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 	w.panes = st.Panes
 	w.groups = st.Groups
 	w.overWins, w.allPanes = overviewOf(st)
+	if st.Overviewing && !w.overviewing {
+		// Shared at once, not a while after.
+		w.sharedAt = time.Time{}
+	}
+	w.overviewing, w.overviewAlone = st.Overviewing, st.OverviewAlone
 	w.machineList = st.Machines
 	w.winID, w.behind = st.Window, st.Behind
 	if st.Theme != w.themeNow {
@@ -2419,13 +2446,16 @@ func (w *Window) paneNode(id string) gunim.Node {
 // captionOf is the line over pane p while panes show their titles:
 // where it runs, and its title. A file manager pane's is where it runs
 // alone: the file manager names the folder already.
-func (w *Window) captionOf(p app.Pane) string {
-	where := w.nameOf(p.Machine)
+func (w *Window) captionOf(p app.Pane) string { return captionIn(w.machineList, p) }
+
+// captionIn is captionOf, naming machines from list.
+func captionIn(list []machines.Info, p app.Pane) string {
+	where := nameIn(list, p.Machine)
 	switch {
 	case p.Machine == "":
 		where = "This computer"
 	case p.On != "":
-		where = w.nameOf(machines.FarID(p.Machine, p.On))
+		where = nameIn(list, machines.FarID(p.Machine, p.On))
 	}
 	if p.Kind == app.KindFileManager {
 		return where
@@ -2629,8 +2659,6 @@ type stage struct {
 	// neither. What came clears from that side first.
 	cover *anim.Float
 	from  float32
-	// said is the size the program was last told the stage is.
-	said geom.Size
 }
 
 func newStage() *stage {
@@ -2668,13 +2696,7 @@ func (s *stage) show(n gunim.Node, u *gunim.UI) {
 }
 
 // Layout implements [gunim.Node].
-func (s *stage) Layout(c gunim.Constraints, f gunim.Frame, kids gunim.Children) geom.Size {
-	if c.Max != s.said {
-		// All Panes in the other windows draws this one's tabs this
-		// shape.
-		s.said = c.Max
-		f.Send(s, app.StageSized{Size: c.Max})
-	}
+func (s *stage) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children) geom.Size {
 	for k := range kids.All {
 		k.Layout(gunim.Tight(c.Max))
 		k.Place(geom.Point{})

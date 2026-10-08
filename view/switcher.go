@@ -9,6 +9,8 @@ import (
 
 	"github.com/marrasen/kakel/app"
 	"github.com/marrasen/kakel/look"
+	"github.com/marrasen/kakel/machines"
+	"github.com/marrasen/kakel/screen"
 	"github.com/marrasen/kakel/ui"
 	"github.com/marrasen/kakel/winkeys"
 
@@ -35,10 +37,16 @@ var (
 	switcherRing = theme.Color("kakel.switcher.ring", color.NRGBA{R: 0x5e, G: 0x9c, B: 0xff, A: 0xff})
 )
 
-// switcher is the overview, over the window while it is open.
+// switcher is the overview, over the window while it is open, or over
+// the screen in a window of its own.
 type switcher struct {
 	anim.Group
-	w *Window
+	// w is the window it is over, and nil over the screen, where host
+	// holds it; here numbers w, 0 over the screen.
+	w    *Window
+	host *Overview
+	here int
+	env  overEnv
 	// wins are the windows shown, a card each, and byID their panes.
 	wins  []app.OverWindow
 	byID  map[string]app.Pane
@@ -78,6 +86,28 @@ type switcher struct {
 	dropped bool
 	// lit is how lit drop's half of a pane is.
 	lit *anim.Float
+	// left says it has gone, and told its host, and ready that it has
+	// started.
+	left, ready bool
+	// pointed says the pointer has moved over it: before, it may only
+	// seem to, as the tiles move under it.
+	pointed bool
+	pointAt geom.Point
+}
+
+// overEnv is what the switcher draws with, from where it stands.
+type overEnv struct {
+	shells   *screen.Shells
+	keys     *ui.Keymap
+	fontSize float32
+	faces    [4]*text.Face
+	titles   bool
+	machines []machines.Info
+}
+
+// overEnv is what a switcher over w draws with.
+func (w *Window) overEnv() overEnv {
+	return overEnv{shells: w.shells, keys: w.keys, fontSize: w.fontSize, faces: w.font.Faces, titles: w.titles, machines: w.machineList}
 }
 
 type tile struct {
@@ -99,8 +129,11 @@ type tile struct {
 	// mirror draws it while it is a terminal of another window, or one
 	// of this window's never drawn here.
 	mirror *mirror
-	// placed says it has had a place in the overview.
-	placed bool
+	// placed says it has had a place in the overview, and heldUntil
+	// that it stays where it was let go until then, or until the program
+	// says where it went.
+	placed    bool
+	heldUntil time.Time
 }
 
 // card is a window, as the overview shows it.
@@ -143,11 +176,24 @@ const (
 )
 
 func newSwitcher(w *Window, wins []app.OverWindow, panes []app.Pane, focus string, u *gunim.UI) *switcher {
-	s := &switcher{w: w, in: anim.NewFloat(0), picked: -1, lit: anim.NewFloat(0)}
-	s.Add(s.in, s.lit)
+	s := &switcher{w: w, here: w.winID, env: w.overEnv(), in: anim.NewFloat(0), picked: -1, lit: anim.NewFloat(0)}
 	if r, ok := u.Bounds(w.stage); ok {
 		s.stageAt = r
 	}
+	return s.start(wins, panes, focus, u)
+}
+
+// newSwitcherOver is a switcher over the screen, in host, its window of
+// its own.
+func newSwitcherOver(host *Overview, env overEnv, wins []app.OverWindow, panes []app.Pane, focus string, u *gunim.UI) *switcher {
+	s := &switcher{host: host, env: env, in: anim.NewFloat(0), picked: -1, lit: anim.NewFloat(0)}
+	return s.start(wins, panes, focus, u)
+}
+
+// start shows wins and their panes, each window's from where it stands,
+// with the ring on focus.
+func (s *switcher) start(wins []app.OverWindow, panes []app.Pane, focus string, u *gunim.UI) *switcher {
+	s.Add(s.in, s.lit)
 	s.sync(wins, panes, u)
 	for i, t := range s.tiles {
 		if t.id == focus {
@@ -160,13 +206,80 @@ func newSwitcher(w *Window, wins []app.OverWindow, panes []app.Pane, focus strin
 			t.fade.Jump(1)
 		}
 	}
-	// This window's card starts as the stage it shrinks from.
+	// Each window's card starts where the window stands, and shrinks
+	// from there.
 	for _, c := range s.cards {
-		if c.own && !s.stageAt.Empty() {
-			c.box.Jump(s.stageAt)
+		if home, _, ok := s.homeOf(c.win); ok {
+			c.box.Jump(home)
+			c.fade.Jump(1)
 		}
 	}
+	s.ready = true
 	return s
+}
+
+// homeOf is where window win stands, in the switcher's space, and its
+// stage in it: for this window, its stage; over the screen, where the
+// window is. ok is false where that cannot be said.
+func (s *switcher) homeOf(win int) (home, stage geom.Rect, ok bool) {
+	if s.w != nil {
+		if win == s.here && !s.stageAt.Empty() {
+			return s.stageAt, s.stageAt, true
+		}
+		return geom.Rect{}, geom.Rect{}, false
+	}
+	for _, ow := range s.wins {
+		if ow.ID != win || ow.Home.Empty() {
+			continue
+		}
+		stage = ow.Home
+		if ow.Size.W > 0 && !ow.StageAt.Empty() {
+			k := ow.Home.Size().W / ow.Size.W
+			stage = geom.Rect{
+				Min: ow.Home.Min.Add(geom.Pt(ow.StageAt.Min.X*k, ow.StageAt.Min.Y*k)),
+				Max: ow.Home.Min.Add(geom.Pt(ow.StageAt.Max.X*k, ow.StageAt.Max.Y*k)),
+			}
+		}
+		return ow.Home, stage, true
+	}
+	return geom.Rect{}, geom.Rect{}, false
+}
+
+// tabOf returns window win's tab group, and nil for none.
+func (s *switcher) tabOf(win, group int) *app.OverTab {
+	for i := range s.wins {
+		if s.wins[i].ID != win {
+			continue
+		}
+		for j := range s.wins[i].Tabs {
+			if s.wins[i].Tabs[j].Group == group {
+				return &s.wins[i].Tabs[j]
+			}
+		}
+	}
+	return nil
+}
+
+// frontOf reports whether group is the tab in front in window win.
+func (s *switcher) frontOf(win, group int) bool {
+	for _, ow := range s.wins {
+		if ow.ID == win {
+			return ow.Front == group
+		}
+	}
+	return false
+}
+
+// close has the switcher go, the keyboard going back to the pane that
+// had it with back.
+func (s *switcher) close(back bool, u *gunim.UI) {
+	if s.w != nil {
+		s.w.closeSwitcher(back, u)
+		return
+	}
+	if s.host != nil {
+		s.host.closeSwitcher(u)
+	}
 }
 
 // overviewOf is every window as st has them: st.Overview, or, published
@@ -188,11 +301,16 @@ func overviewOf(st app.State) ([]app.OverWindow, []app.Pane) {
 		}
 	}
 	for _, p := range st.Panes {
-		if b := st.Groups[p.ID]; b != nil && seen[b] || slices.ContainsFunc(own.Tabs, func(t app.OverTab) bool { return slices.Contains(boxLeaves(t.Box, nil), p.ID) }) {
+		b := st.Groups[p.ID]
+		if b != nil && seen[b] || slices.ContainsFunc(own.Tabs, func(t app.OverTab) bool { return slices.Contains(boxLeaves(t.Box, nil), p.ID) }) {
 			continue
 		}
-		// A tab of its own, numbered apart from the program's.
-		own.Tabs = append(own.Tabs, app.OverTab{Group: -1 - len(own.Tabs), Box: &app.Box{Pane: p.ID}, Pane: p.ID})
+		if b == nil {
+			b = &app.Box{Pane: p.ID}
+		}
+		seen[b] = true
+		// A tab numbered apart from the program's.
+		own.Tabs = append(own.Tabs, app.OverTab{Group: -1 - len(own.Tabs), Box: b, Pane: p.ID})
 	}
 	return []app.OverWindow{own}, all
 }
@@ -229,7 +347,7 @@ func (s *switcher) sync(wins []app.OverWindow, panes []app.Pane, u *gunim.UI) {
 			s.Add(c.box, c.fade, c.lit)
 		}
 		delete(cards, ow.ID)
-		c.own, c.gone = ow.ID == s.w.winID, false
+		c.own, c.gone = s.w != nil && ow.ID == s.here, false
 		name := "Window " + strconv.Itoa(n+1)
 		if c.own {
 			name = "This window"
@@ -247,24 +365,28 @@ func (s *switcher) sync(wins []app.OverWindow, panes []app.Pane, u *gunim.UI) {
 				}
 				delete(old, id)
 				p := s.byID[id]
+				if t.win != ow.ID || t.group != tb.Group {
+					// Where it was let go, it goes now.
+					t.heldUntil = time.Time{}
+				}
 				t.title, t.win, t.group = p.Title, ow.ID, tb.Group
 				// Every pane lands under its caption, one never on stage
 				// as well.
-				t.titled = s.w.titles
+				t.titled = s.env.titles
 				if t.titled {
-					t.caption = text.Default().Shape(s.w.captionOf(p), smallText.Get(u.Theme()))
+					t.caption = text.Default().Shape(captionIn(s.env.machines, p), smallText.Get(u.Theme()))
 				}
-				if _, own := s.w.terms[id]; (!own || ow.ID != s.w.winID) && t.mirror == nil {
-					if sh := s.w.shells.Get(id); sh != nil {
+				if !s.drawsLive(t) && t.mirror == nil && s.env.shells != nil {
+					if sh := s.env.shells.Get(id); sh != nil {
 						t.mirror = newMirror(sh)
 					}
 				}
 				if t.mirror != nil {
-					t.mirror.cells.Size = s.w.fontSize
+					t.mirror.cells.Size = s.env.fontSize
 					if t.mirror.cells.Size <= 0 {
 						t.mirror.cells.Size = 15
 					}
-					t.mirror.cells.Faces = s.w.font.Faces
+					t.mirror.cells.Faces = s.env.faces
 				}
 				s.tiles = append(s.tiles, t)
 			}
@@ -283,25 +405,51 @@ func (s *switcher) sync(wins []app.OverWindow, panes []app.Pane, u *gunim.UI) {
 	if s.carried != nil && !slices.Contains(s.tiles, s.carried) {
 		s.carried = nil
 	}
-	s.hot = max(0, slices.IndexFunc(s.tiles, func(t *tile) bool { return t.id == hot }))
-	if len(s.tiles) == 0 {
-		s.cancel(u)
+	at := slices.IndexFunc(s.tiles, func(t *tile) bool { return t.id == hot })
+	s.hot = max(0, at)
+	switch {
+	case len(s.tiles) == 0:
+		if s.ready {
+			s.cancel(u)
+		}
+	case at < 0 && s.ready:
+		// The pane with the ring has gone: another has it.
+		s.light(s.hot, u)
 	}
 	u.Invalidate()
 }
 
-// slotAt is where tile t's pane stands on stage, with the line over it
-// while it has one, if it is on stage.
+// drawsLive reports whether tile t is a pane of the window the switcher
+// is over, which draws it.
+func (s *switcher) drawsLive(t *tile) bool {
+	if s.w == nil || t.win != s.here {
+		return false
+	}
+	_, ok := s.w.terms[t.id]
+	return ok
+}
+
+// slotAt is where tile t's pane stands on its window's stage, with the
+// line over it while it has one, if it is on stage.
 func (s *switcher) slotAt(t *tile, u *gunim.UI) (geom.Rect, bool) {
-	if t.win != s.w.winID && len(s.wins) > 1 {
+	if s.w != nil {
+		if t.win != s.here {
+			return geom.Rect{}, false
+		}
+		if c := s.w.captions[t.id]; t.titled && c != nil {
+			if r, ok := u.Bounds(c); ok {
+				return r, true
+			}
+		}
+		return s.w.standsAt(t.id, u)
+	}
+	_, stage, ok := s.homeOf(t.win)
+	tb := s.tabOf(t.win, t.group)
+	if !ok || tb == nil || !s.frontOf(t.win, t.group) {
 		return geom.Rect{}, false
 	}
-	if c := s.w.captions[t.id]; t.titled && c != nil {
-		if r, ok := u.Bounds(c); ok {
-			return r, true
-		}
-	}
-	return s.w.standsAt(t.id, u)
+	r, ok := placeIn(tb.Box, t.id, stage, u.Theme())
+	return s.padded(t, r, u), ok
 }
 
 // natural is the size pane id draws at, from its terminal's grid or
@@ -369,18 +517,6 @@ func paintElsewhere(p *paint.Painter, f gunim.Frame, t *tile, r geom.Rect) bool 
 	defer p.Push(paint.Scale(scale, geom.Point{}))()
 	draw()
 	return true
-}
-
-// padded is r, a pane's place, less the room round a terminal's cells
-// when pane id is a terminal: where its tile's picture lands.
-func (w *Window) padded(id string, r geom.Rect, u *gunim.UI) geom.Rect {
-	switch w.kindOf(id) {
-	case app.KindTerminal, app.KindLog:
-		// Drawn by a terminal, which bareNode holds in from the edges.
-	default:
-		return r
-	}
-	return r.Inset(geom.Uniform(termPadding.Get(u.Theme())))
 }
 
 // standsAt is where pane id stands on stage now, if it is on stage.
@@ -547,14 +683,19 @@ func (s *switcher) Transition(p gunim.Presence, f gunim.Frame) bool {
 		s.in.Animate(0, widget.Settle.Get(f.Theme))
 	case gunim.Present:
 	}
-	return !s.in.Active() && !s.moving() && s.onStage(time.Now())
+	done := !s.in.Active() && !s.moving() && s.onStage(time.Now())
+	if done && p == gunim.Exiting && !s.left && s.host != nil {
+		s.left = true
+		f.Send(s.host, app.OverviewDone{})
+	}
+	return done
 }
 
 // onStage reports whether the pane picked is on the stage, so the
 // switcher can go without the stage before it showing for a frame. A
 // pane that never gets there lets the switcher go after landWait.
 func (s *switcher) onStage(now time.Time) bool {
-	if s.picked < 0 || s.picked >= len(s.tiles) || s.away {
+	if s.picked < 0 || s.picked >= len(s.tiles) || s.away || s.w == nil {
 		return true
 	}
 	if s.landed.IsZero() {
@@ -562,6 +703,10 @@ func (s *switcher) onStage(now time.Time) bool {
 	}
 	return s.w.focused == s.tiles[s.picked].id || now.Sub(s.landed) > landWait
 }
+
+// redrawEvery is how often the switcher draws again while another
+// window's panes change, which it hears nothing of.
+const redrawEvery = 100 * time.Millisecond
 
 // awayAfter is how long a pane of another window, picked, grows before
 // its window comes to the front with it.
@@ -583,10 +728,19 @@ func (s *switcher) moving() bool {
 // Layout implements [gunim.Node]: the overview covers the window.
 func (s *switcher) Layout(c gunim.Constraints, f gunim.Frame, _ gunim.Children) geom.Size {
 	s.size = c.Max
+	again := false
 	for _, t := range s.tiles {
 		if t.mirror != nil {
 			t.mirror.sync()
+			// Its window draws what was written a moment after.
+			again = again || t.mirror.busy(f.Now)
+		} else if !s.drawsLive(t) {
+			// A copy of what it drew, which its window makes again.
+			again = true
 		}
+	}
+	if again {
+		f.RedrawAt(f.Now.Add(redrawEvery))
 	}
 	if s.picked < 0 {
 		s.place(f)
@@ -656,6 +810,11 @@ func (s *switcher) place(f gunim.Frame) {
 				t.box.Jump(geom.Rect{Min: r.Center(), Max: r.Center()}.Inset(geom.Uniform(-min(r.Size().W, r.Size().H) * 0.45)))
 			}
 			t.placed = true
+			if f.Now.Before(t.heldUntil) {
+				// Where it was let go, until it is known where it goes.
+				f.RedrawAt(t.heldUntil)
+				continue
+			}
 			t.box.Animate(r, motion)
 			if t != s.carried {
 				t.fade.Animate(1, motion)
@@ -668,15 +827,17 @@ func (s *switcher) place(f gunim.Frame) {
 func (s *switcher) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, _ gunim.Children) {
 	th := f.Theme
 	t := min(max(s.in.Value(), 0), 1)
-	// The window's own ground, solid once the switcher is in: the panes
-	// are shown only as the tiles, not behind them as well.
-	scrim := widget.Background.Get(th)
-	scrim.A = uint8(float32(scrim.A) * t)
-	p.RRect(geom.Rect{Max: box.Point()}, 0, paint.Solid(scrim))
-	// The stage is covered at once, and until the switcher has gone:
-	// the tiles standing where the panes stand are the panes, zooming,
-	// not copies over them.
-	p.RRect(s.stageAt, 0, paint.Solid(widget.Background.Get(th)))
+	if s.w != nil {
+		// The window's own ground, solid once the switcher is in: the
+		// panes are shown only as the tiles, not behind them as well.
+		scrim := widget.Background.Get(th)
+		scrim.A = uint8(float32(scrim.A) * t)
+		p.RRect(geom.Rect{Max: box.Point()}, 0, paint.Solid(scrim))
+		// The stage is covered at once, and until the switcher has gone:
+		// the tiles standing where the panes stand are the panes,
+		// zooming, not copies over them.
+		p.RRect(s.stageAt, 0, paint.Solid(widget.Background.Get(th)))
+	}
 	for _, c := range s.cards {
 		s.paintCard(p, f, c, t)
 	}
@@ -778,7 +939,7 @@ func (s *switcher) paintPane(p *paint.Painter, f gunim.Frame, tl *tile, r geom.R
 		// a terminal's grid can be a little shorter than its pane.
 		full := tl.full
 		if full.H <= 0 {
-			full = s.natural(tl, s.size)
+			full = r.Size()
 		}
 		scale := min(1, r.Size().H/full.H)
 		line := r
@@ -793,10 +954,9 @@ func (s *switcher) paintPane(p *paint.Painter, f gunim.Frame, tl *tile, r geom.R
 		r.Min.Y = line.Max.Y
 	}
 	// A terminal live, and any other pane as it was last drawn.
-	if tl.win != s.w.winID || !s.w.paintMiniature(p, f, tl.id, r, s.size) {
-		if !paintElsewhere(p, f, tl, r) {
-			s.paintNothing(p, f, tl, r)
-		}
+	drawn := s.w != nil && tl.win == s.here && s.w.paintMiniature(p, f, tl.id, r, s.size)
+	if !drawn && !paintElsewhere(p, f, tl, r) {
+		s.paintNothing(p, f, tl, r)
 	}
 	if on := min(max(ring, 0), 1); on > 0.01 {
 		c := switcherRing.Get(th)
@@ -815,16 +975,6 @@ func (s *switcher) paintNothing(p *paint.Painter, f gunim.Frame, tl *tile, r geo
 	}
 	c := r.Center()
 	name.Paint(p, geom.Pt(c.X-name.Advance/2, c.Y-name.Height()/2), look.Faint.Get(f.Theme))
-}
-
-// natural is the size of tile t's pane on its stage, with its caption
-// while it has one.
-func (s *switcher) natural(t *tile, size geom.Size) geom.Size {
-	n := s.w.natural(t.id, size)
-	if t.titled {
-		n.H += captionHeight
-	}
-	return n
 }
 
 // placeIn is where pane id stands when group, the arrangement it is in,
@@ -871,52 +1021,52 @@ func (s *switcher) light(i int, u *gunim.UI) {
 	u.Invalidate()
 }
 
-// pick chooses tile i: it grows to fill the stage, and the overview
-// fades away. A pane of another window grows to fill this one, and that
-// window comes to the front with it as it has.
+// pick chooses tile i: it grows into its place on its window's stage,
+// the panes beside it in its split into theirs, and the overview fades
+// away. Over a window, a pane of another window grows to fill this one,
+// and that window comes to the front with it as it has; over the
+// screen, the pane's window comes to the front under the overview, and
+// is there as the overview goes.
 func (s *switcher) pick(i int, u *gunim.UI) {
 	if s.picked >= 0 || i < 0 || i >= len(s.tiles) {
 		return
 	}
 	s.picked = i
 	t := s.tiles[i]
-	stage := geom.Rect{Max: s.size.Point()}
-	if r, ok := u.Bounds(s.w.stage); ok {
-		stage = r
+	settle, quick := widget.Settle.Get(u.Theme()), widget.Quick.Get(u.Theme())
+	t.ring.Animate(0, quick)
+	home, stage, known := s.homeOf(t.win)
+	if s.w != nil && t.win == s.here {
+		stage = geom.Rect{Max: s.size.Point()}
+		if r, ok := u.Bounds(s.w.stage); ok {
+			stage = r
+		}
+	} else if !known {
+		// Another window's, from over this one: it fills this one, as it
+		// will fill its own.
+		stage = geom.Rect{Max: s.size.Point()}
 	}
-	settle := widget.Settle.Get(u.Theme())
-	t.ring.Animate(0, widget.Quick.Get(u.Theme()))
-	s.away = t.win != s.w.winID
+	s.away = s.w != nil && t.win != s.here
+	var group *app.Box
+	if tb := s.tabOf(t.win, t.group); tb != nil {
+		group = tb.Box
+	}
 	// Into its place in its split, and the panes beside it into theirs;
 	// alone, it fills the stage.
-	group := s.w.groups[t.id]
-	into := stage
-	if s.away {
-		group = nil
-		for _, ow := range s.wins {
-			for _, tb := range ow.Tabs {
-				if tb.Group == t.group {
-					group = tb.Box
-				}
-			}
-		}
-		// Another window's: it fills this one, as it will fill its own.
-		into = geom.Rect{Max: s.size.Point()}
-		stage = into
-	}
 	s.mates = map[*tile]bool{}
+	into := stage
 	if r, ok := placeIn(group, t.id, stage, u.Theme()); ok {
 		into = r
 	}
-	t.box.Animate(s.w.padded(t.id, into, u), settle)
+	t.box.Animate(s.padded(t, into, u), settle)
 	for k, o := range s.tiles {
-		if k == i {
+		if k == i || o.win != t.win {
 			continue
 		}
 		if r, ok := placeIn(group, o.id, stage, u.Theme()); ok {
 			s.mates[o] = true
-			o.ring.Animate(0, widget.Quick.Get(u.Theme()))
-			o.box.Animate(s.w.padded(o.id, r, u), settle)
+			o.ring.Animate(0, quick)
+			o.box.Animate(s.padded(o, r, u), settle)
 		}
 	}
 	// The rest fade as it grows, shrinking a little where they sit, so
@@ -926,51 +1076,72 @@ func (s *switcher) pick(i int, u *gunim.UI) {
 			continue
 		}
 		r := o.box.Target()
-		o.fade.Animate(0, widget.Quick.Get(u.Theme()))
-		o.box.Animate(r.Inset(geom.Uniform(min(r.Size().W, r.Size().H)*0.08)), widget.Quick.Get(u.Theme()))
+		o.fade.Animate(0, quick)
+		o.box.Animate(r.Inset(geom.Uniform(min(r.Size().W, r.Size().H)*0.08)), quick)
 	}
 	for _, c := range s.cards {
-		c.fade.Animate(0, widget.Quick.Get(u.Theme()))
+		if c.win == t.win && known {
+			// Its window's card grows back into the window as it goes.
+			c.box.Animate(home, settle)
+		}
+		c.fade.Animate(0, quick)
 	}
-	if s.away {
+	switch {
+	case s.w == nil:
+		u.Send(s, app.FocusPane{Pane: t.id})
+		s.close(true, u)
+	case s.away:
 		// Its window comes to the front once it has grown, with the
 		// pane; this one stays as it was under it.
-		s.w.closeSwitcher(true, u)
-		id := t.id
-		u.After(awayAfter, func(u *gunim.UI) { u.Send(s.w, app.FocusPane{Pane: id}) })
-		return
+		s.close(true, u)
+		id, w := t.id, s.w
+		u.After(awayAfter, func(u *gunim.UI) { u.Send(w, app.FocusPane{Pane: id}) })
+	default:
+		// The pane comes on stage at once, with the keyboard, so it is
+		// live the moment it is picked, under the switcher, which covers
+		// the stage until the pane has grown into place; then the
+		// switcher goes, and the stage shows the pane where it landed.
+		s.stageAt = stage
+		s.landed = time.Now()
+		u.Send(s.w, app.FocusPane{Pane: t.id})
+		s.close(false, u)
 	}
-	// The pane comes on stage at once, with the keyboard, so it is live
-	// the moment it is picked, under the switcher, which covers the
-	// stage until the pane has grown into place; then the switcher goes,
-	// and the stage shows the pane where it landed.
-	s.stageAt = stage
-	s.landed = time.Now()
-	u.Send(s.w, app.FocusPane{Pane: t.id})
-	s.w.closeSwitcher(false, u)
+}
+
+// padded is r, the place of tile t's pane, less the room round a
+// terminal's cells: where its picture lands.
+func (s *switcher) padded(t *tile, r geom.Rect, u *gunim.UI) geom.Rect {
+	switch s.byID[t.id].Kind {
+	case app.KindTerminal, app.KindLog:
+		// Drawn by a terminal, which bareNode holds in from the edges.
+		return r.Inset(geom.Uniform(termPadding.Get(u.Theme())))
+	}
+	return r
 }
 
 // cancel closes the overview without a choice; the panes on stage go
-// back where they stood.
+// back where they stood, and every window's card into its window.
 func (s *switcher) cancel(u *gunim.UI) {
 	if s.picked >= 0 {
 		return
 	}
+	settle := widget.Settle.Get(u.Theme())
 	for _, t := range s.tiles {
+		t.ring.Animate(0, widget.Quick.Get(u.Theme()))
 		if r, ok := s.slotAt(t, u); ok {
-			t.box.Animate(r, widget.Settle.Get(u.Theme()))
+			t.box.Animate(r, settle)
 			continue
 		}
-		t.fade.Animate(0, widget.Settle.Get(u.Theme()))
+		t.fade.Animate(0, settle)
 	}
 	for _, c := range s.cards {
-		if c.own && !s.stageAt.Empty() {
-			c.box.Animate(s.stageAt, widget.Settle.Get(u.Theme()))
+		if home, _, ok := s.homeOf(c.win); ok {
+			c.box.Animate(home, settle)
 		}
-		c.fade.Animate(0, widget.Settle.Get(u.Theme()))
+		c.fade.Animate(0, settle)
 	}
 	s.picked = len(s.tiles) // the choice is closed
-	s.w.closeSwitcher(true, u)
+	s.close(true, u)
 }
 
 // Focusable implements [gunim.Focusable].
@@ -1003,7 +1174,7 @@ func (s *switcher) Handle(e input.Event, u *gunim.UI) bool {
 			// Its shortcut again closes it; held down, it does not
 			// open and close over and over.
 			if ev, ok := winkeys.Event(e); ok && !e.Repeat {
-				if id, bound := s.w.keys.Lookup(ui.ChordOf(ev)); bound && id == "view.switcher" {
+				if id, bound := s.env.keys.Lookup(ui.ChordOf(ev)); bound && id == "view.switcher" {
 					s.cancel(u)
 				}
 			}
@@ -1012,6 +1183,13 @@ func (s *switcher) Handle(e input.Event, u *gunim.UI) bool {
 	case input.PointerMove:
 		if s.pressed != nil && s.carried == nil && moved(e.Pos, s.pressAt) {
 			s.carry(e.Pos, u)
+			return true
+		}
+		// The ring follows the pointer as it moves, not the tiles as
+		// they move under it.
+		still := !s.pointed || e.Pos == s.pointAt
+		s.pointed, s.pointAt = true, e.Pos
+		if still {
 			return true
 		}
 		if i := s.tileAt(e.Pos); i >= 0 && i != s.hot {

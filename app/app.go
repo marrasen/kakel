@@ -42,6 +42,7 @@ import (
 	"github.com/marrasen/kakel/vt"
 
 	"github.com/marrasen/gunim"
+	"github.com/marrasen/gunim/driver"
 	"github.com/marrasen/gunim/theme"
 )
 
@@ -74,8 +75,13 @@ type State struct {
 	// in, in whichever window, whose row it lights.
 	AllPanes []Pane
 	Working  string
-	// Overview is every window, with its tabs, for All Panes.
-	Overview []OverWindow
+	// Overview is every window, with its tabs, for All Panes;
+	// Overviewing says All Panes is open somewhere, so the windows share
+	// what their panes draw; and OverviewAlone says it opens in a window
+	// of its own.
+	Overview      []OverWindow
+	Overviewing   bool
+	OverviewAlone bool
 	// InTray says kakel is to show its icon in the system tray, and run
 	// on there once its last window closes, where there is a tray.
 	InTray bool
@@ -705,6 +711,11 @@ type app struct {
 	// openLaunch opens the launcher's window, hotKeys takes its key from
 	// every program, and launch is the launcher as it is.
 	openLaunch LauncherOpener
+	// openOverview opens All Panes' own window, monitors says what the
+	// monitors are, and over is that window while it is open.
+	openOverview OverviewOpener
+	monitors     func() []driver.Monitor
+	over         overState
 	// files makes the file manager's panes; serverPlaces are the servers as its places list them, read
 	// off the program's goroutine, fmFiles the machines' files as it
 	// reads them, and fmFavs the favourites its windows share.
@@ -777,6 +788,9 @@ func (a *app) tellOutput() {
 		return
 	}
 	// All Panes draws every window's panes.
+	if a.over.c != nil {
+		_ = a.over.c.Patch(OverviewTopic, OutputArrived{})
+	}
 	for _, w := range a.liveWins() {
 		if w.overview && !told[w] {
 			told[w] = true
@@ -1201,10 +1215,12 @@ func (a *app) publish() {
 	st.Panes = slices.Clone(a.st.Panes)
 	st.AllPanes = a.allPanes()
 	st.Overview = a.overview()
+	st.Overviewing, st.OverviewAlone = a.overviewOpen(), a.overviewAlone()
 	a.noteWork()
 	if !a.gone {
 		a.showTray()
 		a.publishLauncher()
+		a.publishOverview()
 	}
 	st.InTray = a.trayWanted()
 	st.LauncherKey = a.launcherKey()
@@ -2309,6 +2325,11 @@ type Config struct {
 	// OpenLauncher opens the launcher's window, and HotKeys takes its key
 	// from every program; either may be unset.
 	OpenLauncher LauncherOpener
+	// OpenOverview opens All Panes in a window of its own, over the
+	// monitor Monitors names; unset, All Panes opens over the window it
+	// is asked in.
+	OpenOverview OverviewOpener
+	Monitors     func() []driver.Monitor
 	HotKeys      HotKeys
 	// Files opens the file manager's windows; unset, files open in panes.
 	Files FileWindows
@@ -2335,6 +2356,7 @@ func Start(ctx context.Context, cfg Config) error {
 	a.traySet = cfg.Tray
 	a.handovers = cfg.Handovers
 	a.openLaunch = cfg.OpenLauncher
+	a.openOverview, a.monitors = cfg.OpenOverview, cfg.Monitors
 	a.files = cfg.Files
 	a.openPrompt = cfg.OpenPrompt
 	a.hotKeys = cfg.HotKeys

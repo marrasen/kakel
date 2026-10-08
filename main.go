@@ -133,6 +133,7 @@ func run() error {
 			Themes: all, ThemeTrouble: trouble, RegisterThemes: ws.registerThemes,
 			Tray: app.Tray{Set: a.SetTray, StayOpen: a.StayOpen, Notify: a.TrayNotify}, Handovers: handovers,
 			OpenLauncher: ws.openLauncher, HotKeys: a.RegisterHotKey, OpenPrompt: ws.openPrompt, Sound: sounds.Set,
+			OpenOverview: ws.openOverview, Monitors: a.Monitors,
 			// The file manager's windows, gunim's own, outside kakel's
 			// tabs; they end with the program.
 			Files: filemanager.NewHub(ctx, a),
@@ -271,6 +272,33 @@ func (ws *ownWindows) openLauncher() (gunim.Client, error) {
 		return gunim.Client{}, err
 	}
 	return c, nil
+}
+
+// openOverview opens All Panes' own window over the whole of monitor m,
+// above the other windows, with its view mounted. It draws no frame,
+// and comes and goes at once: All Panes moves the windows' cards in and
+// out itself.
+func (ws *ownWindows) openOverview(m driver.Monitor) (gunim.Client, *gunim.Window, error) {
+	w, err := ws.app.NewWindow(gunim.WindowOptions{
+		Title: "All Panes", Size: m.Bounds.Size(), Icons: appicon.Images(), Pinned: true, Fixed: true, Instant: true,
+		TitleBar: view.NoTitleBar(), Place: &driver.Placement{Bounds: m.Bounds},
+	})
+	if err != nil {
+		return gunim.Client{}, nil, fmt.Errorf("kakel: %w", err)
+	}
+	ws.mu.Lock()
+	all := ws.all
+	ws.mu.Unlock()
+	look.Register(w, all)
+	gunim.RegisterView(w, "overview", func(app.OverState) *view.Overview { return view.NewOverview(ws.sh, view.Shortcuts()) },
+		func(o *view.Overview, st app.OverState, u *gunim.UI) { o.Update(st, u) })
+	gunim.RegisterPatch(w, "overview", func(o *view.Overview, _ app.OutputArrived, u *gunim.UI) { o.OutputArrived(u) })
+	c := w.Client()
+	if err := c.Mount(gunim.Root, "overview", "overview", app.OverState{}, app.OverviewTopic); err != nil {
+		c.Close()
+		return gunim.Client{}, nil, err
+	}
+	return c, w, nil
 }
 
 // openPrompt opens a window of its own for the question q, sized to it

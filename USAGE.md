@@ -54,13 +54,16 @@ The file browser's own keys are not in the file.
 ## Every pane at once
 
 Pane → Go To → All Panes…, or `Ctrl+Shift+A`, shows every pane of
-every kakel window at once, each one live and shrunk. Each window is a
-card, and each of its tabs sits in the card the shape of the window,
-its splits as they stand. The arrows walk the panes, `Tab` goes
-through them in turn, `Enter` goes to the one marked and `Escape`
-leaves you where you were. A click goes straight there; a pane in
-another window brings that window to the front with it. `Ctrl+Shift+A`
-again closes it. The images are shrunk by the GPU rather than cell by
+every kakel window at once, each one live and shrunk, over the whole of
+the screen the window is on. Each window shrinks from where it stands
+into a card, and each of its tabs sits in the card the shape of the
+window, its splits as they stand. Windows on other screens fly in from
+their side. The arrows walk the panes, `Tab` goes through them in turn,
+`Enter` goes to the one marked and `Escape` puts every window back as
+it was. A click goes straight there: the pane grows back into its
+window, which is in front, on that tab, once All Panes has gone.
+`Ctrl+Shift+A` again closes it. Where kakel cannot say where its
+windows are, All Panes shows over the window it was asked in instead. The images are shrunk by the GPU rather than cell by
 cell, and a window with nothing happening in it still skips the frames
 it would have skipped anyway.
 
@@ -72,9 +75,8 @@ In All Panes, drag a pane to move it:
   go nearest; the half it would take lights up.
 - onto another window's card, and it moves there on a tab of its own.
   Onto its own window's card, it leaves its split for a tab of its own.
-- onto room no card covers, or outside every window, and it opens a
-  window of its own where you let it go. A window's only pane stays
-  where it is.
+- onto room no card covers, and it opens a window of its own where you
+  let it go. A window's only pane stays where it is.
 - over another kakel window, and it moves there; that window lights up
   while the pane is over it.
 

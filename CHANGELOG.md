@@ -11,12 +11,13 @@ change how something behaves.
 
 ### Changed
 
-**All Panes shows every window.** `Ctrl+Shift+A` shows a card for each
-kakel window, holding its tabs with their splits as they stand, every
-pane live. Pick a pane in another window and that window comes to the
-front with it. Drag a pane onto a pane to join it in a split, onto a
-window's card to move it there on a tab of its own, or onto empty room
-to give it a window of its own.
+**All Panes shows every window, over the whole screen.** `Ctrl+Shift+A`
+shrinks each kakel window from where it stands into a card, holding its
+tabs with their splits as they stand, every pane live. Pick a pane and
+it grows back into its window, which comes to the front on that tab;
+`Escape` puts every window back. Drag a pane onto a pane to join it in
+a split, onto a window's card to move it there on a tab of its own, or
+onto empty room to give it a window of its own there.
 
 ## v0.12.0-beta.6
 

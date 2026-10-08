@@ -36,9 +36,10 @@ type ownWin struct {
 	// the bells rung in its panes.
 	pings Pings
 	bells uint64
-	// stage is the size of its stage, as it last said, and overview
-	// says All Panes is open in it.
-	stage    geom.Size
+	// stage is where its stage is in it, and size its own size, as it
+	// last said, and overview says All Panes is open over it.
+	stage    geom.Rect
+	size     geom.Size
 	overview bool
 }
 
@@ -72,10 +73,12 @@ type (
 )
 
 // PaneDrag is what a pane dragged out of the switcher carries: the
-// pane, and the window it is dragged from.
+// pane, the window it is in, and where the image of it is held, from
+// its top left corner.
 type PaneDrag struct {
 	Pane   string
 	Window int
+	Grab   geom.Point
 }
 
 // WindowOpener opens another window, placed at at in from's space, and
@@ -224,7 +227,11 @@ func (a *app) moveToWindow(id string, w *ownWin) {
 }
 
 // paneToNewWindow opens a window at in.At and moves in.Pane into it.
-func (a *app) paneToNewWindow(in PaneToNewWindow) {
+func (a *app) paneToNewWindow(in PaneToNewWindow) { a.paneToNewWindowFrom(in, nil) }
+
+// paneToNewWindowFrom is paneToNewWindow, with in.At in from's space,
+// or the window in front's for nil.
+func (a *app) paneToNewWindowFrom(in PaneToNewWindow, space *gunim.Window) {
 	from := a.ownerOf(in.Pane)
 	if from == nil || a.closing[in.Pane] {
 		return
@@ -234,7 +241,7 @@ func (a *app) paneToNewWindow(in PaneToNewWindow) {
 		// already.
 		return
 	}
-	a.openWindowThen(in.At, in.Size, func(w *ownWin) bool {
+	a.openWindowFrom(space, in.At, in.Size, func(w *ownWin) bool {
 		from := a.ownerOf(in.Pane)
 		if from == nil || a.closing[in.Pane] || len(a.panesIn(from)) == 1 {
 			return false
@@ -249,12 +256,17 @@ func (a *app) paneToNewWindow(in PaneToNewWindow) {
 // front. When then says there is nothing for it after all, the window
 // closes again.
 func (a *app) openWindowThen(at geom.Point, size geom.Size, then func(w *ownWin) bool) {
+	a.openWindowFrom(nil, at, size, then)
+}
+
+// openWindowFrom is openWindowThen, with at in gw's space, or the window
+// in front's for nil.
+func (a *app) openWindowFrom(gw *gunim.Window, at geom.Point, size geom.Size, then func(w *ownWin) bool) {
 	if a.openWindow == nil {
 		a.failed("Couldn't open another window", "This kakel can't open windows.")
 		return
 	}
-	var gw *gunim.Window
-	if a.cur != nil && !a.cur.gone {
+	if gw == nil && a.cur != nil && !a.cur.gone {
 		gw = a.cur.gw
 	}
 	open := a.openWindow
@@ -275,6 +287,11 @@ func (a *app) openWindowThen(at geom.Point, size geom.Size, then func(w *ownWin)
 				return
 			}
 			a.front(w)
+			if a.over.c != nil {
+				// Opened from All Panes, which keeps the keyboard while it
+				// is over the screen.
+				a.over.c.ToFront()
+			}
 		}
 	}()
 }
