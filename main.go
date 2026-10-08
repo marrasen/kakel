@@ -306,7 +306,7 @@ func (ws *ownWindows) openPrompt(q app.Ask, name string, near *gunim.Window) (gu
 		}
 	}
 	w, err := ws.app.NewWindow(gunim.WindowOptions{
-		Title: q.Title, Size: size, Icons: appicon.Images(), Pinned: true, TitleBar: bar,
+		Title: q.Title, Size: size, Icons: appicon.Images(), Pinned: true, Fixed: true, TitleBar: bar,
 		Place: view.PromptPlace(ws.app.Monitors(), at, size),
 	})
 	if err != nil {

@@ -20,6 +20,14 @@ badly.
 where it opened in a window of its own. Asked for again, it goes to
 the tab where it is.
 
+### Fixed
+
+**A question window keeps its size.** Connect to Server, a password
+ask and the other question windows could not be sized or maximized,
+yet Windows still snapped them to half the screen or maximized them,
+from a drag to the screen's edge or the Windows key and an arrow. Now
+they stay as they open.
+
 ## v0.12.0-beta.2
 
 ### Changed
