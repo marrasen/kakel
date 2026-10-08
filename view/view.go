@@ -1929,6 +1929,11 @@ func (w *Window) refreshKey(k input.KeyPress, u *gunim.UI) bool {
 	return true
 }
 
+// sameMap reports whether a and b are one map, not two alike.
+func sameMap[K comparable, V any](a, b map[K]V) bool {
+	return reflect.ValueOf(a).UnsafePointer() == reflect.ValueOf(b).UnsafePointer()
+}
+
 // Update shows st.
 func (w *Window) Update(st app.State, u *gunim.UI) {
 	w.panes = st.Panes
@@ -2041,7 +2046,9 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 	if w.themeEditor != nil {
 		w.themeEditor.follow(w.looks[st.Theme], u)
 	}
-	if st.Contents != nil {
+	if st.Contents != nil && !sameMap(st.Contents, w.contents) {
+		// Themes read again. Each update carries them from then on, and
+		// wearing the same theme again would only cost a pass over it.
 		w.contents = st.Contents
 		if c, ok := w.contents[st.Theme]; ok {
 			w.onStage.Use(c)
