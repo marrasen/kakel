@@ -37,18 +37,18 @@ func menuAt(title string) int {
 func withAccessKeys(m widget.BarMenu, first ...int) widget.BarMenu {
 	m.Title = markKey(m.Title, map[rune]bool{}, menuKeys[m.Title])
 	taken := map[rune]bool{}
-	items := make([]string, len(m.Items))
+	items := append([]widget.MenuItem(nil), m.Items...)
 	done := make([]bool, len(m.Items))
 	mark := func(i int) {
 		if i < 0 || i >= len(m.Items) || done[i] {
 			return
 		}
 		done[i] = true
-		if isCaption(m, i) {
-			items[i] = escapeAmp(m.Items[i])
+		if m.Items[i].Caption {
+			items[i].Label = escapeAmp(m.Items[i].Label)
 			return
 		}
-		items[i] = markKey(m.Items[i], taken, 0)
+		items[i].Label = markKey(m.Items[i].Label, taken, 0)
 	}
 	for _, i := range first {
 		mark(i)
@@ -58,16 +58,6 @@ func withAccessKeys(m widget.BarMenu, first ...int) widget.BarMenu {
 	}
 	m.Items = items
 	return m
-}
-
-// isCaption reports whether line i of m is a caption.
-func isCaption(m widget.BarMenu, i int) bool {
-	for _, c := range m.Captions {
-		if c == i {
-			return true
-		}
-	}
-	return false
 }
 
 // markKey puts a & before the letter of s that is its access key, and

@@ -75,8 +75,8 @@ func newSecretsPane(w *Window) *secretsPane {
 	}
 	p.find = widget.NewTextField()
 	p.find.Placeholder, p.find.Icon, p.find.Clearable = "Search", icon.Search, true
-	p.find.OnEdit = func(_ string, u *gunim.UI) { p.show(p.st, u) }
-	p.table.OnActivate = func(k widget.Key, u *gunim.UI) { u.Send(p.table, app.CopySecret{ID: string(k)}) }
+	p.find.OnChange = func(_ string, u *gunim.UI) gunim.Intent { p.show(p.st, u); return nil }
+	p.table.OnActivate = func(k widget.Key, u *gunim.UI) gunim.Intent { return app.CopySecret{ID: string(k)} }
 	// The fingerprint in a column of its own, wide enough for all of
 	// it: half of one can seem to match the wrong key.
 	p.keys = widget.NewTable(widget.TableColumn{Title: "Key"}, widget.TableColumn{Title: "", Width: 150},
@@ -90,21 +90,22 @@ func newSecretsPane(w *Window) *secretsPane {
 	p.lock, p.unlock = button(icon.Lock, "Lock"), button(icon.LockOpen, "Unlock")
 	p.typ, p.cp, p.reveal = button(icon.Keyboard, "Type"), button(icon.Copy, "Copy"), button(icon.Eye, "Show")
 	p.change, p.remove = button(icon.Pencil, "Change"), button(icon.Trash2, "Remove")
-	p.lock.On, p.unlock.On = app.LockSecrets{}, app.UnlockSecrets{}
-	p.add.OnActivate(func(u *gunim.UI) { p.w.secretForm(secrets.Password, nil, u) })
-	p.note.OnActivate(func(u *gunim.UI) { p.w.secretForm(secrets.Note, nil, u) })
+	p.lock.OnClick, p.unlock.OnClick = widget.Sends(app.LockSecrets{}), widget.Sends(app.UnlockSecrets{})
+	p.add.OnClick = func(u *gunim.UI) gunim.Intent { p.w.secretForm(secrets.Password, nil, u); return nil }
+	p.note.OnClick = func(u *gunim.UI) gunim.Intent { p.w.secretForm(secrets.Note, nil, u); return nil }
 	onRow := func(b *widget.Button, do func(app.SecretItem, *gunim.UI)) {
-		b.OnActivate(func(u *gunim.UI) {
+		b.OnClick = func(u *gunim.UI) gunim.Intent {
 			if k, ok := p.table.Cursor(); ok {
 				do(p.byID[k], u)
 			}
-		})
+			return nil
+		}
 	}
 	onRow(p.typ, func(it app.SecretItem, u *gunim.UI) { u.Send(p.table, app.TypeSecret{ID: it.ID}) })
 	onRow(p.cp, func(it app.SecretItem, u *gunim.UI) { u.Send(p.table, app.CopySecret{ID: it.ID}) })
 	onRow(p.reveal, func(it app.SecretItem, u *gunim.UI) { u.Send(p.table, app.RevealSecret{ID: it.ID}) })
 	onRow(p.change, func(it app.SecretItem, u *gunim.UI) { p.w.secretForm(it.Kind, &it, u) })
-	p.remove.OnActivate(func(u *gunim.UI) {
+	p.remove.OnClick = func(u *gunim.UI) gunim.Intent {
 		// The ones marked with Space, or the one under the cursor.
 		var picked []app.SecretItem
 		for _, k := range p.table.Marked() {
@@ -112,25 +113,27 @@ func newSecretsPane(w *Window) *secretsPane {
 		}
 		if len(picked) > 1 {
 			p.w.confirmRemoveSecrets(picked, u)
-			return
+			return nil
 		}
 		if len(picked) == 1 {
 			p.w.confirmRemoveSecret(picked[0], u)
-			return
+			return nil
 		}
 		if k, ok := p.table.Cursor(); ok {
 			p.w.confirmRemoveSecret(p.byID[k], u)
 		}
-	})
+		return nil
+	}
 	p.addKey, p.addPass, p.removeKey = button(icon.KeyRound, "Add Key"), button(icon.RectangleEllipsis, "Add Passphrase"),
 		button(icon.Trash2, "Remove")
-	p.addKey.On = app.AddSecretsKey{}
-	p.addPass.OnActivate(func(u *gunim.UI) { p.w.passphraseForm(p.st, u) })
-	p.removeKey.OnActivate(func(u *gunim.UI) {
+	p.addKey.OnClick = widget.Sends(app.AddSecretsKey{})
+	p.addPass.OnClick = func(u *gunim.UI) gunim.Intent { p.w.passphraseForm(p.st, u); return nil }
+	p.removeKey.OnClick = func(u *gunim.UI) gunim.Intent {
 		if k, ok := p.keys.Cursor(); ok {
 			p.w.confirmRemoveKey(p.st, p.keyNames[k], u)
 		}
-	})
+		return nil
+	}
 	p.col = widget.Column(p.head, p.find, p.table, p.act, p.opens, p.keys).Grow(p.table, 3).Grow(p.keys, 1)
 	p.col.Cross, p.col.Gap = widget.CrossStretch, noGap
 	return p
@@ -221,29 +224,30 @@ func (w *Window) secretForm(kind secrets.Kind, old *app.SecretItem, u *gunim.UI)
 	id := ""
 	if old != nil {
 		id, title = old.ID, "Change "+old.Name
-		name.SetText(old.Name)
-		user.SetText(old.User)
+		name.SetText(old.Name, nil)
+		user.SetText(old.User, nil)
 		value.Placeholder = "Unchanged"
 	} else if m := w.machineOf(w.lastTerm); m != "" {
 		// The server in front of the user, which a password typed now
 		// is nearly always for.
-		user.SetText(w.nameOf(m))
+		user.SetText(w.nameOf(m), nil)
 	}
 	// Who or what it is for, completed from the servers' names.
 	servers := w.serverNames()
-	user.OnEdit = func(text string, u *gunim.UI) { user.Ghost = restOf(false, servers, text) }
+	user.OnChange = func(text string, u *gunim.UI) gunim.Intent { user.Ghost = restOf(false, servers, text); return nil }
 	form := widget.NewForm().Add("Name", name).Add("For", user).Add(label, field)
 	d := widget.NewDialog(title)
 	if kind != secrets.Note {
 		reveal := widget.NewCheckbox("Show password")
-		reveal.OnFlip(func(on bool, u *gunim.UI) { value.Secret = !on; u.Invalidate() })
+		reveal.OnChange = func(on bool, u *gunim.UI) gunim.Intent { value.Secret = !on; u.Invalidate(); return nil }
 		form.Add("", reveal)
-		d.AddAction("Generate", func(u *gunim.UI) {
+		d.AddAction("Generate", func(u *gunim.UI) gunim.Intent {
 			if made, err := secrets.NewPassword(secrets.PasswordLength); err == nil {
-				value.SetText(made)
+				value.SetText(made, nil)
 				value.Flash()
 				u.Invalidate()
 			}
+			return nil
 		})
 	}
 	d.Body = form
@@ -257,10 +261,10 @@ func (w *Window) secretForm(kind secrets.Kind, old *app.SecretItem, u *gunim.UI)
 		}
 		return ""
 	}
-	d.OnAccept = func() gunim.Intent {
+	d.OnAccept = func(u *gunim.UI) gunim.Intent {
 		return app.PutSecret{ID: id, Name: strings.TrimSpace(name.Text()), User: strings.TrimSpace(user.Text()), Kind: kind, Value: text()}
 	}
-	d.Dismiss = app.DialogClosed{}
+	d.OnDismiss = widget.Sends(app.DialogClosed{})
 	w.openDialog(d, u)
 }
 
@@ -270,7 +274,7 @@ func (w *Window) confirmRemoveSecret(it app.SecretItem, u *gunim.UI) {
 	d.Body = widget.NewLabel("This can't be undone.")
 	d.SetButtons("Remove", "Cancel")
 	d.Danger = true
-	d.Accept, d.Dismiss = app.RemoveSecret{ID: it.ID}, app.DialogClosed{}
+	d.OnAccept, d.OnDismiss = widget.Sends(app.RemoveSecret{ID: it.ID}), widget.Sends(app.DialogClosed{})
 	w.openDialog(d, u)
 }
 
@@ -285,7 +289,7 @@ func (w *Window) confirmRemoveSecrets(items []app.SecretItem, u *gunim.UI) {
 	d.Body = widget.NewLabel(strings.Join(names, ", ") + ". This can't be undone.")
 	d.SetButtons("Remove "+strconv.Itoa(len(items)), "Cancel")
 	d.Danger = true
-	d.Accept, d.Dismiss = app.RemoveSecrets{IDs: ids}, app.DialogClosed{}
+	d.OnAccept, d.OnDismiss = widget.Sends(app.RemoveSecrets{IDs: ids}), widget.Sends(app.DialogClosed{})
 	w.openDialog(d, u)
 }
 
@@ -312,8 +316,8 @@ func (w *Window) passphraseForm(st app.Secrets, u *gunim.UI) {
 		}
 		return ""
 	}
-	d.OnAccept = func() gunim.Intent { return app.AddSecretsPassphrase{Passphrase: pass.Text()} }
-	d.Dismiss = app.DialogClosed{}
+	d.OnAccept = func(u *gunim.UI) gunim.Intent { return app.AddSecretsPassphrase{Passphrase: pass.Text()} }
+	d.OnDismiss = widget.Sends(app.DialogClosed{})
 	w.openDialog(d, u)
 }
 
@@ -328,7 +332,7 @@ func (w *Window) confirmRemoveKey(st app.Secrets, k app.SecretKey, u *gunim.UI) 
 	d.Body = widget.NewLabel(k.Removing)
 	d.SetButtons("Remove", "Cancel")
 	d.Danger = true
-	d.Accept, d.Dismiss = app.RemoveSecretsKey{Fingerprint: k.Fingerprint}, app.DialogClosed{}
+	d.OnAccept, d.OnDismiss = widget.Sends(app.RemoveSecretsKey{Fingerprint: k.Fingerprint}), widget.Sends(app.DialogClosed{})
 	w.openDialog(d, u)
 }
 
@@ -352,8 +356,8 @@ func (w *Window) exportForm(u *gunim.UI) {
 		}
 		return ""
 	}
-	d.OnAccept = func() gunim.Intent { return app.ExportSecrets{Path: path.Text()} }
-	d.Dismiss = app.DialogClosed{}
+	d.OnAccept = func(u *gunim.UI) gunim.Intent { return app.ExportSecrets{Path: path.Text()} }
+	d.OnDismiss = widget.Sends(app.DialogClosed{})
 	w.openDialog(d, u)
 }
 
@@ -363,7 +367,7 @@ func (w *Window) importForm(u *gunim.UI) {
 	path := widget.NewTextField()
 	path.Placeholder = "~/Downloads/passwords.csv"
 	completesPaths(path)
-	dup := widget.NewDropdown(app.KeepBoth, app.SkipThem, app.Replace)
+	dup := widget.NewDropdown(widget.Labels(app.KeepBoth, app.SkipThem, app.Replace))
 	dup.Label = "Duplicates"
 	d := widget.NewDialog("Import Secrets")
 	d.Body = widget.NewForm().Add("File", path).Add("Duplicates", dup)
@@ -374,10 +378,10 @@ func (w *Window) importForm(u *gunim.UI) {
 		}
 		return ""
 	}
-	d.OnAccept = func() gunim.Intent {
-		return app.ImportSecrets{Path: path.Text(), Duplicates: []string{app.KeepBoth, app.SkipThem, app.Replace}[max(0, min(dup.Selected, 2))]}
+	d.OnAccept = func(u *gunim.UI) gunim.Intent {
+		return app.ImportSecrets{Path: path.Text(), Duplicates: []string{app.KeepBoth, app.SkipThem, app.Replace}[max(0, min(dup.Selected(), 2))]}
 	}
-	d.Dismiss = app.DialogClosed{}
+	d.OnDismiss = widget.Sends(app.DialogClosed{})
 	w.openDialog(d, u)
 }
 
@@ -387,7 +391,7 @@ func (w *Window) importForm(u *gunim.UI) {
 func (w *Window) makeKeyDialog(u *gunim.UI) {
 	path, comment, pass, again := widget.NewTextField(), widget.NewTextField(), widget.NewTextField(), widget.NewTextField()
 	if at, err := remote.DefaultKeyPath(); err == nil {
-		path.SetText(at)
+		path.SetText(at, nil)
 	}
 	completesPaths(path)
 	comment.Placeholder, pass.Placeholder = "Optional", "Optional"
@@ -400,18 +404,19 @@ func (w *Window) makeKeyDialog(u *gunim.UI) {
 		generate = widget.NewCheckbox("Generate a passphrase and save it in your secrets")
 		// Ticked, the passphrase fields take nothing: they are emptied
 		// and disabled.
-		generate.OnFlip(func(on bool, u *gunim.UI) {
+		generate.OnChange = func(on bool, u *gunim.UI) gunim.Intent {
 			if on {
-				pass.SetText("")
-				again.SetText("")
+				pass.SetText("", nil)
+				again.SetText("", nil)
 			}
 			pass.Disabled, again.Disabled = on, on
 			u.Invalidate()
-		})
+			return nil
+		}
 		form.Add("", generate)
 	}
 	form.Add("Passphrase", pass).Add("Confirm", again)
-	made := func() bool { return generate != nil && generate.On }
+	made := func() bool { return generate != nil && generate.Checked() }
 	d := widget.NewDialog("New SSH Key")
 	d.Body = form
 	d.SetButtons("Create", "Cancel")
@@ -433,10 +438,10 @@ func (w *Window) makeKeyDialog(u *gunim.UI) {
 		}
 		return ""
 	}
-	d.OnAccept = func() gunim.Intent {
+	d.OnAccept = func(u *gunim.UI) gunim.Intent {
 		return app.MakeKey{Path: path.Text(), Comment: comment.Text(), Passphrase: pass.Text(), Generate: made()}
 	}
-	d.Dismiss = app.DialogClosed{}
+	d.OnDismiss = widget.Sends(app.DialogClosed{})
 	w.openDialog(d, u)
 }
 
@@ -487,7 +492,7 @@ func (w *Window) serverNames() []string {
 // the rest of a file's or folder's name as it is typed, as Go To does.
 func completesPaths(f *widget.TextField) {
 	var c pathCompleter
-	f.OnEdit = func(text string, _ *gunim.UI) { f.Ghost = c.rest(text) }
+	f.OnChange = func(text string, _ *gunim.UI) gunim.Intent { f.Ghost = c.rest(text); return nil }
 }
 
 // pathCompleter completes paths on this machine, reading each folder

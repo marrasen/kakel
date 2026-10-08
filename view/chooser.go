@@ -108,10 +108,11 @@ func (c *chooser) refresh(u *gunim.UI) {
 			c.made[o.key] = b
 		}
 		if o.local != nil {
-			b.OnActivate(o.local)
+			local := o.local
+			b.OnClick = func(u *gunim.UI) gunim.Intent { local(u); return nil }
 		} else {
 			in := o.in
-			b.OnActivate(func(u *gunim.UI) { u.Send(c, in) })
+			b.OnClick = func(u *gunim.UI) gunim.Intent { u.Send(c, in); return nil }
 		}
 		c.buttons = append(c.buttons, b)
 	}

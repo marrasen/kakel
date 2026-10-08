@@ -106,7 +106,7 @@ func TestGoToCompletesAFoldersName(t *testing.T) {
 	for range 5 {
 		lastWindow.Frame(time.Second / 60)
 	}
-	b.goTo.SetText("/home/")
+	b.goTo.SetText("/home/", nil)
 	lastWindow.Input(gi.TextInput{Text: "rd"})
 	lastWindow.Frame(time.Second / 60)
 	for {

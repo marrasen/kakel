@@ -199,8 +199,8 @@ func TestTheServerFormFitsItsType(t *testing.T) {
 	if kind == nil {
 		t.Fatal("the form has no Type drop-down")
 	}
-	if kind.Selected != 1 || kind.Items[1] != remote.WindowKind {
-		t.Fatalf("the Type drop-down offers %q with %d chosen, want %q chosen", kind.Items, kind.Selected, remote.WindowKind)
+	if kind.Selected() != 1 || kind.Items()[1].Label != remote.WindowKind {
+		t.Fatalf("the Type drop-down offers %+v with %d chosen, want %q chosen", kind.Items(), kind.Selected(), remote.WindowKind)
 	}
 
 }
@@ -253,7 +253,7 @@ func TestAServerEditKeepsFoldersNotYetMoved(t *testing.T) {
 	srv := remote.Host{ID: "s1", Name: "srv", Address: "srv.example", Folders: []string{"/data/a,b", "/srv"}}
 	publish(app.State{Saved: []remote.Host{srv}})
 	win.serverForm(&srv, lastUI)
-	in, ok := win.dialog.OnAccept().(app.SaveServer)
+	in, ok := win.dialog.OnAccept(lastUI).(app.SaveServer)
 	if !ok || !slices.Equal(in.Host.Folders, srv.Folders) {
 		t.Fatalf("saved, the folders are %q", in.Host.Folders)
 	}
@@ -271,7 +271,7 @@ func TestAWindowKeepsTheAgentTickItCameWith(t *testing.T) {
 	far := remote.Host{ID: "f1", Name: "far", Address: "far.example", Window: true, ForwardAgent: true}
 	publish(app.State{Saved: []remote.Host{far}})
 	win.serverForm(&far, lastUI)
-	if in, ok := win.dialog.OnAccept().(app.SaveServer); !ok || !in.Host.ForwardAgent {
+	if in, ok := win.dialog.OnAccept(lastUI).(app.SaveServer); !ok || !in.Host.ForwardAgent {
 		t.Fatalf("saved untouched, the window is %+v", in.Host)
 	}
 }
@@ -294,7 +294,7 @@ func TestForgetAKeptKeyListsThem(t *testing.T) {
 	if p == nil || len(p.Items) != 2 || p.Items[1].Title != "/keys/two" {
 		t.Fatalf("the list is %+v", p)
 	}
-	p.Pick(1, lastUI)
+	p.OnPick(1, lastUI)
 	if in, ok := nextIntent(t).(app.RemoveSavedKey); !ok || in.Path != "/keys/two" {
 		t.Fatalf("picking the second key sent %#v", in)
 	}

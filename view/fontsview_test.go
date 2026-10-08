@@ -55,8 +55,8 @@ func TestTheWindowDrawsInTheFontAndZoomsWithCtrlAndTheWheel(t *testing.T) {
 		if i != menuAt("Font") {
 			continue
 		}
-		if len(m.Checked) < 2 || !m.Checked[1] || m.Checked[0] {
-			t.Fatalf("the Font menu ticks %v", win.bar.Menus[i].Checked)
+		if len(m.Items) < 2 || !m.Items[1].Checked || m.Items[0].Checked {
+			t.Fatalf("the Font menu is %+v", m.Items)
 		}
 	}
 	for len(lastWindow.Client().Intents()) > 0 {

@@ -526,11 +526,11 @@ func (s *serverCards) sync(rows []sideItem, u *gunim.UI) {
 		}
 		c.info = info
 		c.head.card = &c.info
-		c.head.title.SetText(c.info.name)
+		c.head.title.Text = c.info.name
 		c.head.title.Size, c.head.title.Color = cardTitleSize, widget.Ink
 		c.head.note.Size, c.head.note.Color = smallText, look.Faint
 		c.head.said = ""
-		c.head.note.SetText(c.info.sub)
+		c.head.note.Text = c.info.sub
 		// The rows it had, kept by key, so a row keeps its state.
 		had := map[string]*sideRow{}
 		for _, r := range c.items {
@@ -579,7 +579,7 @@ func (s *serverCards) sync(rows []sideItem, u *gunim.UI) {
 	case s.filter == "" && len(s.w.saved) == 0:
 		hint = "No servers saved yet. Add one, or import the ones your SSH config knows, from Add."
 	}
-	s.grid.hint.SetText(hint)
+	s.grid.hint.Text = hint
 }
 
 // found reports whether the search field's text is in a card: its
@@ -672,9 +672,9 @@ func (r *sideRow) makeButtons() {
 	files := iconButton(icon.Folder, "Files")
 	more := iconButton(icon.Ellipsis, "")
 	more.Tooltip = "Everything that opens here"
-	term.OnActivate(func(u *gunim.UI) { u.Send(r, app.OpenOn{Machine: r.machine}) })
-	files.OnActivate(func(u *gunim.UI) { u.Send(r, app.OpenFilesOn{Machine: r.machine}) })
-	more.OnActivate(func(u *gunim.UI) { r.w.openMachineMenu(r, u) })
+	term.OnClick = func(u *gunim.UI) gunim.Intent { u.Send(r, app.OpenOn{Machine: r.machine}); return nil }
+	files.OnClick = func(u *gunim.UI) gunim.Intent { u.Send(r, app.OpenFilesOn{Machine: r.machine}); return nil }
+	more.OnClick = func(u *gunim.UI) gunim.Intent { r.w.openMachineMenu(r, u); return nil }
 	r.chips = []*widget.Button{term, files, more}
 }
 

@@ -88,7 +88,7 @@ func newHelpPane(w *Window) *helpPane {
 		}
 		return widget.TableRow{Cells: r[:], Faint: r[2] == ""}
 	}
-	p.table.OnSort = func(int, bool, *gunim.UI) {}
+	p.table.OnSort = func(int, bool, *gunim.UI) gunim.Intent { return nil }
 	p.fill(w)
 	return p
 }
@@ -254,12 +254,12 @@ func (w *Window) applyShortcuts(changes []keys.Change, u *gunim.UI) bool {
 	// The menus and the palette say the new chords.
 	for m := range menus {
 		for i, it := range menus[m].items {
-			if it.caption || i >= len(w.bar.Menus[m].Hints) {
+			if it.caption || i >= len(w.bar.Menus[m].Items) {
 				continue
 			}
-			w.bar.Menus[m].Hints[i] = ""
+			w.bar.Menus[m].Items[i].Hint = ""
 			if ch, ok := w.keys.ChordFor(it.id); ok {
-				w.bar.Menus[m].Hints[i] = chordLabel(ch)
+				w.bar.Menus[m].Items[i].Hint = chordLabel(ch)
 			}
 		}
 	}
@@ -299,13 +299,14 @@ func (w *Window) fileLocationsDialog(u *gunim.UI) {
 	// reading, and a second press would copy over the first.
 	if own, beside, err := conf.CarriesItsOwn(); err == nil && !own {
 		if made, err := conf.IsDir(beside); err == nil && !made {
-			d.AddAction("Make Portable", func(u *gunim.UI) {
+			d.AddAction("Make Portable", func(u *gunim.UI) gunim.Intent {
 				d.Close(u)
 				u.Send(w, app.MakePortable{})
+				return nil
 			})
 		}
 	}
-	d.Accept, d.Dismiss = app.DialogClosed{}, app.DialogClosed{}
+	d.OnAccept, d.OnDismiss = widget.Sends(app.DialogClosed{}), widget.Sends(app.DialogClosed{})
 	w.openDialog(d, u)
 }
 

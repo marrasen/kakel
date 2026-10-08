@@ -54,9 +54,9 @@ func newChipBar() *chipBar {
 func (b *chipBar) show(chips []chip) {
 	b.chips = chips[:min(len(chips), mostChips)]
 	for i, l := range b.labels {
-		l.SetText("")
+		l.Text = ""
 		if i < len(b.chips) {
-			l.SetText(b.chips[i].text)
+			l.Text = b.chips[i].text
 		}
 	}
 }

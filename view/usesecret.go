@@ -124,9 +124,9 @@ func (w *Window) useSecretDialog(u *gunim.UI) {
 			table.SetCursor(keys[0], u)
 		}
 	}
-	find.OnEdit = func(_ string, u *gunim.UI) { fill(u) }
-	picked := func(as func(id string) gunim.Intent) func() gunim.Intent {
-		return func() gunim.Intent {
+	find.OnChange = func(_ string, u *gunim.UI) gunim.Intent { fill(u); return nil }
+	picked := func(as func(id string) gunim.Intent) func(*gunim.UI) gunim.Intent {
+		return func(*gunim.UI) gunim.Intent {
 			if k, ok := table.Cursor(); ok {
 				return as(string(k))
 			}
@@ -144,7 +144,7 @@ func (w *Window) useSecretDialog(u *gunim.UI) {
 	// edge, and the two others stand before it in that order. Escape
 	// still cancels.
 	d.SetButtons("Type", "")
-	d.AddButton("Cancel", func() gunim.Intent { return app.DialogClosed{} })
+	d.AddButton("Cancel", func(u *gunim.UI) gunim.Intent { return app.DialogClosed{} })
 	d.AddButton("Copy", picked(func(id string) gunim.Intent { return app.CopySecret{ID: id} }))
 	// The keys: Up and Down pick in the list, Left and Right a button,
 	// wherever the keyboard is, and typing goes on in the field.
@@ -158,11 +158,12 @@ func (w *Window) useSecretDialog(u *gunim.UI) {
 		return ""
 	}
 	d.OnAccept = typeIt
-	table.OnActivate = func(k widget.Key, u *gunim.UI) {
+	table.OnActivate = func(k widget.Key, u *gunim.UI) gunim.Intent {
 		d.Close(u)
 		u.Send(w, app.TypeSecret{ID: string(k)})
+		return nil
 	}
-	d.Dismiss = app.DialogClosed{}
+	d.OnDismiss = widget.Sends(app.DialogClosed{})
 	w.openDialog(d, u)
 	fill(u)
 	u.Focus(find)
@@ -263,7 +264,7 @@ func (b *pickerBody) dialogKey(e input.Event, u *gunim.UI) bool {
 		if e.Key == input.KeyBackspace && e.Mods == 0 {
 			text := []rune(b.find.Text())
 			if len(text) > 0 {
-				b.find.SetText(string(text[:len(text)-1]))
+				b.find.SetText(string(text[:len(text)-1]), nil)
 			}
 			u.Focus(b.find)
 			b.fill(u)
@@ -271,7 +272,7 @@ func (b *pickerBody) dialogKey(e input.Event, u *gunim.UI) bool {
 		}
 		return b.key(e, u)
 	case input.TextInput:
-		b.find.SetText(b.find.Text() + e.Text)
+		b.find.SetText(b.find.Text()+e.Text, nil)
 		u.Focus(b.find)
 		b.fill(u)
 		return true

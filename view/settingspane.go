@@ -172,7 +172,7 @@ func buttons(bs ...gunim.Node) gunim.Node {
 // settingButton is a button that runs the window's command id.
 func (p *settingsPane) settingButton(label, id string) *widget.Button {
 	b := widget.NewButton(label)
-	b.OnActivate(func(u *gunim.UI) { p.w.run(id, u) })
+	b.OnClick = func(u *gunim.UI) gunim.Intent { p.w.run(id, u); return nil }
 	return b
 }
 
@@ -201,22 +201,23 @@ func (p *settingsPane) newSavedLine(placeholder string, width float32, check fun
 		s := strings.TrimSpace(l.field.Text())
 		if l.check != nil {
 			if why := l.check(s); why != "" {
-				l.note.SetText(why)
+				l.note.Text = why
 				u.Invalidate()
 				return
 			}
 		}
-		l.note.SetText("")
+		l.note.Text = ""
 		l.kept = s
 		l.save.Disabled = true
 		p.send(keep(s), u)
 		u.Invalidate()
 	}
-	l.save.OnActivate(commit)
-	l.field.OnEdit = func(s string, u *gunim.UI) {
+	l.save.OnClick = func(u *gunim.UI) gunim.Intent { commit(u); return nil }
+	l.field.OnChange = func(s string, u *gunim.UI) gunim.Intent {
 		l.save.Disabled = strings.TrimSpace(s) == l.kept
-		l.note.SetText("")
+		l.note.Text = ""
 		u.Invalidate()
+		return nil
 	}
 	l.field.Keys = func(k gi.KeyPress, u *gunim.UI) bool {
 		if k.Key != gi.KeyEnter || k.Mods != 0 {
@@ -240,7 +241,7 @@ func (l *savedLine) show(s string, _ *gunim.UI) {
 	l.kept = s
 	if text == was || text == s {
 		if l.field.Text() != s {
-			l.field.SetText(s)
+			l.field.SetText(s, nil)
 		}
 		l.save.Disabled = true
 		return
@@ -250,16 +251,17 @@ func (l *savedLine) show(s string, _ *gunim.UI) {
 
 func (p *settingsPane) general() gunim.Node {
 	p.autostart = widget.NewSwitch("")
-	p.autostart.OnFlip(func(_ bool, u *gunim.UI) { p.send(app.ToggleAutostart{}, u) })
+	p.autostart.OnChange = func(_ bool, u *gunim.UI) gunim.Intent { p.send(app.ToggleAutostart{}, u); return nil }
 	p.tray = widget.NewSwitch("")
-	p.tray.OnFlip(func(_ bool, u *gunim.UI) { p.send(app.ToggleTray{}, u) })
+	p.tray.OnChange = func(_ bool, u *gunim.UI) gunim.Intent { p.send(app.ToggleTray{}, u); return nil }
 	p.folders = widget.NewSwitch("")
-	p.folders.OnFlip(func(_ bool, u *gunim.UI) { p.send(app.ToggleFolders{}, u) })
+	p.folders.OnChange = func(_ bool, u *gunim.UI) gunim.Intent { p.send(app.ToggleFolders{}, u); return nil }
 	p.titleBar = widget.NewSwitch("")
-	p.titleBar.OnFlip(func(on bool, u *gunim.UI) {
+	p.titleBar.OnChange = func(on bool, u *gunim.UI) gunim.Intent {
 		in := app.SaveLook{Sounds: p.st.Sounds, Rings: p.st.Rings, SystemTitleBar: on}
 		p.send(in, u)
-	})
+		return nil
+	}
 	p.launcher = p.newSavedLine(app.DefaultLauncherKey, 180, func(s string) string {
 		if s == "" || strings.EqualFold(s, "none") {
 			return ""
@@ -273,15 +275,16 @@ func (p *settingsPane) general() gunim.Node {
 	for i, c := range updateChoices {
 		titles[i] = c.title
 	}
-	p.updates = widget.NewDropdown(titles...)
+	p.updates = widget.NewDropdown(widget.Labels(titles...))
 	p.updates.Label = "New releases"
-	p.updates.OnPick(func(i int, u *gunim.UI) {
+	p.updates.OnChange = func(i int, u *gunim.UI) gunim.Intent {
 		p.send(app.SetUpdates{What: updateChoices[max(0, min(i, len(updateChoices)-1))].value}, u)
-	})
+		return nil
+	}
 	p.beta = widget.NewSwitch("")
-	p.beta.OnFlip(func(on bool, u *gunim.UI) { p.send(app.SetBeta{On: on}, u) })
+	p.beta.OnChange = func(on bool, u *gunim.UI) gunim.Intent { p.send(app.SetBeta{On: on}, u); return nil }
 	about := widget.NewButton("About kakel…")
-	about.OnActivate(func(u *gunim.UI) { p.send(app.ShowAbout{}, u) })
+	about.OnClick = func(u *gunim.UI) gunim.Intent { p.send(app.ShowAbout{}, u); return nil }
 	install := p.settingButton("Install kakel…", "app.install")
 	p.installRow = &maybeShown{child: settingRow("Install kakel", "For you alone, with a Start menu entry. Starting with the computer, updates and opening folders are for the installed kakel.", install)}
 	p.foldersRow = &maybeShown{child: settingRow("Default file manager", "Folders and drives opened anywhere, and Win+E, open in kakel's file manager in place of File Explorer.", p.folders)}
@@ -304,25 +307,27 @@ func (p *settingsPane) general() gunim.Node {
 }
 
 func (p *settingsPane) appearance() gunim.Node {
-	p.theme = widget.NewDropdown("")
+	p.theme = widget.NewDropdown(widget.Labels(""))
 	p.theme.Label = "Theme"
-	p.theme.OnPick(func(i int, u *gunim.UI) {
+	p.theme.OnChange = func(i int, u *gunim.UI) gunim.Intent {
 		if i < len(p.themeNames) {
 			p.send(app.PickTheme{Name: p.themeNames[i]}, u)
 		}
-	})
-	p.font = widget.NewDropdown("")
+		return nil
+	}
+	p.font = widget.NewDropdown(widget.Labels(""))
 	p.font.Label = "Font"
-	p.font.OnPick(func(i int, u *gunim.UI) {
+	p.font.OnChange = func(i int, u *gunim.UI) gunim.Intent {
 		if i < len(p.fontNames) {
 			p.send(app.PickFont{Name: p.fontNames[i]}, u)
 		}
-	})
+		return nil
+	}
 	p.size = widget.NewNumberField(float64(app.MinFontSize), float64(app.MaxFontSize))
 	p.size.Suffix = " px"
-	p.size.OnChange = func(v float64) gunim.Intent { return app.SetFontSize{Size: float32(v)} }
+	p.size.OnChange = func(v float64, u *gunim.UI) gunim.Intent { return app.SetFontSize{Size: float32(v)} }
 	reset := widget.NewButton("Reset")
-	reset.OnActivate(func(u *gunim.UI) { p.send(app.FontSize{}, u) })
+	reset.OnClick = func(u *gunim.UI) gunim.Intent { p.send(app.FontSize{}, u); return nil }
 	size := widget.Row(widget.NewSized(p.size, 110, 0), reset)
 	size.Cross, size.Gap = widget.CrossCenter, settingsButtons
 	return settingsPage(
@@ -346,26 +351,28 @@ func (p *settingsPane) terminal() gunim.Node {
 	}, func(s string) gunim.Intent {
 		return app.SaveThisComputer{StartFolder: s, Shell: p.st.ChosenShell}
 	})
-	p.shell = widget.NewDropdown("Your default shell")
+	p.shell = widget.NewDropdown(widget.Labels("Your default shell"))
 	p.shell.Label = "Shell"
-	p.shell.OnPick(func(i int, u *gunim.UI) {
+	p.shell.OnChange = func(i int, u *gunim.UI) gunim.Intent {
 		if i < len(p.shellIDs) {
 			p.send(app.SaveThisComputer{StartFolder: p.st.ThisComputer.StartFolder, Shell: p.shellIDs[i]}, u)
 		}
-	})
+		return nil
+	}
 	p.termProgram = p.newSavedLine("kakel", 180, nil, func(s string) gunim.Intent { return app.SetTermProgram{Called: s} })
-	p.known = widget.NewDropdown(append([]string{"kakel"}, app.KnownTerminals...)...)
+	p.known = widget.NewDropdown(widget.Labels(append([]string{"kakel"}, app.KnownTerminals...)...))
 	p.known.Label = "Known terminals"
-	p.known.OnPick(func(i int, u *gunim.UI) {
+	p.known.OnChange = func(i int, u *gunim.UI) gunim.Intent {
 		called := ""
 		if i > 0 && i-1 < len(app.KnownTerminals) {
 			called = app.KnownTerminals[i-1]
 		}
-		p.termProgram.field.SetText(called)
+		p.termProgram.field.SetText(called, nil)
 		p.termProgram.kept = called
 		p.termProgram.save.Disabled = true
 		p.send(app.SetTermProgram{Called: called}, u)
-	})
+		return nil
+	}
 	return settingsPage(
 		settingsSection("This computer",
 			settingRow("Start in", "New terminals start here, unless kakel was started in a folder of its own, or they open from a terminal in another.", p.startIn.node),
@@ -385,17 +392,17 @@ func (p *settingsPane) notifications() gunim.Node {
 	}
 	save := func(u *gunim.UI) {
 		in := app.SaveLook{SystemTitleBar: p.st.SystemTitleBar}
-		in.Sounds.Interface = p.iface.On
+		in.Sounds.Interface = p.iface.Checked()
 		for i, r := range alertRows {
-			*r.field(&in.Sounds) = p.sounds[i].On
-			*r.field(&in.Rings) = p.rings[i].On
+			*r.field(&in.Sounds) = p.sounds[i].Checked()
+			*r.field(&in.Rings) = p.rings[i].Checked()
 		}
 		p.send(in, u)
 	}
 	check := func(tip string) *widget.Checkbox {
 		c := widget.NewCheckbox("")
 		c.Tooltip = tip
-		c.OnFlip(func(_ bool, u *gunim.UI) { save(u) })
+		c.OnChange = func(_ bool, u *gunim.UI) gunim.Intent { save(u); return nil }
 		return c
 	}
 	rows := []gunim.Node{row(widget.NewLabel(""), faintLabel("Sound"), faintLabel("Rings"))}
@@ -424,31 +431,33 @@ func (p *settingsPane) sharing() gunim.Node {
 		titles[i] = c.title
 	}
 	p.atStart = widget.NewSegmented(titles...)
-	p.atStart.OnChange = func(i int) gunim.Intent {
+	p.atStart.OnChange = func(i int, u *gunim.UI) gunim.Intent {
 		return app.SetServeAtStart{When: serveAtStart[max(0, min(i, len(serveAtStart)-1))].value}
 	}
 	p.port = widget.NewNumberField(0, 65535)
-	p.port.OnChange = func(v float64) gunim.Intent {
-		return app.SetServeDefaults{Port: int(v), Anywhere: p.reach.Selected == 1}
+	p.port.OnChange = func(v float64, u *gunim.UI) gunim.Intent {
+		return app.SetServeDefaults{Port: int(v), Anywhere: p.reach.Selected() == 1}
 	}
-	p.reach = widget.NewDropdown("This machine only", "All networks")
+	p.reach = widget.NewDropdown(widget.Labels("This machine only", "All networks"))
 	p.reach.Label = "Listen on"
-	p.reach.OnPick(func(i int, u *gunim.UI) {
+	p.reach.OnChange = func(i int, u *gunim.UI) gunim.Intent {
 		p.send(app.SetServeDefaults{Port: int(p.port.Value()), Anywhere: i == 1}, u)
-	})
+		return nil
+	}
 	p.keys = widget.NewLabel("")
 	add := widget.NewButton("Add Key…")
-	add.OnActivate(func(u *gunim.UI) { p.w.addKeyDialogFrom(p.st.Serving, false, u) })
+	add.OnClick = func(u *gunim.UI) gunim.Intent { p.w.addKeyDialogFrom(p.st.Serving, false, u); return nil }
 	p.removeK = widget.NewButton("Remove Key…")
-	p.removeK.OnActivate(func(u *gunim.UI) { p.w.removeKeyPickerFrom(p.st.Serving, false, u) })
+	p.removeK.OnClick = func(u *gunim.UI) gunim.Intent { p.w.removeKeyPickerFrom(p.st.Serving, false, u); return nil }
 	p.serving = widget.NewButton("Serve This Window…")
-	p.serving.OnActivate(func(u *gunim.UI) {
+	p.serving.OnClick = func(u *gunim.UI) gunim.Intent {
 		if p.st.Serving.On {
 			p.send(app.StopServing{}, u)
-			return
+			return nil
 		}
 		p.w.run("serve.window", u)
-	})
+		return nil
+	}
 	return settingsPage(
 		settingsSection("Serving",
 			faintLabel("Another kakel window, on a machine whose key is allowed, can take a served window over: open shells here, work in the panes, and read and write files as you."),
@@ -482,7 +491,7 @@ func (p *settingsPane) files() gunim.Node {
 			place = append(place, faintLabel("Portable: the files are kept beside kakel, in "+beside+". The serving key is in there too, and is only as private as that folder."))
 		} else if made, err := conf.IsDir(beside); err == nil && !made {
 			portable := widget.NewButton("Make Portable")
-			portable.OnActivate(func(u *gunim.UI) { p.send(app.MakePortable{}, u) })
+			portable.OnClick = func(u *gunim.UI) gunim.Intent { p.send(app.MakePortable{}, u); return nil }
 			place = append(place, settingRow("Make kakel portable", "Keep the files beside kakel, in "+beside+", so it carries them, as on a USB stick.", portable))
 		}
 	}
@@ -506,8 +515,8 @@ func (p *settingsPane) files() gunim.Node {
 func (p *settingsPane) show(st app.State, u *gunim.UI) {
 	p.st = st
 	setOn := func(s *widget.Switch, on bool) {
-		if s.On != on {
-			s.SetOn(on, u)
+		if s.Checked() != on {
+			s.SetChecked(on, u)
 		}
 	}
 	// General.
@@ -522,7 +531,7 @@ func (p *settingsPane) show(st app.State, u *gunim.UI) {
 	p.launcher.show(st.LauncherKey, u)
 	for i, c := range updateChoices {
 		if c.value == st.Update.Updates {
-			p.updates.Selected = i
+			p.updates.SetSelected(i, nil)
 		}
 	}
 	p.updates.Disabled = !st.Update.Installed
@@ -531,22 +540,22 @@ func (p *settingsPane) show(st app.State, u *gunim.UI) {
 	// Appearance.
 	if !slices.Equal(st.Themes, p.themeNames) {
 		p.themeNames = slices.Clone(st.Themes)
-		p.theme.Items = p.themeNames
+		p.theme.SetItems(widget.Labels(p.themeNames...))
 	}
 	if i := slices.Index(p.themeNames, st.Theme); i >= 0 {
-		p.theme.Selected = i
+		p.theme.SetSelected(i, nil)
 	}
 	if !slices.Equal(st.Fonts, p.fontNames) {
 		p.fontNames = slices.Clone(st.Fonts)
-		p.font.Items = p.fontNames
+		p.font.SetItems(widget.Labels(p.fontNames...))
 	}
 	for i, name := range p.fontNames {
 		if app.FontCommandID(name) == app.FontCommandID(st.Font.Name) {
-			p.font.Selected = i
+			p.font.SetSelected(i, nil)
 		}
 	}
 	if !u.HasFocus(p.size) && float32(p.size.Value()) != st.FontSize {
-		p.size.SetValue(float64(st.FontSize))
+		p.size.SetValue(float64(st.FontSize), u)
 	}
 	// Terminal.
 	p.startIn.show(st.ThisComputer.StartFolder, u)
@@ -556,19 +565,19 @@ func (p *settingsPane) show(st app.State, u *gunim.UI) {
 	}
 	if !slices.Equal(ids, p.shellIDs) {
 		p.shellIDs = ids
-		p.shell.Items = titles
+		p.shell.SetItems(widget.Labels(titles...))
 	}
-	p.shell.Selected = max(slices.Index(p.shellIDs, st.ChosenShell), 0)
+	p.shell.SetSelected(max(slices.Index(p.shellIDs, st.ChosenShell), 0), nil)
 	p.termProgram.show(st.TermProgram, u)
-	p.known.Selected = 0
+	p.known.SetSelected(0, nil)
 	if i := slices.Index(app.KnownTerminals, st.TermProgram); i >= 0 {
-		p.known.Selected = i + 1
+		p.known.SetSelected(i+1, nil)
 	}
 	// Notifications.
-	p.iface.On = st.Sounds.Interface
+	p.iface.SetChecked(st.Sounds.Interface, nil)
 	for i, r := range alertRows {
-		p.sounds[i].On = *r.field(&st.Sounds)
-		p.rings[i].On = *r.field(&st.Rings)
+		p.sounds[i].SetChecked(*r.field(&st.Sounds), nil)
+		p.rings[i].SetChecked(*r.field(&st.Rings), nil)
 	}
 	// Sharing.
 	s := st.Serving
@@ -578,17 +587,17 @@ func (p *settingsPane) show(st app.State, u *gunim.UI) {
 		}
 	}
 	if !u.HasFocus(p.port) && int(p.port.Value()) != s.Port {
-		p.port.SetValue(float64(s.Port))
+		p.port.SetValue(float64(s.Port), u)
 	}
-	p.reach.Selected = 0
+	p.reach.SetSelected(0, nil)
 	if s.Anywhere {
-		p.reach.Selected = 1
+		p.reach.SetSelected(1, nil)
 	}
 	switch {
 	case s.Problem != "":
-		p.keys.SetText(words.UpperFirst(s.Problem) + ".")
+		p.keys.Text = words.UpperFirst(s.Problem) + "."
 	case len(s.Keys) == 0:
-		p.keys.SetText("None yet. Add the public key of the machine you will connect from.")
+		p.keys.Text = "None yet. Add the public key of the machine you will connect from."
 	default:
 		lines := make([]string, len(s.Keys))
 		for i, k := range s.Keys {
@@ -597,13 +606,13 @@ func (p *settingsPane) show(st app.State, u *gunim.UI) {
 				lines[i] += "  ·  " + shortPrint(k.Fingerprint)
 			}
 		}
-		p.keys.SetText(strings.Join(lines, "\n"))
+		p.keys.Text = strings.Join(lines, "\n")
 	}
 	p.removeK.Disabled = len(s.Keys) == 0
 	if s.On {
-		p.serving.SetLabel("Stop Serving")
+		p.serving.Label = "Stop Serving"
 	} else {
-		p.serving.SetLabel("Serve This Window…")
+		p.serving.Label = "Serve This Window…"
 	}
 	u.Invalidate()
 }

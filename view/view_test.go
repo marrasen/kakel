@@ -176,6 +176,14 @@ func TestAPaneSlidingInKeepsItsShellAUsableSize(t *testing.T) {
 		}
 		s.mu.Unlock()
 	}
+	// The new pane slid in: its shell was narrower on the way than where it came to rest. The first size is the one
+	// the shell opened at, before its pane was laid out.
+	s := got[1]
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if n := len(s.seen); n < 3 || s.seen[1][0] >= s.seen[n-1][0] {
+		t.Fatalf("the new shell was given %v, want it growing as its pane slides in", s.seen)
+	}
 }
 
 // nextIntent is the next intent the window sends, or fails.
@@ -293,8 +301,8 @@ func TestTheTunnelDialogOffersTheTunnelsSavedForTheServer(t *testing.T) {
 		t.Fatalf("the dialog has %d fields, want listen, target, direction, saved and the box", len(fields))
 	}
 	pick := fields[3].(*widget.Dropdown)
-	if len(pick.Items) != 2 || pick.Items[1] != "remote :8080 → 127.0.0.1:80" {
-		t.Fatalf("Saved offers %q, want the one tunnel kept for srv", pick.Items)
+	if items := pick.Items(); len(items) != 2 || items[1].Label != "remote :8080 → 127.0.0.1:80" {
+		t.Fatalf("Saved offers %+v, want the one tunnel kept for srv", items)
 	}
 	lastUI.Focus(pick)
 	for _, k := range []gi.Key{gi.KeyDown, gi.KeyDown, gi.KeyEnter} {
@@ -302,8 +310,8 @@ func TestTheTunnelDialogOffersTheTunnelsSavedForTheServer(t *testing.T) {
 		lastWindow.Frame(time.Second / 60)
 	}
 	listen, target := fields[0].(*widget.TextField), fields[1].(*widget.TextField)
-	if listen.Text() != ":8080" || target.Text() != "127.0.0.1:80" || fields[2].(*widget.Dropdown).Selected != 1 {
-		t.Fatalf("picked, the form reads %q, %q, direction %d", listen.Text(), target.Text(), fields[2].(*widget.Dropdown).Selected)
+	if listen.Text() != ":8080" || target.Text() != "127.0.0.1:80" || fields[2].(*widget.Dropdown).Selected() != 1 {
+		t.Fatalf("picked, the form reads %q, %q, direction %d", listen.Text(), target.Text(), fields[2].(*widget.Dropdown).Selected())
 	}
 }
 
@@ -333,7 +341,8 @@ func TestAMachinesPlusOpensWhatCanBeOpenedThere(t *testing.T) {
 	st.Focus = "ps"
 	publish(st)
 	// Its lines are grouped under headings.
-	if m := row.menu; m == nil || !slices.Contains(m.Captions, 0) || m.Items[0] != "Terminal" || !slices.Contains(m.Items, "Files") {
+	if m := row.menu; m == nil || !m.Items()[0].Caption || m.Items()[0].Label != "Terminal" ||
+		!slices.ContainsFunc(m.Items(), func(it widget.MenuItem) bool { return it.Label == "Files" }) {
 		t.Fatalf("this computer's menu is %+v", row.menu)
 	}
 	for _, k := range []gi.Key{gi.KeyDown, gi.KeyEnter} {
