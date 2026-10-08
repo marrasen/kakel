@@ -32,7 +32,7 @@ func FilePaneHost(id string) gunim.ID { return gunim.ID("fmhost:" + id) }
 
 // FilePaneCommands are the file manager's commands kakel's menus offer
 // for a file manager pane, which its own menus leave out: kakel's Edit
-// menu, Files in a New Window and Close Pane.
+// menu, New File Manager Window and Close Pane.
 var FilePaneCommands = []string{filemanager.CmdCut, filemanager.CmdCopy, filemanager.CmdPaste,
 	filemanager.CmdSelectAll, filemanager.CmdNewWindow, filemanager.CmdCloseApp}
 

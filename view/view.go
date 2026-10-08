@@ -1235,10 +1235,10 @@ func (w *Window) servers(saved []remote.Host) {
 			where = "This Computer"
 		}
 		w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: "New Terminal on " + where, Icon: icon.SquareTerminal},
-			widget.PaletteItem{Title: "Browse Files on " + where, Icon: icon.Folder})
+			widget.PaletteItem{Title: "New File Manager on " + where, Icon: icon.Folder})
 		w.paletteIDs = append(w.paletteIDs, "conn.terminal."+w.cmdName(m), "conn.files."+w.cmdName(m))
 		for i, f := range w.foldersOn(m) {
-			w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: "Browse " + f.Label() + " on " + where, Icon: icon.Folder})
+			w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: "New File Manager at " + f.Label() + " on " + where, Icon: icon.Folder})
 			w.paletteIDs = append(w.paletteIDs, "conn.files."+w.cmdName(m)+"."+strconv.Itoa(i+1))
 		}
 	}
@@ -3474,7 +3474,7 @@ func (w *Window) openMachineMenu(r *sideRow, u *gunim.UI) {
 		}
 		add(ic, f.Label(), send(app.OpenFilesOn{Machine: m, Path: f.Path}))
 	}
-	add(icon.AppWindow, "Files in a New Window", send(app.OpenFileManager{Machine: m}))
+	add(icon.AppWindow, "New File Manager Window", send(app.OpenFileManager{Machine: m}))
 	if m != "" {
 		heading("Forward")
 		add(icon.Cable, "Tunnel…", func(u *gunim.UI) { w.tunnelDialogOn(m, false, u) })

@@ -161,7 +161,7 @@ once kakel opens folders, opens a window with one.
 kakel's menus are its menus. While a file manager is in front, its
 lines join kakel's File, Edit and View menus, a Go menu comes after
 View, and the lines for a terminal alone leave. Edit's Cut, Copy, Paste
-and Select All act on the files, File › Files in a New Window opens
+and Select All act on the files, File › New File Manager Window opens
 another in a window of its own, and Close Pane closes it. `Enter` opens,
 `Backspace` or `Alt+Left` goes back, `Alt+Up` goes up, and `Ctrl+L`
 types a path. `Ctrl+C`, `Ctrl+X` and `Ctrl+V` copy, cut and paste, also

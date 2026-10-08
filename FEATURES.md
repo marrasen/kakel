@@ -122,7 +122,7 @@ The whole list. The [README](README.md) has the short version.
   terminal: split it beside a terminal, put it in a tab, dock it, or drag
   it to another window, and it keeps its folder, its history and what is
   selected. It takes kakel's theme. Open one from Files on a machine's
-  card, beside the file manager in front, or with Files in a New Window
+  card, beside the file manager in front, or with New File Manager Window
   in a window of its own; a folder opened from Windows opens in one too.
   Its places are the machines: this computer's folders, and each saved
   server under Machines, connected to when you go there. Its menus sit

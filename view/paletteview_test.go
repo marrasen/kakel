@@ -31,6 +31,23 @@ func TestThePaletteFindsCommandsByOtherWords(t *testing.T) {
 	find("Open the Menus")
 }
 
+// The palette starts with what opens in this window, said alike: a
+// terminal, then a file manager, both on the machine of the pane in
+// front. A file manager in a window of its own comes later.
+func TestThePaletteStartsWithANewTerminalAndANewFileManager(t *testing.T) {
+	win, _, _ := windowStage(t)
+	var titles []string
+	for _, it := range win.palette.Items[:2] {
+		titles = append(titles, it.Title)
+	}
+	if want := []string{"New Terminal", "New File Manager"}; !slices.Equal(titles, want) {
+		t.Fatalf("the palette starts with %q, want %q", titles, want)
+	}
+	if !slices.ContainsFunc(win.palette.Items, func(it widget.PaletteItem) bool { return it.Title == "New File Manager Window" }) {
+		t.Fatal("the palette has no New File Manager Window")
+	}
+}
+
 // Next Pane goes in the sidebar's order, the machine's panes together,
 // not in the order the panes were opened.
 func TestNextPaneGoesInTheSidebarsOrder(t *testing.T) {

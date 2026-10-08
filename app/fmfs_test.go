@@ -232,7 +232,7 @@ func TestAWindowsServersDrivesAreVolumes(t *testing.T) {
 	}
 }
 
-// Files in a New Window on a server opens a kakel window of its own, holding
+// New File Manager Window on a server opens a kakel window of its own, holding
 // a file manager pane on the server's files, and the server's place
 // shows where its home is. Once the connection ends, the place is
 // elsewhere to the pane, so a click on it connects again.
