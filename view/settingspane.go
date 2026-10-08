@@ -436,6 +436,8 @@ func (p *settingsPane) sharing() gunim.Node {
 		return app.SetServeAtStart{When: serveAtStart[max(0, min(i, len(serveAtStart)-1))].value}
 	}
 	p.port = widget.NewNumberField(0, 65535)
+	// A port is a name more than an amount: typed, not dragged to.
+	p.port.NoDrag = true
 	p.port.OnChange = func(v float64, u *gunim.UI) gunim.Intent {
 		return app.SetServeDefaults{Port: int(v), Anywhere: p.reach.Selected() == 1}
 	}
