@@ -37,6 +37,23 @@ var system = func() *host {
 	}
 }()
 
+// ctrlHandler is kernel32's SetConsoleCtrlHandler.
+var ctrlHandler = windows.NewLazySystemDLL("kernel32.dll").NewProc("SetConsoleCtrlHandler")
+
+// hearCtrlC turns Ctrl+C back on for kakel, once, as a program started
+// in it inherits whether Ctrl+C is ignored. Windows ignores it in a
+// program started in a new process group, as gunim's installer starts
+// kakel after an update; every shell would then ignore Ctrl+C too.
+var hearCtrlC = sync.OnceFunc(unignoreCtrlC)
+
+// unignoreCtrlC has kakel, and the programs it starts from now on, hear
+// Ctrl+C.
+func unignoreCtrlC() {
+	if r, _, err := ctrlHandler.Call(0, 0); r == 0 {
+		log.Printf("Ctrl+C may not stop a program in a local pane: %v", err)
+	}
+}
+
 // chosen is the ConPTY consoles are made with: OpenConsole, unless it
 // could not be put in place or loaded. It is decided once, and said in
 // the log.
@@ -295,6 +312,7 @@ func (c *Console) Start(path string, args []string, dir string, env []string) (*
 	if err != nil {
 		return nil, err
 	}
+	hearCtrlC()
 	var pi windows.ProcessInformation
 	flags := uint32(windows.CREATE_UNICODE_ENVIRONMENT | windows.EXTENDED_STARTUPINFO_PRESENT)
 	if err := windows.CreateProcess(pathp, line, nil, nil, false, flags, &block[0], dirp, &si.StartupInfo, &pi); err != nil {

@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 	"unicode/utf16"
@@ -31,9 +32,18 @@ const (
 
 func frameLetter(n int) byte { return 'A' + byte(n%10) }
 
+// The test binary run with this set says it is ready and waits, for a
+// Ctrl+C to stop it.
+const waitEnv = "KAKEL_CONPTY_TEST_WAIT"
+
 func TestMain(m *testing.M) {
 	if os.Getenv(animateEnv) == "1" {
 		animate()
+		return
+	}
+	if os.Getenv(waitEnv) == "1" {
+		fmt.Println("ready")
+		time.Sleep(time.Minute)
 		return
 	}
 	os.Exit(m.Run())
@@ -266,5 +276,64 @@ func TestTwoNamesOfOneFileAreTheSamePath(t *testing.T) {
 		t.Error("two files are the same path")
 	case samePath(file, filepath.Join(dir, "missing.exe")):
 		t.Error("a file is the same path as one that is not there")
+	}
+}
+
+// Ctrl+C stops a program in a console even when kakel was started
+// ignoring it, as gunim's installer starts it after an update, in a new
+// process group.
+func TestCtrlCStopsAProgramKakelStartedIgnoringIt(t *testing.T) {
+	if r, _, err := ctrlHandler.Call(0, 1); r == 0 {
+		t.Fatalf("ignore Ctrl+C: %v", err)
+	}
+	t.Cleanup(func() { _, _, _ = ctrlHandler.Call(0, 0) })
+	hearCtrlC = sync.OnceFunc(unignoreCtrlC)
+
+	c, err := New(80, 24)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	proc, err := c.Start(exe, []string{exe, "-test.run=^$"}, "", append(os.Environ(), waitEnv+"=1"))
+	if err != nil {
+		t.Fatalf("start the waiting program: %v", err)
+	}
+	ready := make(chan struct{})
+	go func() {
+		var seen []byte
+		buf := make([]byte, 4096)
+		for {
+			n, err := c.Read(buf)
+			seen = append(seen, buf[:n]...)
+			if bytes.Contains(seen, []byte("ready")) {
+				close(ready)
+				_, _ = io.Copy(io.Discard, c)
+				return
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+	select {
+	case <-ready:
+	case <-time.After(30 * time.Second):
+		_ = proc.Kill()
+		t.Fatal("the program never said it was ready")
+	}
+	done := make(chan struct{})
+	go func() { _, _ = proc.Wait(); close(done) }()
+	if _, err := c.Write([]byte{0x03}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		_ = proc.Kill()
+		t.Fatal("Ctrl+C did not stop the program")
 	}
 }
