@@ -1626,6 +1626,14 @@ func (t *Terminal) Paste(text string) {
 	t.pastedSecret(text)
 }
 
+// Bracketed reports whether the program asked for pastes to be marked
+// as pasted, so a line break in one is not taken as Enter.
+func (t *Terminal) Bracketed() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.term.Screen().Bracketed()
+}
+
 // PasteClipboard sends whatever is on the clipboard.
 func (t *Terminal) PasteClipboard() { t.Paste(t.readClipboard()) }
 

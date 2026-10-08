@@ -139,6 +139,10 @@ type stored struct {
 	// clickable.
 	ShellSetup *bool `json:"shellSetup,omitempty"`
 
+	// PasteCheck opens a paste of more than one line, or a large one,
+	// in an editor before it reaches the pane. A field left out is on.
+	PasteCheck *bool `json:"pasteCheck,omitempty"`
+
 	// TermProgram is what the window calls itself in TERM_PROGRAM. A
 	// field left out is kakel's own name, which is the true one.
 	TermProgram *string `json:"termProgram,omitempty"`
@@ -1242,6 +1246,31 @@ func (s *Settings) PutTermProgram(called string) error {
 	} else {
 		s.have.TermProgram = &called
 	}
+	if err := s.saveLocked(); err != nil {
+		s.have = before
+		return err
+	}
+	return nil
+}
+
+// PasteCheck reports whether a paste of several lines, or a large one,
+// opens in an editor first. Nothing saved means it does.
+func (s *Settings) PasteCheck() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.have.PasteCheck == nil || *s.have.PasteCheck
+}
+
+// PutPasteCheck turns that on or off, and saves.
+func (s *Settings) PutPasteCheck(on bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// The file first, for the same reason PutServe reads it first.
+	if err := s.rereadLocked(); err != nil {
+		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
+	}
+	before := s.have
+	s.have.PasteCheck = &on
 	if err := s.saveLocked(); err != nil {
 		s.have = before
 		return err

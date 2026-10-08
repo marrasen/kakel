@@ -1114,3 +1114,25 @@ func TestTheAlertsAndTheTitleBarAreKept(t *testing.T) {
 		t.Fatalf("read back, sounds %+v, rings %+v, system title bar %v", again.Sounds(), again.Rings(), again.SystemTitleBar())
 	}
 }
+
+// The paste check is on until it is turned off, and stays off.
+func TestThePasteCheckIsOnUntilTurnedOff(t *testing.T) {
+	path := at(t)
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if !s.PasteCheck() {
+		t.Error("with nothing saved, the paste check is off")
+	}
+	if err := s.PutPasteCheck(false); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	again, err := Load(path)
+	if err != nil {
+		t.Fatalf("load again: %v", err)
+	}
+	if again.PasteCheck() {
+		t.Error("turned off, the paste check came back on")
+	}
+}

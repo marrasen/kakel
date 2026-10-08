@@ -48,6 +48,9 @@ type term struct {
 	// from this one while it has the keyboard, nil for none.
 	along     bool
 	alongWith func() []*term
+	// checkPaste is the window's look at text about to be pasted, which
+	// reports true when it took the text, to show it first.
+	checkPaste func(text string, u *gunim.UI) bool
 	// wheel gathers the wheel's movement until it makes a whole notch.
 	wheel float32
 	// held is the button down in the pane, and at the cell the pointer
@@ -608,7 +611,7 @@ func (t *term) press(e gi.PointerDown, u *gunim.UI) bool {
 		case err != nil:
 			u.Send(t, app.ClipboardUnreadable{Why: clipboardWhy(err)})
 		case s != "":
-			t.paste(s)
+			t.offer(s, u)
 		default:
 			u.Send(t, app.NoTextToPaste{})
 		}
@@ -706,6 +709,15 @@ func (t *term) key(ev input.Event) {
 	}
 }
 
+// offer pastes text the user pasted, unless the window takes it to
+// show first.
+func (t *term) offer(s string, u *gunim.UI) {
+	if t.checkPaste != nil && t.checkPaste(s, u) {
+		return
+	}
+	t.paste(s)
+}
+
 func (t *term) paste(s string) {
 	t.sh.T.Paste(s)
 	for _, o := range t.alongOthers() {
@@ -756,7 +768,7 @@ func (t *term) pasteClipboard(u *gunim.UI) {
 		// Said, rather than taken for a clipboard with nothing on it.
 		u.Send(t, app.ClipboardUnreadable{Why: clipboardWhy(err)})
 	case s != "":
-		t.paste(s)
+		t.offer(s, u)
 	default:
 		u.Send(t, app.PasteImage{Pane: t.id})
 	}

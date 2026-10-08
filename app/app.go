@@ -181,7 +181,10 @@ type State struct {
 	Looks       []look.Themed
 	ShellSetup  bool
 	TermProgram string
-	Bells       uint64
+	// PasteCheck says a paste of several lines, or a large one, opens in
+	// an editor before it reaches the pane.
+	PasteCheck bool
+	Bells      uint64
 	// Pings counts what the window sends an echo out for, past its
 	// edges.
 	Pings        Pings
@@ -455,6 +458,9 @@ type (
 	DialogClosed struct{}
 	// TogglePaneTitles shows or hides the line naming each pane.
 	TogglePaneTitles struct{}
+	// SetPasteCheck turns on or off opening a paste of several lines,
+	// or a large one, in an editor before it reaches the pane.
+	SetPasteCheck struct{ On bool }
 	// RunSavedCommand runs a command kept from before.
 	RunSavedCommand struct{ Saved settings.SavedCommand }
 	// OpenOn opens a terminal on Machine, "" for this computer.
@@ -851,6 +857,8 @@ func (a *app) run(ctx context.Context) error {
 		a.st.Themes = append(a.st.Themes, t.Name)
 	}
 	log.Printf("kakel %s started on %s/%s", thisVersion(), runtime.GOOS, runtime.GOARCH)
+	// On unless the settings say otherwise, read or not.
+	a.st.PasteCheck = true
 	a.loadSettings()
 	// The theme picked last time, or the first.
 	if len(a.themes) > 0 {
@@ -1042,6 +1050,7 @@ func (a *app) loadSettings() {
 			a.st.ChosenShell, _ = s.Shell()
 			a.st.ThisComputer.StartFolder = s.Local()
 			a.st.ShellSetup = s.ShellSetup()
+			a.st.PasteCheck = s.PasteCheck()
 			a.st.TermProgram = s.TermProgram()
 			a.st.SavedCopies = s.Copies()
 			a.st.KeyFiles = s.Keys()
@@ -1492,6 +1501,11 @@ func (a *app) handle(in gunim.Intent) {
 		a.st.ShellSetup = !a.st.ShellSetup
 		if a.settings != nil {
 			err = a.settings.PutShellSetup(a.st.ShellSetup)
+		}
+	case SetPasteCheck:
+		a.st.PasteCheck = in.On
+		if a.settings != nil {
+			err = a.settings.PutPasteCheck(in.On)
 		}
 	case SetTermProgram:
 		a.st.TermProgram = strings.TrimSpace(in.Called)

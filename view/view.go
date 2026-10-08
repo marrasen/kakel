@@ -182,10 +182,13 @@ type Window struct {
 	bells        uint64
 	// echo sends rings out past the window's edges, pings the counts
 	// last sent for, and away says another program has the keyboard.
-	echo         widget.Echo
-	pings        app.Pings
-	away         bool
-	titles       bool
+	echo   widget.Echo
+	pings  app.Pings
+	away   bool
+	titles bool
+	// pasteCheck says a paste of several lines, or a large one, opens
+	// in an editor first.
+	pasteCheck   bool
 	captions     map[string]*captioned
 	sharing      bool
 	savedTunnels []settings.SavedTunnel
@@ -2081,6 +2084,7 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 			u.RequestAttention()
 		}
 	}
+	w.pasteCheck = st.PasteCheck
 	if st.PaneTitles != w.titles {
 		w.titles = st.PaneTitles
 		// Every pane is built again, with its line or without.
@@ -2648,6 +2652,7 @@ func (w *Window) term(id string) *term {
 	t.ctrl = w.ctrlHeld
 	t.away = w.away
 	t.alongWith = func() []*term { return w.typingAlong(t) }
+	t.checkPaste = func(s string, u *gunim.UI) bool { return w.checkPaste(t, s, u) }
 	if w.fontSize > 0 {
 		t.cells.Size = w.fontSize
 	}

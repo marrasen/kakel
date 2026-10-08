@@ -84,6 +84,7 @@ type settingsPane struct {
 	shell                *widget.Dropdown
 	shellIDs             []string
 	known                *widget.Dropdown
+	pasteCheck           *widget.Switch
 
 	// Notifications.
 	iface         *widget.Checkbox
@@ -374,6 +375,8 @@ func (p *settingsPane) terminal() gunim.Node {
 		p.send(app.SetTermProgram{Called: called}, u)
 		return nil
 	}
+	p.pasteCheck = widget.NewSwitch("")
+	p.pasteCheck.OnChange = func(on bool, u *gunim.UI) gunim.Intent { p.send(app.SetPasteCheck{On: on}, u); return nil }
 	return settingsPage(
 		settingsSection("This computer",
 			settingRow("Start in", "New terminals start here, unless kakel was started in a folder of its own, or they open from a terminal in another.", p.startIn.node),
@@ -381,6 +384,8 @@ func (p *settingsPane) terminal() gunim.Node {
 		settingsSection("Terminal identity",
 			settingRow("TERM_PROGRAM", "What programs are told the terminal is called. Blank says kakel. Another name can turn on features such as images, and can bring sequences that show as text. For new panes.", p.termProgram.node),
 			settingRow("Known terminals", "", p.known)),
+		settingsSection("Pasting",
+			settingRow("Show before pasting", "Text of more than one line, or over 5 KB, opens in an editor first, to change before it goes in.", p.pasteCheck)),
 	)
 }
 
@@ -572,6 +577,7 @@ func (p *settingsPane) show(st app.State, u *gunim.UI) {
 	}
 	p.shell.SetSelected(max(slices.Index(p.shellIDs, st.ChosenShell), 0), nil)
 	p.termProgram.show(st.TermProgram, u)
+	setOn(p.pasteCheck, st.PasteCheck)
 	p.known.SetSelected(0, nil)
 	if i := slices.Index(app.KnownTerminals, st.TermProgram); i >= 0 {
 		p.known.SetSelected(i+1, nil)

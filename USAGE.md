@@ -25,6 +25,10 @@ Kakel comes with:
 | `Ctrl+Shift+PageDown` / `Ctrl+Shift+PageUp` | move the tab right / left |
 | `F11` | fill the screen with the panes |
 
+A paste of more than one line, or over 5 KB, opens in an editor first.
+`Enter` pastes it, `Shift+Enter` starts a new line, and `Escape`
+cancels. Settings › Terminal › Show before pasting turns this off.
+
 These are the ones you need most. "Shortcuts and Commands" on the Help
 menu, or `Ctrl+Shift+H`, lists every command, the key that runs it, and
 the name the shortcuts file calls it by, then the keys of the reader.

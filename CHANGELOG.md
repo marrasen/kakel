@@ -7,6 +7,17 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
+## Unreleased
+
+### Added
+
+**A paste of several lines opens in an editor first.** Text of more
+than one line, or over 5 KB, shows in a dialog before it reaches the
+pane, with Paste and Cancel. Change it there: `Enter` pastes,
+`Shift+Enter` starts a new line, `Escape` cancels. Where the program
+treats each line break as `Enter`, the dialog says so. Settings ›
+Terminal › Show before pasting turns it off.
+
 ## v0.12.0-beta.8
 
 ### Changed
