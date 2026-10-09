@@ -492,6 +492,9 @@ func (a *app) showServing() {
 	s.AllowedAt = at
 	if err != nil {
 		s.Problem = err.Error()
+		if s.Problem != a.st.Serving.Problem {
+			log.Printf("Couldn't read the keys allowed to connect: %s", s.Problem)
+		}
 	} else {
 		s.Allowed, s.Keys = allowed.Names(), allowed.Keys()
 		s.Here = a.localKeys(allowed)

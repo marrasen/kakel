@@ -1061,6 +1061,8 @@ func (a *app) loadSettings() {
 		} else {
 			a.unreadable("the settings", path+" is repaired or removed, and kakel is started again", err)
 		}
+	} else {
+		a.failed("Couldn't find where to keep the settings", err.Error()+"\n\nNothing changed is kept.")
 	}
 }
 
@@ -1074,6 +1076,8 @@ func (a *app) loadBook() {
 		} else {
 			a.unreadable("the server list", path+" is repaired or removed, and the list read again", err)
 		}
+	} else {
+		a.failed("Couldn't find where to keep the server list", err.Error()+"\n\nNothing changed is kept.")
 	}
 }
 

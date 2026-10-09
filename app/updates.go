@@ -399,6 +399,11 @@ var stageRelease = func(ctx context.Context, r install.Release, exe string) erro
 func (a *app) fetchUpdate(newest install.Release, asked bool) {
 	exe, err := executable()
 	if err != nil {
+		if asked {
+			a.failed("Couldn't update kakel", err.Error())
+		} else {
+			log.Printf("updating kakel: %v", err)
+		}
 		return
 	}
 	a.say("update", "Fetching kakel "+newest.Version+"…")
@@ -458,7 +463,7 @@ func (a *app) installKakel(in InstallKakel) error {
 		return err
 	}
 	if a.settings != nil {
-		_ = a.settings.PutUpdates(string(got.Updates))
+		a.keep("the update setting", a.settings.PutUpdates(string(got.Updates)))
 	}
 	a.showUpdate()
 	if !samePath(exe, got.Exe) {

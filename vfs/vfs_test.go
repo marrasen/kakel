@@ -185,6 +185,10 @@ func TestOpenSaysWhenThereIsNothingThere(t *testing.T) {
 		if !errors.Is(err, fs.ErrNotExist) {
 			t.Errorf("error = %v, want it to say there is no such file", err)
 		}
+		// The path is said once: the system's error said it again.
+		if n := strings.Count(err.Error(), "nowhere.txt"); n != 1 {
+			t.Errorf("error = %q, names the file %d times, want once", err, n)
+		}
 	})
 }
 

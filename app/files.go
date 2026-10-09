@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"maps"
 	"os"
 	"path/filepath"
@@ -491,8 +492,17 @@ func (a *app) readerSays(id, why string) {
 	a.setReader(id, r)
 }
 
-// setReader publishes a reader pane's state.
+// setReader publishes a reader pane's state. A failure it shows for the
+// first time, of a read or a save, goes to the Window Log too, where it
+// stays once the pane has gone.
 func (a *app) setReader(id string, r Reader) {
+	was := a.st.Readers[id]
+	if r.Err != "" && r.Err != was.Err {
+		log.Printf("Couldn't read %s: %s", r.Path, r.Err)
+	}
+	if r.SaveErr != "" && r.Saves != was.Saves {
+		log.Printf("Couldn't save %s: %s", r.Path, r.SaveErr)
+	}
 	m := make(map[string]Reader, len(a.st.Readers)+1)
 	maps.Copy(m, a.st.Readers)
 	m[id] = r

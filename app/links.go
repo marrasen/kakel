@@ -2,7 +2,7 @@ package app
 
 import (
 	"fmt"
-	"github.com/marrasen/kakel/internal/quiet"
+	"log"
 	"net"
 	"net/url"
 	"os/exec"
@@ -11,6 +11,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/marrasen/kakel/internal/quiet"
 
 	"github.com/marrasen/kakel/links"
 	"github.com/marrasen/kakel/screen"
@@ -146,7 +148,13 @@ var openInBrowser = func(at string) error {
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("could not open %s: %w", at, err)
 	}
-	go func() { _ = cmd.Wait() }()
+	go func() {
+		// The opener ran, and may still not have opened it: said in the
+		// log, as nothing else shows.
+		if err := cmd.Wait(); err != nil {
+			log.Printf("opening %s: %v", at, err)
+		}
+	}()
 	return nil
 }
 

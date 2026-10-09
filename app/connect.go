@@ -173,11 +173,16 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 	}
 	began := time.Now()
 	kept := &signIns{}
+	// What went wrong on the way is in the Window Log too: a dial that
+	// then got through by another way leaves nothing else there.
 	for i := range hops {
 		hops[i].Ask = newAsker(a, name).keeping(kept)
 		hops[i].Ring = a.ring
 		hops[i].Saying = func(what string) { logLine(acct, "", what) }
-		hops[i].Wrong = func(what string) { logLine(acct, badly, what) }
+		hops[i].Wrong = func(what string) {
+			logLine(acct, badly, what)
+			log.Printf("connecting to %s: %s", oneLine(called), oneLine(what))
+		}
 	}
 	a.showStatus()
 	// From the nearest hop already connected, so a second server behind
@@ -264,7 +269,13 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 						a.machines.At(name).Dropped = true
 						a.pingsIn(a.cur).Lost++
 					}
-					a.notify("Disconnected from "+a.machines.Name(name), "", "")
+					// Why it went is in the toast, and so in the Window
+					// Log, not only in the server's own log.
+					why := ""
+					if err != nil {
+						why = err.Error()
+					}
+					a.notify("Disconnected from "+a.machines.Name(name), why, "")
 				}
 			}()
 			a.dialed(logPane, name, then == nil && !in.Only)
@@ -322,6 +333,10 @@ func (a *app) ask(ctx context.Context, q Ask) (AskAnswered, error) {
 	reply := make(chan AskAnswered, 1)
 	a.events <- func() {
 		a.replies[q.ID] = reply
+		if q.Problem != "" {
+			// Asked again after what was given failed: so the log says.
+			log.Printf("%s: %s", q.Title, q.Problem)
+		}
 		a.pose(q)
 	}
 	select {

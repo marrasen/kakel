@@ -78,7 +78,7 @@ func (a *app) moveFolders() {
 		h.Folders = nil
 		// One that won't save keeps its folders, unused: they are
 		// favourites now.
-		_ = a.book.Put(h, h.Name)
+		a.keep("the favourites of "+h.Name, a.book.Put(h, h.Name))
 	}
 	a.st.Saved = a.book.Hosts()
 	a.showFavourites()

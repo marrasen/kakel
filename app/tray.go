@@ -116,7 +116,11 @@ func (a *app) showTray() {
 		// Said once, and not tried again until the menu changes: a
 		// tray that refused refuses again, and a window flooded with
 		// notices is worse than a missing icon.
-		if !errors.Is(err, gunim.ErrNoTray) && a.tray.failed == "" {
+		switch {
+		case a.tray.failed != "":
+		case errors.Is(err, gunim.ErrNoTray):
+			log.Printf("no tray to show kakel in: %v", err)
+		default:
 			a.failed("Couldn't show kakel in the tray", err.Error())
 		}
 		lost := a.tray.on

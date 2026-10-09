@@ -66,8 +66,15 @@ func (a *app) paneEnded(id string) {
 		return
 	}
 	// Once, as the status comes in: the first telling knows none.
-	if i := slices.IndexFunc(a.st.Panes, func(p Pane) bool { return p.ID == id }); known && i >= 0 {
-		log.Printf("%s ended, exit %d", a.paneForLog(a.st.Panes[i]), status)
+	// One that ended with no status, as when its connection went, says
+	// why instead.
+	if i := slices.IndexFunc(a.st.Panes, func(p Pane) bool { return p.ID == id }); i >= 0 {
+		switch why, over := t.Ending(); {
+		case known:
+			log.Printf("%s ended, exit %d", a.paneForLog(a.st.Panes[i]), status)
+		case over && why != nil:
+			log.Printf("%s ended: %v", a.paneForLog(a.st.Panes[i]), why)
+		}
 	}
 	// Ended out of sight, with its status in: an echo says how it went.
 	if w := a.ownerOf(id); known {

@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"os"
 	"strings"
 	"time"
 )
@@ -337,10 +338,33 @@ func entryOf(name string, info fs.FileInfo, link string) Entry {
 }
 
 // wrap says which filesystem a failure happened on, so an error from a
-// two-pane copy names the end that could not do it.
+// two-pane copy names the end that could not do it. The system's own
+// error names the call and the path again, as "open D:\x: denied": the
+// message keeps only why, while the error itself stays in the chain.
 func wrap(f FS, what, path string, err error) error {
 	if err == nil {
 		return nil
 	}
-	return fmt.Errorf("%s: %s %s: %w", f.Name(), what, path, err)
+	return &wrapped{msg: fmt.Sprintf("%s: %s %s: %s", f.Name(), what, path, why(err)), err: err}
+}
+
+// wrapped is a failure as wrap words it.
+type wrapped struct {
+	msg string
+	err error
+}
+
+func (w *wrapped) Error() string { return w.msg }
+func (w *wrapped) Unwrap() error { return w.err }
+
+// why is what err says once the call and the path the system put in
+// front of it are gone.
+func why(err error) string {
+	switch e := err.(type) {
+	case *fs.PathError:
+		return e.Err.Error()
+	case *os.LinkError:
+		return e.Err.Error()
+	}
+	return err.Error()
 }

@@ -7,6 +7,24 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
+## Unreleased
+
+### Fixed
+
+**Every failure you see is in the Window Log.** A copy or paste in the
+file manager that failed showed its error in a dialog, and the Window
+Log had nothing about it. Now every error kakel shows goes there too.
+That covers the file manager's dialogs, folders it can't list, and
+previews that fail. It also covers a reader that can't read or save
+its file, and why a remote window refused or ended a pane. And it
+covers each failed step while connecting, a lost connection's reason,
+a shortcuts file that names unknown commands, and the update window's
+failures. A few failures that showed nothing at all now say so: a link
+that didn't open, and settings that couldn't be saved.
+
+**A failure names its file once.** "open D:\x: open D:\x: denied" now
+reads "open D:\x: denied".
+
 ## v0.12.0-beta.10
 
 ### Added

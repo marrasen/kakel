@@ -84,6 +84,10 @@ func run() error {
 		defer pprof.StopCPUProfile()
 	}
 
+	// From here on what kakel logs is kept for the Window Log too, so
+	// the lines of starting are there as well.
+	app.CaptureLog()
+
 	// One kakel for the user: one already running is handed the
 	// command line, and opens a window for it.
 	var handovers <-chan single.Handover
@@ -110,7 +114,6 @@ func run() error {
 		return nil
 	}
 
-	app.CaptureLog()
 	err = gunim.Main(ctx, func(a *gunim.App) error {
 		sh := screen.NewShells()
 		all, trouble := look.LoadSaying()

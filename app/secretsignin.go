@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"log"
 	"path/filepath"
 	"slices"
@@ -271,7 +272,7 @@ func keepSignIn(v *secrets.Vault, in signIn) (string, error) {
 		}
 		if _, err := v.PutDetails(it); err != nil {
 			if was >= 0 {
-				_, _ = v.PutDetails(items[was])
+				err = errors.Join(err, putBack(v, items[was]))
 			}
 			return "", err
 		}
@@ -300,7 +301,7 @@ func keepSignIn(v *secrets.Vault, in signIn) (string, error) {
 	}
 	if _, err := v.Put(it, in.value); err != nil {
 		if was >= 0 {
-			_, _ = v.PutDetails(items[was])
+			err = errors.Join(err, putBack(v, items[was]))
 		}
 		return "", err
 	}
@@ -369,6 +370,10 @@ func (q asker) unlockFor(ctx context.Context, hint string, saved AskFact) bool {
 		return false
 	}
 	if err := q.a.openVault(v, &saved); err != nil {
+		if !errors.Is(err, errDeclined) {
+			// The passphrase is asked for instead: the log says why.
+			log.Printf("Couldn't unlock the secrets: %v", err)
+		}
 		return false
 	}
 	q.inHand(ctx, func() string { q.a.showVault(); return "" })
@@ -393,4 +398,13 @@ func (a *app) lockedHolding(hint string) *secrets.Vault {
 		return nil
 	}
 	return v
+}
+
+// putBack puts an item's details back as they were, after a change that
+// failed, and says how that went.
+func putBack(v *secrets.Vault, it secrets.Item) error {
+	if _, err := v.PutDetails(it); err != nil {
+		return fmt.Errorf("putting %s back as it was: %w", it.Name, err)
+	}
+	return nil
 }

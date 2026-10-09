@@ -1,8 +1,6 @@
 package view
 
 import (
-	"log"
-
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
 	gi "github.com/marrasen/gunim/input"
@@ -66,7 +64,7 @@ func newThemePane(w *Window) *themePane {
 		OnSave: func(over theme.Theme, u *gunim.UI) gunim.Intent {
 			edits, err := theme.MarshalValues(over)
 			if err != nil {
-				log.Printf("The theme editor's changes to %s cannot be written: %v", p.name, err)
+				w.failed("Couldn't save the changes to "+p.name, err.Error(), u)
 				return nil
 			}
 			return app.SaveThemeEdits{Theme: p.name, Edits: edits}

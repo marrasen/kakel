@@ -168,13 +168,17 @@ func (a *app) reachWindow(in ConnectWindow, quiet bool, then func(error)) error 
 	}
 	began := time.Now()
 	kept := &signIns{}
+	called := oneLine(a.machines.Name(name))
 	a.showStatus()
 	go func() {
 		win, err := remote.ReachWindow(dctx, remote.Reach{
 			Addr: addr, KeyFile: strings.TrimSpace(in.KeyFile), Ring: a.ring, Ask: newAsker(a, name).keeping(kept),
 			Known:  knownWindows,
 			Saying: func(what string) { logLine(acct, "", what) },
-			Wrong:  func(what string) { logLine(acct, badly, what) },
+			Wrong: func(what string) {
+				logLine(acct, badly, what)
+				log.Printf("connecting to the window %s: %s", called, oneLine(what))
+			},
 		})
 		a.events <- func() {
 			a.machines.At(name).Dialing = nil
@@ -304,7 +308,11 @@ func (a *app) windowGone(name machines.ID, w *machines.Window, why error) {
 			text += "\n\n" + serve.Plain(why.Error())
 		}
 		logLine(a.machines.Get(name).Log, "", "connection lost")
-		log.Printf("lost the connection to the window %s", oneLine(a.machines.Name(name)))
+		if why != nil {
+			log.Printf("lost the connection to the window %s: %s", oneLine(a.machines.Name(name)), oneLine(serve.Plain(why.Error())))
+		} else {
+			log.Printf("lost the connection to the window %s", oneLine(a.machines.Name(name)))
+		}
 		a.problem()
 		again := ConnectWindow{Addr: w.Addr, KeyFile: w.KeyFile, ID: name}
 		ctx, cancel := context.WithCancel(a.ctx)

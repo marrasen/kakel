@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"maps"
 	"net"
 	"slices"
@@ -489,15 +490,41 @@ func (w *Window) session(kind string, payload []byte, named func(Attached)) (ses
 	// the user with no idea why.
 	go func() {
 		defer close(s.saidDone)
+		// What it said goes to the log too, where it stays once the
+		// pane has gone.
+		var said strings.Builder
+		defer func() {
+			if why := strings.TrimSpace(said.String()); why != "" {
+				log.Printf("the window at %s said: %s", w.addr, strings.Join(strings.Fields(why), " "))
+			}
+		}()
+		to := io.MultiWriter(errWriter{s}, &capped{b: &said, room: saidRoom})
 		// A reason cut in half by a connection that dropped is worse
 		// than no reason: the user reads what arrived as the whole of
 		// it. So the failure is put on the end of what it cut.
-		if _, err := io.Copy(&PlainWriter{To: errWriter{s}}, ch.Stderr()); err != nil {
-			_, _ = errWriter{s}.Write([]byte(
+		if _, err := io.Copy(&PlainWriter{To: to}, ch.Stderr()); err != nil {
+			_, _ = to.Write([]byte(
 				"\r\nkakel: the rest of that was lost: " + err.Error() + "\r\n"))
 		}
 	}()
 	return s, nil
+}
+
+// saidRoom is how much of what the other end said the log keeps.
+const saidRoom = 2048
+
+// capped keeps the first room bytes written to it, and takes the rest
+// without keeping it.
+type capped struct {
+	b    *strings.Builder
+	room int
+}
+
+func (c *capped) Write(p []byte) (int, error) {
+	if n := min(len(p), c.room-c.b.Len()); n > 0 {
+		c.b.Write(p[:n])
+	}
+	return len(p), nil
 }
 
 // errWriter puts what the other end said onto a session's own stream,

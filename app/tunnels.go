@@ -220,9 +220,13 @@ func (a *app) tunnelFailed(id string, err error) {
 	}
 	first := open.Failed(err)
 	a.setTunnel(id, func(t *Tunnel) { t.Note = open.Note() })
+	label := a.st.Tunnels[a.tunnelIndex(id)].Label
 	if first {
-		a.failed("Trouble on the tunnel "+a.st.Tunnels[a.tunnelIndex(id)].Label, err.Error())
+		a.failed("Trouble on the tunnel "+label, err.Error())
 		a.problem()
+	} else {
+		// Told once; each after it is in the log, as in the tunnel's own.
+		log.Printf("Trouble on the tunnel %s: %v", label, err)
 	}
 }
 

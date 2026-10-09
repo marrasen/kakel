@@ -58,6 +58,25 @@ func TestANoticeIsInTheWindowLog(t *testing.T) {
 	}
 }
 
+// A reader that cannot read its file, or save it, says so in the Window
+// Log too, once.
+func TestAReadersFailureIsInTheWindowLog(t *testing.T) {
+	a, _ := agentApp(t)
+	var got strings.Builder
+	log.SetOutput(&got)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	a.setReader("p9", Reader{Path: `D:\x\board_serial`, Err: "The file cannot be accessed by the system."})
+	a.setReader("p9", Reader{Path: `D:\x\board_serial`, Err: "The file cannot be accessed by the system."})
+	a.setReader("p9", Reader{Path: `D:\x\board_serial`, Saves: 1, SaveErr: "denied"})
+	out := got.String()
+	if n := strings.Count(out, `Couldn't read D:\x\board_serial: The file cannot be accessed by the system.`); n != 1 {
+		t.Errorf("the read's failure is in the log %d times, want once: %q", n, out)
+	}
+	if !strings.Contains(out, `Couldn't save D:\x\board_serial: denied`) {
+		t.Errorf("the save's failure is not in the log: %q", out)
+	}
+}
+
 // What a server said is written into the log clean, a line at a time,
 // and looking at a log does not say it is connecting again.
 func TestALogLineIsCleanAndAskingForTheLogSaysNothing(t *testing.T) {
