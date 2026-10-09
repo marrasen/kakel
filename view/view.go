@@ -1837,9 +1837,15 @@ func (w *Window) ctrlHeld(k input.Key, mods input.Mods, down bool, u *gunim.UI) 
 // nothing has the keyboard, as after a click on room that takes none.
 // The keys then go to gunim's root, above the window, and would reach no
 // shortcut. With anything focused, Handle has heard them already.
+// Letting go of Ctrl ends a walk here too: one that reached a pane with
+// nothing to take the keyboard, as Settings is, left its list up.
 func (w *Window) CatchKey(e input.Event, u *gunim.UI) bool {
 	if u.Focused() != nil {
 		return false
+	}
+	if r, ok := e.(input.KeyRelease); ok && w.walk != nil && walkKey(r) {
+		w.endWalk(u)
+		return true
 	}
 	return w.shortcut(e, u)
 }

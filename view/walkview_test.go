@@ -168,3 +168,33 @@ func TestCtrlTabInAWindowOfOnePaneLeavesNothing(t *testing.T) {
 		t.Fatal("the ring takes the pointer")
 	}
 }
+
+// A walk that reaches a pane taking no keyboard of its own, as Settings
+// and the theme editor are, ends when Ctrl is let go of: the keyboard is
+// then on nothing, and the release reached no one, which left the list
+// on screen.
+func TestAWalkIntoSettingsEndsOnCtrlUp(t *testing.T) {
+	win, sh, publish := windowStage(t)
+	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
+	sh.Set("p1", screen.Open(sessiontest.New(), vt.DefaultPalette(), quiet))
+	t.Cleanup(func() { _ = sh.Get("p1").T.Close() })
+	panes := []app.Pane{{ID: "p1", Title: "Terminal 1"}, {ID: "s", Title: "Settings", Kind: app.KindSettings}}
+	for _, id := range []string{"s", "p1"} {
+		publish(app.State{Panes: panes, Stage: &app.Box{Pane: id}, Focus: id})
+	}
+	lastWindow.Input(gi.KeyPress{Key: gi.KeyTab, Mods: gi.ModControl})
+	lastWindow.Frame(time.Second / 60)
+	if win.walk == nil {
+		t.Fatal("Ctrl+Tab started no walk")
+	}
+	// The program puts Settings in front.
+	publish(app.State{Panes: panes, Stage: &app.Box{Pane: "s"}, Focus: "s"})
+	for range 10 {
+		lastWindow.Frame(time.Second / 60)
+	}
+	lastWindow.Input(gi.KeyRelease{Key: gi.KeyLeftControl})
+	lastWindow.Frame(time.Second / 60)
+	if win.walk != nil || win.walkList != nil {
+		t.Fatal("letting go of Ctrl on Settings left the walk going")
+	}
+}
