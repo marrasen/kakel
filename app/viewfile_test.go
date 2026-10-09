@@ -78,3 +78,20 @@ func TestAFileShownGoesToTheWindowInFront(t *testing.T) {
 		t.Fatalf("the notice is %+v", n)
 	}
 }
+
+// A file asked for again while it is read, as by a second click, is
+// read once.
+func TestAFileAskedForTwiceIsReadOnce(t *testing.T) {
+	a, one, _ := twoWindowApp(t)
+	a.front(one)
+	file := filepath.Join(t.TempDir(), "a.txt")
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a.viewFile(machines.Local, vfs.NewLocal(), file, 0)
+	a.viewFile(machines.Local, vfs.NewLocal(), file, 0)
+	waitFor(t, a, "the file is read", func() bool { return len(a.st.Views) > 0 && len(a.viewing) == 0 })
+	if len(a.st.Views) != 1 {
+		t.Fatalf("asked twice at once, the file was shown %d times", len(a.st.Views))
+	}
+}

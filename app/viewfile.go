@@ -47,6 +47,15 @@ const mostHops = 8
 // without end, or never.
 func (a *app) viewFile(machine machines.ID, f vfs.FS, path string, line int) {
 	path = vfs.Spelled(f, path)
+	// Asked again while it is read, as by a second click: read once.
+	key := string(machine) + "\x00" + path
+	if a.viewing[key] {
+		return
+	}
+	if a.viewing == nil {
+		a.viewing = map[string]bool{}
+	}
+	a.viewing[key] = true
 	a.viewed++
 	where := a.machines.Name(machine)
 	if machine == machines.Local {
@@ -57,6 +66,7 @@ func (a *app) viewFile(machine machines.ID, f vfs.FS, path string, line int) {
 	go func() {
 		v.Data, v.Cut, v.Err = readView(f, path)
 		a.events <- func() {
+			delete(a.viewing, key)
 			if v.Err != "" {
 				// In a toast, and kept in the log past it.
 				a.failed("Couldn't show "+v.Name, v.Err)

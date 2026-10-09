@@ -612,8 +612,10 @@ type app struct {
 	splits int
 	// notices counts the notices made.
 	notices uint64
-	// viewed counts the files shown in the viewer, for each one's ID.
-	viewed uint64
+	// viewed counts the files shown in the viewer, for each one's ID,
+	// and viewing holds those being read, by machine and path.
+	viewed  uint64
+	viewing map[string]bool
 	// ctx ends with the window. machines is every machine known and
 	// what is kept on its connection, ring holds the keys unlocked so
 	// far, and book is the saved servers.
