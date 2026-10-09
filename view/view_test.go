@@ -148,6 +148,8 @@ func TestABellAsksForAttentionOnlyWithoutTheKeyboard(t *testing.T) {
 	}
 }
 
+// A pane sliding in, and the pane it slides in beside, keep shells of
+// a usable size, and each shell is resized once, not on every frame.
 func TestAPaneSlidingInKeepsItsShellAUsableSize(t *testing.T) {
 	win, sh, publish := windowStage(t)
 	_ = win
@@ -175,13 +177,22 @@ func TestAPaneSlidingInKeepsItsShellAUsableSize(t *testing.T) {
 		}
 		s.mu.Unlock()
 	}
-	// The new pane slid in: its shell was narrower on the way than where it came to rest. The first size is the one
-	// the shell opened at, before its pane was laid out.
+	// The panes keep their sizes on the way: the new shell is given the
+	// size it comes to rest at, and the first keeps its own until the
+	// slide is over. Neither is wrapped to the sizes in between.
+	for i, s := range got {
+		s.mu.Lock()
+		seen := slices.Compact(slices.Clone(s.seen))
+		s.mu.Unlock()
+		if len(seen) > 2 {
+			t.Errorf("shell %d was given %v as the pane slid in, want its own size and the one it ends at", i+1, seen)
+		}
+	}
 	s := got[1]
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if n := len(s.seen); n < 3 || s.seen[1][0] >= s.seen[n-1][0] {
-		t.Fatalf("the new shell was given %v, want it growing as its pane slides in", s.seen)
+	if n := len(s.seen); n == 0 || s.seen[n-1][0] >= got[0].seen[0][0] {
+		t.Fatalf("the new shell was given %v, want it narrower than the whole stage", s.seen)
 	}
 }
 

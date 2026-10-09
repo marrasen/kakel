@@ -18,6 +18,12 @@ saving drops them.
 
 ### Fixed
 
+**A docked terminal keeps its text as it slides in.** While a pane slid
+in beside another, both terminals were resized on every frame, so the
+program in them wrapped or cut its output to the narrow sizes on the
+way. Each pane now keeps its size during the slide and is resized once
+at the end.
+
 **A tab docks beside a Files pane.** Dragging a tab to the side of a
 Files pane lit up where it would go, but letting go did nothing.
 
