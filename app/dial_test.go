@@ -398,3 +398,24 @@ func TestTheStatusKeepsWhatElseItSaysWhileAJobRuns(t *testing.T) {
 		t.Fatalf("taken away, the status says %q", a.st.Status)
 	}
 }
+
+// A pane on a server is named after the server, numbered from 2 where a
+// pane open already has that name, until its shell names it.
+func TestAServersPanesAreNamedAfterIt(t *testing.T) {
+	a, answering := dialApp(t)
+	a.handle(OpenOn{Machine: "srv"})
+	waitFor(t, a, "a shell on the server", func() bool { answering(); return oneShell(a) })
+	name := a.machines.Name("srv")
+	if got := a.st.Panes[0].Title; got != name {
+		t.Fatalf("the first pane is called %q, want %q", got, name)
+	}
+	a.handle(OpenOn{Machine: "srv"})
+	waitFor(t, a, "a second shell", func() bool { answering(); return len(a.st.Panes) == 2 })
+	if got := a.st.Panes[1].Title; got != name+" 2" {
+		t.Fatalf("the second pane is called %q, want %q", got, name+" 2")
+	}
+	a.st.Panes[0].Title = "user@srv: ~"
+	if got := a.freeTitle(name); got != name {
+		t.Fatalf("with the first pane named by its shell, a third is called %q", got)
+	}
+}

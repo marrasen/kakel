@@ -42,6 +42,11 @@ opens the same viewer, at the line named. It reads at most 4 MB, and
 only from a real file. A link in a Markdown document opens only when it
 is a web address. View in Reader is gone from the file manager's menu.
 
+**A pane on a server is named after the server.** A new terminal on
+"Mikronika" is called Mikronika, and the next one Mikronika 2, until its
+shell gives it a title of its own. It was "Terminal 3", counted across
+every pane.
+
 **The preview colours code and renders Markdown.** Its picture of a
 file without a thumbnail is now the file's own icon, as the icon view
 shows it, not a coloured square.

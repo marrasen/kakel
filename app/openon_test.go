@@ -319,7 +319,7 @@ func TestAnAgentWorksInPanesThroughAWindow(t *testing.T) {
 		byLabel[p.Label] = p
 	}
 	name := b.machines.Name(win)
-	far, ok := byLabel["Terminal 3 on srv through "+name]
+	far, ok := byLabel["srv on srv through "+name]
 	if !ok {
 		t.Fatalf("the agent is told of %+v", sh.Panes)
 	}
@@ -389,7 +389,7 @@ func TestAnAgentWorksInPanesThroughAWindow(t *testing.T) {
 	// Another pane there, on the server, and on the window's machine.
 	var opened agent.Pane
 	asAgentBoth(t, a, b, func() { opened, err = c.Open(far.ID) })
-	if err != nil || opened.Label != "Terminal 4 on srv through "+name {
+	if err != nil || opened.Label != "srv 2 on srv through "+name {
 		t.Fatalf("opened %+v, %v", opened, err)
 	}
 	if p := b.st.Panes[len(b.st.Panes)-1]; p.On != "srv" || !slices.ContainsFunc(a.st.Panes, func(q Pane) bool { return q.Machine == "srv" && q.ID != a.st.Panes[2].ID }) {
@@ -432,7 +432,7 @@ func TestAnAgentWorksInPanesThroughAWindow(t *testing.T) {
 	}
 	there := len(a.st.Panes)
 	asAgentBoth(t, a, b, func() { opened, err = c.Open(own.ID) })
-	if err != nil || opened.Label != "Terminal 5 on "+name {
+	if err != nil || opened.Label != name+" 2 on "+name {
 		t.Fatalf("opened on the window %+v, %v", opened, err)
 	}
 	if p := b.st.Panes[len(b.st.Panes)-1]; p.Machine != win || p.On != "" || len(a.st.Panes) != there+1 || a.st.Panes[there].Machine != machines.Local {

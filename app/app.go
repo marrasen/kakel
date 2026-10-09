@@ -1811,6 +1811,23 @@ func (a *app) hooks(id string) screen.Hooks {
 // background, and its pane arrives once it has.
 func (a *app) open(machine machines.ID, at Placement) error { return a.openThen(machine, at, nil) }
 
+// freeTitle is name, for a new pane, or where an open pane has that
+// title already, name with the lowest number from 2 that none has.
+func (a *app) freeTitle(name string) string {
+	taken := map[string]bool{}
+	for _, p := range a.st.Panes {
+		taken[p.Title] = true
+	}
+	if !taken[name] {
+		return name
+	}
+	for n := 2; ; n++ {
+		if t := name + " " + strconv.Itoa(n); !taken[t] {
+			return t
+		}
+	}
+}
+
 // openThen is open, telling then the pane it opened, or why it could
 // not, once it has. then runs on the program's goroutine, and may be
 // nil.
@@ -1822,7 +1839,9 @@ func (a *app) openThen(machine machines.ID, at Placement, then func(id string, e
 		// Beyond a window: that window opens it, on its connection.
 		a.next++
 		id := "p" + strconv.Itoa(a.next)
-		return a.openThrough(window, key, command{}, id, fmt.Sprintf("Terminal %d", a.next), at, then)
+		// Named after the server alone: where it is reached through is
+		// said beside it.
+		return a.openThrough(window, key, command{}, id, a.freeTitle(key), at, then)
 	}
 	if machine != "" && a.machines.Get(machine).Conn == nil && a.machines.Get(machine).Window == nil {
 		// Not connected: connected to first, as a saved server's plus
@@ -1848,8 +1867,8 @@ func (a *app) openThen(machine machines.ID, at Placement, then func(id string, e
 	}
 	a.next++
 	id := "p" + strconv.Itoa(a.next)
-	title := fmt.Sprintf("Terminal %d", a.next)
 	if machine == "" {
+		title := fmt.Sprintf("Terminal %d", a.next)
 		// The shell picked for this one, or else the one kept.
 		argv := a.nextShell
 		a.nextShell = nil
@@ -1871,7 +1890,7 @@ func (a *app) openThen(machine machines.ID, at Placement, then func(id string, e
 		return nil
 	}
 	if a.machines.Get(machine).Window != nil {
-		return a.openThrough(machine, "", command{}, id, title, at, then)
+		return a.openThrough(machine, "", command{}, id, a.freeTitle(a.machines.Name(machine)), at, then)
 	}
 	conn, ok, err := a.connOf(machine)
 	switch {
@@ -1894,6 +1913,8 @@ func (a *app) openThen(machine machines.ID, at Placement, then func(id string, e
 			}
 			a.teachFar(machine, sess)
 			a.paneAt[id] = a.machines.Get(machine).Reached
+			// Called after the server, until its shell names the pane.
+			title := a.freeTitle(a.machines.Name(machine))
 			a.addPane(Pane{ID: id, Title: title, Machine: machine}, screen.Open(sess, a.palette, a.withLinks(a.hooks(id), id, machine)), at)
 			then(id, nil)
 		}
