@@ -9,7 +9,19 @@ change how something behaves.
 
 ## Unreleased
 
+### Added
+
+**Create zip and Paste as zip in the file manager.** Right-click items
+and choose Create zip… to put them in a zip beside them. Or copy items,
+go to another folder, and choose Paste as zip… there. That works across
+machines too: copy on this computer, and paste as a zip on a server.
+Each asks for the zip's name first. It suggests the item's name, or the
+source folder's name for several items.
+
 ### Fixed
+
+**File icons stay after a Files pane moves.** A Files pane moved to
+another window lost the icons of its folder until you changed folder.
 
 **Every failure you see is in the Window Log.** A copy or paste in the
 file manager that failed showed its error in a dialog, and the Window

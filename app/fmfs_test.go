@@ -1,6 +1,7 @@
 package app
 
 import (
+	"archive/zip"
 	"context"
 	"errors"
 	"io"
@@ -307,6 +308,41 @@ func transferNow(t *testing.T, a *app, tr filemanager.Transfer) error {
 		case <-deadline:
 			t.Fatal("the transfer never ended")
 		}
+	}
+}
+
+// Items a file manager window pastes as a zip on another machine go
+// into one zip file there.
+func TestAZipBetweenMachinesIsMadeThere(t *testing.T) {
+	a, _ := agentApp(t)
+	a.st.Saved = []remote.Host{{ID: "s1", Name: "web", Address: "web.example"}}
+	a.st.Connected = []machines.ID{"s1"}
+	a.machines.At("s1").Files = sftpHere(t)
+	here, there := t.TempDir(), t.TempDir()
+	if err := os.MkdirAll(filepath.Join(here, "sub"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"a.txt", "sub/b.txt"} {
+		if err := os.WriteFile(filepath.Join(here, filepath.FromSlash(name)), []byte(name), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	paths := []string{filepath.Join(here, "a.txt"), filepath.Join(here, "sub")}
+	if err := transferNow(t, a, filemanager.Transfer{FromFS: "", Paths: paths, ToFS: serverFS + "s1", Into: onServer(there), Zip: "both.zip"}); err != nil {
+		t.Fatal(err)
+	}
+	zr, err := zip.OpenReader(filepath.Join(there, "both.zip"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = zr.Close() }()
+	var names []string
+	for _, f := range zr.File {
+		names = append(names, f.Name)
+	}
+	slices.Sort(names)
+	if want := []string{"a.txt", "sub/", "sub/b.txt"}; !slices.Equal(names, want) {
+		t.Fatalf("the zip holds %v, want %v", names, want)
 	}
 }
 

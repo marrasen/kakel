@@ -180,6 +180,14 @@ func (a *app) fmFor(m machines.ID, f vfs.FS) *fmFS {
 	return fm
 }
 
+// fmFilesOf is m's files, open as f, as the file manager reads them.
+func (a *app) fmFilesOf(m machines.ID, f vfs.FS) filemanager.FS {
+	if m == machines.Local {
+		return filemanager.LocalFS()
+	}
+	return a.fmFor(m, f)
+}
+
 // fmBack hands the file manager m's files, opened again, so a window
 // that lost them has them again.
 func (a *app) fmBack(m machines.ID, f vfs.FS) {
@@ -362,6 +370,21 @@ func (a *app) transferFiles(ctx context.Context, _ *filemanager.Window, t filema
 	}
 	if o.err != nil {
 		return o.err
+	}
+	if t.Zip != "" {
+		// A zip is the file manager's to make, through the files of
+		// each machine as it reads them.
+		ends := make(chan [2]filemanager.FS, 1)
+		if !on(func() { ends <- [2]filemanager.FS{a.fmFilesOf(from, o.ff), a.fmFilesOf(to, o.tf)} }) {
+			return context.Cause(ctx)
+		}
+		var fs [2]filemanager.FS
+		select {
+		case fs = <-ends:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		return filemanager.ZipFiles(ctx, fs[0], t.Paths, fs[1], t.Into, t.Zip, p)
 	}
 	kind, verb := jobs.Copy, "Copying"
 	if t.Move {
