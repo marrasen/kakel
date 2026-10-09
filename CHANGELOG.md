@@ -18,7 +18,16 @@ machines too: copy on this computer, and paste as a zip on a server.
 Each asks for the zip's name first. It suggests the item's name, or the
 source folder's name for several items.
 
+**Files on a server say which server.** A Files pane on a server is
+titled with the server's name and the folder, as "web: log", in its tab
+and in the window's title. The bar of folders above the files starts
+with the machine's name too. Click it to go to your home folder there.
+
 ### Fixed
+
+**A long path scrolls.** When the folders of a path don't fit in the bar
+above the files, the mouse wheel or a touchpad scrolls them. They fade
+at an edge where more are hidden.
 
 **File icons stay after a Files pane moves.** A Files pane moved to
 another window lost the icons of its folder until you changed folder.

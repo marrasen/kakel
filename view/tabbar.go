@@ -397,7 +397,7 @@ func (b *tabBar) drawnAt(i int) (geom.Rect, float32) {
 func (w *Window) tabTitle(t app.Tab) string {
 	for _, p := range w.panes {
 		if p.ID == t.Pane {
-			return p.Title
+			return w.titleOf(p)
 		}
 	}
 	return ""

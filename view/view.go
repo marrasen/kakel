@@ -846,7 +846,7 @@ func (w *Window) showTitle(st app.State, u *gunim.UI) {
 	pane := ""
 	for _, p := range st.Panes {
 		if p.ID == st.Focus {
-			pane = p.Title
+			pane = w.titleOf(p)
 		}
 	}
 	title := app.ProgramName
@@ -2494,6 +2494,22 @@ func (w *Window) isDocked(st app.State) bool {
 // where it runs, and its title. A file manager pane's is where it runs
 // alone: the file manager names the folder already.
 func (w *Window) captionOf(p app.Pane) string { return captionIn(w.machineList, p) }
+
+// titleOf is what the window's title and a tab call pane p, as titleIn
+// says.
+func (w *Window) titleOf(p app.Pane) string { return titleIn(w.machineList, p) }
+
+// titleIn is what the window's title and a tab call pane p, with the
+// machines' names in list: its title, and for files on another machine,
+// which machine first, as their folder alone does not say. The Machines
+// pane lists them under their machine already, and takes the title
+// alone.
+func titleIn(list []machines.Info, p app.Pane) string {
+	if p.Kind != app.KindFileManager || p.Machine == "" {
+		return p.Title
+	}
+	return captionIn(list, p) + ": " + p.Title
+}
 
 // captionIn is captionOf, naming machines from list.
 func captionIn(list []machines.Info, p app.Pane) string {

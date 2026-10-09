@@ -366,7 +366,7 @@ func (s *switcher) sync(wins []app.OverWindow, panes []app.Pane, u *gunim.UI) {
 		c.label = text.Default().Shape(name, 13)
 		c.tabs = c.tabs[:0]
 		for _, tb := range ow.Tabs {
-			title := s.byID[tb.Pane].Title
+			title := titleIn(s.env.machines, s.byID[tb.Pane])
 			c.tabs = append(c.tabs, tabSlot{group: tb.Group, label: text.Default().Shape(title, 12), front: tb.Group == ow.Front})
 			for _, id := range boxLeaves(tb.Box, nil) {
 				t := old[id]
