@@ -10,6 +10,7 @@ import (
 	"github.com/marrasen/kakel/app"
 	"github.com/marrasen/kakel/internal/sessiontest"
 	"github.com/marrasen/kakel/screen"
+	"github.com/marrasen/kakel/shellsetup"
 	"github.com/marrasen/kakel/vt"
 )
 
@@ -65,13 +66,13 @@ func pressKey(k gi.Key, mods gi.Mods) {
 }
 
 // pasteArea is the editor in the paste dialog open.
-func pasteArea(t *testing.T, win *Window) *widget.TextArea {
+func pasteArea(t *testing.T, win *Window) *widget.CodeEditor {
 	t.Helper()
 	if win.dialog == nil {
 		t.Fatal("no dialog opened")
 	}
 	for _, f := range formOf(win.dialog.Body).Children() {
-		if a, ok := f.(*widget.TextArea); ok {
+		if a, ok := f.(*widget.CodeEditor); ok {
 			return a
 		}
 	}
@@ -112,6 +113,7 @@ func TestLinesPastedOpenInAnEditorFirst(t *testing.T) {
 	}
 	// Edited, and Shift+Enter starting a line, then Enter pastes.
 	area.SetText("echo three", lastUI)
+	area.GoTo(1, 11, lastUI)
 	pressKey(gi.KeyEnter, gi.ModShift)
 	lastWindow.Input(gi.TextInput{Text: "echo four"})
 	frames(5)
@@ -135,6 +137,66 @@ func TestAPasteCancelledSendsNothing(t *testing.T) {
 	if got := typed.Sent(); got != "" {
 		t.Fatalf("cancelled, the pane was sent %q", got)
 	}
+}
+
+func TestAPasteIsColouredAsItsShellReadsIt(t *testing.T) {
+	for _, c := range []struct {
+		kind    shellsetup.Route
+		running bool
+		want    string
+	}{
+		{shellsetup.Posix, false, "variable"},
+		{shellsetup.PowerShell, false, "variable"},
+		{shellsetup.Cmd, false, "plain"},
+		{shellsetup.Posix, true, ""},
+		{shellsetup.NoRoute, false, ""},
+	} {
+		h := pasteColours(c.kind, c.running)
+		if h == nil {
+			if c.want != "" {
+				t.Errorf("%v: no colours", c.kind)
+			}
+			continue
+		}
+		if c.want == "" {
+			t.Errorf("%v, a program running %v: coloured, want plain", c.kind, c.running)
+			continue
+		}
+		got := "plain"
+		for _, tk := range h("echo $HOME") {
+			if tk.Start == 5 {
+				got = tk.Kind.String()
+			}
+		}
+		if got != c.want {
+			t.Errorf("%v: $HOME is %s, want %s", c.kind, got, c.want)
+		}
+	}
+}
+
+func TestAPastesEditorTakesItsPanesShell(t *testing.T) {
+	win, sh, publish := windowStage(t)
+	typed := sessiontest.New()
+	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
+	sh.Set("p1", screen.Open(typed, vt.DefaultPalette(), quiet))
+	t.Cleanup(func() { _ = sh.Get("p1").T.Close() })
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1", ShellKind: shellsetup.PowerShell}},
+		Stage: &app.Box{Pane: "p1"}, Focus: "p1", PasteCheck: true})
+	lastUI.SetClipboard("$x = 1\nWrite-Host $x")
+	win.terms["p1"].pasteClipboard(lastUI)
+	frames(5)
+	if got := kindsOf(pasteArea(t, win)); got != "variable operator number function variable" {
+		t.Fatalf("the paste is coloured %q, want PowerShell's colours", got)
+	}
+}
+
+// kindsOf lists the kinds of the tokens an editor colours its code in.
+func kindsOf(c *widget.CodeEditor) string {
+	var out []string
+	for _, tk := range c.Highlight(c.Text()) {
+		out = append(out, tk.Kind.String())
+	}
+	return strings.Join(out, " ")
 }
 
 func TestPasteCheckOffPastesLinesStraightIn(t *testing.T) {

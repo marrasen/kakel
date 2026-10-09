@@ -6,8 +6,10 @@ import (
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/icon"
+	"github.com/marrasen/gunim/syntax"
 	"github.com/marrasen/gunim/widget"
 	"github.com/marrasen/kakel/app"
+	"github.com/marrasen/kakel/shellsetup"
 	"github.com/marrasen/kakel/words"
 )
 
@@ -38,7 +40,8 @@ func needsCheck(s string) bool {
 
 // checkPaste opens text pasted into t in an editor, to change or cancel
 // before it reaches the pane, when it is more than one line or large.
-// It reports whether it did; otherwise the paste goes straight in.
+// It reports whether it did; otherwise the paste goes straight in. The
+// editor colours the text as the pane's shell reads it.
 func (w *Window) checkPaste(t *term, s string, u *gunim.UI) bool {
 	if !w.pasteCheck || !needsCheck(s) {
 		return false
@@ -47,9 +50,9 @@ func (w *Window) checkPaste(t *term, s string, u *gunim.UI) bool {
 	// each into Enter on its way all the same.
 	s = strings.ReplaceAll(s, "\r\n", "\n")
 	s = strings.ReplaceAll(s, "\r", "\n")
-	text := widget.NewTextArea()
-	text.Face = widget.MonoFont
-	text.Rows = min(pasteLines(s), pasteRows)
+	text := widget.NewCodeEditor()
+	text.Label = "Text to paste"
+	text.Highlight = pasteColours(w.shellKind(t.id), t.sh.T.RunningAProgram())
 	text.MaxRows = pasteRows
 	text.SetText(s, nil)
 	d := widget.NewDialog(pasteTitle(s))
@@ -77,6 +80,35 @@ func (w *Window) checkPaste(t *term, s string, u *gunim.UI) bool {
 	d.OnDismiss = widget.Sends(app.DialogClosed{})
 	w.openDialog(d, u)
 	return true
+}
+
+// shellKind is the kind of shell pane id runs.
+func (w *Window) shellKind(id string) shellsetup.Route {
+	for _, p := range w.panes {
+		if p.ID == id {
+			return p.ShellKind
+		}
+	}
+	return shellsetup.NoRoute
+}
+
+// pasteColours colours a paste as the shell it goes to reads it: bash's
+// way, PowerShell's or the Command Prompt's. A paste goes in plain when
+// a program the shell started is reading instead, or the shell is not
+// known.
+func pasteColours(kind shellsetup.Route, programRunning bool) syntax.Highlighter {
+	if programRunning {
+		return nil
+	}
+	switch kind {
+	case shellsetup.Posix:
+		return syntax.Bash
+	case shellsetup.PowerShell:
+		return syntax.PowerShell
+	case shellsetup.Cmd:
+		return syntax.Batch
+	}
+	return nil
 }
 
 // pasteTitle is the paste dialog's title: how many lines, or for one

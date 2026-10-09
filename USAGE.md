@@ -26,6 +26,10 @@ Kakel comes with:
 | `F11` | fill the screen with the panes |
 
 A paste of more than one line, or over 5 KB, opens in an editor first.
+The editor colours the code the way the pane's shell reads it: bash
+(and other POSIX shells), PowerShell or the Command Prompt. The text
+stays plain while a program the shell started is running, and in a
+pane opened through another kakel window.
 `Enter` pastes it, `Shift+Enter` starts a new line, and `Escape`
 cancels. Settings › Terminal › Show before pasting turns this off.
 

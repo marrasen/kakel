@@ -226,6 +226,31 @@ func filesOf(pal vt.Palette, strong color.NRGBA) []theme.Entry {
 	return out
 }
 
+// codeOf is the code editor's colours on fill, with ink for its plain
+// text: the terminal's own colours for each kind of word, as a shell
+// shows them, each the one of its pair that reads best on fill.
+func codeOf(pal vt.Palette, fill, ink color.NRGBA) []theme.Entry {
+	ansi := func(dim, bright int) color.NRGBA {
+		return standout(fill, nrgba(pal.ANSI[dim]), nrgba(pal.ANSI[bright]))
+	}
+	return []theme.Entry{
+		theme.Set(widget.CodeEditorFill, fill),
+		theme.Set(widget.CodeGutterFill, mix(fill, ink, 4)),
+		theme.Set(widget.CodeGutterInk, mix(ink, fill, 55)),
+		theme.Set(widget.CodeLineFill, alpha(ink, 0x0a)),
+		theme.Set(widget.CodeProblem, ansi(1, 9)),
+		theme.Set(widget.SyntaxKeyword, ansi(5, 13)),
+		theme.Set(widget.SyntaxBuiltin, ansi(6, 14)),
+		theme.Set(widget.SyntaxType, ansi(3, 11)),
+		theme.Set(widget.SyntaxFunction, ansi(4, 12)),
+		theme.Set(widget.SyntaxString, ansi(2, 10)),
+		theme.Set(widget.SyntaxNumber, mix(ansi(3, 11), ansi(1, 9), 50)),
+		theme.Set(widget.SyntaxComment, mix(ink, fill, 45)),
+		theme.Set(widget.SyntaxOperator, mix(ink, fill, 25)),
+		theme.Set(widget.SyntaxVariable, ansi(1, 9)),
+	}
+}
+
 // Of turns a kakel theme into gunim's.
 func Of(t themes.Theme) (Themed, error) {
 	pal, err := t.Palette()
@@ -279,6 +304,9 @@ func Of(t themes.Theme) (Themed, error) {
 		return Themed{}, err
 	}
 	echo = append(append(echo, shape...), motion...)
+	// Code sits where a field's text does.
+	field := mix(bg, frameBG, 50)
+	echo = append(echo, codeOf(pal, field, frameFG)...)
 	th := theme.Make(t.Name, append(echo,
 		theme.Set(widget.Background, bg),
 		theme.Set(widget.Ink, frameFG),
@@ -292,7 +320,7 @@ func Of(t themes.Theme) (Themed, error) {
 		theme.Set(widget.MenuBorder, rule),
 		theme.Set(widget.MenuHot, alpha(accent, 0x48)),
 		theme.Set(widget.MenuHint, dim),
-		theme.Set(widget.FieldFill, mix(bg, frameBG, 50)),
+		theme.Set(widget.FieldFill, field),
 		theme.Set(widget.FieldBorder, rule),
 		theme.Set(widget.Placeholder, dim),
 		theme.Set(widget.ButtonFill, buttonBG),
@@ -322,7 +350,7 @@ func Of(t themes.Theme) (Themed, error) {
 	// On stage, the terminal's own colours, and an accent that reads on
 	// its ground.
 	strong := standout(bg, accent, nrgba(pal.ANSI[14]), nrgba(pal.ANSI[11]))
-	content := theme.Make(t.Name+" content", append(filesOf(pal, strong),
+	content := theme.Make(t.Name+" content", append(append(filesOf(pal, strong), codeOf(pal, mix(bg, fg, 6), fg)...),
 		theme.Set(widget.Background, bg),
 		theme.Set(widget.Ink, fg),
 		theme.Set(widget.Accent, strong),

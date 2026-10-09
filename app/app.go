@@ -37,6 +37,7 @@ import (
 	"github.com/marrasen/kakel/secrets"
 	"github.com/marrasen/kakel/settings"
 	shellfind "github.com/marrasen/kakel/shells"
+	"github.com/marrasen/kakel/shellsetup"
 	"github.com/marrasen/kakel/single"
 	"github.com/marrasen/kakel/vfs"
 	"github.com/marrasen/kakel/vt"
@@ -317,6 +318,11 @@ type Pane struct {
 	// Command says the pane runs one command rather than a shell, and
 	// offers to run it again when it finishes.
 	Command bool
+	// ShellKind is the kind of shell a terminal pane runs, as bash or
+	// PowerShell, for colouring code pasted into it. It is NoRoute for a
+	// pane running a command, and for one opened through another kakel
+	// window, whose shell this one cannot see.
+	ShellKind shellsetup.Route
 	// SplitFrom is, for a split's chooser, the pane it was split from.
 	SplitFrom string
 }
@@ -1899,6 +1905,19 @@ func (a *app) openThen(machine machines.ID, at Placement, then func(id string, e
 	return nil
 }
 
+// shellKindOf is the kind of shell pane p runs: on this computer, the
+// one it was started with; on a server, its login shell, taken to be
+// POSIX; through another kakel window, unknown.
+func (a *app) shellKindOf(p Pane) shellsetup.Route {
+	switch {
+	case p.Machine == "":
+		return shellsetup.RouteFor(a.localArgv(p.ID))
+	case a.machines.Get(p.Machine).Window != nil:
+		return shellsetup.NoRoute
+	}
+	return shellsetup.Posix
+}
+
 // addPane shows a new pane, with the keyboard: beside at.beside while
 // that pane is still open, and otherwise on a stage of its own.
 func (a *app) addPane(p Pane, sh *screen.Shell, at Placement) {
@@ -1915,6 +1934,9 @@ func (a *app) addPane(p Pane, sh *screen.Shell, at Placement) {
 	if a.ownerOf(at.Beside) == nil && a.ownerOf(at.Instead) == nil {
 		// Asked for in a tool window: in the window worked in.
 		a.workFor(p.Kind)
+	}
+	if p.Kind == KindTerminal && !p.Command {
+		p.ShellKind = a.shellKindOf(p)
 	}
 	a.st.Panes = append(a.st.Panes, p)
 	if p.Kind != KindChooser && p.Kind != KindLog {

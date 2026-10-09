@@ -10,6 +10,7 @@ import (
 	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/screen"
 	"github.com/marrasen/kakel/settings"
+	"github.com/marrasen/kakel/shellsetup"
 
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/gunimtest"
@@ -171,5 +172,26 @@ func TestAWatchedPaneKeepsTheTitleItsWindowGives(t *testing.T) {
 	a.retitle("p1", `C:\WINDOWS\system32\cmd.exe`)
 	if got := a.titleOf("p1"); got != "Command Prompt" {
 		t.Fatalf("a watched pane is called %q", got)
+	}
+}
+
+// A pane knows the kind of shell it runs, for colouring a paste: the
+// one it was started with here, a login shell on a server, and none for
+// a command.
+func TestAPaneKnowsItsShellsKind(t *testing.T) {
+	w := gunimtest.New(t, geom.Sz(400, 300), nil)
+	a := newApp(w.Client(), screen.NewShells())
+	a.argvs["p1"] = []string{`C:\Program Files\PowerShell\7\pwsh.exe`, "-NoLogo"}
+	a.addPane(Pane{ID: "p1", Title: "Terminal 1"}, nil, Placement{})
+	a.argvs["p2"] = []string{`C:\Windows\System32\cmd.exe`}
+	a.addPane(Pane{ID: "p2", Title: "Terminal 2"}, nil, Placement{})
+	a.addPane(Pane{ID: "p3", Title: "server", Machine: "box"}, nil, Placement{})
+	a.argvs["p4"] = []string{"make"}
+	a.addPane(Pane{ID: "p4", Title: "make", Command: true}, nil, Placement{})
+	want := map[string]shellsetup.Route{"p1": shellsetup.PowerShell, "p2": shellsetup.Cmd, "p3": shellsetup.Posix, "p4": shellsetup.NoRoute}
+	for _, p := range a.st.Panes {
+		if p.ShellKind != want[p.ID] {
+			t.Errorf("%s runs a shell of kind %v, want %v", p.ID, p.ShellKind, want[p.ID])
+		}
 	}
 }
