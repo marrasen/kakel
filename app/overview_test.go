@@ -9,6 +9,8 @@ import (
 	"github.com/marrasen/gunim/driver"
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/gunimtest"
+
+	"github.com/marrasen/kakel/screen"
 )
 
 // All Panes is shown every window, with its tabs and the size of its
@@ -259,5 +261,72 @@ func TestTheLauncherOpensAllPanes(t *testing.T) {
 	a.handleLaunch(Launch{Action: "app:panes"})
 	if a.over.closing {
 		t.Fatal("asked from the launcher again, All Panes closes")
+	}
+}
+
+// While All Panes shows, kakel's windows fade out of its way, and back
+// in as it goes. A click outside it, which takes the keyboard from it,
+// has it go; the keyboard gone for a moment only, as to a window it
+// opened itself, leaves it open.
+func TestAllPanesFadesTheWindowsAndClosesOnAClickOutside(t *testing.T) {
+	first := gunimtest.New(t, geom.Sz(400, 300), nil)
+	a := newApp(first.Client(), screen.NewShells())
+	a.ctx = t.Context()
+	a.addPane(Pane{ID: "p1", Title: "one", Kind: KindFileManager}, nil, Placement{})
+	second := gunimtest.New(t, geom.Sz(400, 300), nil)
+	two := a.addWindow(second.Client(), nil)
+	a.front(two)
+	a.addPane(Pane{ID: "p2", Title: "two", Kind: KindFileManager}, nil, Placement{})
+	two.gw = second
+	mon := driver.Monitor{Bounds: geom.Rc(0, 0, 1600, 1000), CoordsPerLogical: 1, Primary: true}
+	a.monitors = func() []driver.Monitor { return []driver.Monitor{mon} }
+	ow := gunimtest.New(t, geom.Sz(1600, 1000), nil)
+	a.openOverview = func(driver.Monitor, string) (gunim.Client, *gunim.Window, error) {
+		return ow.Client(), ow, nil
+	}
+	run := func(f func()) {
+		t.Helper()
+		select {
+		case f := <-a.events:
+			f()
+		case <-time.After(5 * time.Second):
+			t.Fatal("nothing happened")
+		}
+	}
+	frames := func() {
+		for range 3 {
+			first.Frame(gunim.LeaveTime)
+			second.Frame(gunim.LeaveTime)
+		}
+	}
+	a.handle(ToggleOverview{})
+	run(nil)
+	frames()
+	if !first.Offscreen().Cloaked() || !second.Offscreen().Cloaked() {
+		t.Fatal("with All Panes open, the windows are still on the screen")
+	}
+
+	// The keyboard away and back at once: All Panes stays.
+	a.handleOverviewWin(OverviewFocus{On: true})
+	a.handleOverviewWin(OverviewFocus{On: false})
+	a.handleOverviewWin(OverviewFocus{On: true})
+	run(nil)
+	if a.over.closing {
+		t.Fatal("the keyboard gone for a moment, All Panes closes")
+	}
+
+	// A click outside: it goes, and the windows come back.
+	a.handleOverviewWin(OverviewFocus{On: false})
+	run(nil)
+	if !a.over.closing {
+		t.Fatal("the keyboard gone, All Panes stays open")
+	}
+	frames()
+	if first.Offscreen().Cloaked() || second.Offscreen().Cloaked() {
+		t.Fatal("All Panes going, the windows are still off the screen")
+	}
+	a.handleOverviewWin(OverviewDone{})
+	if a.over.c != nil {
+		t.Fatal("All Panes is still open")
 	}
 }

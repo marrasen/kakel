@@ -10,6 +10,7 @@ import (
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/anim"
 	"github.com/marrasen/gunim/geom"
+	"github.com/marrasen/gunim/input"
 	"github.com/marrasen/gunim/paint"
 	"github.com/marrasen/gunim/theme"
 	"github.com/marrasen/gunim/widget"
@@ -85,6 +86,19 @@ func (o *Overview) Update(st app.OverState, u *gunim.UI) {
 		}
 	}
 	u.Invalidate()
+}
+
+// Handle implements [gunim.Handler]: the program hears when the window
+// loses the keyboard, as to a click outside it, and closes it, and when
+// it has it back.
+func (o *Overview) Handle(e input.Event, u *gunim.UI) bool {
+	switch e.(type) {
+	case input.WindowFocusLost:
+		u.Send(o, app.OverviewFocus{On: false})
+	case input.WindowFocusGained:
+		u.Send(o, app.OverviewFocus{On: true})
+	}
+	return false
 }
 
 // OutputArrived draws again: a shell of some pane wrote.

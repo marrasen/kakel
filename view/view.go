@@ -496,7 +496,7 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 	case "conn.log":
 		machine := w.machineOf(w.focused)
 		if machine == "" {
-			w.toasts.Show(widget.Toast{Title: "Connection logs belong to servers", Body: "Open one from a pane on a server."}, u)
+			w.toast(widget.Toast{Title: "Connection logs belong to servers", Body: "Open one from a pane on a server."}, u)
 			return true
 		}
 		u.Send(w, app.ShowLog{Machine: machine})
@@ -506,7 +506,7 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 		return true
 	case "pane.scrollback":
 		if k := w.kindOf(w.focused); k != app.KindTerminal && k != app.KindLog {
-			w.toasts.Show(widget.Toast{Title: "The pane in front is not a terminal", Body: "Find in Scrollback searches what a terminal or a log has kept."}, u)
+			w.toast(widget.Toast{Title: "The pane in front is not a terminal", Body: "Find in Scrollback searches what a terminal or a log has kept."}, u)
 			return true
 		}
 		u.Send(w, app.ShowScrollback{Pane: w.focused})
@@ -551,9 +551,9 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 		row, ok := u.Focused().(*sideRow)
 		switch {
 		case !ok:
-			w.toasts.Show(widget.Toast{Title: "No row selected", Body: "Close Selected Row works on the row the Machines pane has the keyboard on."}, u)
+			w.toast(widget.Toast{Title: "No row selected", Body: "Close Selected Row works on the row the Machines pane has the keyboard on."}, u)
 		case row.closes == nil:
-			w.toasts.Show(widget.Toast{Title: "That row cannot be closed", Body: "A machine's heading goes with Disconnect, from its menu."}, u)
+			w.toast(widget.Toast{Title: "That row cannot be closed", Body: "A machine's heading goes with Disconnect, from its menu."}, u)
 		default:
 			u.Send(row, row.closes)
 		}
@@ -562,7 +562,7 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 		m := w.machineOf(w.focused)
 		i := slices.IndexFunc(w.saved, func(h remote.Host) bool { return machines.ID(h.ID) == m })
 		if i < 0 {
-			w.toasts.Show(widget.Toast{Title: "This pane is on no saved server", Body: "Edit This Server works on a pane on a server from the Machines menu."}, u)
+			w.toast(widget.Toast{Title: "This pane is on no saved server", Body: "Edit This Server works on a pane on a server from the Machines menu."}, u)
 			return true
 		}
 		if id == "server.editThis" {
@@ -622,7 +622,7 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 		if m := w.machineOf(w.focused); m != "" {
 			u.Send(w, app.Disconnect{Machine: m})
 		} else {
-			w.toasts.Show(widget.Toast{Title: "This pane is on this computer", Body: "Disconnect closes the connection to a server or a window."}, u)
+			w.toast(widget.Toast{Title: "This pane is on this computer", Body: "Disconnect closes the connection to a server or a window."}, u)
 		}
 		return true
 	case "serve.window":
@@ -883,7 +883,7 @@ func (w *Window) secretsCommand(id string, u *gunim.UI) {
 	switch id {
 	case "secrets.change", "secrets.forget":
 		if len(st.Items) == 0 {
-			w.toasts.Show(widget.Toast{Title: "No secrets yet", Body: "Add one with Add Secret."}, u)
+			w.toast(widget.Toast{Title: "No secrets yet", Body: "Add one with Add Secret."}, u)
 			return
 		}
 		choices := make([]widget.PaletteItem, len(st.Items))
@@ -914,7 +914,7 @@ func (w *Window) secretsCommand(id string, u *gunim.UI) {
 		w.chooseFrom("Which key?", choices, func(i int, u *gunim.UI) { w.confirmRemoveKey(st, keys[i], u) }, u)
 	case "secrets.addPassphrase":
 		if st.Passphrase {
-			w.toasts.Show(widget.Toast{Title: "The secrets already take a passphrase", Body: "Remove Secrets Key takes it away first."}, u)
+			w.toast(widget.Toast{Title: "The secrets already take a passphrase", Body: "Remove Secrets Key takes it away first."}, u)
 			return
 		}
 		w.passphraseForm(st, u)
@@ -965,7 +965,7 @@ func (w *Window) pickTheme(u *gunim.UI) {
 // server form offers.
 func (w *Window) removeSavedKey(u *gunim.UI) {
 	if len(w.keyFiles) == 0 {
-		w.toasts.Show(widget.Toast{Title: "No saved keys", Body: "A key is saved when it is created here, chosen for a server, or added with Add Saved Key."}, u)
+		w.toast(widget.Toast{Title: "No saved keys", Body: "A key is saved when it is created here, chosen for a server, or added with Add Saved Key."}, u)
 		return
 	}
 	p := &widget.Palette{Placeholder: "Saved keys"}
@@ -2046,7 +2046,7 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 		if w.applyShortcuts(st.Shortcuts, u) && st.ShortcutsAgain {
 			// Said only now: a file naming a command there is none of
 			// is refused here, and "reloaded" would be untrue.
-			w.toasts.Show(widget.Toast{Title: "Shortcuts reloaded"}, u)
+			w.toast(widget.Toast{Title: "Shortcuts reloaded"}, u)
 		}
 	}
 	if st.Looks != nil {
@@ -2283,6 +2283,7 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 				})
 			}
 		}
+		// Logged already, as the program posted it.
 		w.toasts.Show(widget.Toast{Title: n.Title, Body: n.Body, Kind: toastKinds[n.Kind], Action: n.Action, OnClick: widget.Sends(n.On)}, u)
 	}
 	// The menus take the pane in front's lines, and tick a switch while
@@ -3762,9 +3763,20 @@ func (w *Window) madeNode(id string) gunim.Node {
 // program's failures are said: in a toast, with a red echo, and in the
 // Window Log, where it stays once the toast has gone.
 func (w *Window) failed(title, why string, u *gunim.UI) {
-	log.Printf("%s: %s", title, why)
-	w.toasts.Show(widget.Toast{Title: title, Body: why, Kind: widget.ToastError}, u)
+	w.toast(widget.Toast{Title: title, Body: why, Kind: widget.ToastError}, u)
 	w.echo.Ping(u, widget.EchoProblem)
+}
+
+// toast shows t, and writes it in the Window Log, where it stays once
+// the toast has gone. Every toast the window shows itself goes through
+// here; the program's notices are logged as it posts them.
+func (w *Window) toast(t widget.Toast, u *gunim.UI) {
+	if t.Body != "" {
+		log.Printf("%s: %s", t.Title, t.Body)
+	} else {
+		log.Print(t.Title)
+	}
+	w.toasts.Show(t, u)
 }
 
 // echoFor tells of each count in st.Pings that went up, by rings out
@@ -3829,7 +3841,7 @@ func (w *Window) present(on bool, u *gunim.UI) {
 	w.barShade.show(!on, spring)
 	w.status.hide(on, u)
 	if on {
-		w.toasts.Show(widget.Toast{Title: "Full screen", Body: "F11 brings the menus back."}, u)
+		w.toast(widget.Toast{Title: "Full screen", Body: "F11 brings the menus back."}, u)
 	}
 	u.Invalidate()
 }

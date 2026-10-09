@@ -60,6 +60,10 @@ type (
 	// close, and OverviewLeaving that it is on its way.
 	OverviewDone    struct{}
 	OverviewLeaving struct{}
+	// OverviewFocus says All Panes' own window has the keyboard, or with
+	// On unset that it went elsewhere: a click outside it, as on a window
+	// on another monitor, closes it.
+	OverviewFocus struct{ On bool }
 	// OverviewShown says All Panes opened, or closed with On false, in
 	// the window it came from. While it is open the window hears of
 	// output from every window's panes, not only its own.
@@ -287,6 +291,10 @@ type overState struct {
 	opening bool
 	closing bool
 	raise   *ownWin
+	// faded are the windows faded out while All Panes shows, to fade
+	// back in as it goes, and focused says it has the keyboard.
+	faded   []*ownWin
+	focused bool
 }
 
 // overviewAlone reports whether All Panes opens in a window of its own:
@@ -304,8 +312,7 @@ func (a *app) toggleOverview() {
 			a.closeOverview()
 			return
 		}
-		a.over.closing = true
-		a.closeOverviewSoon()
+		a.leaveOverview()
 		return
 	}
 	if a.over.opening || !a.overviewAlone() {
@@ -338,6 +345,11 @@ func (a *app) toggleOverview() {
 			_ = c.SetTheme(a.st.Theme)
 			a.publishOverview()
 			c.ToFront()
+			// The windows step aside as their cards come out of them.
+			a.over.faded = a.liveWins()
+			for _, w := range a.over.faded {
+				w.c.Fade(true)
+			}
 			go func() {
 				for env := range c.Intents() {
 					a.events <- func() {
@@ -376,11 +388,69 @@ func (a *app) handleOverviewWin(in any) {
 		}
 		a.paneToNewWindowFrom(in, space)
 	case OverviewLeaving:
-		a.over.closing = true
-		a.closeOverviewSoon()
+		a.leaveOverview()
+	case OverviewFocus:
+		a.over.focused = in.On
+		if !in.On {
+			a.overviewBlurred()
+		}
 	case OverviewDone:
 		a.closeOverview()
 	}
+}
+
+// leaveOverview has All Panes go, animated: its cards back into their
+// windows, which fade back in meanwhile, and its own window closed once
+// they have, or after overviewWait.
+func (a *app) leaveOverview() {
+	if a.over.c == nil || a.over.closing {
+		return
+	}
+	a.over.closing = true
+	a.fadeBackIn()
+	a.closeOverviewSoon()
+}
+
+// fadeBackIn fades back in the windows All Panes faded out.
+func (a *app) fadeBackIn() {
+	for _, w := range a.over.faded {
+		if !w.gone {
+			w.c.Fade(false)
+		}
+	}
+	a.over.faded = nil
+}
+
+// blurWait is how long All Panes may be without the keyboard before it
+// closes: a window it opened itself takes the keyboard for a moment,
+// and All Panes takes it back.
+const blurWait = 150 * time.Millisecond
+
+// overviewBlurred closes All Panes once it has been without the
+// keyboard for blurWait: the user clicked outside it, as on another
+// monitor.
+func (a *app) overviewBlurred() {
+	c := a.over.c
+	go func() {
+		time.Sleep(blurWait)
+		a.events <- func() {
+			if a.over.c != c || a.over.focused || a.over.closing || a.openedFromOverview() {
+				return
+			}
+			a.leaveOverview()
+		}
+	}()
+}
+
+// openedFromOverview reports whether a window All Panes opened has yet
+// to show, and give the keyboard back.
+func (a *app) openedFromOverview() bool {
+	for _, w := range a.liveWins() {
+		if w.fresh {
+			return true
+		}
+	}
+	return false
 }
 
 // overviewWait is the longest All Panes' own window may take going
@@ -413,6 +483,7 @@ func (a *app) closeOverview() {
 // overviewGone forgets All Panes' own window, gone, and puts the window
 // of the pane picked there in front, or the window in front again.
 func (a *app) overviewGone() {
+	a.fadeBackIn()
 	raise := a.over.raise
 	a.over = overState{}
 	if raise == nil {

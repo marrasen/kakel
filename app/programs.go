@@ -65,7 +65,6 @@ func (a *app) notePanes() {
 					from = a.machines.Name(p.Machine)
 				}
 				from += ": " + p.Title
-				log.Printf("%s: %s", from, text)
 				a.toast(from, text)
 			}
 		}
@@ -107,8 +106,18 @@ func progressNote(p vt.Progress) string {
 }
 
 // toast pops a message up outside the window, unless one went up less
-// than toastGap ago.
+// than toastGap ago, and writes it in the Window Log either way.
 func (a *app) toast(title, body string) {
+	if body != "" {
+		log.Printf("%s: %s", title, body)
+	} else {
+		log.Print(title)
+	}
+	a.popUp(title, body)
+}
+
+// popUp is toast without the log, for a message the log has already.
+func (a *app) popUp(title, body string) {
 	now := time.Now()
 	if now.Sub(a.lastToast) < toastGap {
 		return
@@ -138,11 +147,6 @@ func closeToaster() {
 // tell says something worth knowing while the window is out of sight:
 // a notice in the window, a line in the log, and a pop-up outside it.
 func (a *app) tell(title, body string) {
-	line := title
-	if body != "" {
-		line += " — " + body
-	}
-	log.Print(line)
-	a.toast(title, body)
+	a.popUp(title, body)
 	a.notify(title, body, "")
 }

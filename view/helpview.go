@@ -209,7 +209,7 @@ func (w *Window) applyShortcuts(changes []keys.Change, u *gunim.UI) bool {
 	next, unknown := keymapOf(changes)
 	if len(unknown) > 0 {
 		log.Printf("The shortcuts file names commands this window lacks: %s", strings.Join(unknown, "; "))
-		w.toasts.Show(widget.Toast{Title: "The shortcuts file names commands this window lacks", Body: strings.Join(unknown, "; ") + ". None of it was used; Shortcuts and Commands lists every command's name."}, u)
+		w.toast(widget.Toast{Title: "The shortcuts file names commands this window lacks", Body: strings.Join(unknown, "; ") + ". None of it was used; Shortcuts and Commands lists every command's name."}, u)
 		return false
 	}
 	w.keys.Become(next)

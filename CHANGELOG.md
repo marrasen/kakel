@@ -7,6 +7,28 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
+## Unreleased
+
+### Added
+
+**A paste is coloured for its shell.** The editor a multi-line paste
+opens in now colours the code the way the pane's shell reads it: bash
+and other POSIX shells, PowerShell, or the Command Prompt. Variables,
+strings, keywords, commands and comments each get a colour from the
+theme's terminal palette. The text stays plain while a program is
+running in the shell.
+
+### Changed
+
+**All Panes clears the screen.** Ctrl+Shift+A fades kakel's windows out
+as their cards come out of them, and fades them back in as All Panes
+goes. A click outside All Panes, as on another monitor, closes it, with
+the same animation.
+
+**Every notice is in the Window Log.** Each toast and pop-up kakel
+shows is written to the Window Log too, so you can read it after it has
+gone. Before, only failures were.
+
 ## v0.12.0-beta.11
 
 ### Added

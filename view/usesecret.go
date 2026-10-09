@@ -30,7 +30,7 @@ const useWait = 2 * time.Minute
 func (w *Window) useSecret(u *gunim.UI) {
 	switch {
 	case !w.vault.Exists:
-		w.toasts.Show(widget.Toast{Title: "No secrets yet", Body: "Add one with Add Secret, in Manage Secrets."}, u)
+		w.toast(widget.Toast{Title: "No secrets yet", Body: "Add one with Add Secret, in Manage Secrets."}, u)
 	case !w.vault.Open:
 		w.useOnOpen = time.Now()
 		u.Send(w, app.UnlockSecrets{})

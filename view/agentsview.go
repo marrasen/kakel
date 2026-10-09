@@ -23,7 +23,7 @@ import (
 func (w *Window) shareDialog(st app.Share, u *gunim.UI) {
 	if st.Code == "" {
 		if w.kindOf(w.focused) != app.KindTerminal {
-			w.toasts.Show(widget.Toast{Title: "Share a terminal pane", Body: "Click into the terminal to share, then choose Share with an Agent."}, u)
+			w.toast(widget.Toast{Title: "Share a terminal pane", Body: "Click into the terminal to share, then choose Share with an Agent."}, u)
 			return
 		}
 		u.Send(w, app.SharePane{Pane: w.focused})
@@ -77,7 +77,7 @@ func (w *Window) shareDialog(st app.Share, u *gunim.UI) {
 	d.AddAction("Copy Prompt", func(u *gunim.UI) gunim.Intent { u.Send(w, app.CopyAgentPrompt{Host: hostName()}); return nil })
 	d.AddAction("Copy Code", func(u *gunim.UI) gunim.Intent {
 		u.SetClipboard(st.Code)
-		w.toasts.Show(widget.Toast{Title: "Code copied", Kind: widget.ToastSuccess}, u)
+		w.toast(widget.Toast{Title: "Code copied", Kind: widget.ToastSuccess}, u)
 		return nil
 	})
 	d.AddAction("Setup…", func(u *gunim.UI) gunim.Intent { w.setupDialog(agenthost.Named(hostName()), u); return nil })
@@ -92,7 +92,7 @@ func (w *Window) shareDialog(st app.Share, u *gunim.UI) {
 func (w *Window) permissionsDialog(st app.Share, u *gunim.UI) {
 	i := slices.IndexFunc(st.Panes, func(p app.SharedPane) bool { return p.Pane == w.focused })
 	if i < 0 {
-		w.toasts.Show(widget.Toast{Title: "This pane is not shared", Body: "Share it with an agent first."}, u)
+		w.toast(widget.Toast{Title: "This pane is not shared", Body: "Share it with an agent first."}, u)
 		return
 	}
 	may := st.Panes[i].May

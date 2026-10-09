@@ -33,7 +33,7 @@ func (w *Window) tunnelDialog(socks bool, u *gunim.UI) {
 // tunnelDialogOn asks for a tunnel over machine's connection.
 func (w *Window) tunnelDialogOn(machine machines.ID, socks bool, u *gunim.UI) {
 	if machine == "" {
-		w.toasts.Show(widget.Toast{Title: "Tunnels run over a server's connection",
+		w.toast(widget.Toast{Title: "Tunnels run over a server's connection",
 			Body: "Open one from a pane on a server."}, u)
 		return
 	}

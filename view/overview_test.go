@@ -10,6 +10,7 @@ import (
 	"github.com/marrasen/kakel/vt"
 
 	"github.com/marrasen/gunim"
+	"github.com/marrasen/gunim/driver"
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/gunimtest"
 	gi "github.com/marrasen/gunim/input"
@@ -179,5 +180,19 @@ func TestAllPanesAskedToCloseFirstIsDone(t *testing.T) {
 	w.Frame(time.Second / 60)
 	if in, ok := overviewIntent(t, w).(app.OverviewDone); !ok {
 		t.Fatalf("All Panes sent %#v", in)
+	}
+}
+
+// All Panes tells the program when its window loses the keyboard, as to
+// a click outside it, and when it has it back.
+func TestAllPanesSaysWhenItLosesTheKeyboard(t *testing.T) {
+	w, _, _ := overviewStage(t)
+	w.Input(driver.WindowFocus{Focused: false})
+	if in, ok := overviewIntent(t, w).(app.OverviewFocus); !ok || in.On {
+		t.Fatalf("losing the keyboard, All Panes sent %#v", in)
+	}
+	w.Input(driver.WindowFocus{Focused: true})
+	if in, ok := overviewIntent(t, w).(app.OverviewFocus); !ok || !in.On {
+		t.Fatalf("given the keyboard back, All Panes sent %#v", in)
 	}
 }
