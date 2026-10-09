@@ -51,12 +51,62 @@ func Contrast(a, b color.RGBA) float64 {
 // luminance is the WCAG relative luminance of an sRGB colour, from 0 for
 // black to 1 for white.
 func luminance(c color.RGBA) float64 {
-	channel := func(v uint8) float64 {
-		s := float64(v) / 255
+	return 0.2126*linear[c.R] + 0.7152*linear[c.G] + 0.0722*linear[c.B]
+}
+
+// linear is each 8-bit sRGB channel value as linear light, worked out
+// once: luminance is asked of every cell drawn.
+var linear = func() (out [256]float64) {
+	for i := range out {
+		s := float64(i) / 255
 		if s <= 0.03928 {
-			return s / 12.92
+			out[i] = s / 12.92
+		} else {
+			out[i] = math.Pow((s+0.055)/1.055, 2.4)
 		}
-		return math.Pow((s+0.055)/1.055, 2.4)
 	}
-	return 0.2126*channel(c.R) + 0.7152*channel(c.G) + 0.0722*channel(c.B)
+	return out
+}()
+
+// Readable returns fg, made to contrast with bg by ratio at least where
+// it does not: lighter on a dark background, darker on a light one, by
+// as little as it takes. A ratio neither way reaches gives whichever of
+// white and black contrasts more. Its hue goes toward white or black
+// with it, so blue text stays bluish, as a terminal with a minimum
+// contrast does.
+func Readable(fg, bg color.RGBA, ratio float64) color.RGBA {
+	if Contrast(fg, bg) >= ratio {
+		return fg
+	}
+	white, black := color.RGBA{0xff, 0xff, 0xff, fg.A}, color.RGBA{0, 0, 0, fg.A}
+	toward := func(end color.RGBA) (color.RGBA, bool) {
+		if Contrast(end, bg) < ratio {
+			return end, false
+		}
+		// The least step toward end that reaches the ratio.
+		lo, hi := 0, 256
+		for lo < hi {
+			mid := (lo + hi) / 2
+			if Contrast(Blend(fg, end, mid, 256), bg) >= ratio {
+				hi = mid
+			} else {
+				lo = mid + 1
+			}
+		}
+		return Blend(fg, end, lo, 256), true
+	}
+	first, second := white, black
+	if luminance(bg) > 0.5 {
+		first, second = black, white
+	}
+	if c, ok := toward(first); ok {
+		return c
+	}
+	if c, ok := toward(second); ok {
+		return c
+	}
+	if Contrast(white, bg) >= Contrast(black, bg) {
+		return white
+	}
+	return black
 }

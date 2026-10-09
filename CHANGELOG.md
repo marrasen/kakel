@@ -28,6 +28,13 @@ saving drops them.
 
 ### Fixed
 
+**Coloured text stays readable on coloured backgrounds.** Some programs
+colour text too close to its background in kakel's themes: `ls` shows a
+folder anyone may write to as blue on green, and PowerShell shows every
+folder on blue. Text that contrasts less than 4.5:1 with its background
+is now lightened or darkened until it reads. Text that reads already,
+box lines, blocks and Powerline symbols keep their colours.
+
 **A docked terminal keeps its text as it slides in.** While a pane slid
 in beside another, both terminals were resized on every frame, so the
 program in them wrapped or cut its output to the narrow sizes on the

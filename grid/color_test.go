@@ -102,3 +102,33 @@ func TestContrast(t *testing.T) {
 		t.Errorf("with no alpha it reads %.4f:1 and with full alpha %.4f:1, want alpha ignored", got, want)
 	}
 }
+
+// Text too close to its background is lightened on a dark one and
+// darkened on a light one until it reads; text that reads already, or
+// as well as it can, is left as it is.
+func TestReadableMakesTextReadOnItsBackground(t *testing.T) {
+	blue := color.RGBA{0x61, 0xaf, 0xef, 0xff}
+	green := color.RGBA{0x8f, 0xd4, 0x6a, 0xff}
+	light := color.RGBA{0xc8, 0xd0, 0xda, 0xff}
+	dark := color.RGBA{0x14, 0x17, 0x1c, 0xff}
+	for _, c := range []struct{ fg, bg color.RGBA }{
+		{blue, green},  // ls: a folder anyone may write to
+		{light, blue},  // PowerShell: a folder
+		{dark, dark},   // the same colour twice
+		{green, light}, // light text on a light ground
+	} {
+		got := Readable(c.fg, c.bg, 4.5)
+		if r := Contrast(got, c.bg); r < 4.5-0.05 {
+			t.Errorf("%v on %v became %v, which contrasts %.2f, want 4.5", c.fg, c.bg, got, r)
+		}
+	}
+	if got := Readable(light, dark, 4.5); got != light {
+		t.Fatalf("text that reads already became %v", got)
+	}
+	// Lightened on a mid ground that cannot reach the ratio either way,
+	// it goes as far as it can the better way.
+	mid := color.RGBA{0x77, 0x77, 0x77, 0xff}
+	if got := Readable(mid, mid, 21); got != (color.RGBA{0, 0, 0, 0xff}) && got != (color.RGBA{0xff, 0xff, 0xff, 0xff}) {
+		t.Fatalf("out of reach, the text became %v, want black or white", got)
+	}
+}

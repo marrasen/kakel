@@ -343,8 +343,22 @@ func (t *term) sync() {
 	})
 }
 
+// minContrast is how far at least a cell's text contrasts with its
+// ground, as WCAG measures it: text a program colours too close to its
+// ground, as ls does a folder anyone may write to, blue on green, is
+// lightened or darkened until it reads. Dim text needs half as much.
+const minContrast = 4.5
+
+// shapeRune reports whether r draws a shape rather than a letter: a line
+// of a box, a block, a shade, or a Powerline symbol. Pictures drawn with
+// half blocks use the text's colour and the ground's as two pixels, so
+// these keep their colours.
+func shapeRune(r rune) bool {
+	return r >= 0x2500 && r <= 0x259f || r >= 0xe0a0 && r <= 0xe0d4
+}
+
 // cellOf turns one of kakel's cells into gunim's, with its colours
-// resolved.
+// resolved, and its text made to read on its ground.
 func cellOf(g *grid.Grid, x, y int) widget.Cell {
 	c := g.At(x, y)
 	if c.Width == 0 {
@@ -356,6 +370,11 @@ func cellOf(g *grid.Grid, x, y int) widget.Cell {
 		fg = bg
 	case c.Attr&grid.AttrDim != 0:
 		fg = grid.Blend(fg, bg, 1, 2)
+		if !shapeRune(c.Rune) {
+			fg = grid.Readable(fg, bg, minContrast/2)
+		}
+	case !shapeRune(c.Rune):
+		fg = grid.Readable(fg, bg, minContrast)
 	}
 	out := widget.Cell{
 		Rune: c.Rune,
