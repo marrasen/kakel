@@ -9,6 +9,13 @@ change how something behaves.
 
 ## Unreleased
 
+### Changed
+
+**The theme editor changes nothing until you press Save.** Your edits
+show in its preview only. Save keeps them and restyles every window.
+Discard takes them back to what was saved. Closing the editor without
+saving drops them.
+
 ### Fixed
 
 **All Panes fades the screen in.** `Ctrl+Shift+A` turned the whole

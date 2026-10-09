@@ -2054,6 +2054,9 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 	}
 	if w.themeEditor != nil {
 		w.themeEditor.follow(w.looks[st.Theme], u)
+		if !slices.ContainsFunc(st.Panes, func(p app.Pane) bool { return p.Kind == app.KindThemeEditor }) {
+			w.themeEditor.drop(u)
+		}
 	}
 	if st.Contents != nil && !sameMap(st.Contents, w.contents) {
 		// Themes read again. Each update carries them from then on, and
