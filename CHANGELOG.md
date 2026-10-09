@@ -18,6 +18,9 @@ saving drops them.
 
 ### Fixed
 
+**A tab docks beside a Files pane.** Dragging a tab to the side of a
+Files pane lit up where it would go, but letting go did nothing.
+
 **All Panes fades the screen in.** `Ctrl+Shift+A` turned the whole
 screen dark in a flash before the cards came in. Now the screen
 darkens smoothly behind them.

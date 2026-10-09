@@ -9,6 +9,7 @@ import (
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/filemanager"
+	"github.com/marrasen/gunim/geom"
 	gi "github.com/marrasen/gunim/input"
 
 	"github.com/marrasen/kakel/app"
@@ -171,6 +172,45 @@ func TestF5RefreshesTheFileManagerInFrontWithTheKeyboardElsewhere(t *testing.T) 
 		}
 		if !refreshed {
 			t.Fatalf("%v with the keyboard on nothing did not refresh the file manager", k)
+		}
+	}
+}
+
+// A tab dropped on a file manager pane docks beside it, as on any pane:
+// the pane takes dropped files alone.
+func TestATabDroppedOnAFileManagerDocks(t *testing.T) {
+	win, _, publish := windowStage(t)
+	filemanager.RegisterViews(lastWindow)
+	fw := filePane(t, "p1")
+	b1, b2 := &app.Box{Pane: "p1"}, &app.Box{Pane: "p2"}
+	publish(app.State{
+		Window: 1,
+		Panes:  []app.Pane{{ID: "p1", Title: "dir", Kind: app.KindFileManager}, {ID: "p2", Title: "Log", Kind: app.KindLog}},
+		Stage:  b1, Focus: "p1",
+		Groups: map[string]*app.Box{"p1": b1, "p2": b2},
+		Tabs:   []app.Tab{{Group: 1, Pane: "p1", Panes: 1}, {Group: 2, Pane: "p2", Panes: 1}},
+	})
+	fw.Attach(lastWindow.Client(), app.FilePaneHost("p1"))
+	framesUntil(t, "the file manager shows in its place", func() bool {
+		return filemanager.FocusIn(lastUI, app.FilePaneViews("p1")) != nil
+	})
+	drain()
+	r, ok := lastUI.Bounds(win.paneNode("p1"))
+	if !ok {
+		t.Fatal("the file manager pane is not drawn")
+	}
+	at := geom.Pt(r.Max.X-10, r.Center().Y)
+	tab := app.TabDrag{Group: 2, Window: 1}
+	lastWindow.Input(gi.DragOver{Pos: at, Data: tab})
+	lastWindow.Frame(time.Second / 60)
+	lastWindow.Input(gi.Drop{Pos: at, Data: tab})
+	lastWindow.Frame(time.Second / 60)
+	for {
+		if in, ok := nextIntent(t).(app.DockTab); ok {
+			if in.Group != 2 || in.Beside != "p1" || in.Vertical || in.First {
+				t.Fatalf("dropped at the pane's right edge, the window sent %#v", in)
+			}
+			return
 		}
 	}
 }

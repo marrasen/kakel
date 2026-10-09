@@ -49,12 +49,17 @@ func (h *fmHost) Paint(p *paint.Painter, _ gunim.Frame, _ geom.Size, kids gunim.
 // Handle implements [gunim.Handler]: the keyboard coming into the file
 // manager, as by a click, makes its pane the one in front.
 func (h *fmHost) Handle(e input.Event, u *gunim.UI) bool {
-	switch e.(type) {
+	switch e := e.(type) {
 	case input.FocusEntered:
 		h.w.entered(h.id, u)
 	case input.Drop:
 		// Files dropped where the file manager takes none, as on its
-		// status bar, go nowhere: not to the terminal beside it.
+		// status bar, go nowhere: not to the terminal beside it. A tab
+		// or a pane goes on to the window, to dock beside this one.
+		switch e.Data.(type) {
+		case app.TabDrag, app.PaneDrag:
+			return false
+		}
 		return true
 	}
 	return false
