@@ -7,9 +7,22 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
-## Unreleased
+## v0.12.0-beta.13
 
 ### Fixed
+
+**No more freezes on Intel graphics.** Two hangs that stopped every
+window at once, "Not Responding", are gone (gunim issue #30):
+
+- Intel's Windows graphics driver could deadlock when one window blurred
+  while another made a picture. kakel now makes its smaller copies of
+  pictures itself, on the graphics card, without the driver call that
+  deadlocked.
+- kakel ran its threads at raised priority. Under heavy load, that kept
+  Windows from running the threads Go needs to hand work between them,
+  and everything stood still for 4 to 11 seconds. Threads now run at
+  the priority Windows gives them. Frames may drop when other programs
+  load the machine heavily, but nothing freezes.
 
 **All Panes puts windows back at their own size.** Closing All Panes,
 the cards could land smaller than the windows they stand for. Each
