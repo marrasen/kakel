@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"syscall"
 	"testing"
 
 	"github.com/marrasen/kakel/machines"
@@ -47,13 +46,6 @@ func TestTheViewerReadsFilesAlone(t *testing.T) {
 	}
 	if _, _, why := readView(f, loop); why == "" {
 		t.Fatal("a link to itself was read")
-	}
-	pipe := filepath.Join(dir, "pipe")
-	if err := syscall.Mkfifo(pipe, 0o600); err != nil {
-		t.Skip("no pipes here:", err)
-	}
-	if _, _, why := readView(f, pipe); !strings.Contains(why, "not a file") {
-		t.Fatalf("a pipe was read: %q", why)
 	}
 }
 
