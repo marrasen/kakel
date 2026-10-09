@@ -7,6 +7,19 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
+## Unreleased
+
+### Fixed
+
+**All Panes puts windows back at their own size.** Closing All Panes,
+the cards could land smaller than the windows they stand for. Each
+window's place is now measured by All Panes' own window, at the scale
+it draws at, not worked out from the monitor's. The windows also fade
+back in at their own size, where before they grew from a little
+smaller. If a card still lands at the wrong size, start kakel with
+`KAKEL_DEBUG_OVERVIEW=1` and the Window Log says where each window was
+measured.
+
 ## v0.12.0-beta.12
 
 ### Added

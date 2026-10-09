@@ -1,6 +1,8 @@
 package app
 
 import (
+	"log"
+	"os"
 	"strconv"
 	"time"
 
@@ -342,6 +344,10 @@ func (a *app) toggleOverview() {
 				// bar.
 				a.over.at = p.Bounds
 			}
+			if debugOverview {
+				log.Printf("overview: opened over monitor %v, scale %v, coords per logical %v; the window is at %v",
+					mon.Bounds, mon.Scale, mon.CoordsPerLogical, a.over.at)
+			}
 			_ = c.SetTheme(a.st.Theme)
 			a.publishOverview()
 			c.ToFront()
@@ -513,7 +519,7 @@ func (a *app) publishOverview() {
 			continue
 		}
 		if p, ok := w.gw.Placement(); ok {
-			wins[i].Home = inSpaceOf(screenRect(p, mons), a.over.at.Min, a.over.mon)
+			wins[i].Home = a.overviewHome(w.id, p, screenRect(p, mons))
 		}
 	}
 	_ = a.over.c.Publish(OverviewTopic, OverState{
@@ -522,6 +528,30 @@ func (a *app) publishOverview() {
 		Shortcuts: a.st.Shortcuts, Close: a.over.closing,
 	})
 }
+
+// overviewHome is where on the screen at, the place of the window
+// numbered id, is in All Panes' own window: measured by that window, at
+// the scale and the place it stands at now, or where it cannot say, by
+// its monitor's scale.
+func (a *app) overviewHome(id int, p driver.Placement, at geom.Rect) geom.Rect {
+	home := inSpaceOf(at, a.over.at.Min, a.over.mon)
+	if a.over.gw != nil {
+		lo, ok1 := a.over.gw.FromScreen(at.Min)
+		hi, ok2 := a.over.gw.FromScreen(at.Max)
+		if ok1 && ok2 {
+			home = geom.Rect{Min: lo, Max: hi}
+		}
+	}
+	if debugOverview {
+		log.Printf("overview: window %d at %v (maximized %v) on screen, home %v; by the monitor's scale %v it would be %v",
+			id, p.Bounds, p.Maximized, home, a.over.mon.CoordsPerLogical, inSpaceOf(at, a.over.at.Min, a.over.mon))
+	}
+	return home
+}
+
+// debugOverview logs where All Panes measures each window, for a card
+// that lands at the wrong size on a machine set up as the user's is.
+var debugOverview = os.Getenv("KAKEL_DEBUG_OVERVIEW") != ""
 
 // monitorOf returns the monitor window w is on: the one holding the
 // middle of it, or the primary one where it cannot say.

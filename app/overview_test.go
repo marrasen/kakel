@@ -330,3 +330,21 @@ func TestAllPanesFadesTheWindowsAndClosesOnAClickOutside(t *testing.T) {
 		t.Fatal("All Panes is still open")
 	}
 }
+
+// A window's place in All Panes is measured by All Panes' own window, at
+// the scale it draws at: a monitor that says another scale changes
+// nothing, and a card lands at its window's size.
+func TestAllPanesMeasuresWindowsByItsOwnWindow(t *testing.T) {
+	a, _, _ := twoWindowApp(t)
+	ow := gunimtest.New(t, geom.Sz(1600, 1000), nil)
+	c := ow.Client()
+	a.over = overState{c: &c, gw: ow, mon: driver.Monitor{Bounds: geom.Rc(0, 0, 1600, 1000), CoordsPerLogical: 2}}
+	at := geom.Rc(100, 120, 400, 200)
+	if got := a.overviewHome(1, driver.Placement{Bounds: at}, at); got != at {
+		t.Fatalf("the window is at %v in All Panes, want %v, as its own window measures it", got, at)
+	}
+	a.over.gw = nil
+	if got := a.overviewHome(1, driver.Placement{Bounds: at}, at); got != geom.Rc(50, 60, 200, 100) {
+		t.Fatalf("with no window to measure by, the window is at %v", got)
+	}
+}
