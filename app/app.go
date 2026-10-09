@@ -565,6 +565,8 @@ type app struct {
 	// saying what else is said there, by what says it.
 	jobLines []string
 	saying   map[string]string
+	// git is the status line's git status.
+	git gitWatch
 	// openedFor are the panes opened here for another window, which
 	// their rows say for as long as they are open.
 	openedFor map[string]bool
@@ -919,6 +921,7 @@ func (a *app) run(ctx context.Context) error {
 	a.takeLauncherKey()
 	a.startUpdates()
 	a.startPings()
+	a.startGit()
 	switch {
 	case a.opts.StartsInTray():
 		// Started with the computer, or with nothing to do: into the
@@ -1017,6 +1020,7 @@ func (a *app) run(ctx context.Context) error {
 		case f := <-a.events:
 			f()
 		}
+		a.gitFocusMoved()
 		// Empty, and connecting to nothing that would open a pane: the
 		// window leaves, and the last one takes the program with it.
 		a.rehome()

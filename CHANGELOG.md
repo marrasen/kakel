@@ -24,6 +24,14 @@ Extract… to unpack it into a new folder beside it. It asks for the
 folder's name first. Undo moves the folder to the trash. It works on
 servers too.
 
+**Git status on the status line.** In a terminal on this computer whose
+shell is in a git repository, the line under the panes says the branch,
+how far it is ahead of or behind its upstream, and how many files have
+changed. The branch is read from the repository's own files. `git
+status` runs only where the repository's settings name no program for
+it to run (a filter or a file monitor), so opening a folder never runs
+code from it.
+
 ### Changed
 
 **A new viewer for files.** Space, or View on a file's menu in the file
