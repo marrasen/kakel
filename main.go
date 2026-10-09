@@ -277,20 +277,28 @@ func (ws *ownWindows) openLauncher() (gunim.Client, error) {
 // openOverview opens All Panes' own window over the whole of monitor m,
 // above the other windows, with its view mounted. It draws no frame,
 // and comes and goes at once: All Panes moves the windows' cards in and
-// out itself.
-func (ws *ownWindows) openOverview(m driver.Monitor) (gunim.Client, *gunim.Window, error) {
-	w, err := ws.app.NewWindow(gunim.WindowOptions{
+// out itself, and darkens the screen behind them. It opens in theme,
+// see-through: in the default theme its first frame was opaque, and the
+// screen went dark at once before the shade could fade in.
+func (ws *ownWindows) openOverview(m driver.Monitor, theme string) (gunim.Client, *gunim.Window, error) {
+	ws.mu.Lock()
+	all := ws.all
+	ws.mu.Unlock()
+	o := gunim.WindowOptions{
 		Title: "All Panes", Size: m.Bounds.Size(), Icons: appicon.Images(), Pinned: true, Fixed: true, Instant: true,
 		TitleBar: view.NoTitleBar(), Place: &driver.Placement{Bounds: m.Bounds},
 		// No line round it: it is the screen, not a window on it.
 		Border: driver.Border{None: true},
-	})
+	}
+	for _, t := range all {
+		if t.Name == theme {
+			o.Theme = view.SeeThrough(t.Theme)
+		}
+	}
+	w, err := ws.app.NewWindow(o)
 	if err != nil {
 		return gunim.Client{}, nil, fmt.Errorf("kakel: %w", err)
 	}
-	ws.mu.Lock()
-	all := ws.all
-	ws.mu.Unlock()
 	// The themes, each with the background see-through, so the screen
 	// shows behind the cards.
 	for _, t := range all {

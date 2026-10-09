@@ -135,7 +135,8 @@ func TestAWindowStandsInTheOverviewWhereItIsOnTheScreen(t *testing.T) {
 
 // All Panes opens in a window of its own over the monitor the window in
 // front is on; a pane picked there gets the keyboard, and its window
-// comes to the front once All Panes has gone.
+// comes to the front once All Panes has gone. It opens in the theme in
+// use, so its first frame is see-through, not the default's dark.
 func TestAllPanesOpensInAWindowOfItsOwn(t *testing.T) {
 	a, one, two := twoWindowApp(t)
 	two.gw = gunimtest.New(t, geom.Sz(400, 300), nil)
@@ -143,10 +144,13 @@ func TestAllPanesOpensInAWindowOfItsOwn(t *testing.T) {
 	a.monitors = func() []driver.Monitor { return []driver.Monitor{mon} }
 	ow := gunimtest.New(t, geom.Sz(1600, 1000), nil)
 	opened := make(chan driver.Monitor, 1)
-	a.openOverview = func(m driver.Monitor) (gunim.Client, *gunim.Window, error) {
+	themed := make(chan string, 1)
+	a.openOverview = func(m driver.Monitor, theme string) (gunim.Client, *gunim.Window, error) {
 		opened <- m
+		themed <- theme
 		return ow.Client(), ow, nil
 	}
+	a.st.Theme = "Light"
 	if !a.overviewAlone() {
 		t.Fatal("All Panes would not open in a window of its own")
 	}
@@ -159,6 +163,9 @@ func TestAllPanesOpensInAWindowOfItsOwn(t *testing.T) {
 	}
 	if got := <-opened; got.Bounds != mon.Bounds {
 		t.Fatalf("it opened over %v", got.Bounds)
+	}
+	if got := <-themed; got != "Light" {
+		t.Fatalf("it opened in theme %q, want the one in use, Light", got)
 	}
 	if a.over.c == nil || !a.overviewOpen() {
 		t.Fatal("All Panes is not open")
@@ -210,7 +217,7 @@ func TestTheLauncherOpensAllPanes(t *testing.T) {
 	two.gw = gunimtest.New(t, geom.Sz(400, 300), nil)
 	a.monitors = func() []driver.Monitor { return []driver.Monitor{{Bounds: geom.Rc(0, 0, 1600, 1000), Primary: true}} }
 	ow := gunimtest.New(t, geom.Sz(1600, 1000), nil)
-	a.openOverview = func(driver.Monitor) (gunim.Client, *gunim.Window, error) { return ow.Client(), ow, nil }
+	a.openOverview = func(driver.Monitor, string) (gunim.Client, *gunim.Window, error) { return ow.Client(), ow, nil }
 	things := a.launchThings(nil)
 	if !slices.ContainsFunc(things, func(l LaunchThing) bool { return l.Action == "app:panes" && slices.Contains(l.Also, "show all panes") }) {
 		t.Fatal("the launcher does not offer All Panes")

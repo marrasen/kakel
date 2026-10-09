@@ -263,9 +263,10 @@ type OverState struct {
 	Close bool
 }
 
-// OverviewOpener opens All Panes' own window over monitor m, and
-// returns its client and the window. It runs on a goroutine of its own.
-type OverviewOpener func(m driver.Monitor) (gunim.Client, *gunim.Window, error)
+// OverviewOpener opens All Panes' own window over monitor m, in the
+// theme named theme from its first frame, and returns its client and
+// the window. It runs on a goroutine of its own.
+type OverviewOpener func(m driver.Monitor, theme string) (gunim.Client, *gunim.Window, error)
 
 // overState is All Panes' own window, while it is open: its client and
 // window, the monitor it covers and where on it it stands, and the
@@ -307,9 +308,9 @@ func (a *app) toggleOverview() {
 		return
 	}
 	a.over.opening = true
-	open := a.openOverview
+	open, theme := a.openOverview, a.st.Theme
 	go func() {
-		c, gw, err := open(mon)
+		c, gw, err := open(mon, theme)
 		a.events <- func() {
 			a.over.opening = false
 			if err != nil {

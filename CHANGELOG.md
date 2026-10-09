@@ -7,6 +7,18 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
+## Unreleased
+
+### Fixed
+
+**All Panes fades the screen in.** `Ctrl+Shift+A` turned the whole
+screen dark in a flash before the cards came in. Now the screen
+darkens smoothly behind them.
+
+**The Ctrl+Tab list closes on Settings.** Walking to Settings or the
+theme editor with `Ctrl+Tab` left the list of panes on screen after
+`Ctrl` was let go.
+
 ## v0.12.0-beta.9
 
 ### Added
