@@ -18,6 +18,12 @@ strings, keywords, commands and comments each get a colour from the
 theme's terminal palette. The text stays plain while a program is
 running in the shell.
 
+**Extract archives in the file manager.** Right-click a zip or a tar
+archive (.zip, .tar, .tar.gz, .tgz, .tar.bz2, .tbz2) and choose
+Extract… to unpack it into a new folder beside it. It asks for the
+folder's name first. Undo moves the folder to the trash. It works on
+servers too.
+
 ### Changed
 
 **All Panes clears the screen.** Ctrl+Shift+A fades kakel's windows out
