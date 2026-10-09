@@ -26,16 +26,15 @@ import (
 	"github.com/marrasen/kakel/winkeys"
 )
 
-// reader shows a file on kakel's own reader: its lines, coloured by
-// the file's kind, with find, going to a line, following, a hex view,
+// reader shows lines on kakel's own reader, as a terminal's scrollback:
+// its lines, coloured by kind, with find, going to a line, a hex view,
 // a view of a JSON log as columns, a minimap along the side, selecting
 // and copying, and saving what it shows; or an image. It draws into a
 // grid of its own, copied into the pane as a terminal's is, with the
 // image and the minimap painted over it.
 //
-// The file is read on the program's side. The reader asks for it, and
-// the lines arrive in the window's state; a file followed arrives again
-// each time it changes.
+// The lines are read on the program's side. The reader asks for them,
+// and they arrive in the window's state.
 type reader struct {
 	id    string
 	w     *Window
@@ -57,11 +56,10 @@ type reader struct {
 	// findAgain is the last ask to open the find bar again.
 	findAgain int
 	// waiting says the first read is on its way unasked, as the reader
-	// opens; saveAs, follow and gone are what the program said last of
-	// where to save, following, and a scrollback whose pane has gone.
+	// opens; saveAs and gone are what the program said last of where to
+	// save, and a scrollback whose pane has gone.
 	waiting bool
 	saveAs  string
-	follow  bool
 	gone    bool
 	// send asks the program for something, from the update the reader
 	// was last brought up to date in.
@@ -83,8 +81,7 @@ func newReader(w *Window, id string) *reader {
 }
 
 // show takes the reader's state: the first read makes the reader, and
-// each read after it is handed to the reader, which asked for it or,
-// for a file followed, is opened again for it.
+// each read after it is handed to the reader, which asked for it.
 func (rd *reader) show(st app.Reader, u *gunim.UI) {
 	rd.send = func(in gunim.Intent) { u.Send(rd.cells, in) }
 	rd.ui = u
@@ -119,10 +116,6 @@ func (rd *reader) show(st app.Reader, u *gunim.UI) {
 		if st.SaveAs != "" && st.SaveAs != rd.saveAs {
 			rd.saveAs = st.SaveAs
 			rd.r.SaveAs = st.SaveAs
-		}
-		if st.Follow != rd.follow {
-			rd.follow = st.Follow
-			rd.r.Follow(st.Follow)
 		}
 		if st.Gone != "" && !rd.gone {
 			rd.gone = true
@@ -192,10 +185,6 @@ func (rd *reader) make(st app.Reader) {
 		}
 		rd.send(app.ReadAgain{Pane: rd.id})
 	}
-	r.OnFollow = func(on bool) {
-		rd.follow = on
-		rd.send(app.FollowFile{Pane: rd.id, On: on})
-	}
 	r.OnCopy = func(text string) { rd.ui.SetClipboard(text) }
 	r.OnClose = func() { rd.send(app.ClosePane{Pane: rd.id}) }
 	r.OnSave = func(at string, lines []string, then func(error)) {
@@ -210,8 +199,6 @@ func (rd *reader) make(st app.Reader) {
 	if st.Text {
 		r.NotAnImage()
 	}
-	r.Follow(st.Follow)
-	rd.follow = st.Follow
 	if st.Gone != "" {
 		rd.gone = true
 		r.Gone(st.Gone)

@@ -109,7 +109,7 @@ func TestTheImageBarOffersWhatThereIsToDo(t *testing.T) {
 			t.Errorf("the bar reads %q, want it to offer %q", bar, want)
 		}
 	}
-	for _, gone := range []string{"Find", "Hex", "Follow"} {
+	for _, gone := range []string{"Find", "Hex"} {
 		if strings.Contains(bar, gone) {
 			t.Errorf("the bar reads %q, want %q left off an image", bar, gone)
 		}
@@ -182,23 +182,6 @@ func TestCtrlHOnAnImageShowsItAsLines(t *testing.T) {
 	g := drawReader(r, 60, 10)
 	if got := readerRow(g, 9); !strings.Contains(got, "Find") {
 		t.Errorf("the bar reads %q, want a file's keys", got)
-	}
-}
-
-// Tailing an image does nothing: an image is not appended to, and a
-// pane stuck saying "(following)" would ask a machine at the far end
-// about the file for ever.
-func TestAnImageIsNotFollowed(t *testing.T) {
-	r := anImageFile(t, 64, 64, 60, 10)
-
-	r.Follow(true)
-
-	if r.Following() {
-		t.Error("an image is being followed")
-	}
-	g := drawReader(r, 60, 10)
-	if got := readerRow(g, 0); strings.Contains(got, "following") {
-		t.Errorf("the top row reads %q", got)
 	}
 }
 

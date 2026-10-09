@@ -615,13 +615,12 @@ func TestAPathBeyondAWindowIsFoundOnItsServer(t *testing.T) {
 		_, _ = term.HandleMouse(input.MouseEvent{Kind: input.MouseRelease, Button: input.MouseLeft, Col: 2, Row: row, Mods: input.ModCtrl})
 	}
 	// Clicked until the path is known: the first look opens the files.
-	pumpBoth(t, a, b, "the reader", func() bool {
+	pumpBoth(t, a, b, "the viewer", func() bool {
 		click()
-		for id, r := range b.st.Readers {
-			if r.Path == onServer(file) && len(r.Lines) >= 2 {
-				p := slices.IndexFunc(b.st.Panes, func(p Pane) bool { return p.ID == id })
-				if p < 0 || b.st.Panes[p].Machine != win || b.st.Panes[p].On != "srv" {
-					t.Fatalf("the reader is %+v, want on srv through the window", b.st.Panes[p])
+		for _, v := range b.st.Views {
+			if v.Path == onServer(file) && strings.Count(string(v.Data), "\n") >= 2 {
+				if v.machine != machines.FarID(win, "srv") {
+					t.Fatalf("the file was read on %q, want srv through the window", v.machine)
 				}
 				return true
 			}

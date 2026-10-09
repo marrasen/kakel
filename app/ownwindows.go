@@ -436,6 +436,7 @@ func (a *app) stateFor(w *ownWin, st State) State {
 	}
 	st.Asks = slices.DeleteFunc(slices.Clone(st.Asks), func(q Ask) bool { return q.win != w.id || q.alone })
 	st.Notices = slices.DeleteFunc(slices.Clone(st.Notices), func(n Notice) bool { return n.win != w.id })
+	st.Views = slices.DeleteFunc(slices.Clone(st.Views), func(v Viewed) bool { return v.win != w.id })
 	return st
 }
 

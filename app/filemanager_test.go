@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -138,27 +137,6 @@ func TestAFolderOpenedAnywhereOpensInTheFileManager(t *testing.T) {
 	p := a.st.Panes[len(a.st.Panes)-1]
 	if files.opened[0].Dir != filepath.FromSlash("/srv/data") || p.Kind != KindFileManager || a.ownerOf(p.ID) != a.cur || len(a.panesIn(a.cur)) != 1 {
 		t.Fatalf("handed a folder, kakel opened %+v in a window of %d panes", files.opened, len(a.panesIn(a.cur)))
-	}
-}
-
-// View in Reader on a file in a file manager pane opens the file in a
-// reader beside the pane.
-func TestAFileManagerPaneOpensAFileInAReader(t *testing.T) {
-	a, _ := agentApp(t)
-	a.settings = mustSettings(t)
-	a.files = newFakeFiles(t)
-	if err := a.filesOn(machines.Local, t.TempDir()); err != nil {
-		t.Fatal(err)
-	}
-	pane := a.st.Focus
-	file := filepath.Join(t.TempDir(), "notes.txt")
-	if err := os.WriteFile(file, []byte("hello\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	a.fileAction(a.fmPanes[pane].w, "", []string{file}, "view")
-	waitFor(t, a, "a reader opens", func() bool { return a.kindOfPane(a.st.Focus) == KindReader })
-	if a.groupOf[a.st.Focus] != a.groupOf[pane] {
-		t.Fatal("the reader didn't open beside the file manager pane")
 	}
 }
 

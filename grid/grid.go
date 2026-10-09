@@ -122,10 +122,6 @@ const (
 	// IconReader is a page being read: lines of text on a sheet.
 	IconReader
 
-	// IconFollow is a reader keeping up with a file: chevrons running
-	// down to the end of it.
-	IconFollow
-
 	// IconRemote is a link to another machine, either way: a mast with
 	// signal either side of it.
 	IconRemote

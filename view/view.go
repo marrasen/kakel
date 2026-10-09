@@ -288,6 +288,8 @@ type Window struct {
 	// shown.
 	toasts *widget.Toasts
 	shown  uint64
+	// viewedSeen is the last file the program sent the window to view.
+	viewedSeen uint64
 	// dialog is the dialog open over the window, which keeps the
 	// keyboard until it starts to leave.
 	dialog *widget.Dialog
@@ -2263,6 +2265,7 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 	w.lastChips = st
 	w.showTypeAll(u)
 	w.showChips(st)
+	w.showViews(st, u)
 	for _, n := range st.Notices {
 		if n.ID <= w.shown {
 			continue

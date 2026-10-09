@@ -87,9 +87,6 @@ func TestTheReaderDeclinesAChordTheBarNeverOffered(t *testing.T) {
 			if r.Hexed() {
 				t.Error("it turned hex on")
 			}
-			if r.Following() {
-				t.Error("it started following the file")
-			}
 			if reads != was {
 				t.Errorf("it read the file %d more times", reads-was)
 			}

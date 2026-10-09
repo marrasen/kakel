@@ -194,6 +194,9 @@ type State struct {
 	// Notices are the latest notices, oldest first, for the window to
 	// show each once.
 	Notices []Notice
+	// Views are the latest files to show in the viewer, oldest first,
+	// for the window to open each once.
+	Views []Viewed
 }
 
 // Pings counts what the window tells of, by rings out past its edges
@@ -607,6 +610,8 @@ type app struct {
 	splits int
 	// notices counts the notices made.
 	notices uint64
+	// viewed counts the files shown in the viewer, for each one's ID.
+	viewed uint64
 	// ctx ends with the window. machines is every machine known and
 	// what is kept on its connection, ring holds the keys unlocked so
 	// far, and book is the saved servers.
@@ -706,10 +711,6 @@ type app struct {
 	// restarting holds the panes whose program is being started again
 	// on another goroutine, until it has started or failed to.
 	restarting map[string]bool
-	// reads are what each reader pane reads, to read it again, and
-	// following the readers with a follow loop running.
-	reads     map[string]readSpec
-	following map[string]bool
 	// nextShell is the command the next terminal here starts, once,
 	// and nextDir the folder the next local one starts in.
 	nextShell []string
@@ -838,8 +839,6 @@ func newApp(c gunim.Client, sh *screen.Shells) *app {
 		argvs:        map[string][]string{},
 		farHost:      map[string]string{},
 		typed:        map[string]*typedLog{},
-		reads:        map[string]readSpec{},
-		following:    map[string]bool{},
 		restarts:     map[string]int{},
 		endings:      map[string]int{},
 		endCounted:   map[string]bool{},
@@ -1248,6 +1247,7 @@ func (a *app) publish() {
 		st.Working = a.focusIn(a.work)
 	}
 	st.Notices = slices.Clone(a.st.Notices)
+	st.Views = slices.Clone(a.st.Views)
 	st.Asks = slices.Clone(a.st.Asks)
 	st.Saved = slices.Clone(a.st.Saved)
 	st.Themes = slices.Clone(a.st.Themes)
@@ -1399,8 +1399,6 @@ func (a *app) handle(in gunim.Intent) {
 		err = a.connect(in)
 	case OpenFiles:
 		err = a.openFiles()
-	case ReadFile:
-		a.readFile(in)
 	case SaveServer:
 		err = a.saveServer(in)
 	case ImportSSHConfig:
@@ -1594,13 +1592,7 @@ func (a *app) handle(in gunim.Intent) {
 	case ShowCopies:
 		a.showCopies()
 	case ReadAgain:
-		if spec, ok := a.reads[in.Pane]; ok {
-			if in.Text {
-				spec.text = true
-				a.reads[in.Pane] = spec
-			}
-			a.readOnce(in.Pane)
-		} else if r, ok := a.st.Readers[in.Pane]; ok {
+		if r, ok := a.st.Readers[in.Pane]; ok {
 			// A scrollback is read off its pane again, as it stands now,
 			// while the pane is there to read.
 			if t := a.terminal(r.Of); t != nil {
@@ -1609,8 +1601,6 @@ func (a *app) handle(in gunim.Intent) {
 			r.Seq++
 			a.setReader(in.Pane, r)
 		}
-	case FollowFile:
-		a.followReader(in.Pane, in.On)
 	case SaveLines:
 		a.saveLines(in)
 	case AskAction:
@@ -1621,6 +1611,8 @@ func (a *app) handle(in gunim.Intent) {
 		err = a.pasteImage(in.Pane, true)
 	case PasteImage:
 		err = a.pasteImage(in.Pane, false)
+	case ViewLink:
+		a.viewLink(in)
 	case ShowScrollback:
 		err = a.showScrollback(in.Pane)
 	case ReloadServers:
@@ -2198,7 +2190,6 @@ func (a *app) remove(id string) {
 	delete(a.paneAt, id)
 	delete(a.farHost, id)
 	delete(a.typed, id)
-	delete(a.reads, id)
 	delete(a.restarts, id)
 	delete(a.endings, id)
 	delete(a.endCounted, id)

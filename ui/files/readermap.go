@@ -255,7 +255,6 @@ func (r *Reader) mapTo(row int) {
 	at := y * len(r.shown) / room.Rows
 	r.top = at - r.rows()/2
 	r.clampTop()
-	r.follow = false
 }
 
 // mapPress is a press on the strip: the file goes to the band that was

@@ -4,49 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
-
-	"github.com/marrasen/kakel/ui"
 )
-
-// A pane made shorter keeps a file that is being followed on its end.
-//
-// The end of the file moves away from where the reader is sitting when
-// the pane loses rows, so without this the header goes on saying
-// "(following)" while the new lines never arrive.
-func TestAShorterPaneKeepsTheTail(t *testing.T) {
-	r := aFileOf(t, 40, 20, numbered(100)...)
-	r.Follow(true)
-	if !r.AtEnd() {
-		t.Fatal("the reader did not start at the end of the file")
-	}
-
-	r.Layout(ui.Size{Cols: 40, Rows: 10})
-
-	if !r.AtEnd() {
-		t.Errorf("the pane got shorter and the reader is on line %d, want the end", r.Top()+1)
-	}
-	// And the next answer stays there.
-	r.Read = func(then func([]string, bool, error)) { then(numbered(140), false, nil) }
-	r.Open()
-	if !r.AtEnd() {
-		t.Errorf("the file grew and the reader is on line %d, want the end", r.Top()+1)
-	}
-}
-
-// A pane made shorter leaves a reader who scrolled back where they put
-// themselves: following is about the end moving, not about taking the
-// pane away from whoever is reading it.
-func TestAShorterPaneLeavesAScrolledReaderAlone(t *testing.T) {
-	r := aFileOf(t, 40, 20, numbered(100)...)
-	r.Follow(true)
-	r.Home()
-
-	r.Layout(ui.Size{Cols: 40, Rows: 10})
-
-	if got := r.Top(); got != 0 {
-		t.Errorf("the reader moved to line %d, want the first, where they were", got+1)
-	}
-}
 
 // A file read again shorter pulls the reader back inside it, across as
 // well as down: a pane scrolled past the end of every line it now has

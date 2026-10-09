@@ -378,7 +378,7 @@ func TestTheReaderShowsWhatArrivesAndWhatFollows(t *testing.T) {
 		`{"level":"info","msg":"served","time":"2026-09-26T10:00:04Z"}`,
 	}
 	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "app.log", Kind: app.KindReader}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"}
-	st.Readers = map[string]app.Reader{"p1": {Path: "/var/log/app.log", Name: "app.log", Lines: lines, Seq: 1, Follow: true}}
+	st.Readers = map[string]app.Reader{"p1": {Path: "/var/log/app.log", Name: "app.log", Lines: lines, Seq: 1}}
 	publish(st)
 	rd := win.readers["p1"]
 	if rd == nil || rd.r == nil || rd.r.Lines() == 0 {
@@ -387,11 +387,11 @@ func TestTheReaderShowsWhatArrivesAndWhatFollows(t *testing.T) {
 	if !rd.r.IsLog() {
 		t.Fatal("a JSON log reads as plain text")
 	}
-	// The file grew, and the reader, following, takes the new read.
-	st.Readers = map[string]app.Reader{"p1": {Path: "/var/log/app.log", Name: "app.log", Lines: append(lines, `{"level":"error","msg":"down","time":"2026-09-26T10:00:02Z"}`), Seq: 2, Follow: true}}
+	// Read again longer, the reader takes the new read.
+	st.Readers = map[string]app.Reader{"p1": {Path: "/var/log/app.log", Name: "app.log", Lines: append(lines, `{"level":"error","msg":"down","time":"2026-09-26T10:00:02Z"}`), Seq: 2}}
 	publish(st)
 	if got := rd.r.Lines(); got < 6 {
-		t.Fatalf("followed, the reader holds %d lines", got)
+		t.Fatalf("read again, the reader holds %d lines", got)
 	}
 	for range 5 {
 		lastWindow.Frame(time.Second / 60)

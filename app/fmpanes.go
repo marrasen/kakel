@@ -10,7 +10,6 @@ import (
 	"github.com/marrasen/gunim/filemanager"
 
 	"github.com/marrasen/kakel/machines"
-	"github.com/marrasen/kakel/vfs"
 )
 
 // File manager panes: gunim's file manager in a pane, among terminals,
@@ -120,49 +119,11 @@ func (a *app) fileManagerOptions(fsys filemanager.FS, path string) filemanager.O
 		Places: a.fileManagerPlaces, Visit: a.visitPlace, Favourites: a.favStore(),
 		Transfer: a.transferFiles, FSName: a.fsName,
 		PlaceMenu: placeMenu, PlaceCommand: a.placeCommand,
-		ItemActions: fileActions, ItemAction: a.fileAction,
 		SystemFrame: a.st.SystemTitleBar,
 		// What a file manager shows going wrong is kept in the Window Log
 		// too, past the banner it is dismissed from.
 		Log: func(line string) { log.Print(line) },
 	}
-}
-
-// fileActions are kakel's items on the menu of a file in the file
-// manager: its reader, on the file as it is, or following it as it
-// grows.
-var fileActions = []filemanager.ItemAction{
-	{Label: "View in Reader", ID: "view", Files: true, One: true},
-	{Label: "Follow in Reader", ID: "follow", Files: true, One: true},
-}
-
-// fileAction does what kakel's item id on the menu of the items at paths
-// asks, on the file system of ID fs, from file manager w: opens the file
-// in a reader beside w's pane. It runs on a goroutine of its own.
-func (a *app) fileAction(w *filemanager.Window, fs string, paths []string, id string) {
-	if len(paths) != 1 || id != "view" && id != "follow" {
-		return
-	}
-	a.later(func() {
-		m := machineOfFS(fs)
-		at := Placement{Beside: a.filePaneOf(w)}
-		failed := func(err error) {
-			if err != nil {
-				a.failed("Couldn't read the file", err.Error())
-			}
-		}
-		failed(a.withFilesHow(m, func(f vfs.FS) { a.readOn(m, f, paths[0], id == "follow", 0, at) }, failed, false))
-	})
-}
-
-// filePaneOf is the file manager pane of w, or "".
-func (a *app) filePaneOf(w *filemanager.Window) string {
-	for id, fp := range a.fmPanes {
-		if fp.w == w {
-			return id
-		}
-	}
-	return ""
 }
 
 // newFilePaneLike opens another file manager pane, in a tab of its own,

@@ -98,7 +98,6 @@ func (r *Reader) GoToLine(n int) {
 	}
 	r.top = max(min(n, len(r.shown))-1, 0)
 	r.clampTop()
-	r.stuck = r.follow && r.AtEnd()
 }
 
 // FindNext moves to the next line holding what was searched for, or the
@@ -177,7 +176,6 @@ func (r *Reader) showLine(at int) {
 		return
 	}
 	r.clampTop()
-	r.stuck = r.follow && r.AtEnd()
 }
 
 // askKey takes a key while the reader is waiting to be told something.

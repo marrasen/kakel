@@ -205,7 +205,7 @@ between machines, `F2` renames and `Delete` moves to the trash. `F5`
 or `Ctrl+R` lists the folder again, even with the keyboard elsewhere
 in the window.
 `Ctrl+F` filters the folder, `Ctrl+P` finds a file, `Ctrl+1` and
-`Ctrl+2` switch between details and icons, and `Space` shows a picture.
+`Ctrl+2` switch between details and icons, and `Space` views a file.
 `Ctrl+W` closes the pane. Keys with `Ctrl+Shift` stay kakel's, as
 `Ctrl+Shift+D` to split and `Ctrl+Shift+C` to copy, except
 `Ctrl+Shift+N`, a new folder. Copy path is on a file's menu.
@@ -214,6 +214,9 @@ The `+` at the end of the tabs opens a tab like the one in front: a
 file manager at the same folder, or a terminal. Right-click it to pick
 one.
 
-Right-click a file for View in Reader, which opens it in kakel's
-reader beside the pane, or Follow in Reader, which follows it as it
-grows.
+`Space`, or View on a file's menu, shows the file over the window: a
+picture large, code in its language's colours, Markdown rendered, and
+anything else as its bytes in hex. `Space` or `Escape` closes it. The
+preview beside the files colours code and renders Markdown too.
+`Ctrl`+click a file's path in a terminal to view it the same way, at
+the line a compiler named.

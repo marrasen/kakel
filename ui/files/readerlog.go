@@ -283,7 +283,6 @@ func (r *Reader) Log(on bool) {
 	}
 	r.logOn = on
 	r.top, r.left = 0, 0
-	r.stuck = false
 	// The lines are not the lines they were, so what was picked out of
 	// them is not there any more.
 	r.sel = span{}

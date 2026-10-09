@@ -137,18 +137,19 @@ The whole list. The [README](README.md) has the short version.
   cover the pane alone, so the terminal beside it keeps working. Its own
   keys work while it has the keyboard, and `Ctrl+Shift` keys stay
   kakel's. A pane narrower than 860 pixels folds its preview away.
-- **A reader for a file, without a shell.** View in Reader on a file's
-  menu in the file manager opens it, and Follow in Reader tails it, on
-  this machine or on a server. It works the
-  way `less` does: a page at a time, "/" to search, "n" and "N" for the
-  next match and the one before, ":" to go to a line, and Ctrl+H for a
-  hex dump. A file being tailed is looked at every 300 ms and
-  stays at its end as it grows; scroll back and it leaves you where you
-  put yourself. Code is coloured by what the file is called, and a
-  markdown file gets its headings, bullets and quotes. An image file
-  shows the image, on a layer of its own over the pane: the grid is for
-  text. Nothing is read on the goroutine that draws, and a file that will
-  not read says why rather than showing an empty pane.
+- **A viewer for a file, without a shell.** Space or View in the file
+  manager, or Ctrl+click on a path in a terminal, shows a file over the
+  window, on this machine or on a server: code coloured for some forty
+  kinds of file, Markdown rendered with its source a click away, and
+  anything else as its bytes in hex. It reads the first 4 MB of a file,
+  and only a file: never a device or a pipe. A Markdown document loads
+  nothing it points at, and its links open in the browser only when
+  they are web addresses. The file manager's preview colours code and
+  renders Markdown the same way.
+- **A reader for a terminal's scrollback**, from Find in Scrollback,
+  that works the way `less` does: a page at a time, "/" to search, "n"
+  and "N" for the next match and the one before, ":" to go to a line,
+  and Ctrl+H for a hex dump.
 - **A strip beside the file**, where a code editor puts its minimap and
   doing the same job: the shape of the whole file at once, drawn in
   pixels, the pane's place in it as a box, and a click or a drag to go

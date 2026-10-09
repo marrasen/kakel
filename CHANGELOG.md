@@ -26,6 +26,18 @@ servers too.
 
 ### Changed
 
+**A new viewer for files.** Space, or View on a file's menu in the file
+manager, shows the file over the window: code in its language's
+colours, Markdown rendered (with its source a click away), and anything
+else as its bytes in hex. A Ctrl+click on a file's path in a terminal
+opens the same viewer, at the line named. It reads at most 4 MB, and
+only from a real file. A link in a Markdown document opens only when it
+is a web address. View in Reader is gone from the file manager's menu.
+
+**The preview colours code and renders Markdown.** Its picture of a
+file without a thumbnail is now the file's own icon, as the icon view
+shows it, not a coloured square.
+
 **All Panes clears the screen.** Ctrl+Shift+A fades kakel's windows out
 as their cards come out of them, and fades them back in as All Panes
 goes. A click outside All Panes, as on another monitor, closes it, with
@@ -41,6 +53,11 @@ a tab of its own again, in front, where you dropped it.
 **Every notice is in the Window Log.** Each toast and pop-up kakel
 shows is written to the Window Log too, so you can read it after it has
 gone. Before, only failures were.
+
+### Removed
+
+**Follow in Reader.** The file manager no longer tails a file, and a
+scrollback reader no longer follows its pane; Ctrl+F there does nothing.
 
 ## v0.12.0-beta.11
 

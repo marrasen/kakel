@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/marrasen/kakel/conf"
 	"github.com/marrasen/kakel/machines"
@@ -33,10 +32,8 @@ type Reader struct {
 	// Cut says the file was longer than a reader holds.
 	Cut bool
 	Err string
-	// Follow says the reader follows the file as it grows, and Seq
-	// counts its reads.
-	Follow bool
-	Seq    int
+	// Seq counts its reads.
+	Seq int
 	// Line is the line to show first, counted from 1, and 0 for the top.
 	Line int
 	// Name is the file's name, for telling its kind; Pic is it, read as
@@ -75,12 +72,6 @@ type (
 		Pane string
 		Text bool
 	}
-	// FollowFile has a reader pane follow its file, reading it again as
-	// it changes, or stop.
-	FollowFile struct {
-		Pane string
-		On   bool
-	}
 	// SaveLines writes lines to a file at Path on this machine, for
 	// the reader in Pane, which is told how it went.
 	SaveLines struct {
@@ -90,12 +81,6 @@ type (
 	// OpenFiles opens a file manager pane at home on the machine of the
 	// focused pane.
 	OpenFiles struct{}
-	// ReadFile opens Path, on the machine Pane is on, in a reader beside
-	// Pane, following it as it grows with Follow.
-	ReadFile struct {
-		Pane, Path string
-		Follow     bool
-	}
 )
 
 // Pane kinds.
@@ -302,196 +287,6 @@ func (a *app) savedFolders(machine machines.ID) []string {
 	return a.favouritesOn(machine)
 }
 
-// readFile opens a file in a reader beside the pane that asked, and, to
-// follow it, reads it again each time it changes.
-func (a *app) readFile(in ReadFile) {
-	machine := a.filesKey(in.Pane)
-	f := a.fsFor(machine)
-	if f == nil {
-		return
-	}
-	a.readOn(machine, f, in.Path, in.Follow, 0, Placement{Beside: in.Pane})
-}
-
-// readOn opens path on a machine's files in a reader, at line when it
-// is past zero, placed at at, and returns its pane. An image is read
-// as an image. A file followed is read again each time it changes.
-func (a *app) readOn(machine machines.ID, f vfs.FS, path string, follow bool, line int, at Placement) string {
-	path = vfs.Spelled(f, path)
-	a.next++
-	id := "p" + itoa(a.next)
-	name := vfs.Base(f, path)
-	a.addPane(a.paneOn(machine, Pane{ID: id, Title: name, Kind: KindReader}), nil, at)
-	under := a.fsFor(machine)
-	window := a.machines.Get(machine).Window != nil
-	_, _, far := machine.Far()
-	window = window || far
-	a.reads[id] = readSpec{f: f, under: under, machine: machine, window: window, archives: f != under, path: path, name: name, line: line}
-	// There before the first read, so how far that read has got shows.
-	a.setReader(id, Reader{Path: path, Name: name, Line: line})
-	a.readOnce(id)
-	if follow {
-		a.followReader(id, true)
-	}
-	return id
-}
-
-// readSpec is what a reader pane reads, to read it again.
-type readSpec struct {
-	f    vfs.FS
-	path string
-	name string
-	line int
-	seq  int
-	// machine is where the file is, and under the files there that f
-	// reads through, with archives opened as folders when archives is
-	// set. A connection that went takes those files with it, and a read
-	// after goes through the files opened once it is back.
-	machine  machines.ID
-	under    vfs.FS
-	archives bool
-	// window says machine is another kakel window, or a machine it
-	// reaches, which is connected to again from the sidebar, never by a
-	// read: its name may be an address, and not one to sign in at.
-	window bool
-	// text reads a file named as an image as lines, asked for once it
-	// was not one.
-	text bool
-	// reading says a read is out, and again that another was asked for
-	// meanwhile, made once it lands: reads never overlap, so an older
-	// one cannot land last and put older text back.
-	reading, again bool
-}
-
-// mostImageSide bounds an image read.
-const mostImageSide = 4096
-
-// readOnce reads a reader pane's file in the background, and publishes
-// it: its lines, or its image, with how far the read has got as it
-// goes. A server whose connection went is connected to again first.
-func (a *app) readOnce(id string) {
-	a.readerFiles(id, true, func(f vfs.FS) { a.readWith(id, f) })
-}
-
-// readerFiles hands then the files reader id reads through: the ones
-// it was opened with, or those of its machine opened since, when the
-// connection those came over went. With dial it connects again to a
-// machine it is not connected to; without, it says it is not and gives
-// up.
-func (a *app) readerFiles(id string, dial bool, then func(vfs.FS)) {
-	spec, ok := a.reads[id]
-	if !ok {
-		return
-	}
-	if spec.machine == "" || (spec.under != nil && a.fsFor(spec.machine) == spec.under) {
-		then(spec.f)
-		return
-	}
-	lost := func() {
-		a.readerSays(id, "The connection to "+a.machines.Name(spec.machine)+" went. Ctrl+R connects again.")
-	}
-	if spec.window && a.fsFor(spec.machine) == nil {
-		a.readerSays(id, "The connection to "+a.machines.Name(spec.machine)+" went. Connect to it again, then Ctrl+R.")
-		return
-	}
-	if !dial && a.fsFor(spec.machine) == nil {
-		lost()
-		return
-	}
-	err := a.withFilesOr(spec.machine, func(under vfs.FS) {
-		spec, ok := a.reads[id]
-		if !ok {
-			return
-		}
-		spec.under, spec.f = under, under
-		if spec.archives {
-			spec.f = vfs.WithArchives(under)
-		}
-		a.reads[id] = spec
-		then(spec.f)
-	}, lost)
-	if err != nil {
-		lost()
-	}
-}
-
-// readWith reads reader id's file through f.
-func (a *app) readWith(id string, f vfs.FS) {
-	spec, ok := a.reads[id]
-	if !ok {
-		return
-	}
-	if spec.reading {
-		spec.again = true
-		a.reads[id] = spec
-		return
-	}
-	spec.reading = true
-	a.reads[id] = spec
-	var last time.Time
-	watch := func(read int64) {
-		if now := time.Now(); now.Sub(last) >= 100*time.Millisecond {
-			last = now
-			a.events <- func() {
-				if r, ok := a.st.Readers[id]; ok {
-					r.SoFar = read
-					a.setReader(id, r)
-				}
-			}
-		}
-	}
-	go func() {
-		r := Reader{Path: spec.path, Name: spec.name, Line: spec.line, Text: spec.text}
-		var err error
-		if files.IsImage(spec.name) && !spec.text {
-			var pic files.Pic
-			pic, err = files.ReadImageWatched(f, spec.path, mostImageSide, watch)
-			r.Pic = &pic
-		} else {
-			r.Lines, r.Cut, err = files.ReadFileWatched(f, spec.path, watch)
-		}
-		if err != nil {
-			r.Err = err.Error()
-		}
-		a.events <- func() {
-			if !a.has(id) {
-				return
-			}
-			spec := a.reads[id]
-			spec.seq++
-			again := spec.again
-			spec.reading, spec.again = false, false
-			a.reads[id] = spec
-			if again {
-				defer a.readOnce(id)
-			}
-			r.Seq = spec.seq
-			// A save that finished is still counted, for the reader to
-			// hear how it went, and what was said of the file stays.
-			was := a.st.Readers[id]
-			r.Saves, r.SaveErr, r.SaveAs = was.Saves, was.SaveErr, was.SaveAs
-			r.Follow, r.Expect = was.Follow, was.Expect
-			a.setReader(id, r)
-		}
-	}()
-}
-
-// readerSays shows why in reader id in place of its file, counted as a
-// read of its own, so the read after it is one the reader has not seen.
-func (a *app) readerSays(id, why string) {
-	spec, ok := a.reads[id]
-	r, shown := a.st.Readers[id]
-	if !ok || !shown || r.Err == why {
-		// Said already: once is enough, and a read on its way is not
-		// answered with it.
-		return
-	}
-	spec.seq++
-	a.reads[id] = spec
-	r.Err, r.Seq = why, spec.seq
-	a.setReader(id, r)
-}
-
 // setReader publishes a reader pane's state. A failure it shows for the
 // first time, of a read or a save, goes to the Window Log too, where it
 // stays once the pane has gone.
@@ -507,160 +302,6 @@ func (a *app) setReader(id string, r Reader) {
 	maps.Copy(m, a.st.Readers)
 	m[id] = r
 	a.st.Readers = m
-}
-
-// followEvery is how often a followed file is looked at: as often as
-// the old app looked, so a log written to shows its lines at once.
-const followEvery = 300 * time.Millisecond
-
-// scrollbackFollowEvery is how often a followed scrollback is looked at.
-const scrollbackFollowEvery = time.Second
-
-// followTitle is what a reader's title says while it follows.
-const followTitle = " (following)"
-
-// followReader has reader id follow what it shows, or stop: its file,
-// read again each time it changes, or its terminal's scrollback.
-func (a *app) followReader(id string, on bool) {
-	r, ok := a.st.Readers[id]
-	if !ok {
-		return
-	}
-	if on && !a.followable(id) {
-		// Nothing to read again: typed history, or a scrollback whose
-		// pane has gone. The reader is told it does not follow.
-		r.Follow = false
-		a.setReader(id, r)
-		return
-	}
-	was := r.Follow
-	r.Follow = on
-	a.setReader(id, r)
-	for i := range a.st.Panes {
-		if p := &a.st.Panes[i]; p.ID == id && !p.Named {
-			p.Title = strings.TrimSuffix(p.Title, followTitle)
-			if on {
-				p.Title += followTitle
-			}
-		}
-	}
-	if on && !was && r.Seq > 0 {
-		// What it shows may be from long ago: read again now, and
-		// followed from there.
-		a.readOnce(id)
-	}
-	if on && !a.following[id] {
-		a.following[id] = true
-		go a.followLoop(id)
-	}
-}
-
-// followable reports whether reader id has something to follow: a
-// file, or the scrollback of a pane still open.
-func (a *app) followable(id string) bool {
-	if _, ok := a.reads[id]; ok {
-		return true
-	}
-	r := a.st.Readers[id]
-	return r.Of != "" && r.Gone == "" && a.has(r.Of)
-}
-
-// followStep is what a follow loop does next.
-type followStep struct {
-	stop bool
-	// f and path are the file to look at, or scroll says the reader
-	// follows a scrollback, which was brought up to date.
-	f      vfs.FS
-	path   string
-	scroll bool
-}
-
-// nextFollow says what reader id's follow loop does next, on the
-// program's goroutine. A loop told to stop has stopped.
-func (a *app) nextFollow(id string) followStep {
-	r, ok := a.st.Readers[id]
-	if !a.has(id) || !ok || !r.Follow || !a.followable(id) {
-		delete(a.following, id)
-		return followStep{stop: true}
-	}
-	if r.Of != "" {
-		if t := a.terminal(r.Of); t != nil {
-			if lines := scrollbackText(t); !slices.Equal(lines, r.Lines) {
-				r.Lines = lines
-				r.Seq++
-				a.setReader(id, r)
-			}
-		}
-		return followStep{scroll: true}
-	}
-	var step followStep
-	a.readerFiles(id, false, func(f vfs.FS) {
-		step.f, step.path = f, a.reads[id].path
-	})
-	return step
-}
-
-// followLoop reads reader id again each time what it follows changes,
-// looked at every followEvery, until it stops following or closes. A
-// file that cannot be looked at says so in the pane, and is read again
-// once it can be.
-func (a *app) followLoop(id string) {
-	var last vfs.Entry
-	failed := false
-	every := followEvery
-	for looked := false; ; looked = true {
-		// The first look at once, so a change straight after following
-		// was turned on is not taken as how the file stands.
-		if looked {
-			select {
-			case <-a.ctx.Done():
-				return
-			case <-time.After(every):
-			}
-		}
-		step := make(chan followStep, 1)
-		var s followStep
-		select {
-		case a.events <- func() { step <- a.nextFollow(id) }:
-		case <-a.ctx.Done():
-			return
-		}
-		select {
-		case s = <-step:
-		case <-a.ctx.Done():
-			return
-		}
-		switch {
-		case s.stop:
-			return
-		case s.scroll:
-			// A scrollback is compared whole on the window's goroutine,
-			// so it is looked at less often.
-			every = scrollbackFollowEvery
-			continue
-		case s.f == nil:
-			// Not reachable now, and the pane says so already.
-			failed = true
-			continue
-		}
-		e, err := s.f.Stat(s.path)
-		if err != nil {
-			failed = true
-			a.events <- func() {
-				if r, ok := a.st.Readers[id]; ok && r.Follow {
-					a.readerSays(id, "Couldn't look at the file: "+err.Error())
-				}
-			}
-			continue
-		}
-		first := last.Mod.IsZero() && !failed
-		changed := e.Size != last.Size || !e.Mod.Equal(last.Mod)
-		last = e
-		if failed || (changed && !first) {
-			failed = false
-			a.events <- func() { a.readOnce(id) }
-		}
-	}
 }
 
 // saveLines writes what a reader shows to a file on this machine.

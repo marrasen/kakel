@@ -291,12 +291,12 @@ func (a *app) forgetFar(machine machines.ID) {
 }
 
 // openPath opens a path a link named: a folder in a file manager pane,
-// a file in the reader at line.
+// a file in the viewer at line.
 func (a *app) openPath(machine machines.ID, at string, isDir bool, line int) error {
 	// A server's files are opened first when nothing has opened them yet.
 	return a.withFiles(machine, func(f vfs.FS) {
 		if !isDir {
-			a.readOn(machine, f, at, false, line, Placement{})
+			a.viewFile(machine, f, at, line)
 			return
 		}
 		if err := a.filesOn(machine, vfs.Spelled(f, at)); err != nil {

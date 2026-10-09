@@ -58,7 +58,7 @@ func TestCtrlClickOpensAnAddressInTheBrowser(t *testing.T) {
 	}
 }
 
-func TestCtrlClickOpensAFileInTheReader(t *testing.T) {
+func TestCtrlClickOpensAFileInTheViewer(t *testing.T) {
 	a, _ := agentApp(t)
 	file := filepath.Join(t.TempDir(), "notes.txt")
 	if err := os.WriteFile(file, []byte("one\ntwo\nthree\n"), 0o600); err != nil {
@@ -68,9 +68,9 @@ func TestCtrlClickOpensAFileInTheReader(t *testing.T) {
 	widen(a, id)
 	a.terminal(id).Paste(clearAndEcho(file) + "\r")
 	ctrlClick(t, a, id, file)
-	waitFor(t, a, "the reader", func() bool {
-		for _, r := range a.st.Readers {
-			if r.Path == file && len(r.Lines) >= 3 {
+	waitFor(t, a, "the viewer", func() bool {
+		for _, v := range a.st.Views {
+			if v.Path == file && string(v.Data) == "one\ntwo\nthree\n" {
 				return true
 			}
 		}
@@ -171,9 +171,9 @@ func TestAPathOnAServerOpensWithItsFilesNotOpen(t *testing.T) {
 	if err := a.openPath("srv", at, false, 0); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, a, "the reader", func() bool {
-		for _, r := range a.st.Readers {
-			if r.Path == onServer(file) && len(r.Lines) >= 2 {
+	waitFor(t, a, "the viewer", func() bool {
+		for _, v := range a.st.Views {
+			if v.Path == onServer(file) && string(v.Data) == "one\ntwo\n" {
 				return true
 			}
 		}

@@ -120,8 +120,9 @@ leave out borrows one you gave.
   or any server: split, docked and moved between windows like a
   terminal, in the same theme, with copying and moving between machines
   that runs in the background and says how far it has got.
-- **A file viewer without a shell**: paging, search, hex, tailing,
-  syntax colour, and JSON logs laid out as logs.
+- **A file viewer without a shell**: code in colour, Markdown
+  rendered, pictures, and hex for the rest, from the file manager or a
+  path in a terminal.
 - **Tunnels**, local, remote and SOCKS5, each with a pane saying what it
   is carrying.
 - **One kakel working inside another**, and through it on the servers

@@ -55,11 +55,6 @@ type Reader struct {
 	// business, not this package's.
 	OnClose func()
 
-	// OnFollow is called when the user turns following on or off, with
-	// whether it is on now, for whatever reads the file to read it again
-	// as it changes, or to stop.
-	OnFollow func(on bool)
-
 	// OnCopy is called with the selected text when the user copies. A
 	// nil one leaves the key doing nothing: the clipboard is the
 	// window's, not this package's.
@@ -195,12 +190,6 @@ type Reader struct {
 	// screenful.
 	found int
 
-	// follow says the reader keeps up with a file that is being written
-	// to, the way tail -f does, and stuck says it was at the end when
-	// the last read went out so the next answer should stay there.
-	follow bool
-	stuck  bool
-
 	// sel is what is picked out, in the file's own lines and columns so
 	// it stays where it is while the view scrolls. selecting is true
 	// between a press and its release.
@@ -286,10 +275,6 @@ func (r *Reader) Open() bool {
 		return false
 	}
 	r.busy, r.sofar = true, 0
-	// Asked before the read goes out rather than after it comes back: a
-	// file that grew in between would have moved the end out from under
-	// the question.
-	r.stuck = r.follow && r.AtEnd()
 	r.Read(func(lines []string, cut bool, err error) {
 		// The count goes with the read it belonged to, so nothing is
 		// left holding how far a read that has finished got.
@@ -311,12 +296,6 @@ func (r *Reader) Open() bool {
 			r.logOn = r.logOn || r.isLog
 		}
 		r.remake()
-		if r.stuck {
-			// Following, and the end is where it was left, so the new
-			// lines are what the user is looking at.
-			r.End()
-			return
-		}
 		r.clampTop()
 	})
 	return true
@@ -443,16 +422,9 @@ func (r *Reader) Size() ui.Size { return r.size }
 var _ ui.Sized = (*Reader)(nil)
 
 // Layout tells the reader how much room it has.
-//
-// A shorter pane moves the end of the file away from where the reader is
-// sitting, so a file being followed is put back on its end.
 func (r *Reader) Layout(size ui.Size) {
-	stuck := r.stuck
 	r.size = size
 	r.clampTop()
-	if stuck {
-		r.End()
-	}
 }
 
 // rows is how many lines of the file are shown, which is the room less
@@ -489,61 +461,26 @@ func (r *Reader) lastTop() int {
 }
 
 // Scroll moves n lines down the file, negative for up.
-//
-// Scrolling back off the end of a file being followed leaves the reader
-// where the user put it. The next answer does not drag them to the
-// bottom again: they scrolled back to read something.
 func (r *Reader) Scroll(n int) {
 	r.top += n
 	r.clampTop()
-	r.stuck = r.follow && r.AtEnd()
 }
 
 // ScrollPages moves n screenfuls down the file, negative for up.
 func (r *Reader) ScrollPages(n int) { r.Scroll(n * max(r.rows(), 1)) }
 
-// Home goes to the first line, and End to the last screenful. Both
-// settle whether the reader is at the end, the same as scrolling does:
-// a file being followed sticks to the end only while the user is there.
+// Home goes to the first line, and End to the last screenful.
 func (r *Reader) Home() {
 	r.top, r.left = 0, 0
-	r.stuck = false
 }
 
 func (r *Reader) End() {
 	r.top = r.lastTop()
 	r.clampTop()
-	r.stuck = r.follow
 }
 
-// AtEnd reports that the last line of the file is on screen, which is
-// what a reader following a file has to stay at.
+// AtEnd reports that the last line of the file is on screen.
 func (r *Reader) AtEnd() bool { return r.top >= r.lastTop() }
-
-// Follow sets whether the reader keeps up with a file being written to.
-//
-// A reader that is following and is at the end of the file stays there
-// as the file grows. One the user has scrolled back through stays where
-// they put it: following is about the end moving, not about taking the
-// pane away from whoever is reading it.
-func (r *Reader) Follow(on bool) {
-	if r.isPic {
-		// An image is not appended to, so there is nothing to follow.
-		// Without this, following one leaves a pane
-		// labelled "(following)" for good, asking a machine at the far
-		// end about the file three times a second.
-		return
-	}
-	r.follow = on
-	if on {
-		r.End()
-		return
-	}
-	r.stuck = false
-}
-
-// Following reports whether the reader is keeping up with the file.
-func (r *Reader) Following() bool { return r.follow }
 
 // Sideways moves n columns across, for a line wider than the pane.
 //
@@ -621,7 +558,6 @@ func ReaderKeys() []Key {
 		{Chord: chord(input.KeyHome, 0), Shown: "Home", Title: "Top"},
 		{Chord: chord(input.KeyEnd, 0), Shown: "End", Title: "Bottom"},
 		{Chord: chord(input.KeyR, input.ModCtrl), Shown: "^R", Title: "Reload"},
-		{Chord: chord(input.KeyF, input.ModCtrl), Shown: "^F", Title: "Follow"},
 		{Typed: '/', Shown: "/", Title: "Find"},
 		{Chord: chord(input.KeyH, input.ModCtrl), Shown: "^H", Title: "Hex"},
 		{Typed: ':', Shown: ":", Title: "Line"},
@@ -754,11 +690,6 @@ func (r *Reader) HandleKey(ev input.Event) (bool, error) {
 		r.End()
 	case ev.Key == input.KeyR && plainCtrl(ev):
 		r.Open()
-	case ev.Key == input.KeyF && plainCtrl(ev):
-		r.Follow(!r.follow)
-		if r.OnFollow != nil {
-			r.OnFollow(r.follow)
-		}
 	case ev.Key == input.KeyH && plainCtrl(ev):
 		r.Hex(!r.hex)
 	case ev.Key == input.KeyD && plainCtrl(ev), ev.Key == input.KeyQ:
@@ -910,9 +841,6 @@ func (r *Reader) Draw(v grid.View) {
 	}
 	if r.Logged() {
 		head += " (log)"
-	}
-	if r.follow {
-		head += " (following)"
 	}
 	if r.busy {
 		head += " …"
