@@ -526,3 +526,21 @@ func TestAWaitBeforeAnythingIsTypedTakesTheScreenAsItIs(t *testing.T) {
 		t.Errorf("it waited for %+v, want the screen as it already is", waited)
 	}
 }
+
+// The pointer is a screenshot script's: a list holding a click is
+// refused before anything is typed.
+func TestAListWithAClickTypesNothing(t *testing.T) {
+	panes := &fakePanes{code: "gt1-2222-abc", screen: "$ "}
+
+	text, failed := runList(t, panes, "type:ls", "key:Enter", "click:40,120")
+
+	if !failed || !strings.Contains(text, "the pointer is for a screenshot script") {
+		t.Fatalf("a click in an agent's list said %q", text)
+	}
+	panes.mu.Lock()
+	typed := panes.typed
+	panes.mu.Unlock()
+	if typed != "" {
+		t.Errorf("it typed %q before refusing the list", typed)
+	}
+}

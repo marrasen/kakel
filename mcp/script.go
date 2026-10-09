@@ -185,6 +185,8 @@ func checkList(list []steps.Step) (at int, why string) {
 			}
 		case steps.Shot:
 			return i, "a screenshot is not something this can take"
+		case steps.Click, steps.Move, steps.Drag, steps.Scroll, steps.Down, steps.Up:
+			return i, "the pointer is for a screenshot script, which points at a window: you work in a pane, by typing"
 		}
 	}
 	return 0, ""

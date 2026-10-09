@@ -1,6 +1,7 @@
 package steps
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -25,13 +26,23 @@ func TestEachStepIsRead(t *testing.T) {
 		// Spaces are part of what is typed, which is why a list of
 		// steps is a list rather than a line.
 		{step: "type:vim notes.md", want: Step{Kind: Type, Text: "vim notes.md"}},
+		// The pointer, at a place in the window, with keys held.
+		{step: "click:40,120", want: Step{Kind: Click, At: Point{40, 120}, Clicks: 1}},
+		{step: "rclick:40.5,12", want: Step{Kind: Click, Button: Secondary, At: Point{40.5, 12}, Clicks: 1}},
+		{step: "mclick:1,2", want: Step{Kind: Click, Button: Middle, At: Point{1, 2}, Clicks: 1}},
+		{step: "dclick:ctrl+shift+3,4", want: Step{Kind: Click, At: Point{3, 4}, Clicks: 2, Mods: []string{"ctrl", "shift"}}},
+		{step: "move:5,6", want: Step{Kind: Move, At: Point{5, 6}}},
+		{step: "drag:1,2,300,400", want: Step{Kind: Drag, At: Point{1, 2}, To: Point{300, 400}}},
+		{step: "scroll:10,20,-3", want: Step{Kind: Scroll, At: Point{10, 20}, Notches: -3}},
+		{step: "down:shift+7,8", want: Step{Kind: Down, At: Point{7, 8}, Mods: []string{"shift"}}},
+		{step: "up:9,10", want: Step{Kind: Up, At: Point{9, 10}}},
 	} {
 		got, err := Parse(one.step)
 		if err != nil {
 			t.Errorf("Parse(%q): %v", one.step, err)
 			continue
 		}
-		if got != one.want {
+		if !reflect.DeepEqual(got, one.want) {
 			t.Errorf("Parse(%q) = %+v, want %+v", one.step, got, one.want)
 		}
 		// And it says itself back the way it was read.
@@ -135,5 +146,21 @@ func TestAScriptOnOneLineIsTheSameSteps(t *testing.T) {
 	}
 	if got[0].Wait != 250*time.Millisecond {
 		t.Errorf("the wait is %s, want the milliseconds it says", got[0].Wait)
+	}
+}
+
+// A pointer step wants its numbers, and holds only modifier keys.
+func TestAPointerStepSaysWhatIsWrong(t *testing.T) {
+	for step, want := range map[string]string{
+		"click:40":       "wants x,y",
+		"drag:1,2,3":     "wants x,y,x2,y2",
+		"scroll:1,2":     "wants x,y,notches",
+		"click:meta+1,2": "ctrl, shift, alt and super",
+		"click:x,y":      "wants x,y",
+		"rclick:ctrl+":   "wants x,y",
+	} {
+		if _, err := Parse(step); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("Parse(%q) said %v, want it to say %q", step, err, want)
+		}
 	}
 }

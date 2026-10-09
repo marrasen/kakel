@@ -91,7 +91,9 @@ func ParseOptions(args []string) (Options, error) {
 	fs.StringVar(&o.shot, "shot", "",
 		"drive the window through a script and write PNGs, then exit;"+
 			" steps are wait:<ms> until:<text> key:<chord> type:<text>"+
-			" shot:<file>, e.g. \"until:$ type:make key:Enter until:done shot:built.png\"")
+			" shot:<file>, and for the pointer click:<x>,<y> (also rclick: mclick: dclick: move: down: up:),"+
+			" drag:<x>,<y>,<x2>,<y2> and scroll:<x>,<y>,<notches>, with keys held as click:ctrl+<x>,<y>;"+
+			" e.g. \"until:$ type:make key:Enter until:done shot:built.png\"")
 	if err := fs.Parse(args); err != nil {
 		return o, err
 	}

@@ -26,6 +26,14 @@ import (
 //	key:ctrl+k       press a chord, spelled the way a keymap spells it
 //	type:hello       type text, a character at a time
 //	shot:out.png     write the window to a file
+//	click:40,120     click there, in the window's logical pixels; also
+//	                 rclick:, mclick:, dclick:, move:, drag:x,y,x2,y2,
+//	                 scroll:x,y,notches, down: and up:, with keys held
+//	                 as click:ctrl+40,120
+//
+// Keys and the pointer arrive as a keyboard and a mouse send them: a
+// key that types sends its press, the text and its release, and a
+// click moves the pointer there first.
 //
 // The window closes when the script ends. A script whose until ran out
 // fails the run, so nothing reads last time's images as new ones.
@@ -147,31 +155,22 @@ func (a *app) shoot(ctx context.Context, list []steps.Step) error {
 				return err
 			}
 			before = now()
-			if press.Key == gi.KeySpace && press.Mods&^gi.ModShift == 0 {
-				// A space comes from the keyboard as text, as the one
-				// thing type: cannot hold.
-				if err := front().Input(ctx, gi.TextInput{Text: " "}); err != nil {
-					return err
-				}
-				typed = true
-				break
-			}
-			c := front()
-			if err := c.Input(ctx, press); err != nil {
-				return err
-			}
-			if err := c.Input(ctx, gi.KeyRelease{Key: press.Key, Mods: press.Mods}); err != nil {
+			// As a keyboard sends it: a key that types, as Space, sends
+			// its press, its text and its release.
+			if err := pressKey(sendTo(ctx, front()), press); err != nil {
 				return err
 			}
 			typed = true
 		case steps.Type:
 			before = now()
-			for _, r := range step.Text {
-				if err := front().Input(ctx, gi.TextInput{Text: string(r)}); err != nil {
-					return err
-				}
+			if err := typeText(sendTo(ctx, front()), step.Text); err != nil {
+				return err
 			}
 			typed = true
+		case steps.Click, steps.Move, steps.Drag, steps.Scroll, steps.Down, steps.Up:
+			if err := point(ctx, sendTo(ctx, front()), step); err != nil {
+				return err
+			}
 		case steps.Shot:
 			img, err := front().Shot(ctx)
 			if err != nil {
@@ -191,6 +190,11 @@ func (a *app) shoot(ctx context.Context, list []steps.Step) error {
 		}
 	}
 	return nil
+}
+
+// sendTo hands events to the window c, as its driver would.
+func sendTo(ctx context.Context, c gunim.Client) func(gi.Event) error {
+	return func(ev gi.Event) error { return c.Input(ctx, ev) }
 }
 
 // paneNow is what the focused pane shows, for an until step to watch:
