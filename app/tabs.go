@@ -247,7 +247,12 @@ func (a *app) shiftTab(back bool) {
 // moveTab moves group g to just before group before, 0 for last, in
 // the window in front, and puts it in front there.
 func (a *app) moveTab(g, before int) {
-	if a.groups[g] == nil || g == before || !a.movable(g) {
+	if a.groups[g] == nil || !a.movable(g) {
+		return
+	}
+	if g == before {
+		// Let go where it stands: in front, as a tab dropped is.
+		a.showTab(g)
 		return
 	}
 	a.groupToWindow(g, a.cur)

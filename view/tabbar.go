@@ -67,6 +67,13 @@ type tabBar struct {
 	// landing is where a tab dragged over the bar would land: before the
 	// tab at that index, len(tabs) for last, and -1 while none is over.
 	landing int
+	// spring is the group of the tab a drag is held over, which comes to
+	// the front after springHold, so what is dragged can dock in it;
+	// springRun numbers the wait for it, so one the drag moved on from
+	// does nothing. sprungFrom is the tab in front before a drag brought
+	// another forward, 0 for none, to go back to if the tab dragged is
+	// let go where nothing takes it.
+	spring, springRun, sprungFrom int
 	// moves are how the tabs move, by group: boxes is where the layout
 	// puts them, and a tab slides there, grows in as it opens, and
 	// shrinks away as it closes, in gone. arriving are the groups new
@@ -716,11 +723,13 @@ func (b *tabBar) Handle(e input.Event, u *gunim.UI) bool {
 			return false
 		}
 		b.landing = b.landingAt(e.Pos)
+		b.holdOver(b.tabAt(e.Pos), u)
 		u.AnswerDrag(movesHere)
 		u.Invalidate()
 		return true
 	case input.DragLeave:
 		b.landing = -1
+		b.holdOver(-1, u)
 		u.Invalidate()
 		return false
 	case input.Drop:
@@ -729,6 +738,8 @@ func (b *tabBar) Handle(e input.Event, u *gunim.UI) bool {
 		}
 		at := b.landingAt(e.Pos)
 		b.landing = -1
+		b.holdOver(-1, u)
+		b.sprungFrom = 0
 		before := 0
 		if at < len(b.tabs) {
 			before = b.tabs[at].Group
@@ -745,6 +756,38 @@ func (b *tabBar) Handle(e input.Event, u *gunim.UI) bool {
 		return true
 	}
 	return false
+}
+
+// springHold is how long a drag is held over a tab before the tab comes
+// to the front.
+const springHold = 500 * time.Millisecond
+
+// holdOver notes that a drag is over the tab at i, -1 for none: held
+// there for springHold, the tab comes to the front, so what is dragged
+// can be docked beside a pane in it.
+func (b *tabBar) holdOver(i int, u *gunim.UI) {
+	g := 0
+	if i >= 0 && i < len(b.tabs) {
+		g = b.tabs[i].Group
+	}
+	if g == b.spring {
+		return
+	}
+	b.spring = g
+	b.springRun++
+	if g == 0 || g == b.front {
+		return
+	}
+	run := b.springRun
+	u.After(springHold, func(u *gunim.UI) {
+		if b.springRun != run || b.spring != g || g == b.front {
+			return
+		}
+		if b.sprungFrom == 0 {
+			b.sprungFrom = b.front
+		}
+		u.Send(b.w, app.ShowTab{Group: g})
+	})
 }
 
 // takes reports whether the bar takes what is dragged over it: a tab,
@@ -773,7 +816,7 @@ func (b *tabBar) lift(u *gunim.UI) {
 	i := b.pressed
 	t := b.tabs[i]
 	r := b.boxes[i]
-	b.carried = t.Group
+	b.carried, b.sprungFrom = t.Group, 0
 	b.grab = b.pressAt.Sub(r.Min)
 	g := &tabGhost{title: b.titles[i], kind: b.w.tabKind(t), size: r.Size(), lit: anim.NewFloat(0)}
 	g.Add(g.lit)
@@ -787,8 +830,16 @@ func (b *tabBar) lift(u *gunim.UI) {
 func (b *tabBar) dragEnded(e input.DragEnd, u *gunim.UI) {
 	g := b.carried
 	b.carried, b.pressed, b.landing = 0, -1, -1
+	from := b.sprungFrom
+	b.sprungFrom = 0
+	b.holdOver(-1, u)
 	if g == 0 {
 		return
+	}
+	if from != 0 && !e.Taken && !e.Out {
+		// Let go where nothing took it, after a tab held over came
+		// forward: the tab in front before goes back.
+		u.Send(b.w, app.ShowTab{Group: from})
 	}
 	if e.Out || e.Taken {
 		b.dropped = g

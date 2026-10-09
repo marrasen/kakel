@@ -135,9 +135,10 @@ func (c *captioned) Paint(p *paint.Painter, _ gunim.Frame, _ geom.Size, kids gun
 }
 
 // captionBar is the line over a pane, naming it. A click on it gives
-// the pane the keyboard, and a drag carries the pane off: beside
-// another pane, onto a tab of its own, into another window, or out of
-// them all into a window of its own.
+// the pane the keyboard, a middle click closes the pane, as it does a
+// tab, and a drag carries the pane off: beside another pane, onto a tab
+// of its own, into another window, or out of them all into a window of
+// its own.
 type captionBar struct {
 	w     *Window
 	id    string
@@ -195,6 +196,10 @@ func (b *captionBar) Cursor(geom.Point) input.Cursor { return input.CursorMove }
 func (b *captionBar) Handle(e input.Event, u *gunim.UI) bool {
 	switch e := e.(type) {
 	case input.PointerDown:
+		if e.Button == input.ButtonMiddle {
+			u.Send(b.w, app.ClosePane{Pane: b.id})
+			return true
+		}
 		if e.Button != input.ButtonPrimary {
 			return false
 		}

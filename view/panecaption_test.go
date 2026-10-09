@@ -145,3 +145,69 @@ func TestALineCarriesItsPaneOff(t *testing.T) {
 		t.Fatal("let go, the pane is still carried")
 	}
 }
+
+// A middle click on a pane's line closes the pane, as it closes a tab.
+func TestAMiddleClickOnALineClosesItsPane(t *testing.T) {
+	win, _, publish := windowStage(t)
+	publish(splitTabs())
+	drain()
+	r, ok := lastUI.Bounds(win.captions["p2"].bar)
+	if !ok {
+		t.Fatal("p2 has no line")
+	}
+	click(r.Center(), gi.ButtonMiddle)
+	if in := nextIntent(t); in != (app.ClosePane{Pane: "p2"}) {
+		t.Fatalf("a middle click on the line sent %#v", in)
+	}
+}
+
+// A pane or a tab dragged and held over another tab brings that tab to
+// the front, so it can be docked beside a pane there; one only passing
+// over leaves it be. A tab let go where nothing takes it puts back the
+// tab that was in front.
+func TestADragHeldOverATabOpensIt(t *testing.T) {
+	win, _, publish := windowStage(t)
+	publish(splitTabs())
+	drain()
+	// In the bar's own space, as the drag reaches it.
+	second := win.tabs.boxes[1].Center()
+	over := func(at geom.Point, data any) {
+		if !win.tabs.Handle(gi.DragOver{Pos: at, Data: data}, lastUI) {
+			win.tabs.Handle(gi.DragLeave{}, lastUI)
+		}
+		lastWindow.Frame(time.Second / 60)
+	}
+
+	// Passing over: nothing.
+	over(second, app.PaneDrag{Pane: "p2", Window: 1})
+	lastWindow.Frame(springHold / 2)
+	over(second.Add(geom.Pt(0, 200)), app.PaneDrag{Pane: "p2", Window: 1})
+	lastWindow.Frame(springHold)
+	lastWindow.Frame(time.Second / 60)
+	if len(lastWindow.Client().Intents()) != 0 {
+		t.Fatalf("a drag passing over a tab sent %#v", nextIntent(t))
+	}
+
+	// Held there: it comes to the front.
+	over(second, app.PaneDrag{Pane: "p2", Window: 1})
+	lastWindow.Frame(springHold)
+	lastWindow.Frame(time.Second / 60)
+	if in := nextIntent(t); in != (app.ShowTab{Group: 2}) {
+		t.Fatalf("a drag held over the second tab sent %#v", in)
+	}
+	win.tabs.Handle(gi.DragLeave{}, lastUI)
+
+	// A tab carried there and let go where nothing takes it: the first
+	// tab, in front before, comes back.
+	win.tabs.carried = 1
+	over(second, app.TabDrag{Group: 1, Window: 1})
+	lastWindow.Frame(springHold)
+	lastWindow.Frame(time.Second / 60)
+	if in := nextIntent(t); in != (app.ShowTab{Group: 2}) {
+		t.Fatalf("a tab held over the second tab sent %#v", in)
+	}
+	win.tabs.dragEnded(gi.DragEnd{}, lastUI)
+	if in := nextIntent(t); in != (app.ShowTab{Group: 1}) {
+		t.Fatalf("let go where nothing took it, the bar sent %#v", in)
+	}
+}

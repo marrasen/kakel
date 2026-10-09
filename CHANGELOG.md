@@ -25,6 +25,13 @@ as their cards come out of them, and fades them back in as All Panes
 goes. A click outside All Panes, as on another monitor, closes it, with
 the same animation.
 
+**Tabs open under a drag.** Drag a tab, or a pane by its title, and
+hold it over another tab: that tab comes to the front, so you can dock
+the pane beside one there. Let it go on the tab bar instead, and it is
+a tab of its own again, in front, where you dropped it.
+
+**A middle click on a pane's title closes it**, as it closes a tab.
+
 **Every notice is in the Window Log.** Each toast and pop-up kakel
 shows is written to the Window Log too, so you can read it after it has
 gone. Before, only failures were.

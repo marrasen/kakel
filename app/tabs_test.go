@@ -84,6 +84,13 @@ func TestMoveTabReorders(t *testing.T) {
 	if a.st.Focus != "p4" {
 		t.Fatalf("the tab moved is not in front: %q is", a.st.Focus)
 	}
+	// Let go where it stands, after another tab came forward under the
+	// drag: it is in front again.
+	a.handle(ShowTab{Group: g2})
+	a.handle(MoveTab{Group: g4, Before: g4})
+	if got := groups(a.tabsOf(one)); got[0] != g4 || a.st.Focus != "p4" {
+		t.Fatalf("let go in place, the tabs are %v with %q in front", got, a.st.Focus)
+	}
 	a.handle(ShiftTab{})
 	if got := groups(a.tabsOf(one)); got[0] != g1 || got[1] != g4 {
 		t.Fatalf("shifted, the tabs are %v", got)
