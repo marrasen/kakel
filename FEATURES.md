@@ -77,6 +77,9 @@ The whole list. The [README](README.md) has the short version.
   another kakel window's bar to move it there, splits and all. Drop it
   on a pane to join that pane in a split, on the side it is nearest.
   Let it go outside every window and it opens a window of its own.
+  In a split each pane has a line naming it: drag the line to dock the
+  pane beside another, onto a tab of its own, or out into a window of
+  its own.
 - **In the tray, and one kakel at a time.** kakel shows an icon in the
   system tray, whose menu lists this computer and every saved server,
   each with Terminal, Files and the rest, and Machines, New Window,

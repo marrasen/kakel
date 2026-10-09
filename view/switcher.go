@@ -382,8 +382,8 @@ func (s *switcher) sync(wins []app.OverWindow, panes []app.Pane, u *gunim.UI) {
 				}
 				t.title, t.win, t.group = p.Title, ow.ID, tb.Group
 				// Every pane lands under its caption, one never on stage
-				// as well.
-				t.titled = s.env.titles
+				// as well. In a split, a pane has its line anyway.
+				t.titled = s.env.titles || namedInSplit(tb.Box, s.byID)
 				if t.titled {
 					t.caption = text.Default().Shape(captionIn(s.env.machines, p), smallText.Get(u.Theme()))
 				}
@@ -438,6 +438,18 @@ func (s *switcher) drawsLive(t *tile) bool {
 	}
 	_, ok := s.w.terms[t.id]
 	return ok
+}
+
+// namedInSplit reports whether the panes of tab box b have a line
+// naming them on stage: two or more of them, the Machines pane apart.
+func namedInSplit(b *app.Box, panes map[string]app.Pane) bool {
+	n := 0
+	for _, id := range boxLeaves(b, nil) {
+		if panes[id].Kind != app.KindServers {
+			n++
+		}
+	}
+	return n > 1
 }
 
 // slotAt is where tile t's pane stands on its window's stage, with the

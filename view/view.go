@@ -186,6 +186,9 @@ type Window struct {
 	pings  app.Pings
 	away   bool
 	titles bool
+	// docked says the stage is a split, whose panes each have a line
+	// naming them, to drag them by.
+	docked bool
 	// pasteCheck says a paste of several lines, or a large one, opens
 	// in an editor first.
 	pasteCheck   bool
@@ -2094,8 +2097,8 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 		}
 	}
 	w.pasteCheck = st.PasteCheck
-	if st.PaneTitles != w.titles {
-		w.titles = st.PaneTitles
+	if docked := w.isDocked(st); st.PaneTitles != w.titles || docked != w.docked {
+		w.titles, w.docked = st.PaneTitles, docked
 		// Every pane is built again, with its line or without.
 		clear(w.splits)
 	}
@@ -2120,6 +2123,9 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 	keep := map[string]bool{}
 	w.placeFilePanes(st, u)
 	w.stage.show(w.build(st.Stage, keep, u), u)
+	for id, c := range w.captions {
+		c.bar.setFront(w.docked && id == st.Focus)
+	}
 	w.parkFilePanes(leavesOf(st.Stage, map[string]bool{}), u)
 	// After the panes are built, so one made now shows the state too.
 	if w.settings != nil && u.Presence(w.settings) != gunim.Exiting {
@@ -2444,23 +2450,44 @@ func (w *Window) kindOf(id string) string {
 }
 
 // paneNode returns the node that shows pane id, made on first use,
-// under a line naming it while panes show their titles.
+// under a line naming it while panes show their titles, or while the
+// stage is a split, where the line is what a pane is dragged by.
 func (w *Window) paneNode(id string) gunim.Node {
 	n := w.bareNode(id)
-	if !w.titles {
+	if !w.titles && (!w.docked || w.kindOf(id) == app.KindServers) {
+		// The Machines pane, the sidebar, has a title of its own.
 		return n
 	}
 	c, ok := w.captions[id]
 	if !ok || c.pane != n {
-		c = newCaptioned(n)
+		c = newCaptioned(w, id, n)
 		w.captions[id] = c
 	}
 	for _, p := range w.panes {
-		if p.ID == id {
-			c.label.Text = w.captionOf(p)
+		if p.ID != id {
+			continue
+		}
+		c.bar.label.Text = p.Title
+		if w.titles {
+			c.bar.label.Text = w.captionOf(p)
 		}
 	}
 	return c
+}
+
+// isDocked reports whether st's stage is a split of two or more panes,
+// the Machines pane, the sidebar, apart: each then has a line naming
+// it, to drag it by.
+func (w *Window) isDocked(st app.State) bool {
+	n := 0
+	for _, id := range boxLeaves(st.Stage, nil) {
+		for _, p := range st.Panes {
+			if p.ID == id && p.Kind != app.KindServers {
+				n++
+			}
+		}
+	}
+	return n > 1
 }
 
 // captionOf is the line over pane p while panes show their titles:

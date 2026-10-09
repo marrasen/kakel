@@ -85,6 +85,21 @@ In All Panes, drag a pane to move it:
 - over another kakel window, and it moves there; that window lights up
   while the pane is over it.
 
+In a split, each pane has a line along its top naming it; the pane with
+the keyboard has a coloured edge under its name. A click on the line
+gives the pane the keyboard. Drag the line to move the pane, without
+All Panes:
+
+- onto another pane, in this window or another, and it joins it in a
+  split, on the side of it you let go nearest; the half it would take
+  lights up.
+- onto the tab bar, and it leaves its split for a tab of its own, where
+  you let it go. With one tab, and no tab bar, let it go above the
+  panes.
+- outside every kakel window, and it opens a window of its own there.
+
+The Machines pane, the sidebar, has its own title and no line.
+
 Each window has its own panes and its own pane in front. The Machines
 pane lists the panes of every window, and clicking one in another
 window brings that window to the front.

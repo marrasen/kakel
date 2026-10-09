@@ -712,11 +712,10 @@ func (b *tabBar) Handle(e input.Event, u *gunim.UI) bool {
 		b.dragEnded(e, u)
 		return true
 	case input.DragOver:
-		d, ok := e.Data.(app.TabDrag)
-		if !ok || !b.shown() {
+		if !b.takes(e.Data) {
 			return false
 		}
-		b.landing = b.landingAt(e.Pos, d)
+		b.landing = b.landingAt(e.Pos)
 		u.AnswerDrag(movesHere)
 		u.Invalidate()
 		return true
@@ -725,26 +724,42 @@ func (b *tabBar) Handle(e input.Event, u *gunim.UI) bool {
 		u.Invalidate()
 		return false
 	case input.Drop:
-		d, ok := e.Data.(app.TabDrag)
-		if !ok || !b.shown() {
+		if !b.takes(e.Data) {
 			return false
 		}
-		at := b.landingAt(e.Pos, d)
+		at := b.landingAt(e.Pos)
 		b.landing = -1
 		before := 0
 		if at < len(b.tabs) {
 			before = b.tabs[at].Group
 		}
-		u.Send(b.w, app.MoveTab{Group: d.Group, Before: before})
+		switch d := e.Data.(type) {
+		case app.TabDrag:
+			u.Send(b.w, app.MoveTab{Group: d.Group, Before: before})
+		case app.PaneDrag:
+			// Out of its split, or out of another window, onto a tab of
+			// its own where it was let go.
+			u.Send(b.w, app.PaneToTab{Pane: d.Pane, Window: b.w.winID, Bar: true, Before: before})
+		}
 		u.Invalidate()
 		return true
 	}
 	return false
 }
 
-// landingAt is where tab d, dragged to p, would land: before the first
+// takes reports whether the bar takes what is dragged over it: a tab,
+// or a pane, which lands on a tab of its own.
+func (b *tabBar) takes(data any) bool {
+	switch data.(type) {
+	case app.TabDrag, app.PaneDrag:
+		return b.shown()
+	}
+	return false
+}
+
+// landingAt is where a tab dragged to p would land: before the first
 // tab whose middle is past p.
-func (b *tabBar) landingAt(p geom.Point, d app.TabDrag) int {
+func (b *tabBar) landingAt(p geom.Point) int {
 	for i, r := range b.boxes {
 		if p.X < r.Min.X+r.Size().W/2 {
 			return i
@@ -941,12 +956,13 @@ func (t *titleFader) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids 
 	}
 }
 
-// tabDock is where a tab dragged over the stage would go: beside pane,
-// on the side it is nearest, which is lit at lit. A zero one is
-// nowhere.
+// tabDock is where a tab or a pane dragged over the window would go:
+// beside pane, on the side it is nearest, or, with toTab, onto a tab of
+// its own. What it would take is lit at lit. A zero one is nowhere.
 type tabDock struct {
 	pane            string
 	vertical, first bool
+	toTab           bool
 	lit             geom.Rect
 }
 
@@ -1022,12 +1038,19 @@ func (w *Window) dockAt(p geom.Point, d app.TabDrag, u *gunim.UI) tabDock {
 			return tabDock{}
 		}
 	}
+	return w.dockOver(p, u, func(id string) bool { return own != "" && w.groups[own] == w.groups[id] })
+}
+
+// dockOver is where something dragged to p would join a split: beside
+// the pane on stage under p, on the side of it p is nearest. Not beside
+// a pane mine says is the dragged thing's own.
+func (w *Window) dockOver(p geom.Point, u *gunim.UI, mine func(id string) bool) tabDock {
 	for _, id := range boxLeaves(w.stageBox, nil) {
 		r, ok := u.Bounds(w.paneNode(id))
 		if !ok || !r.Contains(p) {
 			continue
 		}
-		if own != "" && w.groups[own] == w.groups[id] {
+		if mine(id) {
 			return tabDock{}
 		}
 		s := r.Size()
@@ -1053,7 +1076,7 @@ func (w *Window) dockAt(p geom.Point, d app.TabDrag, u *gunim.UI) tabDock {
 
 // paintDock lights the half of a pane a tab dragged over it would take.
 func (w *Window) paintDock(p *paint.Painter, f gunim.Frame) {
-	if w.dock.pane == "" {
+	if w.dock.pane == "" && !w.dock.toTab {
 		return
 	}
 	c := switcherRing.Get(f.Theme)

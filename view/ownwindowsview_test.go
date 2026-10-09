@@ -13,10 +13,11 @@ import (
 	gi "github.com/marrasen/gunim/input"
 )
 
-// A pane dragged over the window from another lights it, and a drop
-// moves the pane in.
+// A pane dragged over the window from another docks beside the pane it
+// is let go over, as a tab does; let go above the stage, it moves in on
+// a tab of its own.
 func TestAPaneDroppedFromAnotherWindowMovesIn(t *testing.T) {
-	_, _, publish := windowStage(t)
+	win, _, publish := windowStage(t)
 	publish(app.State{Window: 2, Panes: []app.Pane{{ID: "p1", Title: "Jobs", Kind: app.KindJobs}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
 	for len(lastWindow.Client().Intents()) > 0 {
 		<-lastWindow.Client().Intents()
@@ -24,8 +25,14 @@ func TestAPaneDroppedFromAnotherWindowMovesIn(t *testing.T) {
 	at := geom.Pt(450, 300)
 	lastWindow.Input(gi.Drop{Pos: at, Data: app.PaneDrag{Pane: "p9", Window: 1}})
 	lastWindow.Frame(time.Second / 60)
+	if in, ok := nextIntent(t).(app.DockPane); !ok || in.Pane != "p9" || in.Beside != "p1" {
+		t.Fatalf("let go over p1, the drop sent %#v", in)
+	}
+	stage, _ := lastUI.Bounds(win.stage)
+	lastWindow.Input(gi.Drop{Pos: geom.Pt(stage.Center().X, stage.Min.Y-3), Data: app.PaneDrag{Pane: "p9", Window: 1}})
+	lastWindow.Frame(time.Second / 60)
 	if in, ok := nextIntent(t).(app.PaneToWindow); !ok || in.Pane != "p9" {
-		t.Fatalf("the drop sent %#v", in)
+		t.Fatalf("let go above the stage, the drop sent %#v", in)
 	}
 	// Its own pane, dropped back on it, is no move.
 	lastWindow.Input(gi.Drop{Pos: at, Data: app.PaneDrag{Pane: "p1", Window: 2}})

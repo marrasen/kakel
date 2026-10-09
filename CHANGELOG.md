@@ -9,6 +9,16 @@ change how something behaves.
 
 ## Unreleased
 
+### Added
+
+**Panes in a split have titles you can drag.** Each pane in a split
+has a line along its top naming it, and the one with the keyboard is
+marked. Drag the line to dock the pane on another side of another pane,
+onto the tab bar as a tab of its own, or outside the window into a
+window of its own. With one tab, let it go above the panes to give it a
+tab. A pane dragged from another window docks beside the pane it is let
+go over, as a tab does.
+
 ### Changed
 
 **The theme editor changes nothing until you press Save.** Your edits

@@ -120,7 +120,7 @@ func TestPaneTitlesComeAndGo(t *testing.T) {
 	}
 	// A file manager pane's caption names its machine; the file manager
 	// names the folder.
-	if got := c.label.Text; got != "This computer" {
+	if got := c.bar.label.Text; got != "This computer" {
 		t.Fatalf("the title reads %q", got)
 	}
 	st.PaneTitles = false
@@ -177,15 +177,19 @@ func TestAPaneSlidingInKeepsItsShellAUsableSize(t *testing.T) {
 		}
 		s.mu.Unlock()
 	}
-	// The panes keep their sizes on the way: the new shell is given the
-	// size it comes to rest at, and the first keeps its own until the
-	// slide is over. Neither is wrapped to the sizes in between.
+	// The panes keep their widths on the way: the new shell is given the
+	// width it comes to rest at, and the first keeps its own until the
+	// slide is over. Neither is wrapped to the widths in between. (The
+	// first loses a row at once, to the line naming it in the split.)
 	for i, s := range got {
 		s.mu.Lock()
-		seen := slices.Compact(slices.Clone(s.seen))
+		var cols []int
+		for _, size := range s.seen {
+			cols = append(cols, size[0])
+		}
 		s.mu.Unlock()
-		if len(seen) > 2 {
-			t.Errorf("shell %d was given %v as the pane slid in, want its own size and the one it ends at", i+1, seen)
+		if cols = slices.Compact(cols); len(cols) > 2 {
+			t.Errorf("shell %d was given widths %v as the pane slid in, want its own and the one it ends at", i+1, cols)
 		}
 	}
 	s := got[1]

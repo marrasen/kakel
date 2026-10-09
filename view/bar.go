@@ -3,11 +3,15 @@ package view
 import (
 	"slices"
 
+	"github.com/marrasen/kakel/app"
 	"github.com/marrasen/kakel/look"
 
 	"github.com/marrasen/gunim"
+	"github.com/marrasen/gunim/anim"
 	"github.com/marrasen/gunim/geom"
+	"github.com/marrasen/gunim/input"
 	"github.com/marrasen/gunim/paint"
+	"github.com/marrasen/gunim/text"
 	"github.com/marrasen/gunim/widget"
 )
 
@@ -88,42 +92,163 @@ func (b *buttonBar) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids g
 	}
 }
 
-// captioned is a pane under a line naming it, for a window that shows
-// pane titles.
+// captioned is a pane under a line naming it: in a split, where the
+// line is what the pane is dragged by, and in every pane of a window
+// that shows pane titles.
 type captioned struct {
-	pane  gunim.Node
-	label *widget.Label
+	pane gunim.Node
+	bar  *captionBar
 }
 
-func newCaptioned(pane gunim.Node) *captioned {
+func newCaptioned(w *Window, id string, pane gunim.Node) *captioned {
 	l := widget.NewLabel("")
 	l.Size, l.Color, l.MaxLines = smallText, look.Faint, 1
-	return &captioned{pane: pane, label: l}
+	return &captioned{pane: pane, bar: &captionBar{w: w, id: id, label: l}}
 }
 
 // captionHeight is the height of the line over a pane.
 const captionHeight = 22
 
 // Children implements [gunim.Composite].
-func (c *captioned) Children() []gunim.Node { return []gunim.Node{c.label, c.pane} }
+func (c *captioned) Children() []gunim.Node { return []gunim.Node{c.bar, c.pane} }
 
 // Layout implements [gunim.Node]: the line along the top, and the pane
 // in the rest.
 func (c *captioned) Layout(cs gunim.Constraints, _ gunim.Frame, kids gunim.Children) geom.Size {
-	const padX = 10
-	l := kids.At(0)
-	s := l.Layout(gunim.Constraints{Max: geom.Sz(max(0, cs.Max.W-2*padX), captionHeight)})
-	l.Place(geom.Pt(padX, (captionHeight-s.H)/2))
-	p := kids.At(1)
-	p.Layout(gunim.Tight(geom.Sz(cs.Max.W, max(0, cs.Max.H-captionHeight))))
-	p.Place(geom.Pt(0, captionHeight))
+	for k := range kids.All {
+		if k.Node() == c.bar {
+			k.Layout(gunim.Tight(geom.Sz(cs.Max.W, min(captionHeight, cs.Max.H))))
+			k.Place(geom.Point{})
+			continue
+		}
+		k.Layout(gunim.Tight(geom.Sz(cs.Max.W, max(0, cs.Max.H-captionHeight))))
+		k.Place(geom.Pt(0, captionHeight))
+	}
 	return cs.Max
 }
 
 // Paint implements [gunim.Node].
-func (c *captioned) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gunim.Children) {
-	p.RRect(geom.Rect{Max: geom.Pt(box.W, captionHeight)}, 0, paint.Solid(widget.MenuFill.Get(f.Theme)))
+func (c *captioned) Paint(p *paint.Painter, _ gunim.Frame, _ geom.Size, kids gunim.Children) {
 	for k := range kids.All {
 		k.Paint(p)
 	}
+}
+
+// captionBar is the line over a pane, naming it. A click on it gives
+// the pane the keyboard, and a drag carries the pane off: beside
+// another pane, onto a tab of its own, into another window, or out of
+// them all into a window of its own.
+type captionBar struct {
+	w     *Window
+	id    string
+	label *widget.Label
+	// front says the pane has the keyboard, which its line shows.
+	front bool
+	// pressed says the primary button went down on the line, at
+	// pressAt; carried that the pane is being dragged off, held at grab
+	// in the image that follows the pointer.
+	pressed, carried bool
+	pressAt, grab    geom.Point
+}
+
+// captionGhost is how wide the image of a pane carried off by its line
+// is at most.
+const captionGhost = 220
+
+// Children implements [gunim.Composite].
+func (b *captionBar) Children() []gunim.Node { return []gunim.Node{b.label} }
+
+// Layout implements [gunim.Node].
+func (b *captionBar) Layout(cs gunim.Constraints, _ gunim.Frame, kids gunim.Children) geom.Size {
+	const padX = 10
+	l := kids.At(0)
+	s := l.Layout(gunim.Constraints{Max: geom.Sz(max(0, cs.Max.W-2*padX), cs.Max.H)})
+	l.Place(geom.Pt(padX, (cs.Max.H-s.H)/2))
+	return cs.Max
+}
+
+// Paint implements [gunim.Node]: the line, with the pane that has the
+// keyboard marked along its bottom.
+func (b *captionBar) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gunim.Children) {
+	p.RRect(geom.Rect{Max: box.Point()}, 0, paint.Solid(widget.MenuFill.Get(f.Theme)))
+	if b.front {
+		p.RRect(geom.Rc(0, box.H-2, box.W, 2), 0, paint.Solid(widget.Accent.Get(f.Theme)))
+	}
+	for k := range kids.All {
+		k.Paint(p)
+	}
+}
+
+// setFront marks the line of the pane with the keyboard.
+func (b *captionBar) setFront(on bool) {
+	b.front = on
+	b.label.Color = look.Faint
+	if on {
+		b.label.Color = widget.Ink
+	}
+}
+
+// Cursor implements [gunim.CursorShaper]: the line moves the pane.
+func (b *captionBar) Cursor(geom.Point) input.Cursor { return input.CursorMove }
+
+// Handle implements [gunim.Handler].
+func (b *captionBar) Handle(e input.Event, u *gunim.UI) bool {
+	switch e := e.(type) {
+	case input.PointerDown:
+		if e.Button != input.ButtonPrimary {
+			return false
+		}
+		b.pressed, b.pressAt = true, e.Pos
+		return true
+	case input.PointerMove:
+		if b.pressed && !b.carried && moved(e.Pos, b.pressAt) {
+			b.lift(u)
+		}
+		return b.pressed
+	case input.PointerUp:
+		if !b.pressed {
+			return false
+		}
+		b.pressed = false
+		if !b.carried {
+			u.Send(b.w, app.FocusPane{Pane: b.id})
+		}
+		return true
+	case input.DragEnd:
+		b.dragEnded(e, u)
+		return true
+	}
+	return false
+}
+
+// lift carries the pane off, as an image of its line that follows the
+// pointer.
+func (b *captionBar) lift(u *gunim.UI) {
+	b.carried = true
+	size := geom.Sz(min(captionGhost, max(b.w.size.W/4, 120)), widget.MenubarHeight.Get(u.Theme())-6)
+	b.grab = geom.Pt(min(b.pressAt.X, size.W-tabPad), size.H/2)
+	title := ""
+	for _, p := range b.w.panes {
+		if p.ID == b.id {
+			title = p.Title
+		}
+	}
+	g := &tabGhost{title: text.Default().Shape(title, smallText.Get(u.Theme())), kind: b.w.paneIcon(b.id, b.w.kindOf(b.id)), size: size, lit: anim.NewFloat(0)}
+	g.Add(g.lit)
+	u.StartDrag(b, app.PaneDrag{Pane: b.id, Window: b.w.winID, Grab: b.grab}, g, b.grab)
+	u.Invalidate()
+}
+
+// dragEnded hears how the drag of the pane ended: taken, which the next
+// state shows; let go outside every window, which opens one for it,
+// unless it is its window's only pane; or neither, and it stays.
+func (b *captionBar) dragEnded(e input.DragEnd, u *gunim.UI) {
+	carried := b.carried
+	b.pressed, b.carried = false, false
+	if !carried || e.Taken || !e.Out || len(b.w.panes) < 2 {
+		return
+	}
+	// The window as large as this one, its top left corner where the
+	// image's was.
+	u.Send(b.w, app.PaneToNewWindow{Pane: b.id, At: e.At.Sub(b.grab), Size: b.w.size})
 }

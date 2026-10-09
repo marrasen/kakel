@@ -66,10 +66,15 @@ type (
 	OverviewShown struct{ On bool }
 	// PaneToTab moves a pane onto a tab of its own in the window
 	// numbered Window. Asked of the window it is in, it takes the pane
-	// out of its split onto a tab of its own there.
+	// out of its split onto a tab of its own there. Dropped on the
+	// window's tab bar, or above its stage, Bar is set: the tab goes in
+	// front of the tab of group Before, or last for 0, and comes to the
+	// front.
 	PaneToTab struct {
 		Pane   string
 		Window int
+		Bar    bool
+		Before int
 	}
 	// DockPane takes a pane into a split beside the pane Beside, in
 	// whichever window that is: to its right, or below it with
@@ -165,9 +170,12 @@ func (a *app) paneToTab(in PaneToTab) {
 	}
 	if from != w {
 		a.moveToWindow(in.Pane, w)
-		return
+	} else {
+		a.ownTab(in.Pane)
 	}
-	a.ownTab(in.Pane)
+	if g, ok := a.groupOf[in.Pane]; ok && in.Bar && w == a.cur {
+		a.moveTab(g, in.Before)
+	}
 }
 
 // ownTab takes pane id out of its split onto a tab of its own, in its

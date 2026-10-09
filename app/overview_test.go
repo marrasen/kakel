@@ -71,6 +71,30 @@ func TestAPaneDraggedOntoItsOwnCardLeavesItsSplit(t *testing.T) {
 	}
 }
 
+// A pane in a split dropped on its window's tab bar takes a tab of its
+// own where it was dropped, in front.
+func TestAPaneDroppedOnTheBarLandsWhereItWasDropped(t *testing.T) {
+	a, one, _ := twoWindowApp(t)
+	a.front(one)
+	a.handle(MovePane{Pane: "p2", Beside: "p1"})
+	if a.groupOf["p1"] != a.groupOf["p2"] {
+		t.Fatal("the split was not made")
+	}
+	before := a.groupOf["p1"]
+	a.handle(PaneToTab{Pane: "p2", Window: one.id, Bar: true, Before: before})
+	g := a.groupOf["p2"]
+	if g == before || a.groups[g].Pane != "p2" {
+		t.Fatal("p2 is still in p1's split")
+	}
+	order := slices.DeleteFunc(slices.Clone(a.tabOrder), func(o int) bool { return a.groupWin(o) != one })
+	if i := slices.Index(order, g); i < 0 || i+1 >= len(order) || order[i+1] != before {
+		t.Fatalf("the window's tabs are %v; want p2's, %d, before p1's, %d", order, g, before)
+	}
+	if a.st.Focus != "p2" {
+		t.Fatalf("%q has the keyboard, want p2 in front", a.st.Focus)
+	}
+}
+
 // A pane dropped on a pane of another window joins it in a split there,
 // on the side it was dropped on.
 func TestAPaneDockedBesideAnotherWindowsPaneJoinsItsSplit(t *testing.T) {
