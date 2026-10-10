@@ -129,6 +129,8 @@ func (a *app) fileManagerOptions(fsys filemanager.FS, path string) filemanager.O
 		FS: fsys, Dir: path, Name: ProgramName, PrefsPath: fileManagerPrefs(),
 		Places: a.fileManagerPlaces, Visit: a.visitPlace, Favourites: a.favStore(),
 		Transfer: a.transferFiles, FSName: a.fsName,
+		// A zip's password can come from the secrets, and go into them.
+		Password:  a.zipPassword,
 		PlaceMenu: placeMenu, PlaceCommand: a.placeCommand,
 		SystemFrame: a.st.SystemTitleBar,
 		// What a file manager shows going wrong is kept in the Window Log

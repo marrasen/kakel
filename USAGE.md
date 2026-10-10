@@ -218,6 +218,16 @@ in the window.
 `Ctrl+Shift+D` to split and `Ctrl+Shift+C` to copy, except
 `Ctrl+Shift+N`, a new folder. Copy path is on a file's menu.
 
+Create zip… and Paste as zip… on the menus make a zip, and Extract…
+unpacks a zip or a tar into a new folder beside it. Tick Protect with a
+password to protect a new zip: what it holds is encrypted with AES-256,
+which 7-Zip and WinZip open too, while the names of the files in it
+stay readable. Extracting a zip a password protects, made by kakel,
+7-Zip, WinZip or `zip -P`, asks for the password before it makes the
+folder. The question offers your saved secrets, and can save the
+password typed there once it has opened the zip, under the zip's name.
+A secret with the zip's name opens it without asking.
+
 The `+` at the end of the tabs opens a tab like the one in front: a
 file manager at the same folder, or a terminal. Right-click it to pick
 one.

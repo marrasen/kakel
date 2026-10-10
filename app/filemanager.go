@@ -384,7 +384,7 @@ func (a *app) transferFiles(ctx context.Context, _ *filemanager.Window, t filema
 		case <-ctx.Done():
 			return ctx.Err()
 		}
-		return filemanager.ZipFiles(ctx, fs[0], t.Paths, fs[1], t.Into, t.Zip, p)
+		return filemanager.ZipFiles(ctx, fs[0], t.Paths, fs[1], t.Into, t.Zip, t.Password, p)
 	}
 	kind, verb := jobs.Copy, "Copying"
 	if t.Move {

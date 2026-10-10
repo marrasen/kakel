@@ -9,6 +9,18 @@ change how something behaves.
 
 ## Unreleased
 
+### Added
+
+**Zips with a password.** Extract… opens a zip a password protects,
+made by kakel, 7-Zip, WinZip or `zip -P`, both the old kind and AES. It
+asks for the password before it makes the folder, and again when the
+password is wrong. Create zip… and Paste as zip… have a box, Protect
+with a password, that encrypts what the zip holds with AES-256. The
+password question offers your saved secrets, and can save what you type
+in them once it has worked. A secret named like the zip opens it
+without asking. Before, such a zip failed with "flate: corrupt input"
+or "unsupported compression algorithm".
+
 ### Changed
 
 **A file manager window opens where the last one closed, and as big.**
