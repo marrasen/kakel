@@ -17,6 +17,12 @@ Run box gets, keeps its own size and place, apart from the terminals'
 window. The next one opens there, maximized if it was. One opened while
 another is still there opens a step down and right of it.
 
+### Fixed
+
+**Long names in the file manager's sidebar no longer run past their
+row.** A favourite, place or machine whose name is too wide ends in
+"…", and so does its note. Rest the pointer on it to read it whole.
+
 ## v0.12.0-beta.15
 
 ### Changed
