@@ -7,6 +7,20 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
+## Unreleased
+
+### Changed
+
+**The file list's selection slides.** In a file manager's details view,
+the arrow keys, `Page Up`, `Page Down`, `Home` and `End` slide the
+highlight from one row to the next, where it jumped before. A move
+farther than the view still jumps.
+
+**Back comes back to the folder you left.** `Backspace` (or Back) now
+selects the folder you came out of, at every level. So you can select a
+folder, press `Enter` to look in, press `Backspace`, then `Down` and
+`Enter` to look in the next one. Forward does the same.
+
 ## v0.12.0-beta.14
 
 ### Changed
