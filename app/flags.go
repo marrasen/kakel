@@ -325,8 +325,9 @@ func (o Options) Quits() bool { return o.quit }
 func (o Options) ShowStats() bool { return o.stats }
 
 // WindowPlace is where the window was as it last closed, for it to open
-// there again, or nil the first time. gunim moves it onto a screen when
-// the one it was on is gone.
+// there again, or nil the first time: for a start for a folder, where
+// the last file manager window was, when one was. gunim moves it onto a
+// screen when the one it was on is gone.
 func (o Options) WindowPlace() *driver.Placement {
 	path, err := settings.Path()
 	if err != nil {
@@ -337,6 +338,9 @@ func (o Options) WindowPlace() *driver.Placement {
 		return nil
 	}
 	w, ok := s.Window()
+	if f, kept := s.FilesWindow(); o.filesSet && kept {
+		w, ok = f, true
+	}
 	if !ok || w.W <= 0 || w.H <= 0 {
 		return nil
 	}

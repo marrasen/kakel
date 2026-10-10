@@ -14,6 +14,7 @@ import (
 	"github.com/marrasen/kakel/single"
 
 	"github.com/marrasen/gunim"
+	"github.com/marrasen/gunim/driver"
 	"github.com/marrasen/gunim/geom"
 )
 
@@ -273,8 +274,12 @@ func (a *app) filesFromOutside(m machines.ID, path string) {
 }
 
 // newWindow opens a window, brings it to the front, and does f in it.
-func (a *app) newWindow(f func()) {
-	a.openWindowThen(geom.Pt(40, 40), a.opts.WindowSize(), func(w *ownWin) bool {
+func (a *app) newWindow(f func()) { a.newWindowAt(nil, f) }
+
+// newWindowAt is newWindow, with the window at place on the screen, or
+// where a new window goes for nil.
+func (a *app) newWindowAt(place *driver.Placement, f func()) {
+	a.openWindowFrom(nil, geom.Pt(40, 40), a.opts.WindowSize(), place, func(w *ownWin) bool {
 		a.front(w)
 		w.c.ToFront()
 		f()

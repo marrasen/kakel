@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/marrasen/gunim"
+	"github.com/marrasen/gunim/driver"
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/gunimtest"
 	"github.com/marrasen/kakel/single"
@@ -117,7 +118,7 @@ func TestAPaneWithNoWindowGetsOne(t *testing.T) {
 	a, one, two := twoWindowApp(t)
 	a.traySet = (&fakeTray{}).tray()
 	a.publish()
-	a.openWindow = func(_ *gunim.Window, _ geom.Point, s geom.Size) (gunim.Client, *gunim.Window, error) {
+	a.openWindow = func(_ *gunim.Window, _ geom.Point, s geom.Size, _ *driver.Placement) (gunim.Client, *gunim.Window, error) {
 		return gunimtest.New(t, s, nil).Client(), nil, nil
 	}
 	for _, w := range []*ownWin{one, two} {
@@ -160,7 +161,7 @@ func TestATrayThatRefusesIsAskedOnce(t *testing.T) {
 func TestAHandoverOpensAWindow(t *testing.T) {
 	a, _, _ := twoWindowApp(t)
 	a.next = 100
-	a.openWindow = func(_ *gunim.Window, _ geom.Point, s geom.Size) (gunim.Client, *gunim.Window, error) {
+	a.openWindow = func(_ *gunim.Window, _ geom.Point, s geom.Size, _ *driver.Placement) (gunim.Client, *gunim.Window, error) {
 		return gunimtest.New(t, s, nil).Client(), nil, nil
 	}
 	dir := t.TempDir()

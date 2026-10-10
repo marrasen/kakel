@@ -224,10 +224,14 @@ func (ws *ownWindows) open(o gunim.WindowOptions) (*gunim.Window, gunim.Client, 
 }
 
 // openFrom opens a window size large, its top left corner at at in
-// from's space.
-func (ws *ownWindows) openFrom(from *gunim.Window, at geom.Point, size geom.Size) (gunim.Client, *gunim.Window, error) {
+// from's space, or at place on the screen.
+func (ws *ownWindows) openFrom(from *gunim.Window, at geom.Point, size geom.Size, place *driver.Placement) (gunim.Client, *gunim.Window, error) {
 	o := gunim.WindowOptions{Size: size, Parent: from, Anchor: at}
-	if from == nil && ws.place != nil {
+	switch {
+	case place != nil:
+		// gunim places only a window with no parent.
+		o.Place, o.Parent = place, nil
+	case from == nil && ws.place != nil:
 		// With none open, as from the tray: where the last one was.
 		o.Place = ws.place()
 	}

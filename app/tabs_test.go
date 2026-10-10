@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/marrasen/gunim"
+	"github.com/marrasen/gunim/driver"
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/gunimtest"
 )
@@ -198,7 +199,7 @@ func TestClosingATabShowsTheOneBeside(t *testing.T) {
 func TestATabLetGoOutsideOpensAWindow(t *testing.T) {
 	a, one, two := twoWindowApp(t)
 	opened := 0
-	a.openWindow = func(_ *gunim.Window, _ geom.Point, s geom.Size) (gunim.Client, *gunim.Window, error) {
+	a.openWindow = func(_ *gunim.Window, _ geom.Point, s geom.Size, _ *driver.Placement) (gunim.Client, *gunim.Window, error) {
 		opened++
 		return gunimtest.New(t, s, nil).Client(), nil, nil
 	}
@@ -249,7 +250,7 @@ func TestATabOfAnotherWindowIsLeftAlone(t *testing.T) {
 // and the window opened for it closes again.
 func TestATabLeftAloneStaysWhenItsWindowOpens(t *testing.T) {
 	a, one, _ := twoWindowApp(t)
-	a.openWindow = func(_ *gunim.Window, _ geom.Point, s geom.Size) (gunim.Client, *gunim.Window, error) {
+	a.openWindow = func(_ *gunim.Window, _ geom.Point, s geom.Size, _ *driver.Placement) (gunim.Client, *gunim.Window, error) {
 		return gunimtest.New(t, s, nil).Client(), nil, nil
 	}
 	a.front(one)

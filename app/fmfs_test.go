@@ -25,6 +25,7 @@ import (
 	"github.com/marrasen/kakel/vfs"
 	"github.com/pkg/sftp"
 
+	"github.com/marrasen/gunim/driver"
 	"github.com/marrasen/gunim/filemanager"
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/gunimtest"
@@ -248,7 +249,7 @@ func TestAServersFileManagerOpensInAWindowOfItsOwn(t *testing.T) {
 	a.machines.At("s1").Files = sftpHere(t)
 	// Counted on the goroutine a window opens on.
 	var windows atomic.Int32
-	a.openWindow = func(_ *gunim.Window, _ geom.Point, s geom.Size) (gunim.Client, *gunim.Window, error) {
+	a.openWindow = func(_ *gunim.Window, _ geom.Point, s geom.Size, _ *driver.Placement) (gunim.Client, *gunim.Window, error) {
 		windows.Add(1)
 		w := gunimtest.New(t, s, nil)
 		return w.Client(), w, nil
@@ -573,7 +574,7 @@ func TestFilesOnASavedWindowConnectToIt(t *testing.T) {
 	desk := machines.ID(b.st.Saved[0].ID)
 	files := newFakeFiles(t)
 	b.files = files
-	b.openWindow = func(_ *gunim.Window, _ geom.Point, s geom.Size) (gunim.Client, *gunim.Window, error) {
+	b.openWindow = func(_ *gunim.Window, _ geom.Point, s geom.Size, _ *driver.Placement) (gunim.Client, *gunim.Window, error) {
 		w := gunimtest.New(t, s, nil)
 		return w.Client(), w, nil
 	}

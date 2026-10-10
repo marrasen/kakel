@@ -4,6 +4,7 @@ import (
 	"slices"
 
 	"github.com/marrasen/gunim"
+	"github.com/marrasen/gunim/driver"
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/kakel/words"
 )
@@ -44,6 +45,9 @@ type ownWin struct {
 	// fresh says it opened while All Panes was over the screen, and
 	// has not shown yet.
 	fresh bool
+	// files says it held file manager panes alone as its last pane
+	// closed, so where it was is kept as a file manager window's.
+	files bool
 }
 
 // windowIn is an intent from one of the windows, or word that it
@@ -84,9 +88,10 @@ type PaneDrag struct {
 	Grab   geom.Point
 }
 
-// WindowOpener opens another window, placed at at in from's space, and
-// returns its client and the window. It runs on a goroutine of its own.
-type WindowOpener func(from *gunim.Window, at geom.Point, size geom.Size) (gunim.Client, *gunim.Window, error)
+// WindowOpener opens another window, placed at at in from's space, size
+// large, or with place set, there on the screen; and returns its client
+// and the window. It runs on a goroutine of its own.
+type WindowOpener func(from *gunim.Window, at geom.Point, size geom.Size, place *driver.Placement) (gunim.Client, *gunim.Window, error)
 
 // addWindow adds a window to the program's, and returns it. What it
 // asks for is heard once serveWin starts listening.
@@ -244,7 +249,7 @@ func (a *app) paneToNewWindowFrom(in PaneToNewWindow, space *gunim.Window) {
 		// already.
 		return
 	}
-	a.openWindowFrom(space, in.At, in.Size, func(w *ownWin) bool {
+	a.openWindowFrom(space, in.At, in.Size, nil, func(w *ownWin) bool {
 		from := a.ownerOf(in.Pane)
 		if from == nil || a.closing[in.Pane] || len(a.panesIn(from)) == 1 {
 			return false
@@ -259,12 +264,12 @@ func (a *app) paneToNewWindowFrom(in PaneToNewWindow, space *gunim.Window) {
 // front. When then says there is nothing for it after all, the window
 // closes again.
 func (a *app) openWindowThen(at geom.Point, size geom.Size, then func(w *ownWin) bool) {
-	a.openWindowFrom(nil, at, size, then)
+	a.openWindowFrom(nil, at, size, nil, then)
 }
 
 // openWindowFrom is openWindowThen, with at in gw's space, or the window
-// in front's for nil.
-func (a *app) openWindowFrom(gw *gunim.Window, at geom.Point, size geom.Size, then func(w *ownWin) bool) {
+// in front's for nil, or with place set, there on the screen.
+func (a *app) openWindowFrom(gw *gunim.Window, at geom.Point, size geom.Size, place *driver.Placement, then func(w *ownWin) bool) {
 	if a.openWindow == nil {
 		a.failed("Couldn't open another window", "This kakel can't open windows.")
 		return
@@ -275,7 +280,7 @@ func (a *app) openWindowFrom(gw *gunim.Window, at geom.Point, size geom.Size, th
 	open := a.openWindow
 	a.opening++
 	go func() {
-		c, nw, err := open(gw, at, size)
+		c, nw, err := open(gw, at, size, place)
 		a.events <- func() {
 			a.opening--
 			if err != nil {
@@ -358,8 +363,9 @@ func (a *app) letWindowGo(w *ownWin) {
 	if w.gone {
 		return
 	}
-	if live := a.liveWins(); len(live) == 1 && live[0] == w {
-		// The last one, going into the tray: where it was is kept.
+	if live := a.liveWins(); len(live) == 1 && live[0] == w || a.filesWin(w) {
+		// The last one, going into the tray, or a file manager's: where
+		// it was is kept.
 		a.keepPlaceOf(w)
 	}
 	w.gone = true

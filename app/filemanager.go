@@ -117,7 +117,7 @@ func (a *app) openFileManager(m machines.ID, path string) error {
 	if a.files == nil {
 		return errNoFileManager
 	}
-	a.newWindow(func() {
+	a.newWindowAt(a.filesPlace(), func() {
 		// Into this window, however long the server takes, and whichever
 		// window is in front by then.
 		w := a.cur

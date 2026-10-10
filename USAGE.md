@@ -199,7 +199,8 @@ The file manager is a pane, like a terminal: split it, put it in a tab,
 or drag it to another window. Files on a server's card, or the Files
 command, opens one beside the file manager in front; Files in a New
 Window opens one in a window of its own. Opening a folder from Windows,
-once kakel opens folders, opens a window with one.
+once kakel opens folders, opens a window with one. A window of file
+managers alone opens where the last one was, and as big, as it closed.
 
 kakel's menus are its menus. While a file manager is in front, its
 lines join kakel's File, Edit and View menus, a Go menu comes after

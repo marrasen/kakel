@@ -17,6 +17,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/marrasen/gunim"
+	"github.com/marrasen/gunim/driver"
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/gunimtest"
 
@@ -431,7 +432,7 @@ func TestTheSecretsGetAWindowOfTheirOwn(t *testing.T) {
 	startVault(t, a)
 	first := a.cur
 	var opened *gunim.Window
-	a.openWindow = func(_ *gunim.Window, _ geom.Point, s geom.Size) (gunim.Client, *gunim.Window, error) {
+	a.openWindow = func(_ *gunim.Window, _ geom.Point, s geom.Size, _ *driver.Placement) (gunim.Client, *gunim.Window, error) {
 		opened = gunimtest.New(t, s, nil)
 		return opened.Client(), nil, nil
 	}

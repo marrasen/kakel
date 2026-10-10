@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/marrasen/gunim"
+	"github.com/marrasen/gunim/driver"
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/gunimtest"
 	"github.com/marrasen/kakel/screen"
@@ -157,7 +158,7 @@ func TestAToolWindowClosesWithoutAsking(t *testing.T) {
 func TestServersAndTabsGetWindowsOfTheirOwn(t *testing.T) {
 	a, one, _ := twoWindowApp(t)
 	a.next = 100
-	a.openWindow = func(_ *gunim.Window, _ geom.Point, s geom.Size) (gunim.Client, *gunim.Window, error) {
+	a.openWindow = func(_ *gunim.Window, _ geom.Point, s geom.Size, _ *driver.Placement) (gunim.Client, *gunim.Window, error) {
 		return gunimtest.New(t, s, nil).Client(), nil, nil
 	}
 	a.front(one)

@@ -167,6 +167,9 @@ type stored struct {
 	FontFamily *string `json:"fontFamily,omitempty"`
 	// Window is where the window was, and how big, as it last closed.
 	Window *WindowPlace `json:"window,omitempty"`
+	// FilesWindow is where a window of file manager panes alone was,
+	// and how big, as it last closed.
+	FilesWindow *WindowPlace `json:"filesWindow,omitempty"`
 }
 
 // SavedCommand is a command line the user asked to keep, the directory
@@ -803,23 +806,45 @@ type WindowPlace struct {
 // Window is where the window was as it last closed, and whether that
 // was ever written down.
 func (s *Settings) Window() (WindowPlace, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.have.Window == nil {
-		return WindowPlace{}, false
-	}
-	return *s.have.Window, true
+	return s.place(func(f *stored) **WindowPlace { return &f.Window })
 }
 
 // PutWindow remembers where the window is, and saves.
 func (s *Settings) PutWindow(p WindowPlace) error {
+	return s.putPlace(func(f *stored) **WindowPlace { return &f.Window }, p)
+}
+
+// FilesWindow is where a window of file manager panes alone was as it
+// last closed, and whether that was ever written down.
+func (s *Settings) FilesWindow() (WindowPlace, bool) {
+	return s.place(func(f *stored) **WindowPlace { return &f.FilesWindow })
+}
+
+// PutFilesWindow remembers where a window of file manager panes alone
+// is, and saves.
+func (s *Settings) PutFilesWindow(p WindowPlace) error {
+	return s.putPlace(func(f *stored) **WindowPlace { return &f.FilesWindow }, p)
+}
+
+// place returns the place field picks, and whether one was written down.
+func (s *Settings) place(field func(f *stored) **WindowPlace) (WindowPlace, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if p := *field(&s.have); p != nil {
+		return *p, true
+	}
+	return WindowPlace{}, false
+}
+
+// putPlace remembers p in the place field picks, and saves.
+func (s *Settings) putPlace(field func(f *stored) **WindowPlace, p WindowPlace) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.rereadLocked(); err != nil {
 		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
 	}
 	before := s.have
-	s.have.Window = &p
+	*field(&s.have) = &p
 	if err := s.saveLocked(); err != nil {
 		s.have = before
 		return err

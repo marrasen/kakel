@@ -4,15 +4,18 @@ import (
 	"context"
 	"path/filepath"
 	"slices"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/remote"
+	"github.com/marrasen/kakel/settings"
 	"github.com/marrasen/kakel/single"
 
 	"github.com/marrasen/gunim"
+	"github.com/marrasen/gunim/driver"
 	"github.com/marrasen/gunim/filemanager"
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/gunimtest"
@@ -129,7 +132,7 @@ func TestAFolderOpenedAnywhereOpensInTheFileManager(t *testing.T) {
 	a.files = files
 	// Counted on the goroutine a window opens on.
 	var windows atomic.Int32
-	a.openWindow = func(*gunim.Window, geom.Point, geom.Size) (gunim.Client, *gunim.Window, error) {
+	a.openWindow = func(*gunim.Window, geom.Point, geom.Size, *driver.Placement) (gunim.Client, *gunim.Window, error) {
 		windows.Add(1)
 		w := gunimtest.New(t, geom.Sz(400, 300), nil)
 		return w.Client(), w, nil
@@ -199,5 +202,66 @@ func TestNewTabIsLikeTheTabInFront(t *testing.T) {
 	a.handle(NewTab{})
 	if len(a.st.Panes) != panes+1 || a.kindOfPane(a.st.Focus) != KindTerminal {
 		t.Fatal("New Tab on a terminal didn't open a terminal")
+	}
+}
+
+// A file manager window opens where the last one was as it closed, a
+// step down and right of one still there, and keeps that place apart
+// from the terminals' window.
+func TestAFileManagerWindowOpensWhereTheLastOneClosed(t *testing.T) {
+	a, _ := agentApp(t)
+	a.settings = mustSettings(t)
+	a.files = newFakeFiles(t)
+	var mu sync.Mutex
+	var asked []*driver.Placement
+	a.openWindow = func(_ *gunim.Window, _ geom.Point, _ geom.Size, place *driver.Placement) (gunim.Client, *gunim.Window, error) {
+		mu.Lock()
+		asked = append(asked, place)
+		mu.Unlock()
+		w := gunimtest.New(t, geom.Sz(400, 300), nil)
+		return w.Client(), w, nil
+	}
+	where := map[*ownWin]driver.Placement{}
+	a.placed = func(w *ownWin) (driver.Placement, bool) {
+		p, ok := where[w]
+		return p, ok
+	}
+	opened := func() []*driver.Placement {
+		mu.Lock()
+		defer mu.Unlock()
+		return slices.Clone(asked)
+	}
+	open := func(n int) *ownWin {
+		t.Helper()
+		before := a.cur
+		a.openFolder(t.TempDir())
+		waitFor(t, a, "the window opens", func() bool {
+			panes := a.panesIn(a.cur)
+			return len(opened()) == n && a.cur != before && len(panes) == 1 && panes[0].Kind == KindFileManager
+		})
+		return a.cur
+	}
+
+	first := open(1)
+	if opened()[0] != nil {
+		t.Fatalf("with no place kept, the first opened at %v", opened()[0])
+	}
+	where[first] = driver.Placement{Bounds: geom.Rc(100, 120, 1000, 700)}
+	a.closeWindow(first)
+	if p, ok := a.settings.FilesWindow(); !ok || p != (settings.WindowPlace{X: 100, Y: 120, W: 1000, H: 700}) {
+		t.Fatalf("the file manager window closed and %v (%v) was kept", p, ok)
+	}
+	if _, ok := a.settings.Window(); ok {
+		t.Fatal("the file manager window was kept as the terminals' window")
+	}
+
+	second := open(2)
+	if p := opened()[1]; p == nil || p.Bounds != geom.Rc(100, 120, 1000, 700) {
+		t.Fatalf("the next opened at %v, not where the last closed", p)
+	}
+	where[second] = *opened()[1]
+	open(3)
+	if p := opened()[2]; p == nil || p.Bounds != geom.Rc(100+cascade, 120+cascade, 1000, 700) {
+		t.Fatalf("one opened over another at %v, not a step down and right", p)
 	}
 }

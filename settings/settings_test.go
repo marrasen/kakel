@@ -1136,3 +1136,26 @@ func TestThePasteCheckIsOnUntilTurnedOff(t *testing.T) {
 		t.Error("turned off, the paste check came back on")
 	}
 }
+
+// The file manager window's place is kept apart from the window's, and
+// read back after a load.
+func TestTheFileManagerWindowsPlaceIsKeptApart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	s, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.PutFilesWindow(WindowPlace{X: 10, Y: 20, W: 900, H: 600, Maximized: true}); err != nil {
+		t.Fatal(err)
+	}
+	again, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p, ok := again.FilesWindow(); !ok || p != (WindowPlace{X: 10, Y: 20, W: 900, H: 600, Maximized: true}) {
+		t.Fatalf("read back %v (%v)", p, ok)
+	}
+	if _, ok := again.Window(); ok {
+		t.Fatal("the file manager window's place was kept as the window's")
+	}
+}

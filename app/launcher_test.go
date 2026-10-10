@@ -12,6 +12,7 @@ import (
 	"github.com/marrasen/kakel/single"
 
 	"github.com/marrasen/gunim"
+	"github.com/marrasen/gunim/driver"
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/gunimtest"
 	gi "github.com/marrasen/gunim/input"
@@ -198,7 +199,7 @@ func TestNewWindowFromTheLauncherOpensOne(t *testing.T) {
 	a.traySet = (&fakeTray{}).tray()
 	a.publish()
 	opened := 0
-	a.openWindow = func(_ *gunim.Window, _ geom.Point, s geom.Size) (gunim.Client, *gunim.Window, error) {
+	a.openWindow = func(_ *gunim.Window, _ geom.Point, s geom.Size, _ *driver.Placement) (gunim.Client, *gunim.Window, error) {
 		opened++
 		return gunimtest.New(t, s, nil).Client(), nil, nil
 	}
@@ -229,7 +230,7 @@ func TestFilesFromTheTrayOpenInTheWindowWorkedIn(t *testing.T) {
 	a.publish()
 	// Counted on the goroutine a window opens on.
 	var opened atomic.Int32
-	a.openWindow = func(_ *gunim.Window, _ geom.Point, s geom.Size) (gunim.Client, *gunim.Window, error) {
+	a.openWindow = func(_ *gunim.Window, _ geom.Point, s geom.Size, _ *driver.Placement) (gunim.Client, *gunim.Window, error) {
 		opened.Add(1)
 		w := gunimtest.New(t, s, nil)
 		return w.Client(), w, nil

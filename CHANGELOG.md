@@ -7,6 +7,16 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
+## Unreleased
+
+### Changed
+
+**A file manager window opens where the last one closed, and as big.**
+A window holding only file managers, as a folder opened from Windows'
+Run box gets, keeps its own size and place, apart from the terminals'
+window. The next one opens there, maximized if it was. One opened while
+another is still there opens a step down and right of it.
+
 ## v0.12.0-beta.15
 
 ### Changed

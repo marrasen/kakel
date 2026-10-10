@@ -7,6 +7,7 @@ import (
 	"github.com/marrasen/kakel/screen"
 
 	"github.com/marrasen/gunim"
+	"github.com/marrasen/gunim/driver"
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/gunimtest"
 )
@@ -93,7 +94,7 @@ func TestAPaneLetGoOutsideOpensAWindow(t *testing.T) {
 	a.front(one)
 	var at geom.Point
 	var size geom.Size
-	a.openWindow = func(_ *gunim.Window, p geom.Point, s geom.Size) (gunim.Client, *gunim.Window, error) {
+	a.openWindow = func(_ *gunim.Window, p geom.Point, s geom.Size, _ *driver.Placement) (gunim.Client, *gunim.Window, error) {
 		at, size = p, s
 		return gunimtest.New(t, s, nil).Client(), nil, nil
 	}
@@ -119,7 +120,7 @@ func TestAPaneLetGoOutsideOpensAWindow(t *testing.T) {
 // where it is wanted.
 func TestAWindowsOnlyPaneLetGoOutsideStays(t *testing.T) {
 	a, _, _ := twoWindowApp(t)
-	a.openWindow = func(*gunim.Window, geom.Point, geom.Size) (gunim.Client, *gunim.Window, error) {
+	a.openWindow = func(*gunim.Window, geom.Point, geom.Size, *driver.Placement) (gunim.Client, *gunim.Window, error) {
 		t.Fatal("a window opened for the only pane of one")
 		return gunim.Client{}, nil, nil
 	}

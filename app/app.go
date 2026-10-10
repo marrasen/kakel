@@ -546,6 +546,9 @@ type app struct {
 	winOf      map[string]int
 	intents    chan windowIn
 	openWindow WindowOpener
+	// placed, when set, says where a window is on the screen, in place
+	// of asking it, for a test.
+	placed func(w *ownWin) (driver.Placement, bool)
 	// closedWindow hears of each window closed, for whoever opened it to
 	// let it go.
 	closedWindow func(*gunim.Window)
@@ -971,7 +974,7 @@ func (a *app) run(ctx context.Context) error {
 			// Stopped from outside, as by Ctrl+C where it was started:
 			// where the window is is kept as on any other way out.
 			if !a.gone {
-				a.keepWindowPlace()
+				a.keepPlaces()
 			}
 			a.takeSecretBack()
 			a.hangUp()
@@ -2187,6 +2190,11 @@ func (a *app) remove(id string) {
 	// exits.
 	if p := a.st.Panes[i]; p.Kind != KindChooser && p.Kind != KindLog && !a.gone {
 		log.Printf("closed %s", a.paneForLog(p))
+	}
+	if w := a.ownerOf(id); w != nil {
+		// Read now, while the pane is there to say: a window whose last
+		// pane closes is a file manager window still as it goes.
+		w.files = a.filesWin(w)
 	}
 	if p := a.st.Panes[i]; p.Kind == KindLog && p.Machine != "" && p.On == "" {
 		// Closing the log of a connection being made gives it up: it is
