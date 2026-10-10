@@ -12,9 +12,11 @@ change how something behaves.
 ### Changed
 
 **The file list's selection slides.** In a file manager's details view,
-the arrow keys, `Page Up`, `Page Down`, `Home` and `End` slide the
-highlight from one row to the next, where it jumped before. A move
-farther than the view still jumps.
+the highlight slides to its new place instead of jumping: for the arrow
+keys, `Page Up`, `Page Down`, `Home` and `End`, a click, and a name
+typed at the list. With `Shift`, the selection stretches and shrinks,
+and `Ctrl+A` stretches it over every row. A move farther than the view
+still jumps, and rows picked apart with `Ctrl` and a click do not slide.
 
 **Back comes back to the folder you left.** `Backspace` (or Back) now
 selects the folder you came out of, at every level. So you can select a
