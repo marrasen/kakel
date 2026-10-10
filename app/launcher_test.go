@@ -4,6 +4,7 @@ import (
 	"errors"
 	"runtime"
 	"slices"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -226,15 +227,16 @@ func TestFilesFromTheTrayOpenInTheWindowWorkedIn(t *testing.T) {
 	a.files = files
 	a.next = 100
 	a.publish()
-	opened := 0
+	// Counted on the goroutine a window opens on.
+	var opened atomic.Int32
 	a.openWindow = func(_ *gunim.Window, _ geom.Point, s geom.Size) (gunim.Client, *gunim.Window, error) {
-		opened++
+		opened.Add(1)
 		w := gunimtest.New(t, s, nil)
 		return w.Client(), w, nil
 	}
 	a.handleLaunch(Launch{Action: "files"})
-	if len(files.opened) != 1 || opened != 0 || a.ownerOf(a.st.Focus) != two || a.kindOfPane(a.st.Focus) != KindFileManager {
-		t.Fatalf("files opened %d file managers and %d windows, and the keyboard is on %q", len(files.opened), opened, a.st.Focus)
+	if len(files.opened) != 1 || opened.Load() != 0 || a.ownerOf(a.st.Focus) != two || a.kindOfPane(a.st.Focus) != KindFileManager {
+		t.Fatalf("files opened %d file managers and %d windows, and the keyboard is on %q", len(files.opened), opened.Load(), a.st.Focus)
 	}
 
 	for _, w := range []*ownWin{one, two} {
@@ -244,7 +246,7 @@ func TestFilesFromTheTrayOpenInTheWindowWorkedIn(t *testing.T) {
 		a.letWindowGo(w)
 	}
 	a.filesFromOutside("", "/tmp")
-	waitFor(t, a, "a window holding the files", func() bool { return opened == 1 && len(files.opened) == 2 })
+	waitFor(t, a, "a window holding the files", func() bool { return opened.Load() == 1 && len(files.opened) == 2 })
 	if p := a.st.Panes[len(a.st.Panes)-1]; p.Kind != KindFileManager || files.opened[1].Dir != "/tmp" || a.ownerOf(p.ID) == nil || a.ownerOf(p.ID).gone {
 		t.Fatalf("with no window, the files opened as %+v at %q", p, files.opened[1].Dir)
 	}

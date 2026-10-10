@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"slices"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -126,14 +127,15 @@ func TestAFolderOpenedAnywhereOpensInTheFileManager(t *testing.T) {
 	a.settings = mustSettings(t)
 	files := newFakeFiles(t)
 	a.files = files
-	var windows int
+	// Counted on the goroutine a window opens on.
+	var windows atomic.Int32
 	a.openWindow = func(*gunim.Window, geom.Point, geom.Size) (gunim.Client, *gunim.Window, error) {
-		windows++
+		windows.Add(1)
 		w := gunimtest.New(t, geom.Sz(400, 300), nil)
 		return w.Client(), w, nil
 	}
 	a.handover(single.Handover{Args: []string{"-files", "/srv/data/."}})
-	waitFor(t, a, "a window opens", func() bool { return windows == 1 && len(files.opened) == 1 })
+	waitFor(t, a, "a window opens", func() bool { return windows.Load() == 1 && len(files.opened) == 1 })
 	p := a.st.Panes[len(a.st.Panes)-1]
 	if files.opened[0].Dir != filepath.FromSlash("/srv/data") || p.Kind != KindFileManager || a.ownerOf(p.ID) != a.cur || len(a.panesIn(a.cur)) != 1 {
 		t.Fatalf("handed a folder, kakel opened %+v in a window of %d panes", files.opened, len(a.panesIn(a.cur)))

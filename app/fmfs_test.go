@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -245,15 +246,16 @@ func TestAServersFileManagerOpensInAWindowOfItsOwn(t *testing.T) {
 	a.st.Saved = []remote.Host{{ID: "s1", Name: "web", Address: "web.example"}}
 	a.st.Connected = []machines.ID{"s1"}
 	a.machines.At("s1").Files = sftpHere(t)
-	windows := 0
+	// Counted on the goroutine a window opens on.
+	var windows atomic.Int32
 	a.openWindow = func(_ *gunim.Window, _ geom.Point, s geom.Size) (gunim.Client, *gunim.Window, error) {
-		windows++
+		windows.Add(1)
 		w := gunimtest.New(t, s, nil)
 		return w.Client(), w, nil
 	}
 
 	a.handle(OpenFileManager{Machine: "s1"})
-	waitFor(t, a, "a window holding the files", func() bool { return windows == 1 && len(files.opened) == 1 })
+	waitFor(t, a, "a window holding the files", func() bool { return windows.Load() == 1 && len(files.opened) == 1 })
 	if p := a.st.Panes[len(a.st.Panes)-1]; p.Kind != KindFileManager || p.Machine != "s1" || a.ownerOf(p.ID) != a.cur || len(a.panesIn(a.cur)) != 1 {
 		t.Fatalf("the files opened as %+v, in a window of %d panes", p, len(a.panesIn(a.cur)))
 	}
