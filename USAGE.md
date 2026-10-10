@@ -33,11 +33,12 @@ pane opened through another kakel window.
 `Enter` pastes it, `Shift+Enter` starts a new line, and `Escape`
 cancels. Settings › Terminal › Show before pasting turns this off.
 
-In a git repository on this computer, the line under the panes says
-the branch, how far it is ahead of or behind its upstream, and how many
-files have changed. It needs the shell to say its folder, as kakel's
-shell setup has it do. Where the repository's own settings name a
-program for git to run, as a filter, only the branch is shown.
+A file manager pane showing a folder of a git repository on this
+computer says the branch, how far it is ahead of or behind its
+upstream, and how many files have changed, on its line along the
+bottom. Where the repository's own settings name a program for git to
+run, as a filter, only the branch is shown. Folders on servers show
+nothing.
 
 These are the ones you need most. "Shortcuts and Commands" on the Help
 menu, or `Ctrl+Shift+H`, lists every command, the key that runs it, and

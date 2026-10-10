@@ -46,6 +46,8 @@ type fmPane struct {
 	// done says the file manager has stopped: closed by the user, as
 	// with Ctrl+W, so the pane goes.
 	done bool
+	// git is the git status on its status bar.
+	git gitWatch
 }
 
 // newFilePane opens a file manager pane on fsys, the files of machine, at
@@ -70,6 +72,15 @@ func (a *app) newFilePane(machine machines.ID, fsys filemanager.FS, path string,
 			a.fmTitles[id] = [2]string{fs, folder}
 			a.fmTitleMu.Unlock()
 			a.later(func() { a.retitleFilePane(id) })
+		},
+		Folder: func(fs, path string) {
+			a.fmTitleMu.Lock()
+			if a.fmFolders == nil {
+				a.fmFolders = map[string][2]string{}
+			}
+			a.fmFolders[id] = [2]string{fs, path}
+			a.fmTitleMu.Unlock()
+			a.later(func() { a.filePaneFolder(id) })
 		},
 		Commands: FilePaneCommands,
 		Open: func(o filemanager.Options) error {
@@ -221,6 +232,7 @@ func (a *app) dropFilePane(id string) {
 	delete(a.fmPanes, id)
 	a.fmTitleMu.Lock()
 	delete(a.fmTitles, id)
+	delete(a.fmFolders, id)
 	a.fmTitleMu.Unlock()
 	a.routeFilePanes()
 }

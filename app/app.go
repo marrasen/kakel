@@ -565,8 +565,6 @@ type app struct {
 	// saying what else is said there, by what says it.
 	jobLines []string
 	saying   map[string]string
-	// git is the status line's git status.
-	git gitWatch
 	// openedFor are the panes opened here for another window, which
 	// their rows say for as long as they are open.
 	openedFor map[string]bool
@@ -745,10 +743,12 @@ type app struct {
 	// fmPanes are the file manager panes, by pane, and fmRoute their file
 	// managers, for the windows' goroutines to hand their intents to.
 	fmPanes map[string]*fmPane
-	// fmTitles are the file system and the folder each file manager pane
-	// said it shows last, by pane, under fmTitleMu.
+	// fmTitles are the file system and the name of the folder each file
+	// manager pane said it shows last, and fmFolders the file system and
+	// the folder's path, by pane, under fmTitleMu.
 	fmTitleMu sync.Mutex
 	fmTitles  map[string][2]string
+	fmFolders map[string][2]string
 	fmRoute   atomic.Pointer[[]*filemanager.Window]
 	hotKeys   HotKeys
 	launch    launchState
@@ -1022,7 +1022,6 @@ func (a *app) run(ctx context.Context) error {
 		case f := <-a.events:
 			f()
 		}
-		a.gitFocusMoved()
 		// Empty, and connecting to nothing that would open a pane: the
 		// window leaves, and the last one takes the program with it.
 		a.rehome()
