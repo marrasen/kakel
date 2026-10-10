@@ -7,6 +7,18 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
+## Unreleased
+
+### Changed
+
+**The git status is in the file manager, not under terminals.** A file
+manager pane showing a folder on this computer that is in a git
+repository says the branch, how far it is ahead of or behind its
+upstream, and how many files have changed, on its own line along the
+bottom. The line under the panes no longer says it for a terminal. It
+is read again every 3 seconds, and at once when the pane opens another
+folder.
+
 ## v0.12.0-beta.13
 
 ### Fixed
