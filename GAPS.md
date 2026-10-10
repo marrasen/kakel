@@ -50,9 +50,10 @@ something.
 - **A path on a server is found one round trip late.** The machine is
   asked when the pointer first reaches the text, and the answer is what
   underlines it. Hold still for a moment and it lights up.
-- **An OSC payload other than an image is capped at a kilobyte.** The
-  parser keeps that much and throws the rest away. The two sequences
-  that carry an image are read before it sees them, so they are whole;
-  a clipboard write longer than a kilobyte is cut short.
+- **An OSC payload other than an image or a copy is capped at a
+  kilobyte.** The parser keeps that much and throws the rest away. The
+  sequences that carry an image (OSC 1337 and 1338) and a clipboard
+  write (OSC 52) are read before it sees them, so they are whole. A
+  copy may be up to four megabytes.
 - **A command is split on spaces, with no quoting.** That goes for
   `-e` and for Run Command alike.
