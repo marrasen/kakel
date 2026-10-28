@@ -359,6 +359,8 @@ type Pane struct {
 	ShellKind shellsetup.Route
 	// SplitFrom is, for a split's chooser, the pane it was split from.
 	SplitFrom string
+	// Draft says a machine's pane holds a server not saved yet.
+	Draft bool
 }
 
 // Box is one part of an arrangement: a pane, or a split of two boxes.
@@ -559,10 +561,15 @@ type (
 	// SaveServer saves a server, in place of the one named Under when
 	// that is set. Shell is the ID of the profile its new terminal runs,
 	// empty for the account's own shell.
+	//
+	// Pane is the draft machine pane it was added in, which becomes the
+	// server's, and Connect opens a terminal on it once it is saved.
 	SaveServer struct {
-		Host  remote.Host
-		Under string
-		Shell string
+		Host    remote.Host
+		Under   string
+		Shell   string
+		Pane    string
+		Connect bool
 	}
 	// RemoveServer forgets a saved server.
 	RemoveServer struct{ ID machines.ID }
@@ -675,6 +682,9 @@ type app struct {
 	replies map[uint64]chan AskAnswered
 	// closing holds the panes folding away.
 	closing map[string]bool
+	// draftTyped are the draft machine panes with something typed in
+	// them, which ask before they close.
+	draftTyped map[string]bool
 	// local is this computer's filesystem, once something needs it.
 	local vfs.FS
 	// themes are the themes on offer, and palette the terminals' now.
@@ -894,6 +904,7 @@ func newApp(c gunim.Client, sh *screen.Shells) *app {
 		ring:         remote.NewRing(),
 		replies:      map[uint64]chan AskAnswered{},
 		closing:      map[string]bool{},
+		draftTyped:   map[string]bool{},
 		tunnels:      map[string]*tunnel.Held{},
 		agents:       agents{by: map[string]*handover{}},
 		commands:     map[string]command{},
@@ -1211,6 +1222,10 @@ func failedTitle(in gunim.Intent) string {
 		return "Couldn't save the profile"
 	case HideFound:
 		return "Couldn't hide or show the profile"
+	case ShowMachine:
+		return "Couldn't open the machine's settings"
+	case SetDefaultProfile:
+		return "Couldn't make it the default"
 	case SaveFavourite:
 		return "Couldn't save the favourite"
 	case RemoveFavourite:
@@ -1640,11 +1655,6 @@ func (a *app) handle(in gunim.Intent) {
 		}
 		a.nextShell = argv
 		err = a.open("", Placement{})
-	case ToggleShellSetup:
-		a.st.ShellSetup = !a.st.ShellSetup
-		if a.settings != nil {
-			err = a.settings.PutShellSetup(a.st.ShellSetup)
-		}
 	case SetPasteCheck:
 		a.st.PasteCheck = in.On
 		if a.settings != nil {
@@ -1667,6 +1677,14 @@ func (a *app) handle(in gunim.Intent) {
 		err = a.saveFound(in.Found)
 	case HideFound:
 		err = a.hideFound(in)
+	case ShowMachine:
+		err = a.showMachine(in.Machine)
+	case AddServer:
+		a.addServer()
+	case DraftTyped:
+		a.draftTyped[in.Pane] = in.Typed
+	case SetDefaultProfile:
+		err = a.setDefaultProfile(in)
 	case SaveFavourite:
 		err = a.saveFavourite(in)
 	case RemoveFavourite:
@@ -2084,7 +2102,7 @@ func (a *app) openThen(machine machines.ID, at Placement, then func(id string, e
 				then("", err)
 				return
 			}
-			a.teachFar(machine, sess, profile.Command)
+			a.teachFar(machine, sess, profile)
 			if profile.ID != "" {
 				a.farRuns[id] = profile.ID
 			}
@@ -2336,7 +2354,7 @@ const foldTime = 350 * time.Millisecond
 // gives its space to the other side, and the pane goes once it has.
 // The keyboard moves to the pane beside it at once.
 func (a *app) closePane(id string) {
-	if a.closing[id] || !a.has(id) || a.closeFilePane(id) {
+	if a.closing[id] || !a.has(id) || a.closeFilePane(id) || a.keepDraft(id) {
 		return
 	}
 	g, ok := a.groupOf[id]

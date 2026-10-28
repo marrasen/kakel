@@ -9,6 +9,23 @@ change how something behaves.
 
 ## Unreleased
 
+### Changed
+
+**Each machine's settings are a pane of its own.** A machine's card,
+Settings… on its menu, or Add Server… opens it: the machine at the top
+of a sidebar, its profiles under it, and what is picked on the right.
+A new server is a pane too, not a dialog, so its address can be copied
+from a terminal beside it; closed with something typed, it asks first.
+Settings › Profiles, Settings › Terminal's This computer section and
+the server dialog's Shell and Teach boxes are gone: all of it is in the
+pane.
+
+**Profiles are the terminals a machine opens.** A star marks the one
+New Terminal opens on each machine, this computer's start folder and
+shell moved into it. An eye hides a shell kakel found, which stays
+listed, faint, to show again. Whether a shell is taught to say what it
+is doing is ticked on each profile; the Shell Setup command is gone.
+
 ## v0.12.2-beta.5
 
 ### Added

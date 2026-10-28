@@ -7,7 +7,6 @@ import (
 
 	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/settings"
-	shellfind "github.com/marrasen/kakel/shells"
 )
 
 // Found profiles: the profiles kakel finds itself rather than the user
@@ -110,14 +109,7 @@ func (a *app) foundRun(argv []string) (folder string, env []string) {
 	if p, ok := a.profileOf(argv); ok {
 		return p.Folder, p.Env
 	}
-	id := a.ownShell
-	if len(argv) > 0 {
-		s, ok := shellfind.Running(a.detected, argv)
-		if !ok {
-			return "", nil
-		}
-		id = s.ID
-	}
+	id := a.shellFoundAs(argv)
 	if id == "" {
 		return "", nil
 	}

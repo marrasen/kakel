@@ -2,90 +2,12 @@ package view
 
 import (
 	"slices"
-	"strings"
-
-	"github.com/marrasen/gunim"
-	"github.com/marrasen/gunim/widget"
 
 	"github.com/marrasen/kakel/app"
 	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/remote"
 	"github.com/marrasen/kakel/settings"
-	"github.com/marrasen/kakel/words"
 )
-
-// profileDialog asks for a profile: a new one when old is nil, or old
-// to edit. have are the profiles there are, whose names its name must
-// not repeat on the same machine.
-func (w *Window) profileDialog(have []settings.Profile, old *settings.Profile, u *gunim.UI) {
-	name, line, dir := widget.NewTextField(), widget.NewTextField(), widget.NewTextField()
-	env := widget.NewTextArea()
-	env.Rows = 3
-	env.Placeholder = "NAME=value, one a line"
-	// The machine it runs on: this computer, or a saved server. A
-	// profile stays where it was made, as its program and folder are
-	// that machine's.
-	hosts, labels := []string{""}, []string{"This computer"}
-	for _, h := range w.saved {
-		if !h.Window {
-			hosts, labels = append(hosts, h.ID), append(labels, h.Name)
-		}
-	}
-	if old != nil && !slices.Contains(hosts, old.HostID) {
-		hosts, labels = append(hosts, old.HostID), append(labels, w.nameOf(machines.ID(old.HostID)))
-	}
-	machine := widget.NewDropdown(widget.Labels(labels...))
-	machine.Label = "Machine"
-	hostID := func() string { return hosts[max(0, min(machine.Selected(), len(hosts)-1))] }
-	placeholders := func() {
-		line.Placeholder, dir.Placeholder = `such as C:\msys64\usr\bin\bash.exe --login -i`, "Optional"
-		if hostID() != "" {
-			line.Placeholder = "such as tmux new -A -s main"
-		}
-	}
-	machine.OnChange = func(int, *gunim.UI) gunim.Intent { placeholders(); return nil }
-	id, title := "", "Add Profile"
-	if old != nil {
-		id, title = old.ID, "Edit Profile"
-		machine.SetSelected(slices.Index(hosts, old.HostID), nil)
-		machine.Disabled = true
-		name.SetText(old.Name, nil)
-		line.SetText(app.ProfileLine(*old), nil)
-		dir.SetText(old.Folder, nil)
-		env.SetText(strings.Join(old.Env, "\n"), nil)
-	}
-	placeholders()
-	have = slices.Clone(have)
-	parse := func() (settings.Profile, error) {
-		return app.ParseProfile(have, id, hostID(), name.Text(), line.Text(), dir.Text(), env.Text())
-	}
-	form := widget.NewForm()
-	if len(hosts) > 1 {
-		form.Add("Machine", machine)
-	}
-	d := widget.NewDialog(title)
-	d.Body = form.
-		Add("Name", name).
-		Add("Command line", line).
-		Add("Folder", dir).
-		Add("Environment", env)
-	d.SetButtons("Save", "Cancel")
-	d.Check = func() string {
-		if _, err := parse(); err != nil {
-			return words.UpperFirst(err.Error())
-		}
-		return ""
-	}
-	d.OnAccept = func(u *gunim.UI) gunim.Intent {
-		p, err := parse()
-		if err != nil {
-			return nil
-		}
-		return app.SaveProfile{Profile: p}
-	}
-	d.OnDismiss = widget.Sends(app.DialogClosed{})
-	w.openDialog(d, u)
-}
 
 // profilesOn are the profiles on the saved server m, the one its new
 // terminal runs first; none on this computer or a kakel window.

@@ -254,6 +254,7 @@ var kindIcons = map[string]*icon.Icon{
 	"served":      icon.ScreenShare,
 	"command":     icon.SquareChevronRight,
 	"terminal":    icon.SquareTerminal,
+	"machine":     icon.Settings,
 	"split":       icon.Columns2,
 	"servers":     icon.Server,
 	"settings":    icon.Settings,
@@ -405,7 +406,7 @@ func paneKindIcon(p app.Pane) string {
 		return "log"
 	case app.KindSecrets:
 		return "secrets"
-	case app.KindSettings:
+	case app.KindSettings, app.KindMachine:
 		return "settings"
 	case app.KindThemeEditor:
 		return "theme"

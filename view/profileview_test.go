@@ -1,238 +1,224 @@
 package view
 
 import (
-	"os"
-	"path/filepath"
 	"slices"
 	"testing"
-	"time"
 
+	"github.com/marrasen/gunim"
+	"github.com/marrasen/gunim/icon"
 	"github.com/marrasen/gunim/widget"
 
 	"github.com/marrasen/kakel/app"
+	"github.com/marrasen/kakel/look"
 	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/remote"
 	"github.com/marrasen/kakel/settings"
 )
 
-// gitBash is a profile whose program is in a folder with a space in
-// its name, as Git Bash is under Program Files, starting in a folder
-// of its own with two variables.
-func gitBash(t *testing.T) settings.Profile {
+// machinePaneOf opens the pane of machine m, or a draft one, in a
+// window with st, and is it.
+func machinePaneOf(t *testing.T, st app.State, m machines.ID, draft bool) (*Window, *machinePane, func(app.State)) {
 	t.Helper()
-	bin := filepath.Join(t.TempDir(), "Program Files")
-	if err := os.Mkdir(bin, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	bash := filepath.Join(bin, "bash.exe")
-	if err := os.WriteFile(bash, nil, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	return settings.Profile{
-		ID:      "profile:git-bash",
-		Name:    "Git Bash",
-		Command: []string{bash, "-i", "-l"},
-		Folder:  filepath.Clean(t.TempDir()),
-		Env:     []string{"FOO=bar", "GREETING=hello there"},
-	}
-}
-
-// profileFields are the profile dialog's name, command line and folder
-// fields, and its environment.
-func profileFields(t *testing.T, win *Window) (name, line, dir *widget.TextField, env *widget.TextArea) {
-	t.Helper()
-	var fields []*widget.TextField
-	for _, f := range formOf(win.dialog.Body).Children() {
-		switch f := f.(type) {
-		case *widget.TextField:
-			fields = append(fields, f)
-		case *widget.TextArea:
-			env = f
-		}
-	}
-	if len(fields) != 3 || env == nil {
-		t.Fatalf("the profile dialog has %d fields and environment %v", len(fields), env)
-	}
-	return fields[0], fields[1], fields[2], env
-}
-
-// A profile saved as it opened is the profile it was: the program's
-// path keeps its space, and the ID, the folder and the variables stay.
-func TestAProfileSavedAsItOpenedIsUnchanged(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(app.State{})
-	was := gitBash(t)
-	have := []settings.Profile{was}
-	win.profileDialog(have, &have[0], lastUI)
-	if msg := win.dialog.Check(); msg != "" {
-		t.Fatalf("the profile as it was is refused: %s", msg)
-	}
-	in, ok := win.dialog.OnAccept(lastUI).(app.SaveProfile)
-	if !ok || in.Profile.ID != was.ID || in.Profile.Name != was.Name || in.Profile.Folder != was.Folder ||
-		!slices.Equal(in.Profile.Command, was.Command) || !slices.Equal(in.Profile.Env, was.Env) {
-		t.Fatalf("saved untouched, the profile is %+v, want %+v", in.Profile, was)
-	}
-}
-
-// A new profile may not take the name of one there is, whatever its
-// case, and is saved with no ID for the program to give it one.
-func TestANewProfileTakesANameOfItsOwn(t *testing.T) {
-	win, _, publish := windowStage(t)
-	publish(app.State{})
-	have := gitBash(t)
-	win.profileDialog([]settings.Profile{have}, nil, lastUI)
-	name, line, _, _ := profileFields(t, win)
-	name.SetText("git bash", nil)
-	line.SetText(`"`+have.Command[0]+`" -i`, nil)
-	if msg := win.dialog.Check(); msg == "" {
-		t.Fatal("a second profile called Git Bash was taken")
-	}
-	name.SetText("Git Bash, login", nil)
-	if msg := win.dialog.Check(); msg != "" {
-		t.Fatalf("a profile with a name of its own is refused: %s", msg)
-	}
-	in, ok := win.dialog.OnAccept(lastUI).(app.SaveProfile)
-	if !ok || in.Profile.ID != "" || !slices.Equal(in.Profile.Command, []string{have.Command[0], "-i"}) {
-		t.Fatalf("the new profile saved is %+v", in.Profile)
-	}
-}
-
-// The Profiles page lists the shells found, the user's profiles and
-// each server's own shell and home, a hidden one marked; Remove
-// removes the profile the cursor is on, or hides one found, and Show
-// shows a hidden one again.
-func TestTheProfilesPageActsOnTheRowOfTheCursor(t *testing.T) {
-	win, _, publish := windowStage(t)
-	st := app.State{Panes: []app.Pane{{ID: "s", Title: "Settings", Kind: app.KindSettings}}, Stage: &app.Box{Pane: "s"}, Focus: "s"}
-	st.FoundShells = []app.ShellChoice{{ID: "cmd", Title: "Command Prompt"}}
-	st.Profiles = []settings.Profile{
-		{ID: "profile:git-bash", Name: "Git Bash", Command: []string{"bash.exe"}},
-		{ID: "profile:nu", Name: "Nushell", Command: []string{"nu.exe"}},
-	}
-	st.Saved = []remote.Host{{ID: "jump", Name: "jump", Address: "192.0.2.1"}}
-	st.Found = []settings.FoundProfile{{HostID: "jump", ID: app.LoginShell, Hidden: true}}
+	st.Panes = append(st.Panes, app.Pane{ID: "mp", Title: "machine", Kind: app.KindMachine, Machine: m, Draft: draft})
+	st.Stage, st.Focus = &app.Box{Pane: "mp"}, "mp"
 	publish(st)
-	p := win.settings
-	if p == nil {
-		t.Fatal("no Settings pane")
+	mp := win.machinePanes["mp"]
+	if mp == nil {
+		t.Fatal("no machine pane")
 	}
-	pp := p.profilesPage
-	var names []string
-	for _, k := range pp.keys {
-		names = append(names, pp.table.Row(k).Cells[0])
-	}
-	want := []string{"Command Prompt", "Git Bash", "Nushell", "Home", "Login Shell (hidden)", "Home"}
-	if !slices.Equal(names, want) {
-		t.Fatalf("the Profiles page lists %q, want %q", names, want)
+	again := func(next app.State) {
+		next.Panes, next.Stage, next.Focus = st.Panes, st.Stage, st.Focus
+		publish(next)
 	}
 	for len(lastWindow.Client().Intents()) > 0 {
 		<-lastWindow.Client().Intents()
 	}
-	click := func(row int, b *widget.Button) {
-		pp.table.SetCursor(pp.keys[row], lastUI)
-		b.OnClick(lastUI)
-		lastWindow.Frame(time.Second / 60)
+	return win, mp, again
+}
+
+// titlesOf are the titles of the machine pane's rows.
+func titlesOf(mp *machinePane) []string {
+	var out []string
+	for _, it := range mp.items {
+		out = append(out, it.title)
 	}
-	click(2, pp.drop)
-	if in, ok := nextIntent(t).(app.RemoveProfile); !ok || in.ID != "profile:nu" {
-		t.Fatalf("Remove on Nushell sent %#v", in)
+	return out
+}
+
+// rowOf is the machine pane's sidebar row with key k.
+func rowOf(t *testing.T, mp *machinePane, k string) *mpRow {
+	t.Helper()
+	r, ok := widget.RowOf[*mpRow](mp.list, widget.Key(k))
+	if !ok {
+		t.Fatalf("no row %q among %q", k, titlesOf(mp))
 	}
-	click(0, pp.drop)
-	if in, ok := nextIntent(t).(app.HideFound); !ok || in.ID != "cmd" || in.HostID != "" || in.Show {
-		t.Fatalf("Remove on Command Prompt sent %#v, not to hide it", in)
+	return r
+}
+
+// This computer's pane lists the machine, then its profiles: the shells
+// found and those made here, the default first, none of a server's. The
+// star makes one the default, the eye hides or shows one found, and a
+// hidden one stays listed, faint.
+func TestThisComputersPaneListsItsProfiles(t *testing.T) {
+	st := app.State{
+		FoundShells:  []app.ShellChoice{{ID: "cmd", Title: "Command Prompt"}, {ID: "pwsh", Title: "PowerShell"}},
+		DefaultShell: "pwsh",
+		Profiles: []settings.Profile{
+			{ID: "profile:nu", Name: "Nushell", Command: []string{"nu"}},
+			{ID: "profile:tmux", HostID: "s1", Name: "tmux", Command: []string{"tmux"}},
+		},
+		Found: []settings.FoundProfile{{ID: "cmd", Hidden: true}},
+		Saved: []remote.Host{{ID: "s1", Name: "prod", Address: "prod.example"}},
 	}
-	click(4, pp.hide)
-	if in, ok := nextIntent(t).(app.HideFound); !ok || in.ID != app.LoginShell || in.HostID != "jump" || !in.Show {
-		t.Fatalf("Show on the hidden login shell sent %#v", in)
+	_, mp, _ := machinePaneOf(t, st, "", false)
+	want := []string{"This computer", "Profiles", "PowerShell", "Command Prompt", "Nushell", "Add Profile"}
+	if got := titlesOf(mp); !slices.Equal(got, want) {
+		t.Fatalf("the rows are %q, want %q", got, want)
+	}
+	cmd := rowOf(t, mp, mpProfile+"cmd")
+	if cmd.title.Color.Key() != look.Faint.Key() || cmd.eye.Icon != icon.EyeOff {
+		t.Fatal("hidden, Command Prompt's row is not faint with its eye shut")
+	}
+	if in, ok := cmd.eye.OnClick(lastUI).(app.HideFound); !ok || in.ID != "cmd" || !in.Show {
+		t.Fatalf("the eye on hidden Command Prompt sent %#v", in)
+	}
+	if in := rowOf(t, mp, mpProfile+"profile:nu").star.OnClick(lastUI); in != (app.SetDefaultProfile{ID: "profile:nu"}) {
+		t.Fatalf("Nushell's star sends %#v", in)
+	}
+	if r := rowOf(t, mp, mpProfile+"profile:nu"); slices.Contains(r.inner.Children(), gunim.Node(r.eye)) {
+		t.Fatal("a profile made here has an eye")
 	}
 }
 
-// dropdownIn is the drop-down labelled label in the open dialog's form,
-// or nil.
-func dropdownIn(win *Window, label string) *widget.Dropdown {
-	for _, f := range formOf(win.dialog.Body).Children() {
-		if d, ok := f.(*widget.Dropdown); ok && d.Label == label {
-			return d
-		}
+// A profile picked shows its settings: saved untouched, it is the
+// profile it was, its own shell tick left unset; with the tick changed,
+// that is kept.
+func TestAProfileSavedFromItsPaneIsAsItWas(t *testing.T) {
+	nu := settings.Profile{ID: "profile:nu", Name: "Nushell", Command: []string{"sh", "-l"}, Env: []string{"FOO=bar"}}
+	_, mp, _ := machinePaneOf(t, app.State{Profiles: []settings.Profile{nu}, ShellSetup: true}, "", false)
+	mp.pick(mpProfile+nu.ID, lastUI)
+	save, teach := findButton(t, mp.right, "Save"), findCheckbox(t, mp.right)
+	in, ok := save.OnClick(lastUI).(app.SaveProfile)
+	if !ok || in.Profile.ID != nu.ID || in.Profile.Name != nu.Name || !slices.Equal(in.Profile.Command, nu.Command) ||
+		!slices.Equal(in.Profile.Env, nu.Env) || in.Profile.Setup != nil {
+		t.Fatalf("saved untouched, the profile is %+v", in.Profile)
 	}
-	return nil
+	teach.SetChecked(false, lastUI)
+	if in, _ := save.OnClick(lastUI).(app.SaveProfile); in.Profile.Setup == nil || *in.Profile.Setup {
+		t.Fatalf("with its tick off, the profile is %+v", in.Profile)
+	}
 }
 
-// A profile made for a saved server is that server's: its program is
-// not looked for here, and its folder is a path there. A kakel window
-// takes no profile. Edited, a profile stays on its machine.
-func TestAProfileIsMadeOnTheMachineChosen(t *testing.T) {
-	win, _, publish := windowStage(t)
-	publish(app.State{Saved: []remote.Host{{ID: "s1", Name: "prod", Address: "prod.example"}, {ID: "w1", Name: "desk", Address: "desk.example", Window: true}},
-		Machines: []machines.Info{{ID: "s1", Name: "prod"}, {ID: "w1", Name: "desk", Window: true}}})
-	win.profileDialog(nil, nil, lastUI)
-	machine := dropdownIn(win, "Machine")
-	if machine == nil || len(machine.Items()) != 2 || machine.Items()[1].Label != "prod" {
-		t.Fatalf("the Machine drop-down is %+v", machine)
+// A server's pane lists its own shell first, then its profiles; one
+// added there is the server's, its folder a path there.
+func TestAProfileIsAddedOnItsServer(t *testing.T) {
+	st := app.State{Saved: []remote.Host{{ID: "s1", Name: "prod", Address: "prod.example"}},
+		Profiles:     []settings.Profile{{ID: "profile:htop", HostID: "s1", Name: "htop", Command: []string{"htop"}}},
+		ServerShells: map[string]string{"s1": "profile:htop"}}
+	_, mp, _ := machinePaneOf(t, st, "s1", false)
+	if got, want := titlesOf(mp), []string{"prod", "Profiles", "htop", "Login Shell", "Add Profile"}; !slices.Equal(got, want) {
+		t.Fatalf("the rows are %q, want %q", got, want)
 	}
-	machine.SetSelected(1, nil)
-	name, line, dir, env := profileFields(t, win)
+	mp.pick(mpAdd, lastUI)
+	fields := fieldsIn(mp.right)
+	if len(fields) < 3 {
+		t.Fatalf("adding, the fields are %d", len(fields))
+	}
+	name, line, dir := fields[0], fields[1], fields[2]
 	name.SetText("tmux", nil)
 	line.SetText("kakel-test-not-here new -A -s main", nil)
 	dir.SetText("src", nil)
-	if msg := win.dialog.Check(); msg == "" {
+	save := findButton(t, mp.right, "Save")
+	if _, ok := save.OnClick(lastUI).(app.SaveProfile); ok {
 		t.Fatal("a folder on a server not from / or ~ was taken")
 	}
 	dir.SetText("~/src", nil)
-	env.SetText("FOO=bar", nil)
-	if msg := win.dialog.Check(); msg != "" {
-		t.Fatalf("a profile on prod is refused: %s", msg)
-	}
-	in, ok := win.dialog.OnAccept(lastUI).(app.SaveProfile)
+	in, ok := save.OnClick(lastUI).(app.SaveProfile)
 	if !ok || in.Profile.HostID != "s1" || in.Profile.Folder != "~/src" || in.Profile.Command[0] != "kakel-test-not-here" {
 		t.Fatalf("the profile saved is %+v", in.Profile)
 	}
-	have := []settings.Profile{{ID: "profile:tmux", HostID: "s1", Name: "tmux", Command: []string{"tmux"}}}
-	win.profileDialog(have, &have[0], lastUI)
-	if machine := dropdownIn(win, "Machine"); machine == nil || !machine.Disabled || machine.Selected() != 1 {
-		t.Fatalf("editing a profile on prod, the Machine drop-down is %+v", machine)
+}
+
+// A kakel window's pane has its settings and no profiles; a new
+// server's has its settings alone, says what is typed, and is saved
+// from the pane it was typed in.
+func TestANewServersPaneSavesIntoItself(t *testing.T) {
+	_, mp, _ := machinePaneOf(t, app.State{Saved: []remote.Host{{ID: "w1", Name: "desk", Address: "desk.example", Window: true}}}, "w1", false)
+	if got := titlesOf(mp); !slices.Equal(got, []string{"desk"}) {
+		t.Fatalf("a window's rows are %q", got)
 	}
-	if in, ok := win.dialog.OnAccept(lastUI).(app.SaveProfile); !ok || in.Profile.HostID != "s1" {
-		t.Fatalf("saved untouched, the profile is %+v", in.Profile)
+	_, mp, _ = machinePaneOf(t, app.State{}, "", true)
+	if got := titlesOf(mp); !slices.Equal(got, []string{"New server"}) {
+		t.Fatalf("a new server's rows are %q", got)
+	}
+	fields := fieldsIn(mp.right)
+	fields[0].SetText("box", nil)
+	fields[0].OnChange("box", lastUI)
+	if in, ok := nextIntent(t).(app.DraftTyped); !ok || in.Pane != "mp" || !in.Typed {
+		t.Fatalf("typing a name sent %#v", in)
+	}
+	fields[1].SetText("box.example", nil)
+	in, ok := findButton(t, mp.right, "Save").OnClick(lastUI).(app.SaveServer)
+	if !ok || in.Pane != "mp" || in.Host.Name != "box" || in.Host.Address != "box.example" || in.Connect {
+		t.Fatalf("Save sent %#v", in)
+	}
+	if in, _ := findButton(t, mp.right, "Save and Connect").OnClick(lastUI).(app.SaveServer); !in.Connect {
+		t.Fatalf("Save and Connect sent %#v", in)
 	}
 }
 
-// A server's dialog offers its profiles as the shell its new terminal
-// runs, the one it runs chosen, and sends the one chosen. A server with
-// no profiles has nothing to choose, and a window runs no shell of its
-// own.
-func TestTheServerDialogChoosesTheShellItsNewTerminalRuns(t *testing.T) {
-	win, _, publish := windowStage(t)
-	prod := remote.Host{ID: "s1", Name: "prod", Address: "prod.example"}
-	bare := remote.Host{ID: "s2", Name: "bare", Address: "bare.example"}
-	desk := remote.Host{ID: "w1", Name: "desk", Address: "desk.example", Window: true}
-	publish(app.State{Saved: []remote.Host{prod, bare, desk},
-		Profiles: []settings.Profile{
-			{ID: "profile:git-bash", Name: "Git Bash", Command: []string{"bash.exe"}},
-			{ID: "profile:tmux", HostID: "s1", Name: "tmux", Command: []string{"tmux"}},
-			{ID: "profile:htop", HostID: "s1", Name: "htop", Command: []string{"htop"}},
-			{ID: "profile:old", HostID: "w1", Name: "old", Command: []string{"old"}},
-		},
-		ServerShells: map[string]string{"s1": "profile:htop"}})
-	win.serverForm(&prod, lastUI)
-	shell := dropdownIn(win, "Shell")
-	if shell == nil || shell.Disabled || shell.Selected() != 2 {
-		t.Fatalf("prod's Shell drop-down is %+v", shell)
+// findButton is the button labelled label under n.
+func findButton(t *testing.T, n gunim.Node, label string) *widget.Button {
+	t.Helper()
+	var found *widget.Button
+	walkNodes(n, func(n gunim.Node) {
+		if b, ok := n.(*widget.Button); ok && b.Label == label && found == nil {
+			found = b
+		}
+	})
+	if found == nil {
+		t.Fatalf("no button %q", label)
 	}
-	if in, ok := win.dialog.OnAccept(lastUI).(app.SaveServer); !ok || in.Shell != "profile:htop" {
-		t.Fatalf("saved untouched, prod's shell is %q", in.Shell)
+	return found
+}
+
+// findCheckbox is the first tick box under n.
+func findCheckbox(t *testing.T, n gunim.Node) *widget.Checkbox {
+	t.Helper()
+	var found *widget.Checkbox
+	walkNodes(n, func(n gunim.Node) {
+		if c, ok := n.(*widget.Checkbox); ok && found == nil {
+			found = c
+		}
+	})
+	if found == nil {
+		t.Fatal("no tick box")
 	}
-	shell.SetSelected(0, nil)
-	if in, ok := win.dialog.OnAccept(lastUI).(app.SaveServer); !ok || in.Shell != "" {
-		t.Fatalf("with the login shell chosen, prod's shell is %q", in.Shell)
+	return found
+}
+
+// fieldsIn are the text fields under n, in order.
+func fieldsIn(n gunim.Node) []*widget.TextField {
+	var out []*widget.TextField
+	walkNodes(n, func(n gunim.Node) {
+		if f, ok := n.(*widget.TextField); ok {
+			out = append(out, f)
+		}
+	})
+	return out
+}
+
+// walkNodes calls do with n and every node under it.
+func walkNodes(n gunim.Node, do func(gunim.Node)) {
+	if n == nil {
+		return
 	}
-	win.serverForm(&bare, lastUI)
-	if shell := dropdownIn(win, "Shell"); shell != nil {
-		t.Fatal("a server with no profiles offers a shell")
-	}
-	win.serverForm(&desk, lastUI)
-	if shell := dropdownIn(win, "Shell"); shell == nil || !shell.Disabled {
-		t.Fatalf("a window's Shell drop-down is %+v", shell)
+	do(n)
+	if c, ok := n.(gunim.Composite); ok {
+		for _, k := range c.Children() {
+			walkNodes(k, do)
+		}
 	}
 }
 
@@ -249,7 +235,7 @@ func TestAServersProfilesOpenFromThePalette(t *testing.T) {
 		},
 		ServerShells: map[string]string{"s1": "profile:htop"}})
 	at := slices.Index(win.paletteIDs, "machine:s1")
-	if at < 0 || !slices.Equal(win.palette.Items[at].Chips, []string{"Terminal", "htop", "tmux", "Files", "Connect", "Edit", "Remove"}) {
+	if at < 0 || !slices.Equal(win.palette.Items[at].Chips, []string{"Terminal", "htop", "tmux", "Files", "Connect", "Settings", "Remove"}) {
 		t.Fatalf("prod's line is %+v", win.palette.Items[max(at, 0)])
 	}
 	line := slices.IndexFunc(win.palette.Items, func(it widget.PaletteItem) bool { return it.Title == "tmux" })

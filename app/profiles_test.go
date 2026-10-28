@@ -642,9 +642,11 @@ func TestAServerProfileRunningAnUnknownProgramIsNotTaught(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.st.Saved = a.book.Hosts()
+	off := false
 	a.st.Profiles = []settings.Profile{
 		{ID: "profile:htop", HostID: "srv", Command: []string{"htop"}},
 		{ID: "profile:bash", HostID: "srv", Command: []string{"bash", "-l"}},
+		{ID: "profile:zsh", HostID: "srv", Command: []string{"zsh"}, Setup: &off},
 	}
 	for _, c := range []struct {
 		run    string
@@ -654,10 +656,12 @@ func TestAServerProfileRunningAnUnknownProgramIsNotTaught(t *testing.T) {
 		{"", true, shellsetup.Posix},
 		{"profile:bash", true, shellsetup.Posix},
 		{"profile:htop", false, shellsetup.NoRoute},
+		// A profile's own tick says no, though its server says yes.
+		{"profile:zsh", false, shellsetup.Posix},
 	} {
 		profile, _ := a.farProfile("srv", c.run)
 		sess := sessiontest.New()
-		a.teachFar("srv", sess, profile.Command)
+		a.teachFar("srv", sess, profile)
 		if taught := sess.Sent() != ""; taught != c.taught {
 			t.Errorf("running %q, the shell is taught: %v", c.run, taught)
 		}

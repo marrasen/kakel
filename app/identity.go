@@ -10,6 +10,7 @@ import (
 
 	"github.com/marrasen/kakel/internal/build"
 	"github.com/marrasen/kakel/session"
+	"github.com/marrasen/kakel/settings"
 	shellfind "github.com/marrasen/kakel/shells"
 	"github.com/marrasen/kakel/shellsetup"
 )
@@ -21,8 +22,6 @@ import (
 
 // Intents for the shell's start.
 type (
-	// ToggleShellSetup turns the teaching of new shells here on or off.
-	ToggleShellSetup struct{}
 	// SetTermProgram sets what new shells here are told the terminal
 	// is called, "" for kakel's own name.
 	SetTermProgram struct{ Called string }
@@ -68,29 +67,34 @@ func (a *app) startLocalSession(argv []string, dir string, cols, rows int, shell
 // teaches reports whether a shell started with argv is taught to say
 // what it is doing: with Shell Setup on, unless it is a profile's
 // program the teaching is not written for.
+//
+// A profile may say otherwise than Shell Setup, as may a shell found
+// here.
 func (a *app) teaches(argv []string) bool {
-	if !a.st.ShellSetup {
-		return false
+	on := a.st.ShellSetup
+	p, isProfile := a.profileOf(argv)
+	set := p.Setup
+	if !isProfile {
+		if id := a.shellFoundAs(argv); id != "" {
+			set = a.foundEdit("", id).Setup
+		}
 	}
-	_, isProfile := a.profileOf(argv)
-	return !isProfile || shellsetup.Knows(argv)
+	if set != nil {
+		on = *set
+	}
+	return on && (!isProfile || shellsetup.Knows(argv))
 }
 
 // teachFar teaches a server's shell to say what it is doing, when its
-// saved server says to. argv is the command of the profile it runs,
-// nil for the account's own shell, and a profile's program the lines
-// are not written for is left alone.
-func (a *app) teachFar(machine machines.ID, sess session.Session, argv []string) {
-	if len(argv) > 0 && !shellsetup.Knows(argv) {
+// profile, or else its saved server, says to. p is the profile it runs,
+// empty for the account's own shell (see teachesFar).
+func (a *app) teachFar(machine machines.ID, sess session.Session, p settings.Profile) {
+	if !a.teachesFar(machine, p) {
 		return
 	}
-	for _, h := range a.st.Saved {
-		if machines.ID(h.ID) == machine && h.Setup {
-			if typed := shellsetup.Typed(shellsetup.RouteFor(argv)); len(typed) > 0 {
-				if _, err := sess.Write(typed); err != nil {
-					a.failed("Couldn't set up the shell on "+a.machines.Name(machine), err.Error())
-				}
-			}
+	if typed := shellsetup.Typed(shellsetup.RouteFor(p.Command)); len(typed) > 0 {
+		if _, err := sess.Write(typed); err != nil {
+			a.failed("Couldn't set up the shell on "+a.machines.Name(machine), err.Error())
 		}
 	}
 }

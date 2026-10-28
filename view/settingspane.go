@@ -52,7 +52,6 @@ var settingsTabs = []struct {
 	{"General", icon.Settings},
 	{"Appearance", icon.Palette},
 	{"Terminal", icon.SquareTerminal},
-	{"Profiles", icon.Layers},
 	{"Notifications", icon.Bell},
 	{"Sharing", icon.Share2},
 	{"Files", icon.Folder},
@@ -95,19 +94,11 @@ type settingsPane struct {
 	size        *widget.NumberField
 
 	// Terminal.
-	startIn, termProgram *savedLine
+	termProgram *savedLine
 	// proxy is the HTTP proxy relays are reached through.
 	proxy      *savedLine
-	shell      *widget.Dropdown
-	shellIDs   []string
 	known      *widget.Dropdown
 	pasteCheck *widget.Switch
-	// shellTitles are shell's items beside shellIDs: a renamed profile
-	// changes them while its ID stays.
-	shellTitles []string
-
-	// Profiles.
-	profilesPage *profilesPage
 
 	// Notifications.
 	iface         *widget.Checkbox
@@ -129,7 +120,7 @@ type settingsPane struct {
 
 func newSettingsPane(w *Window) *settingsPane {
 	p := &settingsPane{w: w}
-	pages := []gunim.Node{p.general(), p.appearance(), p.terminal(), p.profilesTab(), p.notifications(), p.sharing(), p.files()}
+	pages := []gunim.Node{p.general(), p.appearance(), p.terminal(), p.notifications(), p.sharing(), p.files()}
 	titles := make([]string, len(settingsTabs))
 	icons := make([]*icon.Icon, len(settingsTabs))
 	for i, t := range settingsTabs {
@@ -377,25 +368,6 @@ func (p *settingsPane) appearance() gunim.Node {
 }
 
 func (p *settingsPane) terminal() gunim.Node {
-	p.startIn = p.newSavedLine("your home folder", 280, func(s string) string {
-		if s == "" {
-			return ""
-		}
-		if _, err := app.FolderHere(s); err != nil {
-			return words.UpperFirst(err.Error()) + "."
-		}
-		return ""
-	}, func(s string) gunim.Intent {
-		return app.SaveThisComputer{StartFolder: s, Shell: p.st.ChosenShell}
-	})
-	p.shell = widget.NewDropdown(widget.Labels("Your default shell"))
-	p.shell.Label = "Shell"
-	p.shell.OnChange = func(i int, u *gunim.UI) gunim.Intent {
-		if i < len(p.shellIDs) {
-			p.send(app.SaveThisComputer{StartFolder: p.st.ThisComputer.StartFolder, Shell: p.shellIDs[i]}, u)
-		}
-		return nil
-	}
 	p.termProgram = p.newSavedLine("kakel", 180, nil, func(s string) gunim.Intent { return app.SetTermProgram{Called: s} })
 	p.known = widget.NewDropdown(widget.Labels(append([]string{"kakel"}, app.KnownTerminals...)...))
 	p.known.Label = "Known terminals"
@@ -413,9 +385,6 @@ func (p *settingsPane) terminal() gunim.Node {
 	p.pasteCheck = widget.NewSwitch("")
 	p.pasteCheck.OnChange = func(on bool, u *gunim.UI) gunim.Intent { p.send(app.SetPasteCheck{On: on}, u); return nil }
 	return settingsPage(
-		settingsSection("This computer",
-			settingRow("Start in", "New terminals start here, unless kakel was started in a folder of its own, or they open from a terminal in another.", p.startIn.node),
-			settingRow("Shell", "What a new terminal here runs. Add, rename or hide shells under Profiles.", p.shell)),
 		settingsSection("Terminal identity",
 			settingRow("TERM_PROGRAM", "What programs are told the terminal is called. Blank says kakel. Another name can turn on features such as images, and can bring sequences that show as text. For new panes.", p.termProgram.node),
 			settingRow("Known terminals", "", p.known)),
@@ -621,21 +590,9 @@ func (p *settingsPane) show(st app.State, u *gunim.UI) {
 		p.size.SetValue(float64(st.FontSize), u)
 	}
 	// Terminal.
-	p.startIn.show(st.ThisComputer.StartFolder, u)
-	titles, ids := []string{"Your default shell"}, []string{""}
-	for _, sh := range st.Shells {
-		titles, ids = append(titles, sh.Title), append(ids, sh.ID)
-	}
-	if !slices.Equal(ids, p.shellIDs) || !slices.Equal(titles, p.shellTitles) {
-		p.shellIDs, p.shellTitles = ids, titles
-		p.shell.SetItems(widget.Labels(titles...))
-	}
-	p.shell.SetSelected(max(slices.Index(p.shellIDs, st.ChosenShell), 0), nil)
 	p.termProgram.show(st.TermProgram, u)
 	p.proxy.show(st.Serving.Proxy, u)
 	setOn(p.pasteCheck, st.PasteCheck)
-	// Profiles.
-	p.profilesPage.show(st, u)
 	p.known.SetSelected(0, nil)
 	if i := slices.Index(app.KnownTerminals, st.TermProgram); i >= 0 {
 		p.known.SetSelected(i+1, nil)

@@ -114,7 +114,7 @@ func (a *app) allPanes() []Pane {
 
 // isToolKind reports whether a pane of kind is a tool pane.
 func isToolKind(kind string) bool {
-	return kind == KindServers || kind == KindSecrets || kind == KindSettings || kind == KindThemeEditor
+	return kind == KindServers || kind == KindSecrets || kind == KindSettings || kind == KindThemeEditor || kind == KindMachine
 }
 
 // isTool reports whether w holds tool panes and nothing else.

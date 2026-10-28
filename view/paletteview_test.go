@@ -121,13 +121,13 @@ func TestThePaletteHasAMachineALineWithChips(t *testing.T) {
 		return found[0].Index
 	}
 	sky := best("skylake")
-	if it := win.palette.Items[sky]; it.Title != "skylake" || !slices.Equal(it.Chips, []string{"Terminal", "Files", "Connection Log", "Edit", "Remove"}) || it.Detail != "connected" {
+	if it := win.palette.Items[sky]; it.Title != "skylake" || !slices.Equal(it.Chips, []string{"Terminal", "Files", "Connection Log", "Settings", "Remove"}) || it.Detail != "connected" {
 		t.Fatalf("skylake finds %q with chips %q", it.Title, it.Chips)
 	}
 	if it := win.palette.Items[best("10.0.0.5")]; it.Title != "skylake" {
 		t.Fatalf("skylake's address finds %q", it.Title)
 	}
-	if it := win.palette.Items[best("backup")]; !slices.Equal(it.Chips, []string{"Terminal", "Files", "Connect", "Edit", "Remove"}) {
+	if it := win.palette.Items[best("backup")]; !slices.Equal(it.Chips, []string{"Terminal", "Files", "Connect", "Settings", "Remove"}) {
 		t.Fatalf("backup, not connected to, has chips %q", it.Chips)
 	}
 	here := slices.IndexFunc(win.palette.Items, func(it widget.PaletteItem) bool { return it.Title == "This computer" })
