@@ -243,3 +243,20 @@ func (a *app) settingsFavs() []settings.Favourite {
 	kept, _ := a.settings.Favourites()
 	return kept
 }
+
+// A command or a tunnel kept is taken off the list from its pane.
+func TestAKeptCommandOrTunnelIsForgotten(t *testing.T) {
+	a := fontApp(t)
+	tun := settings.SavedTunnel{Host: "srv", HostID: "srv", Kind: "local", Listen: "localhost:5432", Target: "db:5432"}
+	if err := a.settings.KeepCommand(settings.SavedCommand{Line: "make test"}, 10); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.settings.KeepTunnel(tun, 10); err != nil {
+		t.Fatal(err)
+	}
+	a.handle(ForgetCommand{Saved: settings.SavedCommand{Line: "make test"}})
+	a.handle(ForgetTunnel{Saved: tun})
+	if len(a.settings.Commands()) != 0 || len(a.settings.Tunnels()) != 0 || len(a.st.Notices) != 0 {
+		t.Fatalf("forgotten, kept are %+v and %+v; notices %+v", a.settings.Commands(), a.settings.Tunnels(), a.st.Notices)
+	}
+}

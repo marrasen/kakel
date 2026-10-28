@@ -43,6 +43,8 @@ const (
 	// mpFolder starts a folder's key: a found one's ID, or a
 	// favourite's path.
 	mpFolder = "folder:"
+	// mpSaved starts the key of a command, copy or tunnel kept.
+	mpSaved = "saved:"
 )
 
 // The room of a machine pane: round its sidebar, round the rest, between
@@ -60,9 +62,19 @@ type mpItem struct {
 	key, title string
 	icon       *icon.Icon
 	heading    bool
-	// profile is what a profile row is about, and folder a folder's.
+	// profile is what a profile row is about, and folder a folder's;
+	// saved is a command, copy or tunnel kept for next time.
 	profile mpProfileOf
 	folder  mpFolderOf
+	saved   *mpSavedOf
+}
+
+// mpSavedOf is something the machine keeps for next time: a command, a
+// copy or a tunnel, one of them set.
+type mpSavedOf struct {
+	command *settings.SavedCommand
+	copy    *settings.SavedCopy
+	tunnel  *settings.SavedTunnel
 }
 
 // mpFolderOf is a folder as a machine pane's Files list it: a favourite
@@ -239,6 +251,8 @@ func (mp *machinePane) refresh(u *gunim.UI) {
 		mp.right.set(mp.folderSide(mpFolderOf{}, true), u)
 	case strings.HasPrefix(mp.sel, mpFolder):
 		mp.right.set(mp.folderSide(it.folder, false), u)
+	case it.saved != nil:
+		mp.right.set(mp.savedSide(*it.saved), u)
 	default:
 		mp.right.set(mp.profileSide(it.profile, false, u), u)
 	}
@@ -357,7 +371,103 @@ func (mp *machinePane) rows() []mpItem {
 		out = append(out, mpItem{key: mpProfile + p.id, title: p.title(), icon: icon.SquareTerminal, profile: p})
 	}
 	out = append(out, mpItem{key: mpAdd, title: "Add Profile", icon: icon.Plus})
-	return append(out, mp.folderRows()...)
+	out = append(out, mp.folderRows()...)
+	return append(out, mp.savedRows()...)
+}
+
+// savedRows are what the machine keeps for next time, each kind under
+// its heading when it has any: the commands run on it, the copies to or
+// from it, and the tunnels through it.
+func (mp *machinePane) savedRows() []mpItem {
+	st, m := mp.st, mp.machine
+	var cmds, copies, tunnels []mpItem
+	for i, c := range st.SavedCommands {
+		if machines.ID(c.HostID) == m && (m != "" || c.Host == "") {
+			cmds = append(cmds, mpItem{key: mpSaved + fmt.Sprintf("cmd:%+v", c), title: c.Line, icon: icon.SquareChevronRight,
+				saved: &mpSavedOf{command: &st.SavedCommands[i]}})
+		}
+	}
+	end := func(id, name, window string) bool {
+		if m == "" {
+			return id == "" && name == "" && window == ""
+		}
+		return machines.ID(id) == m
+	}
+	for i, c := range st.SavedCopies {
+		if end(c.FromID, c.From, c.FromWindow) || end(c.ToID, c.To, c.ToWindow) {
+			copies = append(copies, mpItem{key: mpSaved + fmt.Sprintf("copy:%+v", c), title: "Copy " + app.CopiedWhat(c), icon: icon.Copy,
+				saved: &mpSavedOf{copy: &st.SavedCopies[i]}})
+		}
+	}
+	for i, t := range st.SavedTunnels {
+		if m != "" && machines.ID(t.HostID) == m {
+			tunnels = append(tunnels, mpItem{key: mpSaved + fmt.Sprintf("tunnel:%+v", t), title: tunnelTitle(t), icon: icon.Cable,
+				saved: &mpSavedOf{tunnel: &st.SavedTunnels[i]}})
+		}
+	}
+	var out []mpItem
+	for _, sec := range []struct {
+		title string
+		rows  []mpItem
+	}{{"Commands", cmds}, {"Copies", copies}, {"Tunnels", tunnels}} {
+		if len(sec.rows) > 0 {
+			out = append(out, mpItem{key: "head:" + sec.title, title: sec.title, heading: true})
+			out = append(out, sec.rows...)
+		}
+	}
+	return out
+}
+
+// tunnelTitle is what a saved tunnel's row says: where it goes.
+func tunnelTitle(t settings.SavedTunnel) string {
+	if t.Target == "" {
+		return "SOCKS proxy on " + t.Listen
+	}
+	return t.Listen + " → " + t.Target
+}
+
+// savedSide is the right side for something kept: what it is, and the
+// buttons that run it again or take it off the list.
+func (mp *machinePane) savedSide(s mpSavedOf) gunim.Node {
+	form := widget.NewForm()
+	run, remove := widget.NewButton("Run"), widget.NewButton("Remove…")
+	run.Kind = widget.ButtonPrimary
+	var title, note string
+	switch {
+	case s.command != nil:
+		c := *s.command
+		title, note = c.Line, "A command kept from Run Command. It runs in a pane of its own."
+		form.Add("Command line", widget.NewLabel(c.Line))
+		if c.Dir != "" {
+			form.Add("Folder", widget.NewLabel(c.Dir))
+		}
+		run.OnClick = func(*gunim.UI) gunim.Intent { return app.RunSavedCommand{Saved: c} }
+	case s.copy != nil:
+		c := *s.copy
+		title, note = "Copy "+app.CopiedWhat(c), "A copy kept from the file manager, to run again."
+		form.Add("Copies", widget.NewLabel(strings.Join(c.Names, ", ")))
+		form.Add("From and to", widget.NewLabel(app.CopiedWhere(c, mp.w.nameOf)))
+		run.OnClick = func(*gunim.UI) gunim.Intent { return app.RunSavedCopy{Saved: c} }
+	case s.tunnel != nil:
+		t := *s.tunnel
+		title, note = tunnelTitle(t), "A tunnel kept, to open again."
+		run.Label = "Open"
+		kind := map[string]string{"local": "A port here, reaching through the server", "remote": "A port on the server, reaching back here",
+			"socks": "A SOCKS proxy here, through the server"}[t.Kind]
+		if kind == "" {
+			kind = t.Kind
+		}
+		form.Add("Kind", widget.NewLabel(kind))
+		form.Add("Listens on", widget.NewLabel(t.Listen))
+		if t.Target != "" {
+			form.Add("Reaches", widget.NewLabel(t.Target))
+		}
+		run.OnClick = func(*gunim.UI) gunim.Intent { return app.OpenSavedTunnel{Saved: t} }
+	}
+	remove.OnClick = func(u *gunim.UI) gunim.Intent { mp.confirmForget(s, u); return nil }
+	col := widget.Column(heading(title), faintLabel(note), widget.NewCard(form), buttons(run, remove))
+	col.Cross, col.Gap = widget.CrossStretch, mpGap
+	return widget.NewSized(col, 640, 0)
 }
 
 // folderRows are the Files section's rows: the home folder and, here,
@@ -732,6 +842,29 @@ func savedPath(m machines.ID, path string) string {
 	return path
 }
 
+// confirmForget asks before taking s off the list kept for next time.
+func (mp *machinePane) confirmForget(s mpSavedOf, u *gunim.UI) {
+	var title string
+	var forget gunim.Intent
+	switch {
+	case s.command != nil:
+		title, forget = s.command.Line, app.ForgetCommand{Saved: *s.command}
+	case s.copy != nil:
+		title, forget = "Copy "+app.CopiedWhat(*s.copy), app.ForgetCopy{Saved: *s.copy}
+	case s.tunnel != nil:
+		title, forget = tunnelTitle(*s.tunnel), app.ForgetTunnel{Saved: *s.tunnel}
+	default:
+		return
+	}
+	d := widget.NewDialog("Remove " + title + "?")
+	d.Body = widget.NewLabel("It comes off the list kept for next time.")
+	d.SetButtons("Remove", "Cancel")
+	d.Danger = true
+	d.OnAccept = widget.Sends(forget)
+	d.OnDismiss = widget.Sends(app.DialogClosed{})
+	mp.w.openDialog(d, u)
+}
+
 // confirmUnsave asks before taking the favourite f off the list.
 func (mp *machinePane) confirmUnsave(f app.Favourite, u *gunim.UI) {
 	d := widget.NewDialog("Remove " + f.Label() + "?")
@@ -821,6 +954,9 @@ func newMPRow(mp *machinePane) *mpRow {
 		if f := r.it.folder.fav; f != nil {
 			r.mp.confirmUnsave(*f, u)
 		}
+		if s := r.it.saved; s != nil {
+			r.mp.confirmForget(*s, u)
+		}
 		return nil
 	}
 	return r
@@ -844,6 +980,9 @@ func (r *mpRow) set(it mpItem, picked bool, u *gunim.UI) {
 	default:
 		r.icon.Icon = it.icon
 		kids = append(kids, r.icon, r.title)
+	}
+	if it.saved != nil {
+		kids = append(kids, widget.NewSpacer(), r.bin)
 	}
 	if strings.HasPrefix(it.key, mpFolder) {
 		f := it.folder
