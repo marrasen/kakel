@@ -27,6 +27,57 @@ func TestWhichShellAnArgvRuns(t *testing.T) {
 	}
 }
 
+// The lines are typed only into a shell they are written for: a
+// profile running anything else would take them as its own input.
+func TestOnlyAShellTheLinesAreWrittenForIsKnown(t *testing.T) {
+	for _, tc := range []struct {
+		argv []string
+		want bool
+	}{
+		{[]string{`C:\Program Files\Git\bin\bash.exe`, "-i", "-l"}, true},
+		{[]string{`C:\msys64\usr\bin\ZSH.EXE`}, true},
+		{[]string{"/bin/sh"}, true},
+		{[]string{"ksh"}, true},
+		{[]string{"dash"}, true},
+		{[]string{`C:\Windows\System32\cmd.exe`, "/k", "echo hi"}, true},
+		{[]string{"powershell.exe", "-NoLogo"}, true},
+		{[]string{"pwsh"}, true},
+		{[]string{`C:\Windows\System32\wsl.exe`, "-d", "Ubuntu"}, true},
+		{[]string{"wsl.exe", "-d", "Ubuntu", "--cd", "/home/x"}, true},
+		{[]string{"wsl", "-u", "root", "-e", "bash", "-l"}, true},
+		{[]string{"wsl", "-e", "nu"}, false},
+		{[]string{"wsl", "--exec", "htop"}, false},
+		{[]string{"wsl", "--", "htop"}, false},
+		{[]string{"wsl", "-d", "Ubuntu", "htop"}, false},
+		{[]string{"wsl.exe", "~", "-d", "Ubuntu"}, true},
+		{[]string{"wsl", "-e", "bash", "-c", "make"}, false},
+		// A shell handed something to run runs that, not what is typed.
+		{[]string{"bash", "-c", "make test"}, false},
+		{[]string{"bash", "-lc", "make"}, false},
+		{[]string{"zsh", "deploy.sh"}, false},
+		{[]string{"bash", "-o", "vi", "--login"}, true},
+		{[]string{"bash", "-l", "-Cl"}, true},
+		{[]string{"cmd.exe", "/c", "build.bat"}, false},
+		{[]string{"cmd.exe", "/D", "/C", "dir"}, false},
+		{[]string{"cmd.exe", "/k", "echo /c"}, true},
+		{[]string{"pwsh", "-Command", "Get-Date"}, false},
+		{[]string{"pwsh", "-c", "Get-Date"}, false},
+		{[]string{"powershell.exe", "-NoProfile", "-File", "x.ps1"}, false},
+		{[]string{"powershell.exe", "-ec", "ZQBjAGgAbwA="}, false},
+		{[]string{"pwsh", "-NoExit", "-Command", "cd ~"}, true},
+		{[]string{"pwsh", "-ExecutionPolicy", "Bypass", "-NoLogo"}, true},
+		{[]string{"nu"}, false},
+		{[]string{`C:\Python312\python.exe`}, false},
+		{[]string{"ssh", "-t", "box"}, false},
+		{[]string{"bashful"}, false},
+		{nil, false},
+	} {
+		if got := Knows(tc.argv); got != tc.want {
+			t.Errorf("%q is known: %v, want %v", tc.argv, got, tc.want)
+		}
+	}
+}
+
 // Every shell gets lines to type, and the pane ends up cleared: what
 // is typed is echoed, and a pane that opens on a screenful of setup is
 // worse than one that opens empty.

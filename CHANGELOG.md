@@ -9,6 +9,24 @@ change how something behaves.
 
 ## Unreleased
 
+### Added
+
+**Profiles, for shells kakel does not find.** Settings › Terminal ›
+Profiles adds a shell by its command line, such as MSYS2 with
+`C:\msys64\usr\bin\bash.exe --login -i`, nushell or `ssh host`. A
+profile can start in a folder of its own and set variables, which may
+use ones set already, as `PATH=C:\tools;%PATH%` does. It is
+listed with Command Prompt, PowerShell, Git Bash and the WSL
+distributions everywhere they are: the palette, the split chooser, the
+launcher, the tray and the Shell setting. kakel types its setup line
+into bash, zsh, sh, ksh, dash, PowerShell, Command Prompt and WSL,
+unless the profile gives it a command to run, as `bash -c` does;
+another program starts as it is. A saved server has profiles of its
+own, such as `tmux new -A -s main`, and its dialog can make one what
+its New Terminal opens. These need a POSIX server: variables go through
+`env`, the folder through `cd`, and `.profile` is read only when the
+command asks for a login shell, as `bash -l` does.
+
 ### Fixed
 
 **The title bar is one colour again behind the tabs.** Since the tabs

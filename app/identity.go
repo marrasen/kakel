@@ -3,6 +3,7 @@ package app
 import (
 	"net"
 	"os"
+	"runtime"
 	"strings"
 
 	"github.com/marrasen/kakel/machines"
@@ -33,20 +34,21 @@ var KnownTerminals = []string{"iTerm.app", "WezTerm", "vscode", "Apple_Terminal"
 
 // startLocalSession starts argv here, or the user's shell when it is
 // nil, in dir, as a new shell is started. A shell, rather than one
-// command, is taught when Shell Setup is on.
+// command, is taught when teaches says so.
 func (a *app) startLocalSession(argv []string, dir string, cols, rows int, shell bool) (session.Session, error) {
 	called := ""
 	if a.settings != nil {
 		called = a.settings.TermProgram()
 	}
+	profile, _ := a.profileOf(argv)
 	if dir == "" {
 		cwd, _ := os.Getwd()
-		dir = a.startDir(cwd)
+		dir = a.startDir(cwd, profile.Folder)
 	}
 	sess, err := session.StartLocal(session.LocalConfig{
-		Command: argv, Dir: dir, Env: paneEnv(argv, called), Cols: cols, Rows: rows,
+		Command: argv, Dir: dir, Env: paneEnv(argv, called, profile.Env), Cols: cols, Rows: rows,
 	})
-	if err != nil || !shell || !a.st.ShellSetup {
+	if err != nil || !shell || !a.teaches(argv) {
 		return sess, err
 	}
 	route := argv
@@ -63,12 +65,28 @@ func (a *app) startLocalSession(argv []string, dir string, cols, rows int, shell
 	return sess, nil
 }
 
+// teaches reports whether a shell started with argv is taught to say
+// what it is doing: with Shell Setup on, unless it is a profile's
+// program the teaching is not written for.
+func (a *app) teaches(argv []string) bool {
+	if !a.st.ShellSetup {
+		return false
+	}
+	_, isProfile := a.profileOf(argv)
+	return !isProfile || shellsetup.Knows(argv)
+}
+
 // teachFar teaches a server's shell to say what it is doing, when its
-// saved server says to.
-func (a *app) teachFar(machine machines.ID, sess session.Session) {
+// saved server says to. argv is the command of the profile it runs,
+// nil for the account's own shell, and a profile's program the lines
+// are not written for is left alone.
+func (a *app) teachFar(machine machines.ID, sess session.Session, argv []string) {
+	if len(argv) > 0 && !shellsetup.Knows(argv) {
+		return
+	}
 	for _, h := range a.st.Saved {
 		if machines.ID(h.ID) == machine && h.Setup {
-			if typed := shellsetup.Typed(shellsetup.RouteFor(nil)); len(typed) > 0 {
+			if typed := shellsetup.Typed(shellsetup.RouteFor(argv)); len(typed) > 0 {
 				if _, err := sess.Write(typed); err != nil {
 					a.failed("Couldn't set up the shell on "+a.machines.Name(machine), err.Error())
 				}
@@ -77,16 +95,125 @@ func (a *app) teachFar(machine machines.ID, sess session.Session) {
 	}
 }
 
-// paneEnv is what a shell here is told about the terminal it runs in.
-func paneEnv(argv []string, called string) []string {
+// paneEnv is what a shell here is told about the terminal it runs in,
+// and then the variables its profile sets, each NAME=value, which come
+// last so that one of them can name the terminal otherwise. A value may
+// name the variables there already, as PATH=C:\tools;%PATH% does.
+//
+// A WSL shell is also told to carry each of them into the distribution,
+// a Windows path translated, on top of the WSLENV the profile sets, or
+// else the one the window runs with. PATH stays out: carried, it would
+// take the place of the distribution's own, and WSL adds the Windows
+// one to that by itself.
+func paneEnv(argv []string, called string, set []string) []string {
 	if called == "" {
 		called = build.Name
 	}
 	env := []string{"TERM_PROGRAM=" + called, "TERM_PROGRAM_VERSION=" + build.Version()}
-	if shellfind.IsWSL(argv) {
-		env = append(env, "WSLENV="+shellfind.CarryIntoWSL(os.Getenv("WSLENV"), "TERM_PROGRAM", "TERM_PROGRAM_VERSION"))
+	wsl := shellfind.IsWSL(argv)
+	carry, was := []string{"TERM_PROGRAM", "TERM_PROGRAM_VERSION"}, os.Getenv("WSLENV")
+	for _, v := range set {
+		name, value, _ := strings.Cut(v, "=")
+		value = expandVars(value)
+		switch {
+		case wsl && strings.EqualFold(name, "WSLENV"):
+			was = value
+			continue
+		case wsl && !strings.EqualFold(name, "PATH"):
+			carry = append(carry, name+"/"+shellfind.PathFlag(value))
+		}
+		env = append(env, name+"="+value)
 	}
-	return env
+	if !wsl {
+		return env
+	}
+	return append(env, "WSLENV="+shellfind.CarryIntoWSL(was, carry...))
+}
+
+// expandVars is value with the variables it names filled in, written as
+// this system's own shell writes them: %NAME% on Windows, $NAME or
+// ${NAME} elsewhere. A name that is not set stays as it is written, as
+// cmd leaves it, and a doubled sign, %% or $$, is one sign of its own.
+func expandVars(value string) string {
+	if runtime.GOOS == "windows" {
+		return expandPercent(value)
+	}
+	return expandDollar(value)
+}
+
+// expandPercent fills in each %NAME% in value that is set.
+func expandPercent(value string) string {
+	var out strings.Builder
+	for {
+		start := strings.IndexByte(value, '%')
+		if start < 0 {
+			break
+		}
+		out.WriteString(value[:start])
+		value = value[start+1:]
+		switch end := strings.IndexByte(value, '%'); {
+		case end == 0:
+			out.WriteByte('%')
+			value = value[1:]
+			continue
+		case end > 0:
+			if got, ok := os.LookupEnv(value[:end]); ok {
+				out.WriteString(got)
+				value = value[end+1:]
+				continue
+			}
+		}
+		// Not a variable: this % is a letter, and the next may start one.
+		out.WriteByte('%')
+	}
+	return out.String() + value
+}
+
+// expandDollar fills in each $NAME and ${NAME} in value that is set.
+func expandDollar(value string) string {
+	var out strings.Builder
+	for {
+		start := strings.IndexByte(value, '$')
+		if start < 0 {
+			break
+		}
+		out.WriteString(value[:start])
+		value = value[start+1:]
+		if strings.HasPrefix(value, "$") {
+			out.WriteByte('$')
+			value = value[1:]
+			continue
+		}
+		name, written := dollarName(value)
+		if got, ok := os.LookupEnv(name); ok && name != "" {
+			out.WriteString(got)
+			value = value[written:]
+			continue
+		}
+		out.WriteByte('$')
+	}
+	return out.String() + value
+}
+
+// dollarName is the name s starts with, after a $, and how many bytes
+// it is written with: NAME, or NAME in braces. It is "" when s starts
+// with neither.
+func dollarName(s string) (string, int) {
+	braced := strings.HasPrefix(s, "{")
+	if braced {
+		s = s[1:]
+	}
+	n := 0
+	for n < len(s) && (s[n] == '_' || 'a' <= s[n] && s[n] <= 'z' || 'A' <= s[n] && s[n] <= 'Z' || n > 0 && '0' <= s[n] && s[n] <= '9') {
+		n++
+	}
+	switch {
+	case !braced:
+		return s[:n], n
+	case n > 0 && n < len(s) && s[n] == '}':
+		return s[:n], n + 2
+	}
+	return "", 0
 }
 
 // dirHere is the folder of the focused pane's shell, when it is on this
