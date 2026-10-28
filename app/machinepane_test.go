@@ -1,6 +1,7 @@
 package app
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/marrasen/kakel/machines"
@@ -198,6 +199,9 @@ func TestAFavouriteGoesByItsFoldersName(t *testing.T) {
 		{"/home/me/src/", "src"},
 		{`C:\Users\me\Projects`, "Projects"},
 		{`C:\`, `C:\`},
+		{"/C:/", `C:\`},
+		{`\\wsl$\Ubuntu`, "Ubuntu"},
+		{`\\server\share\`, "share"},
 		{"/", "/"},
 	} {
 		if got := (Favourite{Path: c.path}).Label(); got != c.want {
@@ -207,4 +211,35 @@ func TestAFavouriteGoesByItsFoldersName(t *testing.T) {
 	if got := (Favourite{Path: "/srv", Name: "Sites"}).Label(); got != "Sites" {
 		t.Errorf("named, it is called %q", got)
 	}
+}
+
+// A favourite moved to another folder keeps its colour; on a server,
+// a slash at the end makes no second one; renamed, a local one whose
+// folder has gone is kept.
+func TestAFavouriteMovedOrRenamedStaysOne(t *testing.T) {
+	a := fontApp(t)
+	dir, other := t.TempDir(), t.TempDir()
+	if err := a.settings.PutFavourites([]settings.Favourite{{Path: dir, Color: "green"}, {Machine: "s1", Path: "/srv/www"}}); err != nil {
+		t.Fatal(err)
+	}
+	a.showFavourites()
+	a.handle(SaveFavourite{Was: dir, Path: other})
+	if err := a.saveFavourite(SaveFavourite{Machine: "s1", Path: "/srv/www/"}); err == nil {
+		t.Fatal("/srv/www/ was kept beside /srv/www")
+	}
+	gone := filepath.Join(other, "gone")
+	if err := a.settings.PutFavourites(append(a.settingsFavs(), settings.Favourite{Path: gone})); err != nil {
+		t.Fatal(err)
+	}
+	a.handle(SaveFavourite{Was: gone, Path: gone, Name: "Old"})
+	kept := a.settingsFavs()
+	if kept[0].Path != other || kept[0].Color != "green" || kept[len(kept)-1].Name != "Old" || len(a.st.Notices) != 0 {
+		t.Fatalf("the favourites are %+v; notices %+v", kept, a.st.Notices)
+	}
+}
+
+// settingsFavs are the favourites kept.
+func (a *app) settingsFavs() []settings.Favourite {
+	kept, _ := a.settings.Favourites()
+	return kept
 }

@@ -26,8 +26,8 @@ func (a *app) showThisComputer() {
 	a.st.ThisComputer.StartFolder = a.settings.Local()
 }
 
-// FolderHere is path as a folder on this computer, a leading ~ the
-// home folder, and an error when there is no such folder.
+// FolderHere is path as a folder on this computer, in full, a leading
+// ~ the home folder, and an error when there is no such folder.
 func FolderHere(path string) (string, error) {
 	if path == "~" || strings.HasPrefix(path, "~/") || strings.HasPrefix(path, `~\`) {
 		home, err := os.UserHomeDir()
@@ -35,6 +35,9 @@ func FolderHere(path string) (string, error) {
 			return "", err
 		}
 		path = filepath.Join(home, path[1:])
+	}
+	if full, err := filepath.Abs(path); err == nil {
+		path = full
 	}
 	fi, err := os.Stat(path)
 	switch {

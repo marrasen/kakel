@@ -2,6 +2,8 @@ package view
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 	"runtime"
 	"slices"
@@ -132,8 +134,9 @@ type machinePane struct {
 	// state that changes nothing there leaves what is typed alone.
 	shown   string
 	shownOf string
-	// added is the name of a profile just added, to pick once it comes.
-	added string
+	// added is the name of a profile just added, and addedDir the path
+	// of a folder just saved, to pick once it comes.
+	added, addedDir string
 	st    app.State
 }
 
@@ -207,11 +210,12 @@ func (mp *machinePane) show(st app.State, u *gunim.UI) {
 // refresh lists the rows and builds the right side for the one picked.
 func (mp *machinePane) refresh(u *gunim.UI) {
 	mp.items = mp.rows()
-	if mp.added != "" {
-		for _, it := range mp.items {
-			if it.profile.own != nil && it.profile.own.Name == mp.added {
-				mp.sel, mp.added = it.key, ""
-			}
+	for _, it := range mp.items {
+		switch {
+		case mp.added != "" && it.profile.own != nil && it.profile.own.Name == mp.added:
+			mp.sel, mp.added = it.key, ""
+		case mp.addedDir != "" && it.folder.fav != nil && it.folder.fav.Path == mp.addedDir:
+			mp.sel, mp.addedDir, mp.shown = it.key, "", ""
 		}
 	}
 	if _, ok := mp.item(mp.sel); !ok {
@@ -263,7 +267,7 @@ func (mp *machinePane) signature() string {
 		f := it.folder
 		b.WriteString("\x02" + f.title() + "\x00" + f.path + boolWord(f.hidden()))
 		if f.fav != nil {
-			b.WriteString(f.fav.Path)
+			b.WriteString(f.fav.Path + "\x00" + f.fav.Name)
 		}
 	}
 	return b.String()
@@ -597,9 +601,9 @@ func (mp *machinePane) profileSide(p mpProfileOf, adding bool, u *gunim.UI) guni
 	case adding:
 		note = "A shell, or a program such as tmux, that a terminal on " + mp.w.machineName(mp.machine) + " can open."
 	case p.found && p.edit.Hidden:
-		note = "Found by kakel, and hidden: the eye on the left shows it again."
+		note = "Found by kakel, and hidden: the eye beside it in the list shows it again."
 	case p.found:
-		note = "Found by kakel. Rename it, or hide it with the eye on the left."
+		note = "Found by kakel. Rename it, or hide it with the eye beside it in the list."
 	}
 	if p.def {
 		note += " New terminals open it."
@@ -613,7 +617,7 @@ func (mp *machinePane) profileSide(p mpProfileOf, adding bool, u *gunim.UI) guni
 // with adding: a favourite's name and folder, or a found one's name.
 func (mp *machinePane) folderSide(f mpFolderOf, adding bool) gunim.Node {
 	name, dir := widget.NewTextField(), widget.NewTextField()
-	name.Placeholder, dir.Placeholder = "The folder's own", "such as /srv/www"
+	name.Placeholder, dir.Placeholder = "The folder's name", "such as /srv/www"
 	if mp.machine == "" && runtime.GOOS == "windows" {
 		dir.Placeholder = `such as D:\Projects`
 	}
@@ -643,14 +647,11 @@ func (mp *machinePane) folderSide(f mpFolderOf, adding bool) gunim.Node {
 			e.HostID, e.ID, e.Name = string(mp.machine), f.id, strings.TrimSpace(name.Text())
 			return app.SaveFound{Found: e}, ""
 		}
+		// Whether the folder is there is asked as it is saved, off the
+		// window's goroutine: a drive can be slow to answer.
 		path := strings.TrimSpace(dir.Text())
 		if path == "" {
 			return nil, "Enter a folder."
-		}
-		if mp.machine == "" {
-			if _, err := app.FolderHere(path); err != nil {
-				return nil, words.UpperFirst(err.Error()) + "."
-			}
 		}
 		was := ""
 		if f.fav != nil {
@@ -675,6 +676,11 @@ func (mp *machinePane) folderSide(f mpFolderOf, adding bool) gunim.Node {
 		if why != "" {
 			return nil
 		}
+		if fav, ok := in.(app.SaveFavourite); ok {
+			// The row to pick once it is saved: where it is kept, as the
+			// program writes it.
+			mp.addedDir = savedPath(mp.machine, fav.Path)
+		}
 		return in
 	}
 	actions := []gunim.Node{save}
@@ -692,9 +698,9 @@ func (mp *machinePane) folderSide(f mpFolderOf, adding bool) gunim.Node {
 	case adding:
 		title, note = "Add Folder", "A folder on "+mp.w.machineName(mp.machine)+" to keep at hand: it is a favourite in the file manager's sidebar too."
 	case f.hidden():
-		note = "Found by kakel, and hidden: the eye on the left shows it again."
+		note = "Found by kakel, and hidden: the eye beside it in the list shows it again."
 	case f.found():
-		note = "Found by kakel. Rename it, or hide it with the eye on the left."
+		note = "Found by kakel. Rename it, or hide it with the eye beside it in the list."
 	}
 	if f.fav != nil {
 		del := widget.NewButton("Remove…")
@@ -704,6 +710,26 @@ func (mp *machinePane) folderSide(f mpFolderOf, adding bool) gunim.Node {
 	col := widget.Column(heading(title), faintLabel(note), widget.NewCard(form), problem, buttons(actions...))
 	col.Cross, col.Gap = widget.CrossStretch, mpGap
 	return widget.NewSized(col, 640, 0)
+}
+
+// savedPath is path as a favourite on machine m is kept: here in full,
+// ~ the home folder; on a server without a slash at its end.
+func savedPath(m machines.ID, path string) string {
+	if m != "" {
+		if len(path) > 1 {
+			return strings.TrimRight(path, "/")
+		}
+		return path
+	}
+	if path == "~" || strings.HasPrefix(path, "~/") || strings.HasPrefix(path, `~\`) {
+		if home, err := os.UserHomeDir(); err == nil {
+			path = filepath.Join(home, path[1:])
+		}
+	}
+	if full, err := filepath.Abs(path); err == nil {
+		return full
+	}
+	return path
 }
 
 // confirmUnsave asks before taking the favourite f off the list.

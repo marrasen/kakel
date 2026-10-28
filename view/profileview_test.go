@@ -193,6 +193,24 @@ func TestThisComputersFilesAreListedUnderItsProfiles(t *testing.T) {
 	}
 }
 
+// A folder added is picked once it is saved, so its form is the saved
+// one, not the one it was typed in.
+func TestAFolderAddedIsPickedOnceSaved(t *testing.T) {
+	dir := t.TempDir()
+	_, mp, again := machinePaneOf(t, app.State{}, "", false)
+	mp.pick(mpAddDir, lastUI)
+	fields := fieldsIn(mp.right)
+	fields[1].SetText(dir, nil)
+	in, ok := findButton(t, mp.right, "Save").OnClick(lastUI).(app.SaveFavourite)
+	if !ok || in.Path != dir || in.Was != "" {
+		t.Fatalf("Save sent %#v", in)
+	}
+	again(app.State{Favourites: []app.Favourite{{Path: dir}}})
+	if mp.sel != mpFolder+"fav:"+dir {
+		t.Fatalf("saved, the row picked is %q", mp.sel)
+	}
+}
+
 // A kakel window's pane has its settings and its files, no profiles; a new
 // server's has its settings alone, says what is typed, and is saved
 // from the pane it was typed in.
