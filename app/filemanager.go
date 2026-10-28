@@ -578,24 +578,17 @@ func nameBeside(f vfs.FS, path string, dir bool) string {
 	}
 }
 
-// placeMenu is kakel's part of a place's context menu in the file
-// manager: on a server's, Disconnect while it is connected, Connect
-// while not; and on every place but a favourite, Hide, which hides its
-// found profile.
+// placeMenu is kakel's part of a server place's context menu in the
+// file manager: Disconnect while it is connected, Connect while not.
+// Places are hidden from the machine's own pane, not from here.
 func placeMenu(p filemanager.Place) []filemanager.PlaceItem {
-	if p.Kind == "favourite" {
+	if !strings.HasPrefix(p.FS, serverFS) || p.Kind == "favourite" {
 		return nil
 	}
-	hide := filemanager.PlaceItem{Label: "Hide", ID: "hide"}
-	switch {
-	case p.FS == "":
-		return []filemanager.PlaceItem{hide}
-	case !strings.HasPrefix(p.FS, serverFS):
-		return nil
-	case p.Lit:
-		return []filemanager.PlaceItem{{Label: "Disconnect", ID: "disconnect"}, hide}
+	if p.Lit {
+		return []filemanager.PlaceItem{{Label: "Disconnect", ID: "disconnect"}}
 	}
-	return []filemanager.PlaceItem{{Label: "Connect", ID: "connect"}, hide}
+	return []filemanager.PlaceItem{{Label: "Connect", ID: "connect"}}
 }
 
 // placeCommand does what kakel's item id of place p asks, from file
@@ -607,12 +600,6 @@ func (a *app) placeCommand(w *filemanager.Window, p filemanager.Place, id string
 		switch id {
 		case "disconnect":
 			err = a.disconnectAsking(m)
-		case "hide":
-			if p.FS == "" {
-				err = a.hideFound(HideFound{ID: placeID(p)})
-			} else {
-				err = a.hideFound(HideFound{HostID: string(m), ID: FoundHome})
-			}
 		case "connect":
 			err = a.dialAgainHow(m, true, func(err error) {
 				if err != nil {
@@ -621,11 +608,7 @@ func (a *app) placeCommand(w *filemanager.Window, p filemanager.Place, id string
 			})
 		}
 		if err != nil {
-			what := a.machines.Name(m)
-			if p.FS == "" {
-				what = p.Name
-			}
-			w.Notify("Couldn't "+id+" "+what, words.UpperFirst(err.Error())+".", "warning")
+			w.Notify("Couldn't "+id+" "+a.machines.Name(m), words.UpperFirst(err.Error())+".", "warning")
 		}
 	}
 }

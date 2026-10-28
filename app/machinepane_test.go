@@ -189,3 +189,22 @@ func TestAServerProfileFallsBackToItsServersTick(t *testing.T) {
 		t.Fatal("its tick off, the login shell is taught")
 	}
 }
+
+// A favourite with no name of its own goes by its folder's, as the file
+// manager's sidebar calls it; a root goes by itself.
+func TestAFavouriteGoesByItsFoldersName(t *testing.T) {
+	for _, c := range []struct{ path, want string }{
+		{"/home/me/src", "src"},
+		{"/home/me/src/", "src"},
+		{`C:\Users\me\Projects`, "Projects"},
+		{`C:\`, `C:\`},
+		{"/", "/"},
+	} {
+		if got := (Favourite{Path: c.path}).Label(); got != c.want {
+			t.Errorf("%q is called %q, want %q", c.path, got, c.want)
+		}
+	}
+	if got := (Favourite{Path: "/srv", Name: "Sites"}).Label(); got != "Sites" {
+		t.Errorf("named, it is called %q", got)
+	}
+}

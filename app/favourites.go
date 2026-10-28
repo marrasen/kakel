@@ -28,12 +28,23 @@ type Favourite struct {
 	Name    string
 }
 
-// Label is what a menu calls the favourite: its name, or its path.
+// Label is what a menu calls the favourite: its name, or else its
+// folder's, as the file manager's sidebar calls it.
 func (f Favourite) Label() string {
 	if n := strings.TrimSpace(f.Name); n != "" {
 		return n
 	}
-	return f.Path
+	return FolderName(f.Path)
+}
+
+// FolderName is the name of the folder at path, the part after its last
+// slash or backslash, or the path itself for a root such as / or C:\.
+func FolderName(path string) string {
+	trimmed := strings.TrimRight(path, `/\`)
+	if name := trimmed[strings.LastIndexAny(trimmed, `/\`)+1:]; name != "" && !strings.HasSuffix(name, ":") {
+		return name
+	}
+	return path
 }
 
 // showFavourites tells the windows the favourites, as kept.
