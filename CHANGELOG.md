@@ -9,6 +9,8 @@ change how something behaves.
 
 ## Unreleased
 
+## v0.12.2-beta.5
+
 ### Added
 
 **Profiles, for shells kakel does not find.** Settings › Profiles adds a shell by its command line, such as MSYS2 with
