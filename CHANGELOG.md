@@ -9,6 +9,8 @@ change how something behaves.
 
 ## Unreleased
 
+## v0.12.2-beta.6
+
 ### Changed
 
 **Each machine's settings are a pane of its own.** A machine's card,
