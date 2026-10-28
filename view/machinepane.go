@@ -137,7 +137,7 @@ type machinePane struct {
 	// added is the name of a profile just added, and addedDir the path
 	// of a folder just saved, to pick once it comes.
 	added, addedDir string
-	st    app.State
+	st              app.State
 }
 
 func newMachinePane(w *Window, id string) *machinePane {
