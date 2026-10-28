@@ -26,6 +26,14 @@ shell moved into it. An eye hides a shell kakel found, which stays
 listed, faint, to show again. Whether a shell is taught to say what it
 is doing is ticked on each profile; the Shell Setup command is gone.
 
+**A machine's folders are in its pane too.** Under its profiles, a
+Files section lists its home folder and, here, each drive, which kakel
+finds, then the folders saved as favourites. The eye hides a found one
+everywhere, the file manager's sidebar included, and shows it again;
+the sidebar's Hide is gone. Favourites are added, renamed, opened and
+removed there too. A favourite with no name of its own goes by its
+folder's name everywhere, as the sidebar called it, not by its path.
+
 ## v0.12.2-beta.5
 
 ### Added

@@ -1,6 +1,7 @@
 package view
 
 import (
+	"path/filepath"
 	"slices"
 	"testing"
 
@@ -72,7 +73,7 @@ func TestThisComputersPaneListsItsProfiles(t *testing.T) {
 		Saved: []remote.Host{{ID: "s1", Name: "prod", Address: "prod.example"}},
 	}
 	_, mp, _ := machinePaneOf(t, st, "", false)
-	want := []string{"This computer", "Profiles", "PowerShell", "Command Prompt", "Nushell", "Add Profile"}
+	want := []string{"This computer", "Profiles", "PowerShell", "Command Prompt", "Nushell", "Add Profile", "Files", "Home", "Add Folder"}
 	if got := titlesOf(mp); !slices.Equal(got, want) {
 		t.Fatalf("the rows are %q, want %q", got, want)
 	}
@@ -117,7 +118,7 @@ func TestAProfileIsAddedOnItsServer(t *testing.T) {
 		Profiles:     []settings.Profile{{ID: "profile:htop", HostID: "s1", Name: "htop", Command: []string{"htop"}}},
 		ServerShells: map[string]string{"s1": "profile:htop"}}
 	_, mp, _ := machinePaneOf(t, st, "s1", false)
-	if got, want := titlesOf(mp), []string{"prod", "Profiles", "htop", "Login Shell", "Add Profile"}; !slices.Equal(got, want) {
+	if got, want := titlesOf(mp), []string{"prod", "Profiles", "htop", "Login Shell", "Add Profile", "Files", "Home", "Add Folder"}; !slices.Equal(got, want) {
 		t.Fatalf("the rows are %q, want %q", got, want)
 	}
 	mp.pick(mpAdd, lastUI)
@@ -155,12 +156,67 @@ func TestAHiddenLoginShellPassesItsStar(t *testing.T) {
 	}
 }
 
-// A kakel window's pane has its settings and no profiles; a new
+// The Files section lists the home folder and the drives, which kakel
+// finds, a hidden one faint with its eye shut, then the favourites by
+// their folder's name; a favourite is saved, renamed, from its row.
+func TestThisComputersFilesAreListedUnderItsProfiles(t *testing.T) {
+	dir := t.TempDir()
+	st := app.State{
+		Drives:     []app.FoundDrive{{ID: "drive:/", Name: "Computer", Path: "/"}},
+		Found:      []settings.FoundProfile{{ID: "drive:/", Hidden: true}},
+		Favourites: []app.Favourite{{Path: dir}, {Machine: "s1", Path: "/srv"}},
+	}
+	_, mp, _ := machinePaneOf(t, st, "", false)
+	got := titlesOf(mp)
+	want := []string{"Files", "Home", "Computer", filepath.Base(dir), "Add Folder"}
+	if len(got) < len(want) || !slices.Equal(got[len(got)-len(want):], want) {
+		t.Fatalf("the rows are %q, want them to end %q", got, want)
+	}
+	drive := rowOf(t, mp, mpFolder+"found:drive:/")
+	if drive.eye.Icon != icon.EyeOff || drive.title.Color.Key() != look.Faint.Key() {
+		t.Fatal("hidden, the drive's row is not faint with its eye shut")
+	}
+	if in, ok := drive.eye.OnClick(lastUI).(app.HideFound); !ok || in.ID != "drive:/" || !in.Show {
+		t.Fatalf("the hidden drive's eye sent %#v", in)
+	}
+	mp.pick(mpFolder+"fav:"+dir, lastUI)
+	fields := fieldsIn(mp.right)
+	save := findButton(t, mp.right, "Save")
+	if !save.Disabled {
+		t.Fatal("untouched, the favourite can be saved")
+	}
+	fields[0].SetText("Work", nil)
+	fields[0].OnChange("Work", lastUI)
+	in, ok := save.OnClick(lastUI).(app.SaveFavourite)
+	if !ok || in.Was != dir || in.Path != dir || in.Name != "Work" || in.Machine != "" {
+		t.Fatalf("renamed, the favourite saved is %#v", in)
+	}
+}
+
+// A folder added is picked once it is saved, so its form is the saved
+// one, not the one it was typed in.
+func TestAFolderAddedIsPickedOnceSaved(t *testing.T) {
+	dir := t.TempDir()
+	_, mp, again := machinePaneOf(t, app.State{}, "", false)
+	mp.pick(mpAddDir, lastUI)
+	fields := fieldsIn(mp.right)
+	fields[1].SetText(dir, nil)
+	in, ok := findButton(t, mp.right, "Save").OnClick(lastUI).(app.SaveFavourite)
+	if !ok || in.Path != dir || in.Was != "" {
+		t.Fatalf("Save sent %#v", in)
+	}
+	again(app.State{Favourites: []app.Favourite{{Path: dir}}})
+	if mp.sel != mpFolder+"fav:"+dir {
+		t.Fatalf("saved, the row picked is %q", mp.sel)
+	}
+}
+
+// A kakel window's pane has its settings and its files, no profiles; a new
 // server's has its settings alone, says what is typed, and is saved
 // from the pane it was typed in.
 func TestANewServersPaneSavesIntoItself(t *testing.T) {
 	_, mp, _ := machinePaneOf(t, app.State{Saved: []remote.Host{{ID: "w1", Name: "desk", Address: "desk.example", Window: true}}}, "w1", false)
-	if got := titlesOf(mp); !slices.Equal(got, []string{"desk"}) {
+	if got := titlesOf(mp); !slices.Equal(got, []string{"desk", "Files", "Home", "Add Folder"}) {
 		t.Fatalf("a window's rows are %q", got)
 	}
 	_, mp, _ = machinePaneOf(t, app.State{}, "", true)

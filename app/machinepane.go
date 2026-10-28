@@ -49,6 +49,11 @@ func (a *app) showMachine(m machines.ID) error {
 			return errors.New(a.machines.Name(m) + " is not a saved server")
 		}
 	}
+	if m == machines.Local {
+		// The drives here, for its Files, as they are now: off the
+		// program's goroutine, as a drive can be slow to answer.
+		go func() { _, _ = a.fileManagerPlaces() }()
+	}
 	if id := a.machinePane(m); id != "" {
 		a.focusRaised(id)
 		return nil

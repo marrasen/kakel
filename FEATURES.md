@@ -40,6 +40,12 @@ The whole list. The [README](README.md) has the short version.
   carries its variables into the distribution, a Windows path
   translated. A server's profiles need a POSIX server: variables go
   through `env` and the folder through `cd`.
+- **A machine's folders.** The Files section of a machine's pane lists
+  its home folder and, on this computer, each drive, which kakel finds
+  and an eye hides everywhere (the file manager's sidebar too) or shows
+  again, and the folders saved as favourites, which are added, renamed,
+  opened and removed there. A favourite with no name of its own goes by
+  its folder's name.
 - **Connections, not just shells.** One SSH connection carries several
   things at once, so a second terminal on a machine is a second channel
   rather than a second login. A command runs on a channel of the same

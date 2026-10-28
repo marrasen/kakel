@@ -28,12 +28,28 @@ type Favourite struct {
 	Name    string
 }
 
-// Label is what a menu calls the favourite: its name, or its path.
+// Label is what a menu calls the favourite: its name, or else its
+// folder's, as the file manager's sidebar calls it.
 func (f Favourite) Label() string {
 	if n := strings.TrimSpace(f.Name); n != "" {
 		return n
 	}
-	return f.Path
+	return FolderName(f.Path)
+}
+
+// FolderName is the name of the folder at path, the part after its last
+// slash or backslash, or the path itself for a root such as / or C:\.
+func FolderName(path string) string {
+	trimmed := strings.TrimRight(path, `/\`)
+	name := trimmed[strings.LastIndexAny(trimmed, `/\`)+1:]
+	switch {
+	case name == "":
+		return path
+	case strings.HasSuffix(name, ":"):
+		// A drive, as Windows writes it, whichever way it came.
+		return name + `\`
+	}
+	return name
 }
 
 // showFavourites tells the windows the favourites, as kept.
@@ -267,12 +283,18 @@ func (a *app) saveFavourite(in SaveFavourite) error {
 	if path == "" {
 		return errors.New("enter a folder")
 	}
-	if in.Machine == machines.Local {
+	switch {
+	case in.Machine == machines.Local && path == in.Was:
+		// Only renamed: a folder gone, as a drive unplugged, still can
+		// be.
+	case in.Machine == machines.Local:
 		full, err := FolderHere(path)
 		if err != nil {
 			return err
 		}
 		path = full
+	case len(path) > 1:
+		path = strings.TrimRight(path, "/")
 	}
 	return a.editFavourites(func(kept []settings.Favourite) ([]settings.Favourite, error) {
 		on := func(p string) func(settings.Favourite) bool {
