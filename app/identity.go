@@ -40,13 +40,13 @@ func (a *app) startLocalSession(argv []string, dir string, cols, rows int, shell
 	if a.settings != nil {
 		called = a.settings.TermProgram()
 	}
-	profile, _ := a.profileOf(argv)
+	folder, env := a.foundRun(argv)
 	if dir == "" {
 		cwd, _ := os.Getwd()
-		dir = a.startDir(cwd, profile.Folder)
+		dir = a.startDir(cwd, folder)
 	}
 	sess, err := session.StartLocal(session.LocalConfig{
-		Command: argv, Dir: dir, Env: paneEnv(argv, called, profile.Env), Cols: cols, Rows: rows,
+		Command: argv, Dir: dir, Env: paneEnv(argv, called, env), Cols: cols, Rows: rows,
 	})
 	if err != nil || !shell || !a.teaches(argv) {
 		return sess, err

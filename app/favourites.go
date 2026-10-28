@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"errors"
 	"maps"
 	"os"
 	"slices"
@@ -142,21 +143,14 @@ func (a *app) favouritesOn(machine machines.ID) []string {
 // forgetFavourites takes the favourites on machine away, as it was
 // removed.
 func (a *app) forgetFavourites(machine machines.ID) {
-	if a.settings == nil {
+	if a.settings == nil || !slices.ContainsFunc(a.st.Favourites, func(f Favourite) bool { return f.Machine.Of(machine) }) {
 		return
 	}
-	kept, _ := a.settings.Favourites()
-	left := slices.DeleteFunc(slices.Clone(kept), func(f settings.Favourite) bool { return machines.ID(f.Machine).Of(machine) })
-	if len(left) == len(kept) {
-		return
-	}
-	if err := a.settings.PutFavourites(left); err != nil {
+	err := a.editFavourites(func(kept []settings.Favourite) ([]settings.Favourite, error) {
+		return slices.DeleteFunc(kept, func(f settings.Favourite) bool { return machines.ID(f.Machine).Of(machine) }), nil
+	})
+	if err != nil {
 		a.failed("Couldn't remove the favourites on "+a.machines.Name(machine), err.Error())
-		return
-	}
-	a.showFavourites()
-	if a.files != nil && len(a.fmPanes) > 0 {
-		a.files.Refresh()
 	}
 }
 
@@ -249,4 +243,76 @@ func (a *app) noteNames() {
 	if old != nil && a.files != nil && len(a.fmPanes) > 0 {
 		a.files.Refresh()
 	}
+}
+
+// Intents for favourites, the files profiles the user adds.
+type (
+	// SaveFavourite keeps a favourite: the one at Was on Machine renamed
+	// and moved to Path, or a new one where Was is empty.
+	SaveFavourite struct {
+		Machine         machines.ID
+		Was, Path, Name string
+	}
+	// RemoveFavourite removes the favourite at Path on Machine.
+	RemoveFavourite struct {
+		Machine machines.ID
+		Path    string
+	}
+)
+
+// saveFavourite keeps a favourite added or changed in Settings, its
+// colour and icon as they were.
+func (a *app) saveFavourite(in SaveFavourite) error {
+	path := strings.TrimSpace(in.Path)
+	if path == "" {
+		return errors.New("enter a folder")
+	}
+	if in.Machine == machines.Local {
+		full, err := FolderHere(path)
+		if err != nil {
+			return err
+		}
+		path = full
+	}
+	return a.editFavourites(func(kept []settings.Favourite) ([]settings.Favourite, error) {
+		on := func(p string) func(settings.Favourite) bool {
+			return func(f settings.Favourite) bool { return machines.ID(f.Machine) == in.Machine && f.Path == p }
+		}
+		if path != in.Was && slices.ContainsFunc(kept, on(path)) {
+			return nil, errors.New("that folder is a favourite already")
+		}
+		f := settings.Favourite{Machine: string(in.Machine), Path: path, Name: strings.TrimSpace(in.Name)}
+		if i := slices.IndexFunc(kept, on(in.Was)); in.Was != "" && i >= 0 {
+			f.Color, f.Icon = kept[i].Color, kept[i].Icon
+			kept[i] = f
+			return kept, nil
+		}
+		return append(kept, f), nil
+	})
+}
+
+// removeFavourite removes a favourite, from Settings.
+func (a *app) removeFavourite(in RemoveFavourite) error {
+	return a.editFavourites(func(kept []settings.Favourite) ([]settings.Favourite, error) {
+		return slices.DeleteFunc(kept, func(f settings.Favourite) bool { return machines.ID(f.Machine) == in.Machine && f.Path == in.Path }), nil
+	})
+}
+
+// editFavourites changes the favourites kept, and has the windows and
+// the file manager show them.
+func (a *app) editFavourites(edit func([]settings.Favourite) ([]settings.Favourite, error)) error {
+	if a.settings == nil {
+		return errors.New("the settings could not be read, so nothing can be kept")
+	}
+	if err := a.settings.Err(); err != nil {
+		return err
+	}
+	if err := a.settings.EditFavourites(edit); err != nil {
+		return err
+	}
+	a.showFavourites()
+	if a.files != nil && len(a.fmPanes) > 0 {
+		a.files.Refresh()
+	}
+	return nil
 }

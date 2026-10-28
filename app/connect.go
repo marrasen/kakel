@@ -737,6 +737,7 @@ func (a *app) removeServer(name machines.ID) error {
 	a.st.Saved = a.book.Hosts()
 	a.forgetFavourites(name)
 	a.dropProfilesOn(name, called)
+	a.dropFoundOn(name, called)
 	// Named still by what is left of it, until that goes.
 	a.machines.Removed(name, called)
 	// What the window holds under the name goes with it, as the

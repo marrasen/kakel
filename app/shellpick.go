@@ -78,9 +78,15 @@ func (a *app) scanShells() {
 // defaultShell is the ID of the shell a new terminal here starts: the
 // one kept, or the user's own; "" where neither is among the shells
 // found.
+//
+// A hidden shell is not started: the user's own takes the place of one
+// kept, and the first shown that of the user's own.
 func (a *app) defaultShell() string {
-	if a.st.ChosenShell != "" {
+	if a.st.ChosenShell != "" && !a.hidden(machines.Local, a.st.ChosenShell) {
 		return a.st.ChosenShell
+	}
+	if a.ownShell != "" && a.hidden(machines.Local, a.ownShell) && len(a.st.Shells) > 0 {
+		return a.st.Shells[0].ID
 	}
 	return a.ownShell
 }
@@ -126,7 +132,11 @@ func (a *app) localShell() []string {
 		return nil
 	}
 	id, chosen := a.settings.Shell()
-	if !chosen {
+	if !chosen || a.hidden(machines.Local, id) {
+		if def := a.defaultShell(); def != "" && def != a.ownShell {
+			// The user's own is hidden.
+			return a.shellCommand(def)
+		}
 		return nil
 	}
 	argv := a.shellCommand(id)

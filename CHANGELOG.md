@@ -11,8 +11,7 @@ change how something behaves.
 
 ### Added
 
-**Profiles, for shells kakel does not find.** Settings › Terminal ›
-Profiles adds a shell by its command line, such as MSYS2 with
+**Profiles, for shells kakel does not find.** Settings › Profiles adds a shell by its command line, such as MSYS2 with
 `C:\msys64\usr\bin\bash.exe --login -i`, nushell or `ssh host`. A
 profile can start in a folder of its own and set variables, which may
 use ones set already, as `PATH=C:\tools;%PATH%` does. It is
@@ -26,6 +25,19 @@ own, such as `tmux new -A -s main`, and its dialog can make one what
 its New Terminal opens. These need a POSIX server: variables go through
 `env`, the folder through `cd`, and `.profile` is read only when the
 command asks for a login shell, as `bash -l` does.
+
+**Every machine's profiles in one place.** Settings › Profiles is a tab
+of its own, listing each machine's terminals and files. The ones kakel
+finds count too: Command Prompt, PowerShell, Git Bash, each WSL
+distribution, your home folder and each drive here, and each saved
+server's login shell and home. You can rename those, give a shell here
+a folder and variables of its own, or hide them. A hidden one is gone
+everywhere: the palette, the launcher, the tray, the menus, the Shell
+setting and the file manager's sidebar, whose places now have **Hide**
+on their menu. A server with everything hidden, such as one used only
+to reach others, drops out of those lists but stays in Settings ›
+Machines. Favourites are listed as files profiles there, and can be
+added, renamed and removed from the same page.
 
 ### Fixed
 

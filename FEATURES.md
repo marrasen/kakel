@@ -12,8 +12,8 @@ The whole list. The [README](README.md) has the short version.
 - **Local shells and SSH.** One `session.Session` interface with two
   implementations. Nothing above it — the emulator, the grid, the
   window — can tell the difference.
-- **Profiles for the shells kakel does not find.** Settings › Terminal ›
-  Profiles adds MSYS2, nushell or `ssh host` by its command line, as
+- **Profiles for the shells kakel does not find.** Settings › Profiles
+  adds MSYS2, nushell or `ssh host` by its command line, as
   Windows Terminal does: `C:\msys64\usr\bin\bash.exe --login -i`.
   A profile may name a folder to start in and variables to set, one
   `NAME=value` a line; a value may use one set already, as
@@ -31,6 +31,15 @@ The whole list. The [README](README.md) has the short version.
   shell. It needs a POSIX server: variables go through `env` and the
   folder through `cd`, and `.profile` is read only when the command
   asks for a login shell, as `bash -l` does.
+- **Found profiles you can rename or hide.** What kakel finds is listed
+  with the profiles in Settings › Profiles: the shells here, the home
+  folder and the drives, and each saved server's login shell and home.
+  Each can be renamed, and a shell here can be given a folder and
+  variables. Hidden, it is offered nowhere: not in the palette, the
+  launcher, the tray, the menus, the Shell setting or the file
+  manager's sidebar. A server with everything hidden, used only as a
+  jump host, drops out of them too. Favourites are the files profiles
+  you add, and the same page adds, renames and removes them.
 - **Connections, not just shells.** One SSH connection carries several
   things at once, so a second terminal on a machine is a second channel
   rather than a second login. A command runs on a channel of the same

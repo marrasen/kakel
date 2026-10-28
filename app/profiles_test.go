@@ -520,7 +520,7 @@ func TestAServerProfilesShellConfig(t *testing.T) {
 		{"profile:www", []string{"bash"}, "/srv/www"},
 		{"profile:top", nil, ""},
 		{"profile:nu", nil, ""},
-		{loginShell, nil, ""},
+		{LoginShell, nil, ""},
 		{"", nil, ""},
 	} {
 		cfg := a.farConfig("srv", c.id, 80, 24)

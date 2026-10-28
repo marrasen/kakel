@@ -52,6 +52,7 @@ var settingsTabs = []struct {
 	{"General", icon.Settings},
 	{"Appearance", icon.Palette},
 	{"Terminal", icon.SquareTerminal},
+	{"Profiles", icon.Layers},
 	{"Notifications", icon.Bell},
 	{"Sharing", icon.Share2},
 	{"Files", icon.Folder},
@@ -104,9 +105,9 @@ type settingsPane struct {
 	// shellTitles are shell's items beside shellIDs: a renamed profile
 	// changes them while its ID stays.
 	shellTitles []string
-	// profiles lists the profiles, which editP and removeP need one of.
-	profiles       *widget.Label
-	editP, removeP *widget.Button
+
+	// Profiles.
+	profilesPage *profilesPage
 
 	// Notifications.
 	iface         *widget.Checkbox
@@ -128,7 +129,7 @@ type settingsPane struct {
 
 func newSettingsPane(w *Window) *settingsPane {
 	p := &settingsPane{w: w}
-	pages := []gunim.Node{p.general(), p.appearance(), p.terminal(), p.notifications(), p.sharing(), p.files()}
+	pages := []gunim.Node{p.general(), p.appearance(), p.terminal(), p.profilesTab(), p.notifications(), p.sharing(), p.files()}
 	titles := make([]string, len(settingsTabs))
 	icons := make([]*icon.Icon, len(settingsTabs))
 	for i, t := range settingsTabs {
@@ -411,21 +412,10 @@ func (p *settingsPane) terminal() gunim.Node {
 	}
 	p.pasteCheck = widget.NewSwitch("")
 	p.pasteCheck.OnChange = func(on bool, u *gunim.UI) gunim.Intent { p.send(app.SetPasteCheck{On: on}, u); return nil }
-	p.profiles = widget.NewLabel("")
-	addP := widget.NewButton("Add Profile…")
-	addP.OnClick = func(u *gunim.UI) gunim.Intent { p.w.profileDialog(p.st.Profiles, nil, u); return nil }
-	p.editP = widget.NewButton("Edit Profile…")
-	p.editP.OnClick = func(u *gunim.UI) gunim.Intent { p.w.editProfilePickerFrom(p.st.Profiles, u); return nil }
-	p.removeP = widget.NewButton("Remove Profile…")
-	p.removeP.OnClick = func(u *gunim.UI) gunim.Intent { p.w.removeProfilePickerFrom(p.st.Profiles, u); return nil }
 	return settingsPage(
 		settingsSection("This computer",
 			settingRow("Start in", "New terminals start here, unless kakel was started in a folder of its own, or they open from a terminal in another.", p.startIn.node),
-			settingRow("Shell", "What a new terminal here runs.", p.shell)),
-		settingsSection("Profiles",
-			faintLabel("Shells you add, here or on a saved server, such as MSYS2, nushell or tmux, offered with the ones kakel finds. A profile has its own folder and variables."),
-			p.profiles,
-			buttons(addP, p.editP, p.removeP)),
+			settingRow("Shell", "What a new terminal here runs. Add, rename or hide shells under Profiles.", p.shell)),
 		settingsSection("Terminal identity",
 			settingRow("TERM_PROGRAM", "What programs are told the terminal is called. Blank says kakel. Another name can turn on features such as images, and can bring sequences that show as text. For new panes.", p.termProgram.node),
 			settingRow("Known terminals", "", p.known)),
@@ -644,8 +634,8 @@ func (p *settingsPane) show(st app.State, u *gunim.UI) {
 	p.termProgram.show(st.TermProgram, u)
 	p.proxy.show(st.Serving.Proxy, u)
 	setOn(p.pasteCheck, st.PasteCheck)
-	p.profiles.Text = p.w.profilesSays(st.Profiles)
-	p.editP.Disabled, p.removeP.Disabled = len(st.Profiles) == 0, len(st.Profiles) == 0
+	// Profiles.
+	p.profilesPage.show(st, u)
 	p.known.SetSelected(0, nil)
 	if i := slices.Index(app.KnownTerminals, st.TermProgram); i >= 0 {
 		p.known.SetSelected(i+1, nil)

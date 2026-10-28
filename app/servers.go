@@ -240,6 +240,9 @@ func (a *app) paneOf(kind string) string {
 // showSettings goes to the Settings pane, opening it in the window in
 // front when it is closed.
 func (a *app) showSettings() {
+	// The drives here, for its profiles, as they are now: off the
+	// program's goroutine, as a drive can be slow to answer.
+	go func() { _, _ = a.fileManagerPlaces() }()
 	if id := a.paneOf(KindSettings); id != "" {
 		a.focusRaised(id)
 		return

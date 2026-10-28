@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	gi "github.com/marrasen/gunim/input"
 	"github.com/marrasen/gunim/widget"
 
 	"github.com/marrasen/kakel/app"
@@ -98,38 +97,53 @@ func TestANewProfileTakesANameOfItsOwn(t *testing.T) {
 	}
 }
 
-// Edit Profile… and Remove Profile… take no clicks with no profile to
-// act on, and the profile picked to remove is the one removed.
-func TestTheProfilePickedIsTheOneRemoved(t *testing.T) {
+// The Profiles page lists the shells found, the user's profiles and
+// each server's own shell and home, a hidden one marked; Remove
+// removes the profile the cursor is on, or hides one found, and Show
+// shows a hidden one again.
+func TestTheProfilesPageActsOnTheRowOfTheCursor(t *testing.T) {
 	win, _, publish := windowStage(t)
 	st := app.State{Panes: []app.Pane{{ID: "s", Title: "Settings", Kind: app.KindSettings}}, Stage: &app.Box{Pane: "s"}, Focus: "s"}
+	st.FoundShells = []app.ShellChoice{{ID: "cmd", Title: "Command Prompt"}}
+	st.Profiles = []settings.Profile{
+		{ID: "profile:git-bash", Name: "Git Bash", Command: []string{"bash.exe"}},
+		{ID: "profile:nu", Name: "Nushell", Command: []string{"nu.exe"}},
+	}
+	st.Saved = []remote.Host{{ID: "jump", Name: "jump", Address: "192.0.2.1"}}
+	st.Found = []settings.FoundProfile{{HostID: "jump", ID: app.LoginShell, Hidden: true}}
 	publish(st)
 	p := win.settings
 	if p == nil {
 		t.Fatal("no Settings pane")
 	}
-	if !p.editP.Disabled || !p.removeP.Disabled {
-		t.Fatalf("with no profiles, Edit is disabled %v and Remove %v", p.editP.Disabled, p.removeP.Disabled)
+	pp := p.profilesPage
+	var names []string
+	for _, k := range pp.keys {
+		names = append(names, pp.table.Row(k).Cells[0])
 	}
-	st.Profiles = []settings.Profile{
-		{ID: "profile:git-bash", Name: "Git Bash", Command: []string{"bash.exe"}},
-		{ID: "profile:nu", Name: "Nushell", Command: []string{"nu.exe"}},
-	}
-	publish(st)
-	if p.editP.Disabled || p.removeP.Disabled {
-		t.Fatalf("with profiles, Edit is disabled %v and Remove %v", p.editP.Disabled, p.removeP.Disabled)
+	want := []string{"Command Prompt", "Git Bash", "Nushell", "Home", "Login Shell (hidden)", "Home"}
+	if !slices.Equal(names, want) {
+		t.Fatalf("the Profiles page lists %q, want %q", names, want)
 	}
 	for len(lastWindow.Client().Intents()) > 0 {
 		<-lastWindow.Client().Intents()
 	}
-	win.removeProfilePickerFrom(st.Profiles, lastUI)
-	lastWindow.Frame(time.Second / 60)
-	for _, k := range []gi.Key{gi.KeyDown, gi.KeyEnter} {
-		lastWindow.Input(gi.KeyPress{Key: k, Time: time.Now()})
+	click := func(row int, b *widget.Button) {
+		pp.table.SetCursor(pp.keys[row], lastUI)
+		b.OnClick(lastUI)
 		lastWindow.Frame(time.Second / 60)
 	}
+	click(2, pp.drop)
 	if in, ok := nextIntent(t).(app.RemoveProfile); !ok || in.ID != "profile:nu" {
-		t.Fatalf("picking the second profile sent %#v", in)
+		t.Fatalf("Remove on Nushell sent %#v", in)
+	}
+	click(0, pp.drop)
+	if in, ok := nextIntent(t).(app.HideFound); !ok || in.ID != "cmd" || in.HostID != "" || in.Show {
+		t.Fatalf("Remove on Command Prompt sent %#v, not to hide it", in)
+	}
+	click(4, pp.hide)
+	if in, ok := nextIntent(t).(app.HideFound); !ok || in.ID != app.LoginShell || in.HostID != "jump" || !in.Show {
+		t.Fatalf("Show on the hidden login shell sent %#v", in)
 	}
 }
 

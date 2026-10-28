@@ -98,6 +98,12 @@ type stored struct {
 	// does not know, so they are kept here.
 	ServerShells map[string]string `json:"serverShells,omitempty"`
 
+	// Found are the user's changes to the profiles kakel finds itself,
+	// its shells, drives and each server's login shell and home, and
+	// which of them are hidden. Those are found again each run, so
+	// only what the user changed is kept.
+	Found []FoundProfile `json:"found,omitempty"`
+
 	// AgentMay is what the hand-over dialog's tick boxes were last set
 	// to. A field left out is a box that was not ticked.
 	AgentMay *AgentMay `json:"agentMay,omitempty"`
@@ -431,6 +437,33 @@ type Profile struct {
 
 	// Env are variables the shell is started with, each NAME=value.
 	Env []string `json:"env,omitempty"`
+}
+
+// FoundProfile is what the user changed of a profile kakel finds
+// itself, by the machine it is on, HostID, empty for this computer, and
+// its ID: a shell's, such as "cmd" or "wsl:Ubuntu", "login" for a
+// server's own shell, "home" for its home folder, or "drive:" and a
+// drive's path. Empty fields leave the found profile's own.
+type FoundProfile struct {
+	HostID string `json:"hostId,omitempty"`
+	ID     string `json:"id"`
+
+	// Name is shown in its place.
+	Name string `json:"name,omitempty"`
+
+	// Hidden takes it out of every list that offers it: the palette,
+	// the launcher, the tray, the menus, the Shell setting and the file
+	// manager's sidebar.
+	Hidden bool `json:"hidden,omitempty"`
+
+	// Folder and Env are, for a terminal, as a Profile has them.
+	Folder string   `json:"folder,omitempty"`
+	Env    []string `json:"env,omitempty"`
+}
+
+// empty reports whether f changes nothing, and so need not be kept.
+func (f FoundProfile) empty() bool {
+	return f.Name == "" && !f.Hidden && f.Folder == "" && len(f.Env) == 0
 }
 
 // AgentMay is what a hand-over allows an agent beyond reading a pane and
@@ -793,6 +826,56 @@ func (s *Settings) PutServerShell(hostID, profileID string) error {
 		}
 		s.have.ServerShells[hostID] = profileID
 	}
+	if err := s.saveLocked(); err != nil {
+		s.have = before
+		return err
+	}
+	return nil
+}
+
+// Found are the user's changes to the profiles kakel finds itself.
+func (s *Settings) Found() []FoundProfile {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.have.Found)
+}
+
+// PutFound keeps f as the change to the found profile with its machine
+// and id, in place of the one kept before; one that changes nothing is
+// dropped. Then it saves.
+func (s *Settings) PutFound(f FoundProfile) error {
+	return s.putFound(func(have []FoundProfile) []FoundProfile {
+		same := func(at FoundProfile) bool { return at.HostID == f.HostID && at.ID == f.ID }
+		if i := slices.IndexFunc(have, same); i >= 0 {
+			have[i] = f
+		} else {
+			have = append(have, f)
+		}
+		return slices.DeleteFunc(have, FoundProfile.empty)
+	})
+}
+
+// DropFoundOn forgets the changes to the found profiles on the saved
+// server hostID, as the server is removed, and saves.
+func (s *Settings) DropFoundOn(hostID string) error {
+	if hostID == "" {
+		return errors.New("settings: no server named")
+	}
+	return s.putFound(func(have []FoundProfile) []FoundProfile {
+		return slices.DeleteFunc(have, func(at FoundProfile) bool { return at.HostID == hostID })
+	})
+}
+
+// putFound rereads the file, edits the found profiles it holds and
+// saves.
+func (s *Settings) putFound(edit func([]FoundProfile) []FoundProfile) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.rereadLocked(); err != nil {
+		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
+	}
+	before := s.have
+	s.have.Found = edit(slices.Clone(s.have.Found))
 	if err := s.saveLocked(); err != nil {
 		s.have = before
 		return err
@@ -1333,10 +1416,21 @@ func (s *Settings) Favourites() (favs []Favourite, moved bool) {
 
 // PutFavourites keeps the favourites, and saves.
 func (s *Settings) PutFavourites(favs []Favourite) error {
+	return s.EditFavourites(func([]Favourite) ([]Favourite, error) { return favs, nil })
+}
+
+// EditFavourites hands edit the favourites as the file holds them now,
+// not as this window last read them, and keeps what it returns, unless
+// it fails. So a favourite another kakel pinned since is not lost.
+func (s *Settings) EditFavourites(edit func([]Favourite) ([]Favourite, error)) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.rereadLocked(); err != nil {
 		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
+	}
+	favs, err := edit(slices.Clone(s.have.Favourites))
+	if err != nil {
+		return err
 	}
 	before := s.have
 	s.have.Favourites = slices.Clone(favs)
