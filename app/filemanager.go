@@ -246,7 +246,7 @@ func (a *app) fileManagerPlaces() ([]filemanager.Place, error) {
 		out = append(out, p)
 	}
 	if err == nil {
-		go func() { a.events <- func() { a.noteDrives(drives) } }()
+		a.noteDrives(drives)
 	}
 	if servers := a.serverPlaces.Load(); servers != nil {
 		out = append(out, *servers...)
@@ -288,11 +288,7 @@ func (a *app) notePlaces() {
 		case slices.Contains(connected, m) || windows[m]:
 			note = "Connected"
 		}
-		name := h.Name
-		if n := a.foundEdit(h.ID, FoundHome).Name; n != "" {
-			name = n
-		}
-		p := filemanager.Place{Name: name, Kind: "drive", Group: "Machines", Note: note, FS: serverFS + h.ID,
+		p := filemanager.Place{Name: h.Name, Kind: "drive", Group: "Machines", Note: note, FS: serverFS + h.ID,
 			Lit: slices.Contains(connected, m) || windows[m]}
 		if fm := a.fmFiles[m]; fm != nil {
 			if fm.live() {
@@ -625,7 +621,11 @@ func (a *app) placeCommand(w *filemanager.Window, p filemanager.Place, id string
 			})
 		}
 		if err != nil {
-			w.Notify("Couldn't "+id+" "+a.machines.Name(m), words.UpperFirst(err.Error())+".", "warning")
+			what := a.machines.Name(m)
+			if p.FS == "" {
+				what = p.Name
+			}
+			w.Notify("Couldn't "+id+" "+what, words.UpperFirst(err.Error())+".", "warning")
 		}
 	}
 }

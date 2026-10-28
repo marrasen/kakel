@@ -106,9 +106,25 @@ func (w *Window) profilesOn(m machines.ID) []settings.Profile {
 	return out
 }
 
+// foundOf is what the user changed of the found profile id on machine
+// m: nothing, when they changed nothing.
+func foundOf(found []settings.FoundProfile, m machines.ID, id string) settings.FoundProfile {
+	if i := slices.IndexFunc(found, func(f settings.FoundProfile) bool { return f.HostID == string(m) && f.ID == id }); i >= 0 {
+		return found[i]
+	}
+	return settings.FoundProfile{HostID: string(m), ID: id}
+}
+
 // hidden reports whether the found profile id on machine m is hidden.
-func (w *Window) hidden(m machines.ID, id string) bool {
-	return slices.ContainsFunc(w.found, func(f settings.FoundProfile) bool { return f.HostID == string(m) && f.ID == id && f.Hidden })
+func (w *Window) hidden(m machines.ID, id string) bool { return foundOf(w.found, m, id).Hidden }
+
+// foundName is what the found profile id on machine m is called: the
+// name the user gave it, or else called.
+func (w *Window) foundName(m machines.ID, id, called string) string {
+	if n := foundOf(w.found, m, id).Name; n != "" {
+		return n
+	}
+	return called
 }
 
 // isServer reports whether m is a saved server, not a kakel window.
@@ -127,7 +143,8 @@ func (w *Window) offersTerminal(m machines.ID) bool {
 func (w *Window) showsFiles(m machines.ID) bool { return !w.hidden(m, app.FoundHome) }
 
 // offersNothing reports whether everything the saved server m offers
-// is hidden or gone, as for a server used only to reach others.
+// is hidden or gone, as for a server used only to reach others: its
+// terminals and its files.
 func (w *Window) offersNothing(m machines.ID) bool {
-	return w.isServer(m) && !w.offersTerminal(m) && !w.showsFiles(m) && len(w.foldersOn(m)) == 0
+	return w.isServer(m) && !w.offersTerminal(m) && !w.showsFiles(m)
 }

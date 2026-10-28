@@ -300,6 +300,10 @@ func (a *app) farRun(machine machines.ID) string {
 	delete(a.nextFar, machine)
 	if !asked {
 		run = a.st.ServerShells[string(machine)]
+		// Its own shell hidden, the first profile shown runs instead.
+		if ps := a.profilesOn(machine); run == "" && !a.showsLogin(machine) && len(ps) > 0 {
+			run = ps[0].ID
+		}
 	}
 	return run
 }

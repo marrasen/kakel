@@ -3892,7 +3892,7 @@ func (w *Window) openMachineMenu(r *sideRow, u *gunim.UI) {
 		// Terminal opens only while no profile is its default.
 		heading("Shells")
 		if !w.hidden(m, app.LoginShell) {
-			add(icon.SquareTerminal, "Login Shell", send(app.OpenOn{Machine: m, Login: true}))
+			add(icon.SquareTerminal, w.foundName(m, app.LoginShell, "Login Shell"), send(app.OpenOn{Machine: m, Login: true}))
 		}
 		for _, p := range profiles {
 			add(icon.SquareTerminal, p.Name, send(app.OpenShellNamed{ID: p.ID}))
@@ -3900,7 +3900,7 @@ func (w *Window) openMachineMenu(r *sideRow, u *gunim.UI) {
 	}
 	heading("Files")
 	if w.showsFiles(m) {
-		add(icon.House, "Home", send(app.OpenFilesOn{Machine: m}))
+		add(icon.House, w.foundName(m, app.FoundHome, "Home"), send(app.OpenFilesOn{Machine: m}))
 	}
 	for _, f := range w.foldersOn(m) {
 		ic := icon.Folder

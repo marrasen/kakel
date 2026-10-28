@@ -1416,10 +1416,21 @@ func (s *Settings) Favourites() (favs []Favourite, moved bool) {
 
 // PutFavourites keeps the favourites, and saves.
 func (s *Settings) PutFavourites(favs []Favourite) error {
+	return s.EditFavourites(func([]Favourite) ([]Favourite, error) { return favs, nil })
+}
+
+// EditFavourites hands edit the favourites as the file holds them now,
+// not as this window last read them, and keeps what it returns, unless
+// it fails. So a favourite another kakel pinned since is not lost.
+func (s *Settings) EditFavourites(edit func([]Favourite) ([]Favourite, error)) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.rereadLocked(); err != nil {
 		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
+	}
+	favs, err := edit(slices.Clone(s.have.Favourites))
+	if err != nil {
+		return err
 	}
 	before := s.have
 	s.have.Favourites = slices.Clone(favs)

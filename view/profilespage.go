@@ -75,7 +75,7 @@ func (p *settingsPane) profilesTab() gunim.Node {
 	addT, addF := iconButton(icon.Plus, "Add Terminal…"), iconButton(icon.FolderPlus, "Add Files…")
 	addT.OnClick = func(u *gunim.UI) gunim.Intent { pp.w.profileDialog(pp.w.profiles, nil, u); return nil }
 	addF.OnClick = func(u *gunim.UI) gunim.Intent { pp.w.favouriteDialog(nil, u); return nil }
-	pp.edit, pp.hide, pp.drop = iconButton(icon.Pencil, "Edit…"), iconButton(icon.EyeOff, "Hide or Show"), iconButton(icon.Trash2, "Remove")
+	pp.edit, pp.hide, pp.drop = iconButton(icon.Pencil, "Edit…"), iconButton(icon.Eye, "Show"), iconButton(icon.Trash2, "Remove")
 	onRow := func(b *widget.Button, do func(profileRow, *gunim.UI)) {
 		b.OnClick = func(u *gunim.UI) gunim.Intent {
 			if k, ok := pp.table.Cursor(); ok {
@@ -86,12 +86,15 @@ func (p *settingsPane) profilesTab() gunim.Node {
 	}
 	onRow(pp.edit, pp.editRow)
 	onRow(pp.hide, func(r profileRow, u *gunim.UI) {
-		if r.found != "" {
-			u.Send(pp.table, app.HideFound{HostID: string(r.machine), ID: r.found, Show: r.hidden})
+		if r.found != "" && r.hidden {
+			u.Send(pp.table, app.HideFound{HostID: string(r.machine), ID: r.found, Show: true})
 		}
 	})
+	// One kakel finds is found again each run: removed, it is hidden.
 	onRow(pp.drop, func(r profileRow, u *gunim.UI) {
 		switch {
+		case r.found != "":
+			u.Send(pp.table, app.HideFound{HostID: string(r.machine), ID: r.found})
 		case r.profile != nil:
 			u.Send(pp.table, app.RemoveProfile{ID: r.profile.ID})
 		case r.fav != nil:
@@ -100,7 +103,7 @@ func (p *settingsPane) profilesTab() gunim.Node {
 	})
 	return settingsPage(
 		settingsSection("Profiles",
-			faintLabel("What each machine offers to open: its terminals and its files. kakel finds the shells, the drives and each server's own shell and home; you can rename those, or hide them everywhere. Terminals and folders you add can be changed or removed."),
+			faintLabel("What each machine offers to open: its terminals and its files. kakel finds the shells, the drives and each server's own shell and home: you can rename those, and removing one hides it everywhere until Show brings it back. Terminals and folders you add can be changed or removed."),
 			widget.NewSized(pp.table, 0, 420),
 			buttons(addT, addF, pp.edit, pp.hide, pp.drop)),
 	)
@@ -115,15 +118,8 @@ func (pp *profilesPage) show(st app.State, u *gunim.UI) {
 		pp.rows[k] = r
 		pp.keys = append(pp.keys, k)
 	}
-	edit := func(m machines.ID, id string) settings.FoundProfile {
-		i := slices.IndexFunc(st.Found, func(f settings.FoundProfile) bool { return f.HostID == string(m) && f.ID == id })
-		if i < 0 {
-			return settings.FoundProfile{HostID: string(m), ID: id}
-		}
-		return st.Found[i]
-	}
 	found := func(m machines.ID, id, name, kind, what string) {
-		f := edit(m, id)
+		f := foundOf(st.Found, m, id)
 		if f.Name != "" {
 			name = f.Name
 		}
@@ -153,10 +149,13 @@ func (pp *profilesPage) show(st app.State, u *gunim.UI) {
 	}
 	favs("")
 	for _, h := range st.Saved {
+		m := machines.ID(h.ID)
 		if h.Window {
+			// A kakel window's terminals are its own; its files are
+			// offered, and can be hidden from its place.
+			found(m, app.FoundHome, "Home", "Files", "the window's home folder")
 			continue
 		}
-		m := machines.ID(h.ID)
 		found(m, app.LoginShell, "Login Shell", "Terminal", "the account's own shell")
 		mine(m)
 		found(m, app.FoundHome, "Home", "Files", "the account's home folder")
@@ -182,10 +181,7 @@ func (pp *profilesPage) editRow(r profileRow, u *gunim.UI) {
 // foundDialog changes a profile kakel finds: its name, and for a shell
 // here, the folder it starts in and its variables.
 func (w *Window) foundDialog(r profileRow, u *gunim.UI) {
-	f := settings.FoundProfile{HostID: string(r.machine), ID: r.found, Hidden: r.hidden}
-	if i := slices.IndexFunc(w.found, func(at settings.FoundProfile) bool { return at.HostID == f.HostID && at.ID == f.ID }); i >= 0 {
-		f = w.found[i]
-	}
+	f := foundOf(w.found, r.machine, r.found)
 	name, dir := widget.NewTextField(), widget.NewTextField()
 	env := widget.NewTextArea()
 	env.Rows = 3

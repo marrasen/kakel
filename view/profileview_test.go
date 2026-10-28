@@ -99,8 +99,8 @@ func TestANewProfileTakesANameOfItsOwn(t *testing.T) {
 
 // The Profiles page lists the shells found, the user's profiles and
 // each server's own shell and home, a hidden one marked; Remove
-// removes the profile the cursor is on, and Hide or Show hides a found
-// one, or shows it again.
+// removes the profile the cursor is on, or hides one found, and Show
+// shows a hidden one again.
 func TestTheProfilesPageActsOnTheRowOfTheCursor(t *testing.T) {
 	win, _, publish := windowStage(t)
 	st := app.State{Panes: []app.Pane{{ID: "s", Title: "Settings", Kind: app.KindSettings}}, Stage: &app.Box{Pane: "s"}, Focus: "s"}
@@ -137,9 +137,9 @@ func TestTheProfilesPageActsOnTheRowOfTheCursor(t *testing.T) {
 	if in, ok := nextIntent(t).(app.RemoveProfile); !ok || in.ID != "profile:nu" {
 		t.Fatalf("Remove on Nushell sent %#v", in)
 	}
-	click(0, pp.hide)
+	click(0, pp.drop)
 	if in, ok := nextIntent(t).(app.HideFound); !ok || in.ID != "cmd" || in.HostID != "" || in.Show {
-		t.Fatalf("Hide on Command Prompt sent %#v", in)
+		t.Fatalf("Remove on Command Prompt sent %#v, not to hide it", in)
 	}
 	click(4, pp.hide)
 	if in, ok := nextIntent(t).(app.HideFound); !ok || in.ID != app.LoginShell || in.HostID != "jump" || !in.Show {

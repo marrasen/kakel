@@ -143,21 +143,14 @@ func (a *app) favouritesOn(machine machines.ID) []string {
 // forgetFavourites takes the favourites on machine away, as it was
 // removed.
 func (a *app) forgetFavourites(machine machines.ID) {
-	if a.settings == nil {
+	if a.settings == nil || !slices.ContainsFunc(a.st.Favourites, func(f Favourite) bool { return f.Machine.Of(machine) }) {
 		return
 	}
-	kept, _ := a.settings.Favourites()
-	left := slices.DeleteFunc(slices.Clone(kept), func(f settings.Favourite) bool { return machines.ID(f.Machine).Of(machine) })
-	if len(left) == len(kept) {
-		return
-	}
-	if err := a.settings.PutFavourites(left); err != nil {
+	err := a.editFavourites(func(kept []settings.Favourite) ([]settings.Favourite, error) {
+		return slices.DeleteFunc(kept, func(f settings.Favourite) bool { return machines.ID(f.Machine).Of(machine) }), nil
+	})
+	if err != nil {
 		a.failed("Couldn't remove the favourites on "+a.machines.Name(machine), err.Error())
-		return
-	}
-	a.showFavourites()
-	if a.files != nil && len(a.fmPanes) > 0 {
-		a.files.Refresh()
 	}
 }
 
@@ -314,12 +307,7 @@ func (a *app) editFavourites(edit func([]settings.Favourite) ([]settings.Favouri
 	if err := a.settings.Err(); err != nil {
 		return err
 	}
-	kept, _ := a.settings.Favourites()
-	out, err := edit(slices.Clone(kept))
-	if err != nil {
-		return err
-	}
-	if err := a.settings.PutFavourites(out); err != nil {
+	if err := a.settings.EditFavourites(edit); err != nil {
 		return err
 	}
 	a.showFavourites()

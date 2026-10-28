@@ -93,14 +93,6 @@ func (a *app) saveFound(f settings.FoundProfile) error {
 			return a.pickShell("")
 		}
 	}
-	if f.Hidden && f.HostID != "" && f.ID == LoginShell && a.st.ServerShells[f.HostID] == "" {
-		// Its new terminal runs a profile, if it has one shown.
-		if ps := a.profilesOn(machines.ID(f.HostID)); len(ps) > 0 {
-			err := a.settings.PutServerShell(f.HostID, ps[0].ID)
-			a.st.ServerShells = a.settings.ServerShells()
-			return err
-		}
-	}
 	return nil
 }
 
@@ -154,21 +146,22 @@ func (a *app) showsFiles(m machines.ID) bool { return !a.hidden(m, FoundHome) }
 
 // offersNothing reports whether everything the saved server m offers
 // is hidden or gone, as for a server used only to reach others: its
-// terminals, its files and its favourites. Lists of things to open
-// leave such a server out.
+// terminals and its files. Lists of machines leave such a server out;
+// its favourites are still offered, each as a place of its own.
 func (a *app) offersNothing(m machines.ID) bool {
 	if h, ok := a.machines.Saved(m); !ok || h.Window {
 		return false
 	}
-	return !a.showsLogin(m) && !a.showsFiles(m) && len(a.profilesOn(m)) == 0 && len(a.favouritesOn(m)) == 0
+	return !a.offersTerminal(m) && !a.showsFiles(m)
 }
 
-// noteDrives notes the drives found here, for Settings to offer.
-func (a *app) noteDrives(places []FoundDrive) {
-	if slices.Equal(a.st.Drives, places) {
+// noteDrives notes the drives found here, for Settings to offer. It
+// runs on any goroutine, and tells the program only when they changed.
+func (a *app) noteDrives(drives []FoundDrive) {
+	if old := a.drivesSeen.Swap(&drives); old != nil && slices.Equal(*old, drives) {
 		return
 	}
-	a.st.Drives = places
+	go func() { a.events <- func() { a.st.Drives = drives } }()
 }
 
 // driveID is the ID of the found profile of the drive at path.

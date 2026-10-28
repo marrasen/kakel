@@ -798,6 +798,9 @@ type app struct {
 	fmFiles      map[machines.ID]*fmFS
 	fmFavs       *fmFavourites
 	fmNames      atomic.Pointer[map[string]string]
+	// drivesSeen are the drives the file manager's places last found
+	// here, read off the program's goroutine.
+	drivesSeen atomic.Pointer[[]FoundDrive]
 	// fmPanes are the file manager panes, by pane, and fmRoute their file
 	// managers, for the windows' goroutines to hand their intents to.
 	fmPanes map[string]*fmPane

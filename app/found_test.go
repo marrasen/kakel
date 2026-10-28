@@ -119,8 +119,8 @@ func TestAServerWithEverythingHiddenIsLeftOut(t *testing.T) {
 	a, _ := serverWithProfiles(t)
 	a.handle(HideFound{HostID: "srv", ID: LoginShell})
 	a.handle(HideFound{HostID: "srv", ID: FoundHome})
-	if got := a.st.ServerShells["srv"]; got == "" {
-		t.Fatal("its own shell hidden, the server's new terminal still runs it")
+	if got := a.farRun("srv"); got != "profile:tmux" {
+		t.Fatalf("its own shell hidden, the server's new terminal runs %q, want the first profile", got)
 	}
 	ms := a.launchMachines()
 	i := slices.IndexFunc(ms, func(m LaunchMachine) bool { return m.ID == "srv" })
