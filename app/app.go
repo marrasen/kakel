@@ -1227,6 +1227,12 @@ func failedTitle(in gunim.Intent) string {
 		return "Couldn't open the machine's settings"
 	case SetDefaultProfile:
 		return "Couldn't make it the default"
+	case ForgetCommand:
+		return "Couldn't remove the command"
+	case ForgetCopy:
+		return "Couldn't remove the copy"
+	case ForgetTunnel:
+		return "Couldn't remove the tunnel"
 	case SaveFavourite:
 		return "Couldn't save the favourite"
 	case RemoveFavourite:
@@ -1684,6 +1690,10 @@ func (a *app) handle(in gunim.Intent) {
 		a.draftTyped[in.Pane] = in.Typed
 	case SetDefaultProfile:
 		err = a.setDefaultProfile(in)
+	case ForgetCommand:
+		err = a.forgetCommand(in.Saved)
+	case ForgetTunnel:
+		err = a.forgetTunnel(in.Saved)
 	case SaveFavourite:
 		err = a.saveFavourite(in)
 	case RemoveFavourite:

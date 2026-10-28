@@ -46,6 +46,10 @@ The whole list. The [README](README.md) has the short version.
   again, and the folders saved as favourites, which are added, renamed,
   opened and removed there. A favourite with no name of its own goes by
   its folder's name.
+- **What a machine keeps.** The commands kept from Run Command, the
+  copies kept from the file manager, to or from the machine, and the
+  tunnels kept through it are listed in its pane under their own
+  headings, to run again or take off the list.
 - **Connections, not just shells.** One SSH connection carries several
   things at once, so a second terminal on a machine is a second channel
   rather than a second login. A command runs on a channel of the same

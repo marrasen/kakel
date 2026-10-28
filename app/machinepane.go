@@ -239,3 +239,35 @@ func (a *app) shellFoundAs(argv []string) string {
 	}
 	return ""
 }
+
+// Intents for what a machine keeps for next time, from its pane.
+type (
+	// ForgetCommand takes a saved command off the list.
+	ForgetCommand struct{ Saved settings.SavedCommand }
+	// ForgetTunnel takes a saved tunnel off the list.
+	ForgetTunnel struct{ Saved settings.SavedTunnel }
+)
+
+// forgetCommand takes a saved command off the list.
+func (a *app) forgetCommand(c settings.SavedCommand) error {
+	if a.settings == nil {
+		return errors.New("the settings could not be read, so nothing can be kept")
+	}
+	if err := a.settings.DropCommand(c.Line); err != nil {
+		return err
+	}
+	a.st.SavedCommands = a.settings.Commands()
+	return nil
+}
+
+// forgetTunnel takes a saved tunnel off the list.
+func (a *app) forgetTunnel(t settings.SavedTunnel) error {
+	if a.settings == nil {
+		return errors.New("the settings could not be read, so nothing can be kept")
+	}
+	if err := a.settings.DropTunnel(t); err != nil {
+		return err
+	}
+	a.st.SavedTunnels = a.settings.Tunnels()
+	return nil
+}

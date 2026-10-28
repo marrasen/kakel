@@ -34,6 +34,11 @@ the sidebar's Hide is gone. Favourites are added, renamed, opened and
 removed there too. A favourite with no name of its own goes by its
 folder's name everywhere, as the sidebar called it, not by its path.
 
+**What a machine keeps for next time is in its pane.** The commands kept
+from Run Command, the copies kept from the file manager and the tunnels
+kept for a machine are listed in its pane, each kind under its own
+heading, to run again or take off the list.
+
 ## v0.12.2-beta.5
 
 ### Added

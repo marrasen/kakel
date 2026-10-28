@@ -1,8 +1,11 @@
 package view
 
 import (
+	"fmt"
 	"path/filepath"
+	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/marrasen/gunim"
@@ -208,6 +211,45 @@ func TestAFolderAddedIsPickedOnceSaved(t *testing.T) {
 	again(app.State{Favourites: []app.Favourite{{Path: dir}}})
 	if mp.sel != mpFolder+"fav:"+dir {
 		t.Fatalf("saved, the row picked is %q", mp.sel)
+	}
+}
+
+// A server's pane lists what is kept for it, each kind under its
+// heading: the commands run on it, the copies to or from it, and the
+// tunnels through it, and none of another machine's. Each runs again
+// from its row.
+func TestAServersKeptThingsAreListedInItsPane(t *testing.T) {
+	cmd := settings.SavedCommand{Line: "make test", Dir: "/src", Host: "prod", HostID: "s1"}
+	cp := settings.SavedCopy{To: "prod", ToID: "s1", At: "/tmp", Into: "/srv", Names: []string{"site.zip"}}
+	tun := settings.SavedTunnel{Host: "prod", HostID: "s1", Kind: "local", Listen: "localhost:5432", Target: "db:5432"}
+	st := app.State{Saved: []remote.Host{{ID: "s1", Name: "prod", Address: "prod.example"}},
+		SavedCommands: []settings.SavedCommand{cmd, {Line: "ls"}, {Line: "uptime", Host: "prod\x00far", HostID: "s1"}},
+		SavedCopies:   []settings.SavedCopy{cp, {From: "prod", At: "/a", Into: "/b", Names: []string{"old.txt"}}},
+		SavedTunnels:  []settings.SavedTunnel{tun}}
+	_, mp, _ := machinePaneOf(t, st, "s1", false)
+	got := titlesOf(mp)
+	// A command beyond prod, kept under prod's ID through it, is not
+	// prod's; a copy kept before IDs is, by its name.
+	want := []string{"Commands", "make test", "Copies", "Copy site.zip", "Copy old.txt", "Tunnels", "localhost:5432 → db:5432"}
+	if len(got) < len(want) || !slices.Equal(got[len(got)-len(want):], want) {
+		t.Fatalf("the rows are %q, want them to end %q", got, want)
+	}
+	for k, wantIn := range map[string]gunim.Intent{
+		mpSaved + fmt.Sprintf("cmd:%#v", cmd):    app.RunSavedCommand{Saved: cmd},
+		mpSaved + fmt.Sprintf("tunnel:%#v", tun): app.OpenSavedTunnel{Saved: tun},
+	} {
+		mp.pick(k, lastUI)
+		label := "Run"
+		if strings.Contains(k, "tunnel:") {
+			label = "Open"
+		}
+		if in := findButton(t, mp.right, label).OnClick(lastUI); !reflect.DeepEqual(in, wantIn) {
+			t.Fatalf("%s sent %#v, want %#v", label, in, wantIn)
+		}
+	}
+	mp.pick(mpSaved+fmt.Sprintf("copy:%#v", cp), lastUI)
+	if in, ok := findButton(t, mp.right, "Run").OnClick(lastUI).(app.RunSavedCopy); !ok || in.Saved.Into != "/srv" {
+		t.Fatalf("Run on the copy sent %#v", in)
 	}
 }
 
