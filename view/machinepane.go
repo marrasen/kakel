@@ -278,6 +278,9 @@ func (mp *machinePane) signature() string {
 		if p.edit.Setup != nil {
 			b.WriteString(boolWord(*p.edit.Setup))
 		}
+		if s := it.saved; s != nil && s.copy != nil {
+			b.WriteString("\x03" + app.CopiedWhere(*s.copy, mp.w.nameOf))
+		}
 		f := it.folder
 		b.WriteString("\x02" + f.title() + "\x00" + f.path + boolWord(f.hidden()))
 		if f.fav != nil {
@@ -380,28 +383,37 @@ func (mp *machinePane) rows() []mpItem {
 // from it, and the tunnels through it.
 func (mp *machinePane) savedRows() []mpItem {
 	st, m := mp.st, mp.machine
-	var cmds, copies, tunnels []mpItem
-	for i, c := range st.SavedCommands {
-		if machines.ID(c.HostID) == m && (m != "" || c.Host == "") {
-			cmds = append(cmds, mpItem{key: mpSaved + fmt.Sprintf("cmd:%+v", c), title: c.Line, icon: icon.SquareChevronRight,
-				saved: &mpSavedOf{command: &st.SavedCommands[i]}})
-		}
-	}
-	end := func(id, name, window string) bool {
+	h, _ := mp.host()
+	// on reports whether what was kept on the machine with id and name,
+	// reached through window, is this one's: by its ID, or by its name
+	// when it was kept before servers had IDs. One beyond a kakel window
+	// is kept under the window's ID, and is that machine's, not the
+	// window's.
+	on := func(id, name, window string) bool {
 		if m == "" {
 			return id == "" && name == "" && window == ""
 		}
-		return machines.ID(id) == m
+		if window != "" || strings.Contains(name, app.KeptFarSep) {
+			return false
+		}
+		return machines.ID(id) == m || id == "" && name != "" && name == h.Name
+	}
+	var cmds, copies, tunnels []mpItem
+	for i, c := range st.SavedCommands {
+		if on(c.HostID, c.Host, "") {
+			cmds = append(cmds, mpItem{key: mpSaved + fmt.Sprintf("cmd:%#v", c), title: c.Line, icon: icon.SquareChevronRight,
+				saved: &mpSavedOf{command: &st.SavedCommands[i]}})
+		}
 	}
 	for i, c := range st.SavedCopies {
-		if end(c.FromID, c.From, c.FromWindow) || end(c.ToID, c.To, c.ToWindow) {
-			copies = append(copies, mpItem{key: mpSaved + fmt.Sprintf("copy:%+v", c), title: "Copy " + app.CopiedWhat(c), icon: icon.Copy,
+		if on(c.FromID, c.From, c.FromWindow) || on(c.ToID, c.To, c.ToWindow) {
+			copies = append(copies, mpItem{key: mpSaved + fmt.Sprintf("copy:%#v", c), title: "Copy " + app.CopiedWhat(c), icon: icon.Copy,
 				saved: &mpSavedOf{copy: &st.SavedCopies[i]}})
 		}
 	}
 	for i, t := range st.SavedTunnels {
-		if m != "" && machines.ID(t.HostID) == m {
-			tunnels = append(tunnels, mpItem{key: mpSaved + fmt.Sprintf("tunnel:%+v", t), title: tunnelTitle(t), icon: icon.Cable,
+		if m != "" && on(t.HostID, t.Host, "") {
+			tunnels = append(tunnels, mpItem{key: mpSaved + fmt.Sprintf("tunnel:%#v", t), title: tunnelTitle(t), icon: icon.Cable,
 				saved: &mpSavedOf{tunnel: &st.SavedTunnels[i]}})
 		}
 	}
@@ -445,15 +457,16 @@ func (mp *machinePane) savedSide(s mpSavedOf) gunim.Node {
 	case s.copy != nil:
 		c := *s.copy
 		title, note = "Copy "+app.CopiedWhat(c), "A copy kept from the file manager, to run again."
-		form.Add("Copies", widget.NewLabel(strings.Join(c.Names, ", ")))
+		form.Add("Files", widget.NewLabel(strings.Join(c.Names, ", ")))
 		form.Add("From and to", widget.NewLabel(app.CopiedWhere(c, mp.w.nameOf)))
 		run.OnClick = func(*gunim.UI) gunim.Intent { return app.RunSavedCopy{Saved: c} }
 	case s.tunnel != nil:
 		t := *s.tunnel
 		title, note = tunnelTitle(t), "A tunnel kept, to open again."
 		run.Label = "Open"
-		kind := map[string]string{"local": "A port here, reaching through the server", "remote": "A port on the server, reaching back here",
-			"socks": "A SOCKS proxy here, through the server"}[t.Kind]
+		kind := map[string]string{"local": "A port here, reaching through " + mp.w.nameOf(mp.machine),
+			"remote": "A port on " + mp.w.nameOf(mp.machine) + ", reaching back here",
+			"socks":  "A SOCKS proxy here, through " + mp.w.nameOf(mp.machine)}[t.Kind]
 		if kind == "" {
 			kind = t.Kind
 		}
@@ -848,11 +861,11 @@ func (mp *machinePane) confirmForget(s mpSavedOf, u *gunim.UI) {
 	var forget gunim.Intent
 	switch {
 	case s.command != nil:
-		title, forget = s.command.Line, app.ForgetCommand{Saved: *s.command}
+		title, forget = "the command "+shortened(s.command.Line, 50), app.ForgetCommand{Saved: *s.command}
 	case s.copy != nil:
-		title, forget = "Copy "+app.CopiedWhat(*s.copy), app.ForgetCopy{Saved: *s.copy}
+		title, forget = "the copy of "+shortened(app.CopiedWhat(*s.copy), 50), app.ForgetCopy{Saved: *s.copy}
 	case s.tunnel != nil:
-		title, forget = tunnelTitle(*s.tunnel), app.ForgetTunnel{Saved: *s.tunnel}
+		title, forget = "the tunnel "+tunnelTitle(*s.tunnel), app.ForgetTunnel{Saved: *s.tunnel}
 	default:
 		return
 	}
@@ -981,7 +994,9 @@ func (r *mpRow) set(it mpItem, picked bool, u *gunim.UI) {
 		r.icon.Icon = it.icon
 		kids = append(kids, r.icon, r.title)
 	}
+	r.bin.Tooltip = "Delete it"
 	if it.saved != nil {
+		r.bin.Tooltip = "Take it off the list"
 		kids = append(kids, widget.NewSpacer(), r.bin)
 	}
 	if strings.HasPrefix(it.key, mpFolder) {

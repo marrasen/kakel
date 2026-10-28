@@ -1229,6 +1229,8 @@ func failedTitle(in gunim.Intent) string {
 		return "Couldn't make it the default"
 	case ForgetCommand:
 		return "Couldn't remove the command"
+	case ForgetCopy:
+		return "Couldn't remove the copy"
 	case ForgetTunnel:
 		return "Couldn't remove the tunnel"
 	case SaveFavourite:
