@@ -170,6 +170,13 @@ type State struct {
 	// runs, by the server's ID.
 	Profiles     []settings.Profile
 	ServerShells map[string]string
+	// Found are the user's changes to the profiles kakel finds itself,
+	// and which are hidden. FoundShells are the shells found here,
+	// hidden ones too, by the names they are found by, and Drives the
+	// drives found here, as the file manager's sidebar lists them.
+	Found       []settings.FoundProfile
+	FoundShells []ShellChoice
+	Drives      []FoundDrive
 	// HereMachine is the machine a new terminal and New Files open on,
 	// from the pane in front, and HereShell the name of the shell such
 	// a terminal runs on this computer: the one in front, or else the
@@ -764,7 +771,7 @@ type app struct {
 	nextShell []string
 	nextDir   string
 	// nextFar is what the next terminal on a saved server runs, once: a
-	// profile's ID, or loginShell. farRuns is the profile each server
+	// profile's ID, or LoginShell. farRuns is the profile each server
 	// pane runs, to start it again and to open another like it.
 	nextFar map[machines.ID]string
 	farRuns map[string]string
@@ -1119,6 +1126,7 @@ func (a *app) loadSettings() {
 			a.st.ChosenShell, _ = s.Shell()
 			a.st.Profiles = s.Profiles()
 			a.st.ServerShells = s.ServerShells()
+			a.st.Found = s.Found()
 			a.mergeShells()
 			a.st.ThisComputer.StartFolder = s.Local()
 			a.st.ShellSetup = s.ShellSetup()
@@ -1196,6 +1204,14 @@ func failedTitle(in gunim.Intent) string {
 		return "Couldn't save the profile"
 	case RemoveProfile:
 		return "Couldn't remove the profile"
+	case SaveFound:
+		return "Couldn't save the profile"
+	case HideFound:
+		return "Couldn't hide or show the profile"
+	case SaveFavourite:
+		return "Couldn't save the favourite"
+	case RemoveFavourite:
+		return "Couldn't remove the favourite"
 	case SetLauncherKey:
 		return "Couldn't change the launcher's key"
 	case SetLauncherFiles:
@@ -1345,6 +1361,9 @@ func (a *app) publish() {
 	st.Shells = slices.Clone(a.st.Shells)
 	st.Profiles = slices.Clone(a.st.Profiles)
 	st.ServerShells = maps.Clone(a.st.ServerShells)
+	st.Found = slices.Clone(a.st.Found)
+	st.FoundShells = slices.Clone(a.st.FoundShells)
+	st.Drives = slices.Clone(a.st.Drives)
 	st.DefaultShell = a.defaultShell()
 	st.HereMachine, st.HereShell = a.filesKey(a.st.Focus), a.shellHere()
 	st.MachinesUsed = slices.Clone(a.lastOn)
@@ -1641,13 +1660,21 @@ func (a *app) handle(in gunim.Intent) {
 		err = a.saveProfile(in.Profile)
 	case RemoveProfile:
 		err = a.removeProfile(in.ID)
+	case SaveFound:
+		err = a.saveFound(in.Found)
+	case HideFound:
+		err = a.hideFound(in)
+	case SaveFavourite:
+		err = a.saveFavourite(in)
+	case RemoveFavourite:
+		err = a.removeFavourite(in)
 	case OpenDefaultShell:
 		if err = a.pickShell(""); err == nil {
 			err = a.open("", Placement{})
 		}
 	case OpenOn:
 		if in.Login && in.Machine != "" {
-			a.nextFar[in.Machine] = loginShell
+			a.nextFar[in.Machine] = LoginShell
 		}
 		err = a.open(in.Machine, Placement{})
 	case FilesOn:

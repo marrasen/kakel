@@ -158,6 +158,11 @@ type Window struct {
 	// one each saved server's new terminal runs, as last published.
 	profiles     []settings.Profile
 	serverShells map[string]string
+	// found are the user's changes to the profiles kakel finds, and
+	// which are hidden; foundShells and drives what was found here.
+	found       []settings.FoundProfile
+	foundShells []app.ShellChoice
+	drives      []app.FoundDrive
 	// hereMachine and hereShell are where a new terminal and Files open,
 	// and the shell such a terminal runs, from the pane in front.
 	hereMachine machines.ID
@@ -1307,12 +1312,16 @@ func (w *Window) servers(saved []remote.Host) {
 				}
 			}
 		} else {
-			chip("Terminal", "conn.terminal."+cmd)
+			if w.offersTerminal(m) {
+				chip("Terminal", "conn.terminal."+cmd)
+			}
 			for _, p := range w.profilesOn(m) {
 				chip(p.Name, shellfind.CommandID(p.ID))
 			}
 		}
-		chip("Files", "conn.files."+cmd)
+		if w.showsFiles(m) {
+			chip("Files", "conn.files."+cmd)
+		}
 		if m == "" {
 			chip("Settings", "app.thisComputer")
 			also = append(also, commandAlso["app.thisComputer"]...)
@@ -1342,7 +1351,9 @@ func (w *Window) servers(saved []remote.Host) {
 		w.paletteChips = append(w.paletteChips, ids)
 	}
 	for _, m := range w.paletteMachines() {
-		machineLine(m)
+		if !w.offersNothing(m) {
+			machineLine(m)
+		}
 	}
 	for _, c := range commands {
 		if notInPalette[c.id] {
@@ -2263,8 +2274,9 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 		w.defaultShell = st.DefaultShell
 		w.servers(w.saved)
 	}
-	if !reflect.DeepEqual(st.Profiles, w.profiles) || !maps.Equal(st.ServerShells, w.serverShells) {
-		w.profiles, w.serverShells = st.Profiles, st.ServerShells
+	if !reflect.DeepEqual(st.Profiles, w.profiles) || !maps.Equal(st.ServerShells, w.serverShells) || !reflect.DeepEqual(st.Found, w.found) ||
+		!slices.Equal(st.FoundShells, w.foundShells) || !slices.Equal(st.Drives, w.drives) {
+		w.profiles, w.serverShells, w.found, w.foundShells, w.drives = st.Profiles, st.ServerShells, st.Found, st.FoundShells, st.Drives
 		w.servers(w.saved)
 	}
 	// A new terminal and Files are named for what they open, which
@@ -3864,7 +3876,9 @@ func (w *Window) openMachineMenu(r *sideRow, u *gunim.UI) {
 	// saved server.
 	heading := func(title string) { add(nil, title, nil) }
 	heading("Terminal")
-	add(icon.SquareTerminal, "New Terminal", send(app.OpenOn{Machine: m}))
+	if w.offersTerminal(m) {
+		add(icon.SquareTerminal, "New Terminal", send(app.OpenOn{Machine: m}))
+	}
 	add(icon.SquareChevronRight, "Command…", func(u *gunim.UI) { w.commandDialogOn(m, u) })
 	if m == "" && len(w.shellChoices) > 1 {
 		// This computer's shells, each to open a terminal with.
@@ -3877,13 +3891,17 @@ func (w *Window) openMachineMenu(r *sideRow, u *gunim.UI) {
 		// A server's profiles, and its account's own shell, which New
 		// Terminal opens only while no profile is its default.
 		heading("Shells")
-		add(icon.SquareTerminal, "Login Shell", send(app.OpenOn{Machine: m, Login: true}))
+		if !w.hidden(m, app.LoginShell) {
+			add(icon.SquareTerminal, "Login Shell", send(app.OpenOn{Machine: m, Login: true}))
+		}
 		for _, p := range profiles {
 			add(icon.SquareTerminal, p.Name, send(app.OpenShellNamed{ID: p.ID}))
 		}
 	}
 	heading("Files")
-	add(icon.House, "Home", send(app.OpenFilesOn{Machine: m}))
+	if w.showsFiles(m) {
+		add(icon.House, "Home", send(app.OpenFilesOn{Machine: m}))
+	}
 	for _, f := range w.foldersOn(m) {
 		ic := icon.Folder
 		if slices.Contains(w.favourites, f) {

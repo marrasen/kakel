@@ -13,6 +13,7 @@ import (
 	"github.com/marrasen/kakel/conf"
 	"github.com/marrasen/kakel/jobs"
 	"github.com/marrasen/kakel/machines"
+	"github.com/marrasen/kakel/settings"
 	"github.com/marrasen/kakel/vfs"
 	"github.com/marrasen/kakel/words"
 
@@ -217,15 +218,49 @@ func fileManagerPrefs() string {
 // fileManagerPlaces are the file manager's places: this computer's
 // folders, then the servers, as last noted. It runs off the program's
 // goroutine.
+//
+// This computer's home and drives are found profiles: one the user
+// renamed goes by its new name, and one they hid is left out. The
+// drives found are noted, for Settings to offer.
 func (a *app) fileManagerPlaces() ([]filemanager.Place, error) {
-	out, err := filemanager.LocalPlaces()
-	for i := range out {
-		out[i].Group = "This computer"
+	found, err := filemanager.LocalPlaces()
+	var edits []settings.FoundProfile
+	if a.settings != nil {
+		edits = a.settings.Found()
+	}
+	var out []filemanager.Place
+	var drives []FoundDrive
+	for _, p := range found {
+		id := placeID(p)
+		if p.Kind != "home" {
+			drives = append(drives, FoundDrive{ID: id, Name: p.Name, Path: p.Path})
+		}
+		i := slices.IndexFunc(edits, func(f settings.FoundProfile) bool { return f.HostID == "" && f.ID == id })
+		if i >= 0 && edits[i].Hidden {
+			continue
+		}
+		if i >= 0 && edits[i].Name != "" {
+			p.Name = edits[i].Name
+		}
+		p.Group = "This computer"
+		out = append(out, p)
+	}
+	if err == nil {
+		go func() { a.events <- func() { a.noteDrives(drives) } }()
 	}
 	if servers := a.serverPlaces.Load(); servers != nil {
 		out = append(out, *servers...)
 	}
 	return out, err
+}
+
+// placeID is the ID of the found profile of a place here: home, or a
+// drive by its path.
+func placeID(p filemanager.Place) string {
+	if p.Kind == "home" {
+		return FoundHome
+	}
+	return driveID(p.Path)
 }
 
 // notePlaces notes the servers as the file manager lists them, and has
@@ -243,6 +278,9 @@ func (a *app) notePlaces() {
 	}
 	for _, h := range a.st.Saved {
 		m := machines.ID(h.ID)
+		if !a.showsFiles(m) {
+			continue
+		}
 		note := "Not connected"
 		switch {
 		case slices.Contains(dialing, m):
@@ -250,7 +288,11 @@ func (a *app) notePlaces() {
 		case slices.Contains(connected, m) || windows[m]:
 			note = "Connected"
 		}
-		p := filemanager.Place{Name: h.Name, Kind: "drive", Group: "Machines", Note: note, FS: serverFS + h.ID,
+		name := h.Name
+		if n := a.foundEdit(h.ID, FoundHome).Name; n != "" {
+			name = n
+		}
+		p := filemanager.Place{Name: name, Kind: "drive", Group: "Machines", Note: note, FS: serverFS + h.ID,
 			Lit: slices.Contains(connected, m) || windows[m]}
 		if fm := a.fmFiles[m]; fm != nil {
 			if fm.live() {
@@ -540,16 +582,24 @@ func nameBeside(f vfs.FS, path string, dir bool) string {
 	}
 }
 
-// placeMenu is kakel's part of a server place's context menu in the
-// file manager: Disconnect while it is connected, Connect while not.
+// placeMenu is kakel's part of a place's context menu in the file
+// manager: on a server's, Disconnect while it is connected, Connect
+// while not; and on every place but a favourite, Hide, which hides its
+// found profile.
 func placeMenu(p filemanager.Place) []filemanager.PlaceItem {
-	if !strings.HasPrefix(p.FS, serverFS) || p.Kind == "favourite" {
+	if p.Kind == "favourite" {
 		return nil
 	}
-	if p.Lit {
-		return []filemanager.PlaceItem{{Label: "Disconnect", ID: "disconnect"}}
+	hide := filemanager.PlaceItem{Label: "Hide", ID: "hide"}
+	switch {
+	case p.FS == "":
+		return []filemanager.PlaceItem{hide}
+	case !strings.HasPrefix(p.FS, serverFS):
+		return nil
+	case p.Lit:
+		return []filemanager.PlaceItem{{Label: "Disconnect", ID: "disconnect"}, hide}
 	}
-	return []filemanager.PlaceItem{{Label: "Connect", ID: "connect"}}
+	return []filemanager.PlaceItem{{Label: "Connect", ID: "connect"}, hide}
 }
 
 // placeCommand does what kakel's item id of place p asks, from file
@@ -561,6 +611,12 @@ func (a *app) placeCommand(w *filemanager.Window, p filemanager.Place, id string
 		switch id {
 		case "disconnect":
 			err = a.disconnectAsking(m)
+		case "hide":
+			if p.FS == "" {
+				err = a.hideFound(HideFound{ID: placeID(p)})
+			} else {
+				err = a.hideFound(HideFound{HostID: string(m), ID: FoundHome})
+			}
 		case "connect":
 			err = a.dialAgainHow(m, true, func(err error) {
 				if err != nil {

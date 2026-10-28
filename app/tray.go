@@ -169,6 +169,11 @@ func (a *app) traySig() string {
 			sig.WriteString("\x02" + p.ID + "\x00" + p.Name + "\x00")
 		}
 	}
+	for _, f := range a.st.Found {
+		if f.Hidden {
+			sig.WriteString("\x03" + f.HostID + "\x00" + f.ID + "\x00")
+		}
+	}
 	sig.WriteString("\x01")
 	for _, m := range a.machines.Connected() {
 		sig.WriteString(string(m) + "\x00")
@@ -186,9 +191,12 @@ func (a *app) trayMenu(gen int) ([]gunim.TrayItem, map[int]func()) {
 		return next
 	}
 	machine := func(m machines.ID, title string) gunim.TrayItem {
-		sub := []gunim.TrayItem{
-			{Title: "Terminal", ID: act(func() { a.toTray(func() { a.handle(OpenOn{Machine: m}) }) })},
-			{Title: "Files", ID: act(func() { a.filesFromOutside(m, "") })},
+		var sub []gunim.TrayItem
+		if a.offersTerminal(m) {
+			sub = append(sub, gunim.TrayItem{Title: "Terminal", ID: act(func() { a.toTray(func() { a.handle(OpenOn{Machine: m}) }) })})
+		}
+		if a.showsFiles(m) {
+			sub = append(sub, gunim.TrayItem{Title: "Files", ID: act(func() { a.filesFromOutside(m, "") })})
 		}
 		if m == machines.Local {
 			for _, sh := range a.st.Shells {
@@ -213,6 +221,9 @@ func (a *app) trayMenu(gen int) ([]gunim.TrayItem, map[int]func()) {
 	connected := a.machines.Connected()
 	for _, h := range a.st.Saved {
 		m := machines.ID(h.ID)
+		if a.offersNothing(m) {
+			continue
+		}
 		title := h.Name
 		for _, c := range connected {
 			if c == m {

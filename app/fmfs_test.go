@@ -517,8 +517,8 @@ func TestAServerConnectedSaysSoAmongThePlaces(t *testing.T) {
 		t.Fatalf("the places are %+v", places)
 	}
 	// Its menu offers to disconnect, which asks first: a shell is open
-	// on it.
-	if items := placeMenu(places[i]); len(items) != 1 || items[0].ID != "disconnect" {
+	// on it; and to hide it.
+	if items := placeMenu(places[i]); len(items) != 2 || items[0].ID != "disconnect" || items[1].ID != "hide" {
 		t.Fatalf("its menu offers %+v", items)
 	}
 	if err := a.disconnectAsking("srv"); err != nil {
@@ -544,7 +544,7 @@ func TestAServerConnectedSaysSoAmongThePlaces(t *testing.T) {
 	}
 	a.notePlaces()
 	places = *a.serverPlaces.Load()
-	if items := placeMenu(places[i]); places[i].Lit || len(items) != 1 || items[0].ID != "connect" {
+	if items := placeMenu(places[i]); places[i].Lit || len(items) != 2 || items[0].ID != "connect" {
 		t.Fatalf("disconnected, the place is %+v, its menu %+v", places[i], items)
 	}
 }

@@ -79,14 +79,14 @@ func (c *chooser) refresh(u *gunim.UI) {
 		}
 	}
 	for _, m := range reach {
-		if m != here {
+		if m != here && c.w.offersTerminal(m) {
 			add("Terminal on "+c.w.nameOf(m), app.SplitPane{Instead: c.id, Machine: m, Elsewhere: true})
 		}
 		profiles(m, c.w.nameOf(m))
 	}
 	// The saved servers not connected to, which cost a sign-in first.
 	for _, h := range c.w.saved {
-		if !h.Window && !slices.Contains(reach, machines.ID(h.ID)) {
+		if !h.Window && !slices.Contains(reach, machines.ID(h.ID)) && c.w.offersTerminal(machines.ID(h.ID)) {
 			add("Terminal on "+h.Name, app.SplitPane{Instead: c.id, Machine: machines.ID(h.ID), Elsewhere: true})
 			profiles(machines.ID(h.ID), h.Name)
 		}

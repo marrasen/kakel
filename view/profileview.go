@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/marrasen/gunim"
-	"github.com/marrasen/gunim/icon"
 	"github.com/marrasen/gunim/widget"
 
 	"github.com/marrasen/kakel/app"
@@ -107,49 +106,28 @@ func (w *Window) profilesOn(m machines.ID) []settings.Profile {
 	return out
 }
 
-// profileItems are the palette's lines for the profiles, a server's
-// named with it.
-func (w *Window) profileItems(have []settings.Profile) []widget.PaletteItem {
-	items := make([]widget.PaletteItem, len(have))
-	for i, p := range have {
-		items[i] = widget.PaletteItem{Title: p.Name, Detail: w.profileOn(p), Hint: app.ProfileLine(p), Icon: icon.SquareTerminal}
-	}
-	return items
+// hidden reports whether the found profile id on machine m is hidden.
+func (w *Window) hidden(m machines.ID, id string) bool {
+	return slices.ContainsFunc(w.found, func(f settings.FoundProfile) bool { return f.HostID == string(m) && f.ID == id && f.Hidden })
 }
 
-// profileOn says which server p runs on, "" for this computer.
-func (w *Window) profileOn(p settings.Profile) string {
-	if p.HostID == "" {
-		return ""
-	}
-	return "on " + w.nameOf(machines.ID(p.HostID))
+// isServer reports whether m is a saved server, not a kakel window.
+func (w *Window) isServer(m machines.ID) bool {
+	return m != "" && slices.ContainsFunc(w.saved, func(h remote.Host) bool { return machines.ID(h.ID) == m && !h.Window })
 }
 
-// editProfilePickerFrom offers the profiles, to edit one.
-func (w *Window) editProfilePickerFrom(have []settings.Profile, u *gunim.UI) {
-	have = slices.Clone(have)
-	w.chooseFrom("The profile to edit", w.profileItems(have), func(i int, u *gunim.UI) { w.profileDialog(have, &have[i], u) }, u)
+// offersTerminal reports whether machine m offers a new terminal:
+// anything but a saved server always does, and that when its own shell
+// or one of its profiles is shown.
+func (w *Window) offersTerminal(m machines.ID) bool {
+	return !w.isServer(m) || !w.hidden(m, app.LoginShell) || len(w.profilesOn(m)) > 0
 }
 
-// removeProfilePickerFrom offers the profiles, to remove one.
-func (w *Window) removeProfilePickerFrom(have []settings.Profile, u *gunim.UI) {
-	have = slices.Clone(have)
-	w.chooseFrom("The profile to remove", w.profileItems(have), func(i int, u *gunim.UI) { u.Send(w, app.RemoveProfile{ID: have[i].ID}) }, u)
-}
+// showsFiles reports whether machine m offers its files.
+func (w *Window) showsFiles(m machines.ID) bool { return !w.hidden(m, app.FoundHome) }
 
-// profilesSays is the profiles, one a line with the server it runs on
-// and its command line.
-func (w *Window) profilesSays(have []settings.Profile) string {
-	if len(have) == 0 {
-		return "None yet."
-	}
-	lines := make([]string, len(have))
-	for i, p := range have {
-		lines[i] = p.Name + "  ·  "
-		if on := w.profileOn(p); on != "" {
-			lines[i] += on + "  ·  "
-		}
-		lines[i] += app.ProfileLine(p)
-	}
-	return strings.Join(lines, "\n")
+// offersNothing reports whether everything the saved server m offers
+// is hidden or gone, as for a server used only to reach others.
+func (w *Window) offersNothing(m machines.ID) bool {
+	return w.isServer(m) && !w.offersTerminal(m) && !w.showsFiles(m) && len(w.foldersOn(m)) == 0
 }

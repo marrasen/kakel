@@ -279,24 +279,33 @@ func (a *app) publishLauncher() {
 // then each saved server and kakel window, the connected ones first.
 func (a *app) launchMachines() []LaunchMachine {
 	actions := func(m machines.ID) []LaunchAction {
-		out := []LaunchAction{{ID: "terminal", Title: "Terminal"}, {ID: "files", Title: "Files"}}
+		var out []LaunchAction
+		files := func() {
+			if a.showsFiles(m) {
+				out = append(out, LaunchAction{ID: "files", Title: "Files"})
+			}
+		}
 		if m == machines.Local {
 			// Each shell by its name, the one a new terminal starts
 			// first: "Terminal" would not say which.
-			if shells := a.shellsDefaultFirst(); len(shells) > 0 {
-				out = out[:0]
-				for _, sh := range shells {
-					out = append(out, LaunchAction{ID: "shell:" + sh.ID, Title: sh.Title})
-				}
-				out = append(out, LaunchAction{ID: "files", Title: "Files"})
+			for _, sh := range a.shellsDefaultFirst() {
+				out = append(out, LaunchAction{ID: "shell:" + sh.ID, Title: sh.Title})
 			}
+			if len(out) == 0 {
+				out = append(out, LaunchAction{ID: "terminal", Title: "Terminal"})
+			}
+			files()
 			return out
 		}
 		// Each profile by its name, after the terminal the server opens
 		// by default.
-		for i, p := range a.profilesOn(m) {
-			out = slices.Insert(out, 1+i, LaunchAction{ID: "shell:" + p.ID, Title: p.Name})
+		if a.offersTerminal(m) {
+			out = append(out, LaunchAction{ID: "terminal", Title: "Terminal"})
 		}
+		for _, p := range a.profilesOn(m) {
+			out = append(out, LaunchAction{ID: "shell:" + p.ID, Title: p.Name})
+		}
+		files()
 		if slices.Contains(a.machines.Connected(), m) {
 			// A log is of a connection: there is none to show before.
 			out = append(out, LaunchAction{ID: "log", Title: "Connection Log"})
@@ -317,6 +326,9 @@ func (a *app) launchMachines() []LaunchMachine {
 	var rest []LaunchMachine
 	for _, h := range a.st.Saved {
 		m := machines.ID(h.ID)
+		if a.offersNothing(m) {
+			continue
+		}
 		lm := LaunchMachine{ID: m, Name: h.Name, Window: h.Window}
 		if h.Window {
 			lm.Note = "kakel window"
@@ -354,7 +366,7 @@ func (a *app) launchThings(ms []LaunchMachine) []LaunchThing {
 	}
 	for _, m := range ms {
 		// This computer's terminals are its shells, by name, above.
-		if m.ID != machines.Local || len(a.st.Shells) == 0 {
+		if m.ID == machines.Local && len(a.st.Shells) == 0 || m.ID != machines.Local && a.offersTerminal(m.ID) {
 			out = append(out, LaunchThing{Title: "Terminal on " + m.Name, Note: m.Note, Also: []string{"shell", "ssh", "console", "new terminal"},
 				Kind: "terminal", Machine: m.ID, Action: "terminal"})
 		}
@@ -366,8 +378,10 @@ func (a *app) launchThings(ms []LaunchMachine) []LaunchThing {
 			out = append(out, LaunchThing{Title: p.Name + " on " + m.Name, Note: note, Also: []string{p.ID, "shell", "ssh", "terminal", "new terminal"},
 				Kind: "terminal", Machine: m.ID, Action: "shell:" + p.ID})
 		}
-		out = append(out, LaunchThing{Title: "Files on " + m.Name, Note: m.Note,
-			Also: []string{"folder", "browse", "explorer", "sftp", "file manager", "new file manager"}, Kind: "files", Machine: m.ID, Action: "files"})
+		if a.showsFiles(m.ID) {
+			out = append(out, LaunchThing{Title: "Files on " + m.Name, Note: m.Note,
+				Also: []string{"folder", "browse", "explorer", "sftp", "file manager", "new file manager"}, Kind: "files", Machine: m.ID, Action: "files"})
+		}
 		if slices.ContainsFunc(m.Actions, func(x LaunchAction) bool { return x.ID == "log" }) {
 			out = append(out, LaunchThing{Title: "Connection Log of " + m.Name, Note: m.Note, Also: []string{"log", "account"}, Kind: "log", Machine: m.ID, Action: "log"})
 		}

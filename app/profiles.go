@@ -82,18 +82,11 @@ func ParseProfile(have []settings.Profile, id, hostID, name, line, folder, env s
 			return p, errors.New("enter an absolute path")
 		}
 	}
-	for i, l := range strings.Split(env, "\n") {
-		l = strings.TrimSpace(l)
-		if l == "" {
-			continue
-		}
-		key, value, ok := strings.Cut(l, "=")
-		key = strings.TrimSpace(key)
-		if !ok || key == "" || strings.ContainsFunc(key, unicode.IsSpace) {
-			return p, fmt.Errorf("invalid environment line %d", i+1)
-		}
-		p.Env = append(p.Env, key+"="+value)
+	vars, err := ParseEnv(env)
+	if err != nil {
+		return p, err
 	}
+	p.Env = vars
 	return p, nil
 }
 
@@ -114,6 +107,25 @@ func taken(have []settings.Profile, p settings.Profile) error {
 		}
 	}
 	return nil
+}
+
+// ParseEnv reads variables as a profile's dialog takes them, NAME=value
+// one a line, blank lines left out.
+func ParseEnv(env string) ([]string, error) {
+	var out []string
+	for i, l := range strings.Split(env, "\n") {
+		l = strings.TrimSpace(l)
+		if l == "" {
+			continue
+		}
+		key, value, ok := strings.Cut(l, "=")
+		key = strings.TrimSpace(key)
+		if !ok || key == "" || strings.ContainsFunc(key, unicode.IsSpace) {
+			return nil, fmt.Errorf("invalid environment line %d", i+1)
+		}
+		out = append(out, key+"="+value)
+	}
+	return out, nil
 }
 
 // profileID is the ID a new profile called name is given: its name in
@@ -198,8 +210,19 @@ func (a *app) removeProfile(id string) error {
 // looked for. Before that the menus offer the user's own shell, which
 // the profiles alone would hide; a.found holds them already, so a
 // profile kept for new terminals opens.
+//
+// A detected shell the user renamed goes by its new name, and one they
+// hid is left out of what is offered, though a.found keeps it, for a
+// pane that runs it.
 func (a *app) mergeShells() {
 	a.found = slices.Clone(a.detected)
+	a.st.FoundShells = nil
+	for i, s := range a.found {
+		a.st.FoundShells = append(a.st.FoundShells, ShellChoice{ID: s.ID, Title: s.Title})
+		if name := a.foundEdit("", s.ID).Name; name != "" {
+			a.found[i].Title = name
+		}
+	}
 	for _, p := range a.st.Profiles {
 		if p.HostID == "" {
 			a.found = append(a.found, profileShell(p))
@@ -210,6 +233,9 @@ func (a *app) mergeShells() {
 	}
 	a.st.Shells = nil
 	for _, s := range a.found {
+		if a.hidden(machines.Local, s.ID) {
+			continue
+		}
 		choice := ShellChoice{ID: s.ID, Title: s.Title}
 		if s.Distro != "" {
 			choice.Folder = shellfind.WSLRoot(s.Distro)
@@ -262,10 +288,10 @@ func (a *app) keptFolder() string {
 	return ""
 }
 
-// loginShell, as what the next terminal on a server runs, is the
-// account's own shell, in place of the profile the server runs by
-// default.
-const loginShell = "login"
+// LoginShell is the ID of a server's own shell as a found profile, and
+// as what its next terminal runs, the account's own shell in place of
+// the profile the server runs by default.
+const LoginShell = "login"
 
 // farRun is what the next terminal on machine runs: what was asked for
 // it, once, or else the profile the server runs by default.
@@ -348,7 +374,7 @@ func (a *app) likeFar(id string) {
 	}
 	run := a.farRuns[id]
 	if run == "" {
-		run = loginShell
+		run = LoginShell
 	}
 	a.nextFar[m] = run
 }
