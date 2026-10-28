@@ -437,6 +437,11 @@ type Profile struct {
 
 	// Env are variables the shell is started with, each NAME=value.
 	Env []string `json:"env,omitempty"`
+
+	// Setup says whether the shell is taught to say what it is doing;
+	// unset, as its machine says: Shell Setup here, and on a saved
+	// server, the server's own tick.
+	Setup *bool `json:"setup,omitempty"`
 }
 
 // FoundProfile is what the user changed of a profile kakel finds
@@ -456,14 +461,15 @@ type FoundProfile struct {
 	// manager's sidebar.
 	Hidden bool `json:"hidden,omitempty"`
 
-	// Folder and Env are, for a terminal, as a Profile has them.
+	// Folder, Env and Setup are, for a terminal, as a Profile has them.
 	Folder string   `json:"folder,omitempty"`
 	Env    []string `json:"env,omitempty"`
+	Setup  *bool    `json:"setup,omitempty"`
 }
 
 // empty reports whether f changes nothing, and so need not be kept.
 func (f FoundProfile) empty() bool {
-	return f.Name == "" && !f.Hidden && f.Folder == "" && len(f.Env) == 0
+	return f.Name == "" && !f.Hidden && f.Folder == "" && len(f.Env) == 0 && f.Setup == nil
 }
 
 // AgentMay is what a hand-over allows an agent beyond reading a pane and

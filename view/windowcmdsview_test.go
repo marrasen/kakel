@@ -148,22 +148,9 @@ func TestEditingAServerKeepsItsKeysAndRefusesATakenName(t *testing.T) {
 	win, _, publish := windowStage(t)
 	desk := remote.Host{ID: "d1", Name: "desk", Address: "desk.example", Identities: []string{"/k/one", "/k/two"}}
 	publish(app.State{Saved: []remote.Host{desk}, Connected: []machines.ID{"laptop"}})
-	for len(lastWindow.Client().Intents()) > 0 {
-		<-lastWindow.Client().Intents()
-	}
-	win.serverForm(&desk, lastUI)
-	for range 5 {
-		lastWindow.Frame(time.Second / 60)
-	}
-	lastWindow.Input(gi.KeyPress{Key: gi.KeyEnter})
-	lastWindow.Frame(time.Second / 60)
-	for {
-		if in, ok := nextIntent(t).(app.SaveServer); ok {
-			if !slices.Equal(in.Host.Identities, []string{"/k/one", "/k/two"}) {
-				t.Fatalf("saved the keys %v", in.Host.Identities)
-			}
-			break
-		}
+	h, why := newServerFields(win, &desk).host()
+	if why != "" || !slices.Equal(h.Identities, []string{"/k/one", "/k/two"}) {
+		t.Fatalf("saved, the keys are %v (%s)", h.Identities, why)
 	}
 	// Everything goes by the server's ID: a new name takes nothing
 	// from anything connected.
@@ -182,32 +169,8 @@ func TestTheServerFormFitsItsType(t *testing.T) {
 	win, _, publish := windowStage(t)
 	desk := remote.Host{ID: "d1", Name: "desk", Address: "desk.example", Window: true}
 	publish(app.State{Saved: []remote.Host{desk, {ID: "j1", Name: "jump", Address: "jump.example"}}})
-	win.serverForm(&desk, lastUI)
-	for range 3 {
-		lastWindow.Frame(time.Second / 60)
-	}
-	form, ok := formOf(win.dialog.Body), formOf(win.dialog.Body) != nil
-	if !ok {
-		t.Fatalf("the form is a %T", win.dialog.Body)
-	}
-	var via, kind *widget.Dropdown
-	var forward *widget.Checkbox
-	// Every field, the ones greyed out too, which take no focus.
-	for _, f := range form.Children() {
-		switch f := f.(type) {
-		case *widget.Dropdown:
-			switch f.Label {
-			case "Through":
-				via = f
-			case "Type":
-				kind = f
-			}
-		case *widget.Checkbox:
-			if strings.Contains(f.Label, "agent") {
-				forward = f
-			}
-		}
-	}
+	f := newServerFields(win, &desk)
+	via, kind, forward := f.via, f.kind, f.forward
 	// A window, or its relay, can be reached through a saved server;
 	// it carries no agent.
 	if via == nil || forward == nil || via.Disabled || !forward.Disabled {
@@ -269,12 +232,11 @@ func TestAServerEditKeepsFoldersNotYetMoved(t *testing.T) {
 	win, _, publish := windowStage(t)
 	srv := remote.Host{ID: "s1", Name: "srv", Address: "srv.example", Folders: []string{"/data/a,b", "/srv"}}
 	publish(app.State{Saved: []remote.Host{srv}})
-	win.serverForm(&srv, lastUI)
-	in, ok := win.dialog.OnAccept(lastUI).(app.SaveServer)
-	if !ok || !slices.Equal(in.Host.Folders, srv.Folders) {
-		t.Fatalf("saved, the folders are %q", in.Host.Folders)
+	f := newServerFields(win, &srv)
+	if h, _ := f.host(); !slices.Equal(h.Folders, srv.Folders) {
+		t.Fatalf("saved, the folders are %q", h.Folders)
 	}
-	for _, f := range formOf(win.dialog.Body).Children() {
+	for _, f := range f.form.Children() {
 		if f, ok := f.(*widget.TextField); ok && strings.HasPrefix(f.Placeholder, "optional: paths") {
 			t.Fatal("the dialog still has a field for folders")
 		}
@@ -287,9 +249,8 @@ func TestAWindowKeepsTheAgentTickItCameWith(t *testing.T) {
 	win, _, publish := windowStage(t)
 	far := remote.Host{ID: "f1", Name: "far", Address: "far.example", Window: true, ForwardAgent: true}
 	publish(app.State{Saved: []remote.Host{far}})
-	win.serverForm(&far, lastUI)
-	if in, ok := win.dialog.OnAccept(lastUI).(app.SaveServer); !ok || !in.Host.ForwardAgent {
-		t.Fatalf("saved untouched, the window is %+v", in.Host)
+	if h, _ := newServerFields(win, &far).host(); !h.ForwardAgent {
+		t.Fatalf("saved untouched, the window is %+v", h)
 	}
 }
 

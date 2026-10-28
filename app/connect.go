@@ -700,6 +700,10 @@ func (a *app) saveServer(in SaveServer) error {
 	a.st.Saved = a.book.Hosts()
 	// Its files say what goes wrong by its name, the new one.
 	if h, ok := a.book.Lookup(in.Host.Name); ok {
+		a.savedInPane(in.Pane, machines.ID(h.ID))
+		if in.Connect {
+			defer a.handle(OpenOn{Machine: machines.ID(h.ID)})
+		}
 		if f, ok := a.machines.Get(machines.ID(h.ID)).Files.(interface{ Renamed(string) }); ok {
 			f.Renamed(h.Name)
 		}
@@ -736,6 +740,7 @@ func (a *app) removeServer(name machines.ID) error {
 	}
 	a.st.Saved = a.book.Hosts()
 	a.forgetFavourites(name)
+	a.closeMachinePanes(name)
 	a.dropProfilesOn(name, called)
 	a.dropFoundOn(name, called)
 	// Named still by what is left of it, until that goes.

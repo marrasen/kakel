@@ -127,7 +127,6 @@ var commands = []struct{ id, title string }{
 	{"server.editThis", "Edit This Server"},
 	{"server.forget", "Remove This Server"},
 	{"server.reload", "Reload Server List"},
-	{"shell.setup", "Shell Setup"},
 	{"shell.termProgram", "Terminal Identity"},
 	{"help.shortcuts", "Shortcuts and Commands"},
 	{"shortcuts.write", "New Shortcuts File"},
@@ -244,7 +243,6 @@ var commandIcons = map[string]*icon.Icon{
 	"conn.socks":             icon.Network,
 	"files.copies":           icon.Bookmark,
 	"conn.log":               icon.ScrollText,
-	"shell.setup":            icon.Wrench,
 	"conn.disconnect":        icon.Unplug,
 	"server.editThis":        icon.Pencil,
 	"server.forget":          icon.Trash2,
@@ -360,9 +358,8 @@ var menus = []struct {
 		{id: "conn.tunnel", title: "Tunnel…"}, {id: "conn.socks", title: "SOCKS Proxy…"},
 		{id: "files.copies", title: "Saved Copies…", group: true},
 		{id: "conn.log", title: "Connection Log"},
-		{id: "shell.setup", title: "Shell Setup"},
 		{id: "conn.disconnect", title: "Disconnect", group: true},
-		{id: "server.editThis", title: "Edit This Server…"}, {id: "server.forget", title: "Remove This Server…"},
+		{id: "server.editThis", title: "Machine Settings…"}, {id: "server.forget", title: "Remove This Server…"},
 	}},
 	// The Machines menu is made from the saved servers.
 	{"Machines", nil},
@@ -459,7 +456,6 @@ var commandAlso = map[string][]string{
 	"view.themesReload":     {"colour", "color", "colors", "reread"},
 	"view.themesStart":      {"colour", "color", "colors", "write", "create", "edit"},
 	"pane.titles":           {"show", "hide", "toggle", "names", "line"},
-	"shell.setup":           {"shell integration", "working directory", "osc 7", "on", "off"},
 	"shell.termProgram":     {"term_program", "compatibility", "pictures", "images", "calls itself"},
 	"sshkey.make":           {"make", "create", "generate", "keygen", "ed25519"},
 	"sshkey.forget":         {"forget", "kept", "delete", "list", "identity", "clear"},
@@ -568,8 +564,6 @@ func commandIntent(id string) (gunim.Intent, bool) {
 		return app.ShowCopies{}, true
 	case "server.reload":
 		return app.ReloadServers{}, true
-	case "shell.setup":
-		return app.ToggleShellSetup{}, true
 	case "sshkey.lock":
 		return app.LockKeys{}, true
 	case "shortcuts.reload":

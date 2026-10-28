@@ -218,7 +218,7 @@ func (a *app) mergeShells() {
 	a.found = slices.Clone(a.detected)
 	a.st.FoundShells = nil
 	for i, s := range a.found {
-		a.st.FoundShells = append(a.st.FoundShells, ShellChoice{ID: s.ID, Title: s.Title})
+		a.st.FoundShells = append(a.st.FoundShells, ShellChoice{ID: s.ID, Title: s.Title, Line: joinLine(s.Command(""))})
 		if name := a.foundEdit("", s.ID).Name; name != "" {
 			a.found[i].Title = name
 		}

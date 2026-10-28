@@ -246,7 +246,7 @@ func (a *app) startAgainOr(id string, dial bool) error {
 			if err == nil {
 				// Taught again, as the shell is new: its paths and the
 				// ends of its commands are said again.
-				a.teachFar(machine, sess, profile.Command)
+				a.teachFar(machine, sess, profile)
 				err = a.restarted(id, t, sess)
 			}
 			if err != nil {
@@ -380,7 +380,7 @@ func (a *app) clearMachine(name machines.ID) {
 	a.machines.At(name).Dropped = false
 	a.withdrawLost(name)
 	for _, p := range slices.Clone(a.st.Panes) {
-		if p.Machine == name && (p.Ended || dropped && p.Kind != KindLog) {
+		if p.Machine == name && p.Kind != KindMachine && (p.Ended || dropped && p.Kind != KindLog) {
 			a.closePane(p.ID)
 		}
 	}

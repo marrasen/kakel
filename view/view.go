@@ -120,6 +120,8 @@ type Window struct {
 	// tunnelPanes are the tunnels' panes, and savedTunnels the tunnels
 	// kept, as the palette lists them.
 	tunnelPanes map[string]*tunnelPane
+	// machinePanes are the machines' panes, by pane.
+	machinePanes map[string]*machinePane
 	// jobs is the jobs pane, once it has been opened.
 	jobs *jobsPane
 	// secrets is the secrets pane, once opened, and lastTerm the
@@ -181,9 +183,6 @@ type Window struct {
 	// title bar, for the Settings dialog to show.
 	sounds, rings  app.Alerts
 	systemTitleBar bool
-	// thisComputer is this computer's settings, as the program keeps
-	// them.
-	thisComputer app.ThisComputer
 	// favourites are the folders saved on any machine.
 	favourites []app.Favourite
 	// useOnOpen is when Use Secret asked the secrets to open, for its
@@ -343,19 +342,20 @@ type Window struct {
 
 func NewWindow(sh *screen.Shells, keys *ui.Keymap, all []look.Themed) *Window {
 	w := &Window{
-		contents:    map[string]theme.Theme{},
-		stage:       newStage(),
-		shells:      sh,
-		keys:        keys,
-		terms:       map[string]*term{},
-		termPads:    map[string]*termPad{},
-		readers:     map[string]*reader{},
-		choosers:    map[string]*chooser{},
-		tunnelPanes: map[string]*tunnelPane{},
-		splits:      map[string]*widget.Split{},
-		captions:    map[string]*captioned{},
-		fmHosts:     map[string]*fmHost{},
-		dropLit:     anim.NewFloat(0),
+		contents:     map[string]theme.Theme{},
+		stage:        newStage(),
+		shells:       sh,
+		keys:         keys,
+		terms:        map[string]*term{},
+		termPads:     map[string]*termPad{},
+		readers:      map[string]*reader{},
+		choosers:     map[string]*chooser{},
+		tunnelPanes:  map[string]*tunnelPane{},
+		machinePanes: map[string]*machinePane{},
+		splits:       map[string]*widget.Split{},
+		captions:     map[string]*captioned{},
+		fmHosts:      map[string]*fmHost{},
+		dropLit:      anim.NewFloat(0),
 	}
 	w.Add(w.dropLit)
 	w.status = newStatusLine()
@@ -523,7 +523,7 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 		w.connectDialog(u)
 		return true
 	case "server.add":
-		w.serverForm(nil, u)
+		u.Send(w, app.AddServer{})
 		return true
 	case "server.import":
 		u.Send(w, app.ImportSSHConfig{})
@@ -559,7 +559,7 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 		w.launcherKeyDialog(u)
 		return true
 	case "app.thisComputer":
-		w.thisComputerDialog(u)
+		u.Send(w, app.ShowMachine{})
 		return true
 	case "secrets.use":
 		w.useSecret(u)
@@ -595,14 +595,17 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 		return true
 	case "server.editThis", "server.forget":
 		m := w.machineOf(w.focused)
+		if id == "server.editThis" && m == "" {
+			u.Send(w, app.ShowMachine{})
+			return true
+		}
 		i := slices.IndexFunc(w.saved, func(h remote.Host) bool { return machines.ID(h.ID) == m })
 		if i < 0 {
-			w.toast(widget.Toast{Title: "This pane is on no saved server", Body: "Edit This Server works on a pane on a server from the Machines menu."}, u)
+			w.toast(widget.Toast{Title: "This pane is on no saved server", Body: "Machine Settings and Remove This Server work on a pane on a saved server."}, u)
 			return true
 		}
 		if id == "server.editThis" {
-			h := w.saved[i]
-			w.serverForm(&h, u)
+			u.Send(w, app.ShowMachine{Machine: m})
 		} else {
 			w.confirmRemove(m, u)
 		}
@@ -1337,7 +1340,7 @@ func (w *Window) servers(saved []remote.Host) {
 			if note == "" {
 				chip("Connect", "server.open."+name)
 			}
-			chip("Edit", "server.edit."+name)
+			chip("Settings", "server.edit."+name)
 			chip("Remove", "server.remove."+name)
 			keys = hint("server.open." + name)
 			also = append(also, h.Address)
@@ -1468,7 +1471,7 @@ func (w *Window) runItem(id string, u *gunim.UI) bool {
 		}
 	case strings.HasPrefix(id, "server.edit."):
 		if h, ok := savedNamed(strings.TrimPrefix(id, "server.edit.")); ok {
-			w.serverForm(&h, u)
+			u.Send(w, app.ShowMachine{Machine: machines.ID(h.ID)})
 		}
 	case strings.HasPrefix(id, "server.remove."):
 		if h, ok := savedNamed(strings.TrimPrefix(id, "server.remove.")); ok {
@@ -1565,205 +1568,6 @@ func (w *Window) savingClashes(h remote.Host, old *remote.Host) string {
 		}
 	}
 	return ""
-}
-
-// serverForm asks for a server to save: a new one, or old edited.
-func (w *Window) serverForm(old *remote.Host, u *gunim.UI) {
-	name, addr, port, user, key := widget.NewTextField(), widget.NewTextField(), widget.NewTextField(), widget.NewTextField(), widget.NewTextField()
-	addr.Placeholder, port.Placeholder = "host name or address", "22"
-	// The code of a window served through a relay, whose address is
-	// then the relay's URL.
-	code := widget.NewTextField()
-	code.Placeholder = "XXXX-XXXX, for a window through a relay"
-	user.Placeholder, key.Placeholder = "your name here", "the usual keys in ~/.ssh"
-	// Through lists the other saved servers, to reach this one through:
-	// a server, or a kakel window or its relay. A server can go through
-	// a kakel window too, which dials it from its machine; a window
-	// cannot, as it is reached over a stream of an SSH connection.
-	through := []string{"Directly"}
-	ids := []string{""}
-	windows := map[string]bool{}
-	for _, h := range w.saved {
-		if old == nil || h.ID != old.ID {
-			label := h.Name
-			if h.Window {
-				label += " (kakel window)"
-				windows[h.ID] = true
-			}
-			through = append(through, label)
-			ids = append(ids, h.ID)
-		}
-	}
-	via := widget.NewDropdown(widget.Labels(through...))
-	via.Label = "Through"
-	kind := widget.NewDropdown(widget.Labels("Server", remote.WindowKind))
-	kind.Label = "Type"
-	// The key files kept, so one is a pick away rather than a path to
-	// remember.
-	var kept *widget.Dropdown
-	if len(w.keyFiles) > 0 {
-		kept = widget.NewDropdown(widget.Labels(append([]string{"Choose a saved key"}, w.keyFiles...)...))
-		kept.Label = "Saved keys"
-		files := w.keyFiles
-		kept.OnChange = func(i int, u *gunim.UI) gunim.Intent {
-			if i > 0 {
-				key.SetText(files[i-1], nil)
-				u.Invalidate()
-			}
-			return nil
-		}
-	}
-	// What its new terminal runs: the account's own shell or one of its
-	// profiles, which a new server has none of yet.
-	shellIDs, shellLabels := []string{""}, []string{"Login shell"}
-	for _, p := range w.profiles {
-		if old != nil && p.HostID == old.ID {
-			shellIDs, shellLabels = append(shellIDs, p.ID), append(shellLabels, p.Name)
-		}
-	}
-	shell := widget.NewDropdown(widget.Labels(shellLabels...))
-	shell.Label = "Shell"
-	setup := widget.NewCheckbox("Teach its shell to say what it is doing")
-	forward := widget.NewCheckbox("Forward this machine's SSH agent to it")
-	title, under := "Add a server", ""
-	if old != nil {
-		title, under = "Edit "+old.Name, old.Name
-		name.SetText(old.Name, nil)
-		addr.SetText(old.Address, nil)
-		if old.Port != 0 {
-			port.SetText(strconv.Itoa(old.Port), nil)
-		}
-		user.SetText(old.User, nil)
-		if len(old.Identities) > 0 {
-			key.SetText(old.Identities[0], nil)
-		}
-		if old.Window {
-			kind.SetSelected(1, nil)
-		}
-		code.SetText(old.Code, nil)
-		setup.SetChecked(old.Setup, nil)
-		forward.SetChecked(old.ForwardAgent, nil)
-		for i, id := range ids {
-			if id != "" && id == old.Via {
-				via.SetSelected(i, nil)
-			}
-		}
-		shell.SetSelected(max(slices.Index(shellIDs, w.serverShells[old.ID]), 0), nil)
-	}
-	host := func() (remote.Host, string) {
-		h := remote.Host{Name: strings.TrimSpace(name.Text()), Address: strings.TrimSpace(addr.Text()), User: strings.TrimSpace(user.Text())}
-		if old != nil {
-			h = *old
-			h.Name, h.Address, h.User = strings.TrimSpace(name.Text()), strings.TrimSpace(addr.Text()), strings.TrimSpace(user.Text())
-			h.Port, h.Identities = 0, nil
-		}
-		if p := strings.TrimSpace(port.Text()); p != "" {
-			n, err := strconv.Atoi(p)
-			if err != nil || n <= 0 || n > 65535 {
-				return h, "The port is a number from 1 to 65535."
-			}
-			h.Port = n
-		}
-		// The key typed first, and the keys after it the entry had,
-		// which the form does not show and so keeps.
-		var rest []string
-		if old != nil && len(old.Identities) > 1 {
-			rest = old.Identities[1:]
-		}
-		if k := strings.TrimSpace(key.Text()); k != "" {
-			h.Identities = []string{k}
-		}
-		for _, r := range rest {
-			if !slices.Contains(h.Identities, r) {
-				h.Identities = append(h.Identities, r)
-			}
-		}
-		h.Via = ids[max(0, min(via.Selected(), len(ids)-1))]
-		h.Window = kind.Selected() == 1
-		h.Code = ""
-		if c := strings.TrimSpace(code.Text()); h.Window && c != "" {
-			parsed, err := relay.ParseCode(c)
-			if err != nil {
-				return h, words.UpperFirst(err.Error()) + "."
-			}
-			h.Code, h.Port = parsed, 0
-			if u, err := relay.ParseURL(h.Address); err == nil {
-				h.Address = u.String()
-			}
-		}
-		if old != nil {
-			// Folders saved before favourites stay until they are moved.
-			h.Folders = old.Folders
-		}
-		// A window keeps the agent tick it had, unused, so switching it
-		// back to a server brings it back. Its route it takes: a window,
-		// or its relay, can be reached through a saved server.
-		h.Setup, h.ForwardAgent = setup.Checked(), forward.Checked()
-		if h.Window && windows[h.Via] {
-			return h, "A kakel window is reached through a server, not through another window."
-		}
-		if err := h.Validate(); err != nil {
-			return h, words.UpperFirst(err.Error()) + "."
-		}
-		if why := w.savingClashes(h, old); why != "" {
-			return h, why
-		}
-		return h, ""
-	}
-	// A window has no account and no session to carry an agent over:
-	// those are greyed out while the type says window, rather than
-	// taken and dropped.
-	applies := func() {
-		window := kind.Selected() == 1
-		via.Disabled = len(ids) <= 1
-		forward.Disabled, shell.Disabled = window, window
-		code.Disabled = !window
-		addr.Placeholder = "host name or address"
-		if window {
-			addr.Placeholder = "host name or address, or a relay's URL"
-		}
-	}
-	applies()
-	kind.OnChange = func(int, *gunim.UI) gunim.Intent { applies(); return nil }
-	// A link pasted whole, the relay and the code, is split into the two.
-	addr.OnChange = func(text string, u *gunim.UI) gunim.Intent {
-		if l, err := relay.ParseLink(text); err == nil {
-			addr.SetText(l.Relay.String(), u)
-			code.SetText(l.Code, u)
-			kind.SetSelected(1, u)
-			applies()
-			u.Invalidate()
-		}
-		return nil
-	}
-	form := widget.NewForm().Add("Name", name).Add("Type", kind).Add("Address", addr).Add("Code", code).Add("Port", port).Add("User", user).
-		Add("Through", via).Add("Key file", key)
-	if kept != nil {
-		form.Add("Saved keys", kept)
-	}
-	if len(shellIDs) > 1 {
-		form.Add("Shell", shell)
-	}
-	d := widget.NewDialog(title)
-	d.Body = form.Add("", setup).Add("", forward)
-	d.SetButtons("Save", "Cancel")
-	if old != nil {
-		d.AddAction("Remove…", func(u *gunim.UI) gunim.Intent {
-			d.Close(u)
-			w.confirmRemove(machines.ID(old.ID), u)
-			return nil
-		})
-	}
-	d.Check = func() string {
-		_, problem := host()
-		return problem
-	}
-	d.OnAccept = func(u *gunim.UI) gunim.Intent {
-		h, _ := host()
-		return app.SaveServer{Host: h, Under: under, Shell: shellIDs[max(0, min(shell.Selected(), len(shellIDs)-1))]}
-	}
-	d.OnDismiss = widget.Sends(app.DialogClosed{})
-	w.openDialog(d, u)
 }
 
 // confirmFarDisconnect asks before closing another window's connection
@@ -2269,8 +2073,8 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 	}
 	w.setSavedCommands(st.SavedCommands)
 	if !slices.Equal(st.Shells, w.shellChoices) || st.ChosenShell != w.chosenShell || st.DefaultShell != w.defaultShell ||
-		st.ThisComputer.StartFolder != w.thisComputer.StartFolder || !slices.Equal(st.Favourites, w.favourites) {
-		w.shellChoices, w.chosenShell, w.thisComputer, w.favourites = st.Shells, st.ChosenShell, st.ThisComputer, st.Favourites
+		!slices.Equal(st.Favourites, w.favourites) {
+		w.shellChoices, w.chosenShell, w.favourites = st.Shells, st.ChosenShell, st.Favourites
 		w.defaultShell = st.DefaultShell
 		w.servers(w.saved)
 	}
@@ -2333,6 +2137,13 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 	// After the panes are built, so one made now shows the state too.
 	if w.settings != nil && u.Presence(w.settings) != gunim.Exiting {
 		w.settings.show(st, u)
+	}
+	for id, mp := range w.machinePanes {
+		if !slices.ContainsFunc(st.Panes, func(p app.Pane) bool { return p.ID == id }) {
+			delete(w.machinePanes, id)
+			continue
+		}
+		mp.show(st, u)
 	}
 	for id := range w.splits {
 		if !keep[id] {
@@ -2530,6 +2341,9 @@ func (w *Window) applies(id string) bool {
 		return w.machineOf(w.focused) != ""
 	case "server.editThis", "server.forget":
 		m := w.machineOf(w.focused)
+		if id == "server.editThis" && m == "" {
+			return true
+		}
 		return m != "" && slices.ContainsFunc(w.saved, func(h remote.Host) bool { return machines.ID(h.ID) == m })
 	case "pane.scrollback":
 		k := w.kindOf(w.focused)
@@ -2596,8 +2410,6 @@ func (w *Window) switchOn(id string, st app.State, u *gunim.UI) (on, isSwitch bo
 		return u.FullScreen(), true
 	case "view.pin":
 		return u.Pinned(), true
-	case "shell.setup":
-		return st.ShellSetup, true
 	case "app.tray":
 		return st.InTray, true
 	case "app.autostart":
@@ -2791,6 +2603,13 @@ func (w *Window) bareNode(id string) gunim.Node {
 			w.jobs.w = w
 		}
 		return w.jobs
+	case app.KindMachine:
+		mp, ok := w.machinePanes[id]
+		if !ok {
+			mp = newMachinePane(w, id)
+			w.machinePanes[id] = mp
+		}
+		return mp
 	case app.KindTunnel:
 		p, ok := w.tunnelPanes[id]
 		if !ok {
@@ -2883,6 +2702,9 @@ func (w *Window) focusNode(id string, u *gunim.UI) gunim.Node {
 	}
 	if w.kindOf(id) == app.KindCopies && w.copies != nil {
 		return w.copies.table
+	}
+	if mp, ok := w.machinePanes[id]; ok {
+		return mp.list
 	}
 	return nil
 }
@@ -3862,10 +3684,9 @@ func (w *Window) openMachineMenu(r *sideRow, u *gunim.UI) {
 		if machines.ID(h.ID) == m && h.Window && !window {
 			// Saved as a window and not connected: nothing that needs a
 			// shell applies.
-			saved := h
 			add(icon.Plug, "Connect", send(app.ConnectTo{Server: m, Only: true}))
 			add(icon.Folder, "Files", send(app.OpenFilesOn{Machine: m}))
-			add(icon.Pencil, "Edit This Window…", func(u *gunim.UI) { w.serverForm(&saved, u) })
+			add(icon.Settings, "Settings…", send(app.ShowMachine{Machine: m}))
 			add(icon.Trash2, "Remove This Window…", func(u *gunim.UI) { w.confirmRemove(m, u) })
 			w.showMachineMenu(r, items, icons, acts, u)
 			return
@@ -3931,20 +3752,19 @@ func (w *Window) openMachineMenu(r *sideRow, u *gunim.UI) {
 		}
 		for _, h := range w.saved {
 			if machines.ID(h.ID) == m {
-				saved := h
 				what := "Server"
 				if h.Window {
 					what = "Window"
 				}
 				heading(what)
-				add(icon.Pencil, "Edit This "+what+"…", func(u *gunim.UI) { w.serverForm(&saved, u) })
+				add(icon.Settings, "Settings…", send(app.ShowMachine{Machine: m}))
 				add(icon.Trash2, "Remove This "+what+"…", func(u *gunim.UI) { w.confirmRemove(m, u) })
 			}
 		}
 	}
 	if m == "" {
 		heading("This Computer")
-		add(icon.Pencil, "Edit This Computer…", func(u *gunim.UI) { w.thisComputerDialog(u) })
+		add(icon.Settings, "Settings…", send(app.ShowMachine{}))
 	}
 	w.showMachineMenu(r, items, icons, acts, u)
 }
@@ -4022,6 +3842,10 @@ func (w *Window) madeNode(id string) gunim.Node {
 	case app.KindJobs:
 		if w.jobs != nil {
 			n = w.jobs
+		}
+	case app.KindMachine:
+		if mp, ok := w.machinePanes[id]; ok {
+			n = mp
 		}
 	case app.KindTunnel:
 		if p, ok := w.tunnelPanes[id]; ok {

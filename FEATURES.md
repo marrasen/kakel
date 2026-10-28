@@ -12,34 +12,34 @@ The whole list. The [README](README.md) has the short version.
 - **Local shells and SSH.** One `session.Session` interface with two
   implementations. Nothing above it — the emulator, the grid, the
   window — can tell the difference.
-- **Profiles for the shells kakel does not find.** Settings › Profiles
-  adds MSYS2, nushell or `ssh host` by its command line, as
-  Windows Terminal does: `C:\msys64\usr\bin\bash.exe --login -i`.
-  A profile may name a folder to start in and variables to set, one
-  `NAME=value` a line; a value may use one set already, as
-  `PATH=C:\tools;%PATH%` does, or `$PATH` on Linux and macOS. A name
-  not set stays as written, and `%%` or `$$` writes one sign. A WSL
-  profile carries them into the distribution, a Windows path
-  translated. It is offered with the
-  shells found here, in the palette, the split chooser, the launcher,
-  the tray and the Shell setting, and can be the shell new terminals
-  start. Renaming it keeps
-  the shell chosen and the shortcuts bound to it. A profile on a saved
-  server, such as `tmux new -A -s main` or `htop`, runs there in place
-  of the account's shell, and the server's dialog can make it what New
-  Terminal opens there; Login Shell on its menu still opens the plain
-  shell. It needs a POSIX server: variables go through `env` and the
-  folder through `cd`, and `.profile` is read only when the command
-  asks for a login shell, as `bash -l` does.
-- **Found profiles you can rename or hide.** What kakel finds is listed
-  with the profiles in Settings › Profiles: the shells here, the home
-  folder and the drives, and each saved server's login shell and home.
-  Each can be renamed, and a shell here can be given a folder and
-  variables. Hidden, it is offered nowhere: not in the palette, the
-  launcher, the tray, the menus, the Shell setting or the file
-  manager's sidebar. A server with everything hidden, used only as a
-  jump host, drops out of them too. Favourites are the files profiles
-  you add, and the same page adds, renames and removes them.
+- **Each machine's settings in a pane of its own.** A machine's card,
+  its menu's Settings… or Add Server… opens the machine's pane: a
+  sidebar with the machine at the top and its profiles under it, and
+  what is picked there on the right. The machine's row holds how it is
+  reached (address, user, port, key, the server it goes through), in a
+  pane rather than a dialog, so an address can be copied from a
+  terminal beside it. A new server is saved from its pane with Save or
+  Save and Connect; closed with something typed in it, the pane asks
+  first.
+- **Profiles: the terminals a machine opens.** kakel finds this
+  computer's shells (Command Prompt, PowerShell, Git Bash, each WSL
+  distribution) and each server's login shell, and lists them with the
+  profiles you add, such as MSYS2 by its command line
+  (`C:\msys64\usr\bin\bash.exe --login -i`), nushell, `ssh host`, or
+  on a server `tmux new -A -s main`. A star marks the one New Terminal
+  opens on that machine; this computer's start folder and shell are
+  that profile's folder and shell. An eye hides one kakel found, and
+  a hidden one stays listed, faint, to show again: hidden, it is
+  offered nowhere, not in the palette, the launcher, the tray, the
+  menus or the split chooser. A server with everything hidden, used
+  only as a jump host, drops out of them too. Each profile can be
+  renamed, can start in a folder of its own with variables, one
+  `NAME=value` a line (a value may use one set already, as
+  `PATH=C:\tools;%PATH%` does, or `$PATH` on Linux and macOS), and says
+  whether its shell is taught to say what it is doing. A WSL profile
+  carries its variables into the distribution, a Windows path
+  translated. A server's profiles need a POSIX server: variables go
+  through `env` and the folder through `cd`.
 - **Connections, not just shells.** One SSH connection carries several
   things at once, so a second terminal on a machine is a second channel
   rather than a second login. A command runs on a channel of the same

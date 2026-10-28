@@ -931,15 +931,8 @@ func (r *sideRow) cardKey(e input.KeyPress, u *gunim.UI) bool {
 	case input.KeyF:
 		u.Send(w, app.OpenFilesOn{Machine: m})
 	case input.KeyE:
-		if m == machines.Local {
-			w.thisComputerDialog(u)
-			break
-		}
-		for _, h := range w.saved {
-			if machines.ID(h.ID) == m {
-				saved := h
-				w.serverForm(&saved, u)
-			}
+		if m == machines.Local || slices.ContainsFunc(w.saved, func(h remote.Host) bool { return machines.ID(h.ID) == m }) {
+			u.Send(w, app.ShowMachine{Machine: m})
 		}
 	case input.KeyDelete:
 		if m != machines.Local && slices.ContainsFunc(w.saved, func(h remote.Host) bool { return machines.ID(h.ID) == m }) {

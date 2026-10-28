@@ -310,8 +310,9 @@ func (a *app) closeWindow(w *ownWin) {
 		a.askToQuit()
 		return
 	}
-	// The tool panes have nothing to lose, and are not asked about.
-	panes := slices.DeleteFunc(a.panesIn(w), func(p Pane) bool { return isToolKind(p.Kind) })
+	// The tool panes have nothing to lose, and are not asked about, but
+	// for a new server with something typed in it.
+	panes := slices.DeleteFunc(a.panesIn(w), func(p Pane) bool { return isToolKind(p.Kind) && !a.draftTyped[p.ID] })
 	var ids []string
 	for _, p := range panes {
 		ids = append(ids, p.ID)

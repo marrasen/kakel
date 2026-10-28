@@ -12,15 +12,6 @@ import (
 // This computer's own settings, as a saved server has its: the folder a
 // new terminal starts in, and the shell it runs.
 
-// SaveThisComputer keeps this computer's settings. StartFolder is
-// where a new terminal starts, empty for the home folder, and a leading
-// ~ is the home folder; Shell is the shell a new terminal runs, by the
-// ID the shell list gives it, empty for the user's own.
-type SaveThisComputer struct {
-	StartFolder string
-	Shell       string
-}
-
 // ThisComputer is what the windows are told of this computer's
 // settings. The shell is State's ChosenShell.
 type ThisComputer struct {
@@ -33,29 +24,6 @@ func (a *app) showThisComputer() {
 		return
 	}
 	a.st.ThisComputer.StartFolder = a.settings.Local()
-}
-
-// saveThisComputer checks and keeps this computer's settings.
-func (a *app) saveThisComputer(in SaveThisComputer) error {
-	if a.settings == nil {
-		return errors.New("the settings could not be read, so nothing can be kept")
-	}
-	start := strings.TrimSpace(in.StartFolder)
-	if start != "" {
-		full, err := FolderHere(start)
-		if err != nil {
-			return err
-		}
-		start = full
-	}
-	if err := a.settings.PutLocal(start); err != nil {
-		return err
-	}
-	a.showThisComputer()
-	if in.Shell != a.st.ChosenShell {
-		return a.pickShell(in.Shell)
-	}
-	return nil
 }
 
 // FolderHere is path as a folder on this computer, a leading ~ the

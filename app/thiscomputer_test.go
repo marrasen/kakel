@@ -8,8 +8,9 @@ import (
 )
 
 // A shell started from a folder nobody starts kakel in to work there,
-// as a shortcut gives it, starts in the start folder This Computer
-// sets, or else at home; any other folder stays.
+// as a shortcut gives it, starts in its profile's folder, or else at
+// home; any other folder stays. A folder is ~ for home, and one that
+// isn't there is refused.
 func TestAShellStartsInTheStartFolder(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("the installed folder is the user's own here")
@@ -29,25 +30,18 @@ func TestAShellStartsInTheStartFolder(t *testing.T) {
 			t.Fatalf("from %q with no start folder, a shell starts in %s, want home", from, got)
 		}
 	}
-	a.handle(SaveThisComputer{StartFolder: work})
-	if a.st.ThisComputer.StartFolder != work {
-		t.Fatalf("saved, the state says %+v", a.st.ThisComputer)
-	}
 	for _, from := range []string{"", home, bin} {
-		if got := a.startDir(from, ""); got != work {
+		if got := a.startDir(from, work); got != work {
 			t.Fatalf("from %q, a shell starts in %s, want %s", from, got, work)
 		}
 	}
-	if got := a.startDir(elsewhere, ""); got != elsewhere {
+	if got := a.startDir(elsewhere, work); got != elsewhere {
 		t.Fatalf("from %s, a shell starts in %s", elsewhere, got)
 	}
-	// ~ is home, and a folder that isn't there is refused.
-	a.handle(SaveThisComputer{StartFolder: "~/.local"})
-	if want := filepath.Join(home, ".local"); a.st.ThisComputer.StartFolder != want {
-		t.Fatalf("~/.local saved as %q, want %q", a.st.ThisComputer.StartFolder, want)
+	if got, err := FolderHere("~/.local"); err != nil || got != filepath.Join(home, ".local") {
+		t.Fatalf("~/.local is %q, %v", got, err)
 	}
-	a.handle(SaveThisComputer{StartFolder: filepath.Join(home, "nowhere")})
-	if want := filepath.Join(home, ".local"); a.st.ThisComputer.StartFolder != want {
-		t.Fatalf("a folder that isn't there was saved: %q", a.st.ThisComputer.StartFolder)
+	if _, err := FolderHere(filepath.Join(home, "nowhere")); err == nil {
+		t.Fatal("a folder that isn't there was taken")
 	}
 }

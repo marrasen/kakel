@@ -22,6 +22,9 @@ type ShellChoice struct {
 	// Folder is where Windows reaches a WSL distribution's files, empty
 	// for any other shell.
 	Folder string
+	// Line is the command line a shell found here runs, as FoundShells
+	// says it.
+	Line string
 }
 
 // Intents for the shell.
@@ -55,6 +58,9 @@ func (a *app) scanShells() {
 				if sh, ok := shellfind.Running(found, argv); ok {
 					a.ownShell = sh.ID
 				}
+			}
+			if a.scanned {
+				a.moveStartFolder()
 			}
 			// Panes that opened before the shells were known, such as
 			// the first, are named again: "Command Prompt", not the
