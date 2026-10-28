@@ -140,6 +140,21 @@ func TestAProfileIsAddedOnItsServer(t *testing.T) {
 	}
 }
 
+// A server whose own shell is hidden stars its first profile, which is
+// what its New Terminal runs, and a hidden row's star takes no click.
+func TestAHiddenLoginShellPassesItsStar(t *testing.T) {
+	st := app.State{Saved: []remote.Host{{ID: "s1", Name: "prod", Address: "prod.example"}},
+		Profiles: []settings.Profile{{ID: "profile:htop", HostID: "s1", Name: "htop", Command: []string{"htop"}}},
+		Found:    []settings.FoundProfile{{HostID: "s1", ID: app.LoginShell, Hidden: true}}}
+	_, mp, _ := machinePaneOf(t, st, "s1", false)
+	if !rowOf(t, mp, mpProfile+"profile:htop").it.profile.def {
+		t.Fatal("its own shell hidden, the server's first profile has no star")
+	}
+	if login := rowOf(t, mp, mpProfile+app.LoginShell); login.it.profile.def || !login.star.Disabled {
+		t.Fatalf("the hidden login shell's star is %+v", login.it.profile)
+	}
+}
+
 // A kakel window's pane has its settings and no profiles; a new
 // server's has its settings alone, says what is typed, and is saved
 // from the pane it was typed in.

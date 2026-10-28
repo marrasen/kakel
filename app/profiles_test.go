@@ -199,7 +199,9 @@ func TestAKeptProfileWhoseProgramHasGoneFallsBack(t *testing.T) {
 func TestAProfileStartsInItsFolder(t *testing.T) {
 	a := fontApp(t)
 	start, own := t.TempDir(), t.TempDir()
-	a.handle(SaveThisComputer{StartFolder: start})
+	if err := a.settings.PutLocal(start); err != nil {
+		t.Fatal(err)
+	}
 	for _, c := range []struct{ folder, want string }{
 		{own, own},
 		{"", start},

@@ -380,7 +380,7 @@ func (a *app) clearMachine(name machines.ID) {
 	a.machines.At(name).Dropped = false
 	a.withdrawLost(name)
 	for _, p := range slices.Clone(a.st.Panes) {
-		if p.Machine == name && (p.Ended || dropped && p.Kind != KindLog) {
+		if p.Machine == name && p.Kind != KindMachine && (p.Ended || dropped && p.Kind != KindLog) {
 			a.closePane(p.ID)
 		}
 	}

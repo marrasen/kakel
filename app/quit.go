@@ -146,9 +146,10 @@ func (a *app) whatIsOpen() []string {
 	if deletes > 0 {
 		out = append(out, words.ManyOf(deletes, "delete running", "deletes running"))
 	}
-	// The tool panes have nothing to lose, and a connection with nothing
-	// on it nothing to end.
-	panes := slices.DeleteFunc(slices.Clone(a.st.Panes), func(p Pane) bool { return isToolKind(p.Kind) })
+	// The tool panes have nothing to lose, but for a new server with
+	// something typed in it, and a connection with nothing on it nothing
+	// to end.
+	panes := slices.DeleteFunc(slices.Clone(a.st.Panes), func(p Pane) bool { return isToolKind(p.Kind) && !a.draftTyped[p.ID] })
 	if n := len(panes); n > 0 {
 		out = append(out, words.ManyOf(n, "pane", "panes"))
 	}

@@ -931,7 +931,9 @@ func (r *sideRow) cardKey(e input.KeyPress, u *gunim.UI) bool {
 	case input.KeyF:
 		u.Send(w, app.OpenFilesOn{Machine: m})
 	case input.KeyE:
-		u.Send(w, app.ShowMachine{Machine: m})
+		if m == machines.Local || slices.ContainsFunc(w.saved, func(h remote.Host) bool { return machines.ID(h.ID) == m }) {
+			u.Send(w, app.ShowMachine{Machine: m})
+		}
 	case input.KeyDelete:
 		if m != machines.Local && slices.ContainsFunc(w.saved, func(h remote.Host) bool { return machines.ID(h.ID) == m }) {
 			w.confirmRemove(m, u)

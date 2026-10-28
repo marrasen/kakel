@@ -183,9 +183,6 @@ type Window struct {
 	// title bar, for the Settings dialog to show.
 	sounds, rings  app.Alerts
 	systemTitleBar bool
-	// thisComputer is this computer's settings, as the program keeps
-	// them.
-	thisComputer app.ThisComputer
 	// favourites are the folders saved on any machine.
 	favourites []app.Favourite
 	// useOnOpen is when Use Secret asked the secrets to open, for its
@@ -598,9 +595,13 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 		return true
 	case "server.editThis", "server.forget":
 		m := w.machineOf(w.focused)
+		if id == "server.editThis" && m == "" {
+			u.Send(w, app.ShowMachine{})
+			return true
+		}
 		i := slices.IndexFunc(w.saved, func(h remote.Host) bool { return machines.ID(h.ID) == m })
 		if i < 0 {
-			w.toast(widget.Toast{Title: "This pane is on no saved server", Body: "Edit This Server works on a pane on a server from the Machines menu."}, u)
+			w.toast(widget.Toast{Title: "This pane is on no saved server", Body: "Machine Settings and Remove This Server work on a pane on a saved server."}, u)
 			return true
 		}
 		if id == "server.editThis" {
@@ -2072,8 +2073,8 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 	}
 	w.setSavedCommands(st.SavedCommands)
 	if !slices.Equal(st.Shells, w.shellChoices) || st.ChosenShell != w.chosenShell || st.DefaultShell != w.defaultShell ||
-		st.ThisComputer.StartFolder != w.thisComputer.StartFolder || !slices.Equal(st.Favourites, w.favourites) {
-		w.shellChoices, w.chosenShell, w.thisComputer, w.favourites = st.Shells, st.ChosenShell, st.ThisComputer, st.Favourites
+		!slices.Equal(st.Favourites, w.favourites) {
+		w.shellChoices, w.chosenShell, w.favourites = st.Shells, st.ChosenShell, st.Favourites
 		w.defaultShell = st.DefaultShell
 		w.servers(w.saved)
 	}
@@ -2340,6 +2341,9 @@ func (w *Window) applies(id string) bool {
 		return w.machineOf(w.focused) != ""
 	case "server.editThis", "server.forget":
 		m := w.machineOf(w.focused)
+		if id == "server.editThis" && m == "" {
+			return true
+		}
 		return m != "" && slices.ContainsFunc(w.saved, func(h remote.Host) bool { return machines.ID(h.ID) == m })
 	case "pane.scrollback":
 		k := w.kindOf(w.focused)

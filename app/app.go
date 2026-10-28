@@ -685,6 +685,8 @@ type app struct {
 	// draftTyped are the draft machine panes with something typed in
 	// them, which ask before they close.
 	draftTyped map[string]bool
+	// draftAsked are those whose closing is being asked about.
+	draftAsked map[string]bool
 	// local is this computer's filesystem, once something needs it.
 	local vfs.FS
 	// themes are the themes on offer, and palette the terminals' now.
@@ -905,6 +907,7 @@ func newApp(c gunim.Client, sh *screen.Shells) *app {
 		replies:      map[uint64]chan AskAnswered{},
 		closing:      map[string]bool{},
 		draftTyped:   map[string]bool{},
+		draftAsked:   map[string]bool{},
 		tunnels:      map[string]*tunnel.Held{},
 		agents:       agents{by: map[string]*handover{}},
 		commands:     map[string]command{},
@@ -1212,8 +1215,6 @@ func failedTitle(in gunim.Intent) string {
 		return "Couldn't open the files"
 	case DropFiles:
 		return "Couldn't take the files dropped"
-	case SaveThisComputer:
-		return "Couldn't save This Computer's settings"
 	case SaveProfile:
 		return "Couldn't save the profile"
 	case RemoveProfile:
@@ -1667,8 +1668,6 @@ func (a *app) handle(in gunim.Intent) {
 		}
 	case PickShell:
 		err = a.pickShell(in.ID)
-	case SaveThisComputer:
-		err = a.saveThisComputer(in)
 	case SaveProfile:
 		err = a.saveProfile(in.Profile)
 	case RemoveProfile:
@@ -2401,6 +2400,8 @@ func (a *app) remove(id string) {
 	if i < 0 {
 		return
 	}
+	delete(a.draftTyped, id)
+	delete(a.draftAsked, id)
 	// Not each pane as the program exits: that is one line, where it
 	// exits.
 	if p := a.st.Panes[i]; p.Kind != KindChooser && p.Kind != KindLog && !a.gone {

@@ -78,8 +78,13 @@ func (a *app) keepDraft(id string) bool {
 	if !a.draftTyped[id] {
 		return false
 	}
+	if a.draftAsked[id] {
+		return true
+	}
+	a.draftAsked[id] = true
 	a.askThen(a.ctx, Ask{Title: "Discard the new server?", Text: "What was typed for it is not saved.", Yes: "Discard", Danger: true},
 		func(ans AskAnswered) {
+			delete(a.draftAsked, id)
 			if ans.Yes {
 				delete(a.draftTyped, id)
 				a.closePane(id)
@@ -183,8 +188,9 @@ func (a *app) teachesFar(m machines.ID, p settings.Profile) bool {
 }
 
 // moveStartFolder makes the start folder This Computer kept, from
-// before it had profiles, the folder of the shell new terminals start,
-// once: that profile is where a terminal here starts now.
+// before it had profiles, the folder of each profile here that has none
+// of its own, the shells found and those made, once: a profile is where
+// a terminal here starts now, and each started there before.
 func (a *app) moveStartFolder() {
 	if a.settings == nil || a.settings.Err() != nil {
 		return
@@ -193,28 +199,27 @@ func (a *app) moveStartFolder() {
 	if start == "" {
 		return
 	}
-	id := a.defaultShell()
-	if id == "" {
-		return
-	}
 	var err error
-	if i := slices.IndexFunc(a.st.Profiles, func(p settings.Profile) bool { return p.ID == id && p.HostID == "" }); i >= 0 {
-		if p := a.st.Profiles[i]; p.Folder == "" {
+	for _, p := range a.st.Profiles {
+		if p.HostID == "" && p.Folder == "" && err == nil {
 			p.Folder = start
 			err = a.settings.PutProfile(p, nil)
-			a.st.Profiles = a.settings.Profiles()
 		}
-	} else if f := a.foundEdit("", id); f.Folder == "" {
-		f.Folder = start
-		err = a.settings.PutFound(f)
-		a.st.Found = a.settings.Found()
 	}
+	for _, s := range a.detected {
+		if f := a.foundEdit("", s.ID); f.Folder == "" && err == nil {
+			f.Folder = start
+			err = a.settings.PutFound(f)
+			a.st.Found = a.settings.Found()
+		}
+	}
+	a.st.Profiles = a.settings.Profiles()
 	if err == nil {
 		err = a.settings.PutLocal("")
 		a.showThisComputer()
 	}
 	if err != nil {
-		a.failed("Couldn't move the start folder to the default profile", err.Error())
+		a.failed("Couldn't move the start folder to the profiles", err.Error())
 	}
 }
 

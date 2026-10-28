@@ -3,6 +3,7 @@ package view
 import (
 	"fmt"
 	"reflect"
+	"runtime"
 	"slices"
 	"strings"
 
@@ -112,7 +113,7 @@ func newMachinePane(w *Window, id string) *machinePane {
 	}
 	side := widget.NewPad(widget.NewScroll(mp.list))
 	side.Padding = mpSidePad
-	mp.right.child = blankPane{}
+	mp.right.child = &emptyNode{}
 	rightPad := widget.NewPad(widget.NewScroll(mp.right))
 	rightPad.Padding = mpPad
 	row := widget.Row(widget.NewSized(side, 280, 0), &divider{width: 1}, rightPad).Grow(rightPad, 1)
@@ -204,8 +205,8 @@ func (mp *machinePane) refresh(u *gunim.UI) {
 // machine as saved, and the picked row's profile.
 func (mp *machinePane) signature() string {
 	var b strings.Builder
-	if h, ok := mp.host(); ok {
-		b.WriteString(h.Name + "\x00" + h.Address + "\x00" + h.User + "\x00" + h.Via + "\x00" + strings.Join(h.Identities, ","))
+	if h, ok := mp.host(); ok && mp.sel == mpMachine {
+		fmt.Fprintf(&b, "%+v", h)
 	}
 	if it, ok := mp.item(mp.sel); ok {
 		p := it.profile
@@ -277,8 +278,15 @@ func (mp *machinePane) rows() []mpItem {
 		}
 	} else {
 		def := st.ServerShells[string(mp.machine)]
+		login := foundOf(st.Found, mp.machine, app.LoginShell)
+		if def == "" && login.Hidden {
+			// Its own shell hidden, New Terminal runs its first profile.
+			if i := slices.IndexFunc(st.Profiles, func(p settings.Profile) bool { return machines.ID(p.HostID) == mp.machine }); i >= 0 {
+				def = st.Profiles[i].ID
+			}
+		}
 		profiles = append(profiles, mpProfileOf{id: app.LoginShell, name: "Login Shell", line: "the account's own shell", found: true,
-			edit: foundOf(st.Found, mp.machine, app.LoginShell), def: def == ""})
+			edit: login, def: def == ""})
 		for i, p := range st.Profiles {
 			if machines.ID(p.HostID) == mp.machine {
 				profiles = append(profiles, mpProfileOf{id: p.ID, own: &st.Profiles[i], line: app.ProfileLine(p), def: p.ID == def})
@@ -377,11 +385,14 @@ func (mp *machinePane) profileSide(p mpProfileOf, adding bool, u *gunim.UI) guni
 	env.Rows = 3
 	env.Placeholder = "NAME=value, one a line"
 	dir.Placeholder = "Optional"
-	line.Placeholder = `such as C:\msys64\usr\bin\bash.exe --login -i`
+	line.Placeholder = "such as /usr/bin/fish -l"
+	if runtime.GOOS == "windows" {
+		line.Placeholder = `such as C:\msys64\usr\bin\bash.exe --login -i`
+	}
 	if !here {
 		line.Placeholder, dir.Placeholder = "such as tmux new -A -s main", "Optional, such as ~/src"
 	}
-	teach := widget.NewCheckbox("Teach the shell to say what it is doing")
+	teach := widget.NewCheckbox("Let kakel follow the shell's folder and commands")
 	setup := mp.setupOn()
 	switch {
 	case p.own != nil:
@@ -495,7 +506,7 @@ func (mp *machinePane) profileSide(p mpProfileOf, adding bool, u *gunim.UI) guni
 		del.OnClick = func(u *gunim.UI) gunim.Intent { mp.confirmDelete(*p.own, u); return nil }
 		actions = append(actions, del)
 	}
-	if !adding && !p.def {
+	if !adding && !p.def && !p.edit.Hidden {
 		def := widget.NewButton("Make Default")
 		def.OnClick = func(*gunim.UI) gunim.Intent { return app.SetDefaultProfile{Machine: mp.machine, ID: p.id} }
 		actions = append(actions, def)
@@ -615,6 +626,10 @@ func (r *mpRow) set(it mpItem, picked bool, u *gunim.UI) {
 	}
 	if strings.HasPrefix(it.key, mpProfile) {
 		r.star.Icon, r.star.Ink, r.star.Tooltip = icon.Star, look.Faint, "Make it the one new terminals open"
+		r.star.Disabled = p.edit.Hidden
+		if p.edit.Hidden {
+			r.star.Tooltip = "Hidden: show it first to make it the default"
+		}
 		if p.def {
 			r.star.Icon, r.star.Ink, r.star.Tooltip = icon.Star, widget.Accent, "New terminals open it"
 		}
@@ -739,6 +754,18 @@ func (s *swapNode) Paint(p *paint.Painter, _ gunim.Frame, _ geom.Size, kids guni
 		}
 	}
 }
+
+// emptyNode stands where nothing is shown yet. It has a field, so two
+// are two nodes in the tree.
+type emptyNode struct{ _ byte }
+
+// Layout implements [gunim.Node].
+func (*emptyNode) Layout(gunim.Constraints, gunim.Frame, gunim.Children) geom.Size {
+	return geom.Size{}
+}
+
+// Paint implements [gunim.Node].
+func (*emptyNode) Paint(*paint.Painter, gunim.Frame, geom.Size, gunim.Children) {}
 
 // divider is the line between a machine pane's sidebar and the rest.
 // Its width is a field, so two dividers are two nodes.
