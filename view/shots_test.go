@@ -3,6 +3,7 @@ package view
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -154,5 +155,26 @@ func TestShots(t *testing.T) {
 			frames(3)
 			shot("motion-" + strconv.Itoa(i))
 		}
+	}
+}
+
+// TestShotsTabSwitch writes frames of a switch from the Machines pane to
+// a machine's, to see the one go and the other come.
+func TestShotsTabSwitch(t *testing.T) {
+	dir := os.Getenv("KAKEL_SHOTS")
+	if dir == "" {
+		t.Skip("KAKEL_SHOTS names no folder to write the screenshots to")
+	}
+	_, _, publish := windowStageOf(t, geom.Sz(1000, 700))
+	st := shotsState()
+	publish(st)
+	settle()
+	next := st
+	next.Panes = append(slices.Clone(st.Panes), app.Pane{ID: "mp", Title: "web", Kind: app.KindMachine, Machine: "s1"})
+	next.Stage, next.Focus = &app.Box{Pane: "mp"}, "mp"
+	publish(next)
+	for i := 1; i <= 4; i++ {
+		frames(2)
+		gunimtest.WritePNG(t, filepath.Join(dir, "switch-"+strconv.Itoa(i)+".png"), gunimtest.Pixels(t, lastWindow))
 	}
 }

@@ -2803,9 +2803,16 @@ func (s *stage) show(n gunim.Node, u *gunim.UI) {
 	}
 }
 
-// Layout implements [gunim.Node].
+// Layout implements [gunim.Node]: what is on stage takes it all. What
+// left with the tab before takes no room: its parts that animate their
+// own leaving, as a machine's cards fade, hold it in the tree until they
+// are done, and it must not show while they are.
 func (s *stage) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children) geom.Size {
 	for k := range kids.All {
+		if k.Node() != s.shown {
+			k.Layout(gunim.Constraints{})
+			continue
+		}
 		k.Layout(gunim.Tight(c.Max))
 		k.Place(geom.Point{})
 	}
@@ -2818,8 +2825,12 @@ func (s *stage) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children) 
 // shape. That is far cheaper on a large window than a layer the size
 // of the stage, faded or moved, would be.
 func (s *stage) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gunim.Children) {
+	// Only what is on stage: what left with the tab before is gone at
+	// once, and the cover clears off what came.
 	for k := range kids.All {
-		k.Paint(p)
+		if k.Node() == s.shown {
+			k.Paint(p)
+		}
 	}
 	c := min(max(s.cover.Value(), 0), 1)
 	if c <= 0 || box.W <= 0 || box.H <= 0 {
