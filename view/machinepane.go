@@ -1163,6 +1163,9 @@ func newMPRow(mp *machinePane) *mpRow {
 	r.badge = widget.NewBadge("")
 	r.badge.Ink = widget.DialogDangerInk
 	r.star.OnClick = func(*gunim.UI) gunim.Intent {
+		if key, ok := strings.CutPrefix(r.it.key, mpFolder); ok {
+			return app.SetDefaultFiles{Machine: r.mp.machine, Key: key}
+		}
 		return app.SetDefaultProfile{Machine: r.mp.machine, ID: r.it.profile.id}
 	}
 	r.eye.OnClick = func(*gunim.UI) gunim.Intent {
@@ -1250,7 +1253,16 @@ func (r *mpRow) set(it mpItem, picked bool, u *gunim.UI) {
 	}
 	if strings.HasPrefix(it.key, mpFolder) {
 		f := it.folder
-		kids = append(kids, widget.NewSpacer())
+		// The star: where its files open, which a hidden one cannot be.
+		r.star.Icon, r.star.Ink, r.star.Tooltip = icon.Star, look.Faint, "Make it where Files opens"
+		r.star.Disabled = f.hidden()
+		if f.hidden() {
+			r.star.Tooltip = "Hidden: show it first to make it the default"
+		}
+		if mpFolder+r.mp.w.defaults[r.mp.machine].FilesKey == it.key {
+			r.star.Ink, r.star.Tooltip = widget.Accent, "Files opens here"
+		}
+		kids = append(kids, widget.NewSpacer(), r.star)
 		switch {
 		case f.found():
 			r.eye.Icon, r.eye.Tooltip = icon.Eye, "Hide it everywhere"

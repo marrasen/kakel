@@ -168,7 +168,7 @@ var commands = []struct{ id, title string }{
 // are gridterm's, so a shortcuts file written for gridterm works here.
 var itemPrefixes = []string{
 	"server.open.", "server.edit.", "server.remove.", "conn.log.",
-	"conn.terminal.", "conn.files.", "conn.saved.", "conn.savedtunnel.",
+	"conn.terminal.", "conn.login.", "conn.files.", "conn.saved.", "conn.savedtunnel.",
 	shellfind.CommandPrefix, "shell.pick.", "font.use.",
 }
 

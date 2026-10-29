@@ -131,7 +131,7 @@ func TestAServerWithEverythingHiddenIsLeftOut(t *testing.T) {
 	for _, x := range ms[i].Actions {
 		actions = append(actions, x.ID)
 	}
-	if want := []string{"terminal", "shell:profile:tmux", "shell:profile:htop"}; !slices.Equal(actions, want) {
+	if want := []string{"shell:profile:tmux", "shell:profile:htop"}; !slices.Equal(actions, want) {
 		t.Fatalf("with its shell and home hidden, the launcher offers %v, want %v", actions, want)
 	}
 	a.handle(RemoveProfile{ID: "profile:tmux"})

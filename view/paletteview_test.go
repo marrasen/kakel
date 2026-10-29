@@ -98,16 +98,16 @@ func TestNextPaneGoesInTheSidebarsOrder(t *testing.T) {
 // The palette has each machine on a line of its own, found by its name,
 // with what opens on it as chips, as the launcher has them: a terminal,
 // its files, its log, and for a server saved, editing and removing it.
-// This computer's terminals are its shells by name, the default first.
+// Its shells and its files go by their names: no chip says Terminal.
 // No line of its own says "Terminal on" a machine, "Files on" one that
 // is not in front, or connects to, edits or removes a server. Each shell
 // here goes by its name too, the default said to be.
 func TestThePaletteHasAMachineALineWithChips(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(app.State{Saved: []remote.Host{{ID: "sky", Name: "skylake", Address: "10.0.0.5"}, {ID: "bk", Name: "backup"}},
+	publish(withDefaults(app.State{Saved: []remote.Host{{ID: "sky", Name: "skylake", Address: "10.0.0.5"}, {ID: "bk", Name: "backup"}},
 		Machines: []machines.Info{{ID: "sky", Name: "skylake"}}, Connected: []machines.ID{"sky"}, Accounts: []machines.ID{"sky"},
 		Shells:       []app.ShellChoice{{ID: "cmd", Title: "Command Prompt"}, {ID: "pwsh", Title: "PowerShell 7"}},
-		DefaultShell: "pwsh"})
+		DefaultShell: "pwsh"}))
 	items := make([]match.Item, len(win.palette.Items))
 	for i, it := range win.palette.Items {
 		items[i] = match.Item{Title: it.Title, Also: it.Also}
@@ -121,17 +121,17 @@ func TestThePaletteHasAMachineALineWithChips(t *testing.T) {
 		return found[0].Index
 	}
 	sky := best("skylake")
-	if it := win.palette.Items[sky]; it.Title != "skylake" || !slices.Equal(it.Chips, []string{"Terminal", "Files", "Connection Log", "Settings", "Remove"}) || it.Detail != "connected" {
+	if it := win.palette.Items[sky]; it.Title != "skylake" || !slices.Equal(it.Chips, []string{"bash", "Home", "Connection Log", "Settings", "Remove"}) || it.Detail != "connected" {
 		t.Fatalf("skylake finds %q with chips %q", it.Title, it.Chips)
 	}
 	if it := win.palette.Items[best("10.0.0.5")]; it.Title != "skylake" {
 		t.Fatalf("skylake's address finds %q", it.Title)
 	}
-	if it := win.palette.Items[best("backup")]; !slices.Equal(it.Chips, []string{"Terminal", "Files", "Connect", "Settings", "Remove"}) {
+	if it := win.palette.Items[best("backup")]; !slices.Equal(it.Chips, []string{"bash", "Home", "Connect", "Settings", "Remove"}) {
 		t.Fatalf("backup, not connected to, has chips %q", it.Chips)
 	}
 	here := slices.IndexFunc(win.palette.Items, func(it widget.PaletteItem) bool { return it.Title == "This computer" })
-	if it := win.palette.Items[max(here, 0)]; here < 0 || !slices.Equal(it.Chips, []string{"Command Prompt", "PowerShell 7", "Files", "Settings"}) {
+	if it := win.palette.Items[max(here, 0)]; here < 0 || !slices.Equal(it.Chips, []string{"Command Prompt", "PowerShell 7", "Home", "Settings"}) {
 		t.Fatalf("this computer has chips %q", it.Chips)
 	}
 	for _, it := range win.palette.Items {
@@ -155,7 +155,7 @@ func TestThePaletteHasAMachineALineWithChips(t *testing.T) {
 	if got.Machine != "sky" {
 		t.Fatalf("skylake's Files opened files on %q", got.Machine)
 	}
-	publish(app.State{Saved: []remote.Host{{ID: "sky", Name: "skylake"}}, Machines: []machines.Info{{ID: "sky", Name: "skylake"}}})
+	publish(withDefaults(app.State{Saved: []remote.Host{{ID: "sky", Name: "skylake"}}, Machines: []machines.Info{{ID: "sky", Name: "skylake"}}}))
 	i := slices.IndexFunc(win.palette.Items, func(it widget.PaletteItem) bool { return it.Title == "skylake" })
 	if i < 0 || win.palette.Items[i].Chip != 1 {
 		t.Fatalf("skylake lights chip %d after Files was picked, want 1", win.palette.Items[max(i, 0)].Chip)
@@ -191,12 +191,12 @@ func TestThePaletteStartsWithTheMachinesLastUsed(t *testing.T) {
 		}
 		return titles
 	}
-	publish(st)
+	publish(withDefaults(st))
 	if want := []string{"This computer", "skylake", "backup", "nas"}; !slices.Equal(first(), want) {
 		t.Fatalf("with nothing used, the palette starts with %q, want %q", first(), want)
 	}
 	st.MachinesUsed = []machines.ID{"nas", "", "sky"}
-	publish(st)
+	publish(withDefaults(st))
 	if want := []string{"nas", "This computer", "skylake", "backup"}; !slices.Equal(first(), want) {
 		t.Fatalf("after nas, this computer and skylake, the palette starts with %q, want %q", first(), want)
 	}

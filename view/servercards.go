@@ -726,8 +726,19 @@ func (r *sideRow) buttonsShown() [4]bool {
 }
 
 // chipWords are the bottom buttons' words, by button, which a narrow
-// card says as the pointer rests on them instead.
-var chipWords = map[int]string{chipTerminal: "Terminal", chipFiles: "Files"}
+// card says as the pointer rests on them instead: the names of the
+// machine's default shell and default folder.
+func (r *sideRow) chipWords() map[int]string {
+	d := r.w.defaults[r.machine]
+	shell, files := d.Shell, d.Files
+	if shell == "" {
+		shell = "Shell"
+	}
+	if files == "" {
+		files = "Files"
+	}
+	return map[int]string{chipTerminal: shell, chipFiles: files}
+}
 
 // layoutCard lays a header out. On a card: the badge and the name, with
 // the gear and ⋯ at the top right; who and where under the name; along
@@ -767,7 +778,7 @@ func (r *sideRow) layoutCard(c gunim.Constraints, f gunim.Frame, kids gunim.Chil
 		return kids.At(2 + i).Layout(gunim.Constraints{Max: geom.Sz(c.Max.W, cardChipHeight)})
 	}
 	words := func(on bool) {
-		for i, word := range chipWords {
+		for i, word := range r.chipWords() {
 			if on {
 				r.chips[i].Label, r.chips[i].Tooltip = word, ""
 			} else {

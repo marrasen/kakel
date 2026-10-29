@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/marrasen/kakel/app"
+	"github.com/marrasen/kakel/machines"
 
 	"github.com/marrasen/kakel/internal/sessiontest"
 	"github.com/marrasen/kakel/screen"
@@ -324,7 +325,7 @@ func TestTheSidebarWorksFromTheKeyboard(t *testing.T) {
 
 func TestAMachinesPlusOpensWhatCanBeOpenedThere(t *testing.T) {
 	win, _, publish := windowStage(t)
-	st := withServers(twoPanes("p2", nil))
+	st := withDefaults(withServers(twoPanes("p2", nil)))
 	publish(st)
 	for len(lastWindow.Client().Intents()) > 0 {
 		<-lastWindow.Client().Intents()
@@ -348,7 +349,7 @@ func TestAMachinesPlusOpensWhatCanBeOpenedThere(t *testing.T) {
 	st.Focus = "ps"
 	publish(st)
 	// Its lines are grouped under headings.
-	if m := row.menu; m == nil || !m.Items()[0].Caption || m.Items()[0].Label != "Terminal" ||
+	if m := row.menu; m == nil || !m.Items()[0].Caption || m.Items()[0].Label != "Shells" ||
 		!slices.ContainsFunc(m.Items(), func(it widget.MenuItem) bool { return it.Label == "Files" }) {
 		t.Fatalf("this computer's menu is %+v", row.menu)
 	}
@@ -539,4 +540,34 @@ func gridRow(rd *reader, y int) string {
 		}
 	}
 	return b.String()
+}
+
+// withDefaults gives st what the program publishes of what opens on each
+// machine by default: here the shells listed, the one st says first;
+// on each server its own shell, called bash; and Home for files.
+func withDefaults(st app.State) app.State {
+	st.Defaults = map[machines.ID]app.MachineDefaults{}
+	local := app.MachineDefaults{Files: "Home", FilesKey: app.FilesFound + app.FoundHome}
+	for _, s := range st.Shells {
+		def := s.ID == st.DefaultShell
+		local.Shells = append(local.Shells, app.ShellEntry{Action: "shell:" + s.ID, Name: s.Title, Default: def})
+		if def {
+			local.Shell = s.Title
+		}
+	}
+	if len(local.Shells) == 0 {
+		local.Shell, local.Shells = "bash", []app.ShellEntry{{Action: "terminal", Name: "bash", Default: true}}
+	}
+	st.Defaults[machines.Local] = local
+	server := app.MachineDefaults{Shell: "bash", Files: "Home", FilesKey: app.FilesFound + app.FoundHome,
+		Shells: []app.ShellEntry{{Action: "terminal", Name: "bash", Default: true}}}
+	for _, h := range st.Saved {
+		st.Defaults[machines.ID(h.ID)] = server
+	}
+	for _, m := range st.Machines {
+		if _, ok := st.Defaults[m.ID]; !ok {
+			st.Defaults[m.ID] = server
+		}
+	}
+	return st
 }

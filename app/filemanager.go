@@ -92,9 +92,15 @@ func (a *app) filePaneOn(machine machines.ID, path string, at Placement, quiet b
 }
 
 // startFolder is where files on machine open for path: path, or for ""
-// the one folder saved for the machine, or else home, "".
+// the machine's default folder, home being "".
 func (a *app) startFolder(machine machines.ID, path string) string {
-	if saved := a.savedFolders(machine); path == "" && len(saved) == 1 {
+	if path != "" {
+		return path
+	}
+	if _, _, far := machine.Far(); !far {
+		return a.defaultFiles(machine).path
+	}
+	if saved := a.savedFolders(machine); len(saved) == 1 {
 		// One folder saved for the machine is where its files open,
 		// however they are asked for: it is the one the user wants.
 		return saved[0]

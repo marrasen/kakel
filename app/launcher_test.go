@@ -220,7 +220,7 @@ func TestTheLauncherSaysWhichShellIsTheDefault(t *testing.T) {
 	for _, x := range local.Actions {
 		titles = append(titles, x.Title)
 	}
-	if !slices.Equal(titles, []string{"Command Prompt", "PowerShell 7", "Files"}) || local.Default != 1 {
+	if !slices.Equal(titles, []string{"Command Prompt", "PowerShell 7", "Home"}) || local.Default != 1 {
 		t.Fatalf("this computer offers %v, Enter opening %d", titles, local.Default)
 	}
 	// With none kept, the user's own.
