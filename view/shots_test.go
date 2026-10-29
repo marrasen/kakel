@@ -83,6 +83,13 @@ func shotsState() app.State {
 	st.Accounts = []machines.ID{"s1"}
 	st.Logs = map[machines.ID]*logs.Lines{"s1": l}
 	st.LogEnds = map[machines.ID]int64{"s1": l.End()}
+	st = withDefaults(st)
+	// What opens by default, as the user named and picked it.
+	st.Defaults[""] = app.MachineDefaults{Shell: "PowerShell", Files: "Home", FilesKey: app.FilesFound + app.FoundHome,
+		Shells: []app.ShellEntry{{Action: "terminal", Name: "PowerShell", Default: true}}}
+	st.Defaults["s1"] = app.MachineDefaults{Shell: "tmux", Files: "www", FilesKey: app.FilesFavourite + "/srv/www",
+		Shells: []app.ShellEntry{{Action: "login", Name: "Login Shell"}, {Action: "shell:profile:tmux", Name: "tmux", Default: true}}}
+	st.Favourites = []app.Favourite{{Machine: "s1", Path: "/srv/www"}}
 	return st
 }
 

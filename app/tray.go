@@ -192,22 +192,16 @@ func (a *app) trayMenu(gen int) ([]gunim.TrayItem, map[int]func()) {
 	}
 	machine := func(m machines.ID, title string) gunim.TrayItem {
 		var sub []gunim.TrayItem
-		if a.offersTerminal(m) {
-			sub = append(sub, gunim.TrayItem{Title: "Terminal", ID: act(func() { a.toTray(func() { a.handle(OpenOn{Machine: m}) }) })})
+		// Each shell by its name, in the order the user put them in, then
+		// the files, called after the folder they open at.
+		for _, sh := range a.shellsOn(m) {
+			in := Launch{Machine: m, Action: sh.Action}
+			sub = append(sub, gunim.TrayItem{Title: sh.Name, ID: act(func() { a.toTray(func() { a.launchOn(in) }) })})
 		}
 		if a.showsFiles(m) {
-			sub = append(sub, gunim.TrayItem{Title: "Files", ID: act(func() { a.filesFromOutside(m, "") })})
+			sub = append(sub, gunim.TrayItem{Title: a.defaultFiles(m).name, ID: act(func() { a.filesFromOutside(m, "") })})
 		}
-		if m == machines.Local {
-			for _, sh := range a.st.Shells {
-				id := sh.ID
-				sub = append(sub, gunim.TrayItem{Title: sh.Title, ID: act(func() { a.toTray(func() { a.handle(OpenShellNamed{ID: id}) }) })})
-			}
-		} else {
-			for _, p := range a.profilesOn(m) {
-				id := p.ID
-				sub = append(sub, gunim.TrayItem{Title: p.Name, ID: act(func() { a.toTray(func() { a.handle(OpenShellNamed{ID: id}) }) })})
-			}
+		if m != machines.Local {
 			sub = append(sub, gunim.TrayItem{Title: "Connection Log", ID: act(func() { a.toTray(func() { a.handle(ShowMachine{Machine: m, Row: MachineRowLog}) }) })})
 		}
 		return gunim.TrayItem{Title: title, Items: sub}

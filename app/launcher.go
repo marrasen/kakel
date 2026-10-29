@@ -282,30 +282,19 @@ func (a *app) launchMachines() []LaunchMachine {
 		var out []LaunchAction
 		files := func() {
 			if a.showsFiles(m) {
-				out = append(out, LaunchAction{ID: "files", Title: "Files"})
+				// Called after the folder they open at.
+				out = append(out, LaunchAction{ID: "files", Title: a.defaultFiles(m).name})
 			}
 		}
-		if m == machines.Local {
-			// Each shell by its name, in the order the user put them
-			// in: "Terminal" would not say which.
-			for _, sh := range a.st.Shells {
-				out = append(out, LaunchAction{ID: "shell:" + sh.ID, Title: sh.Title})
-			}
-			if len(out) == 0 {
-				out = append(out, LaunchAction{ID: "terminal", Title: "Terminal"})
-			}
-			files()
-			return out
-		}
-		// Each profile by its name, after the terminal the server opens
-		// by default.
-		if a.offersTerminal(m) {
-			out = append(out, LaunchAction{ID: "terminal", Title: "Terminal"})
-		}
-		for _, p := range a.profilesOn(m) {
-			out = append(out, LaunchAction{ID: "shell:" + p.ID, Title: p.Name})
+		// Each shell by its name, in the order the user put them in:
+		// "Terminal" would not say which.
+		for _, sh := range a.shellsOn(m) {
+			out = append(out, LaunchAction{ID: sh.Action, Title: sh.Name})
 		}
 		files()
+		if m == machines.Local {
+			return out
+		}
 		if slices.Contains(a.machines.Connected(), m) {
 			// A log is of a connection: there is none to show before.
 			out = append(out, LaunchAction{ID: "log", Title: "Connection Log"})
@@ -316,10 +305,8 @@ func (a *app) launchMachines() []LaunchMachine {
 		lm.Actions = actions(lm.ID)
 		// Enter opens what a new terminal opens, wherever the user put
 		// it in the order, until something else was used.
-		if lm.ID == machines.Local {
-			if i := slices.IndexFunc(lm.Actions, func(x LaunchAction) bool { return x.ID == "shell:"+a.defaultShell() }); i >= 0 {
-				lm.Default = i
-			}
+		if i := slices.IndexFunc(a.shellsOn(lm.ID), func(s ShellEntry) bool { return s.Default }); i >= 0 {
+			lm.Default = i
 		}
 		if last := a.launch.last[lm.ID]; last != "" {
 			if i := slices.IndexFunc(lm.Actions, func(x LaunchAction) bool { return x.ID == last }); i >= 0 {
@@ -372,18 +359,21 @@ func (a *app) launchThings(ms []LaunchMachine) []LaunchThing {
 		}
 	}
 	for _, m := range ms {
-		// This computer's terminals are its shells, by name, above.
-		if m.ID == machines.Local && len(a.st.Shells) == 0 || m.ID != machines.Local && a.offersTerminal(m.ID) {
-			out = append(out, LaunchThing{Title: "Terminal on " + m.Name, Note: m.Note, Also: []string{"shell", "ssh", "console", "new terminal"},
-				Kind: "terminal", Machine: m.ID, Action: "terminal"})
-		}
-		for _, p := range a.profilesOn(m.ID) {
-			note := m.Note
-			if p.ID == a.st.ServerShells[string(m.ID)] {
-				note = strings.TrimPrefix(note+" · default", " · ")
+		// This computer's shells are above, by name; a server's are
+		// each by its name and the server's.
+		if m.ID != machines.Local || len(a.st.Shells) == 0 {
+			for _, sh := range a.shellsOn(m.ID) {
+				note := m.Note
+				if sh.Default {
+					note = strings.TrimPrefix(note+" · default", " · ")
+				}
+				title := sh.Name + " on " + m.Name
+				if m.ID == machines.Local {
+					title = sh.Name
+				}
+				out = append(out, LaunchThing{Title: title, Note: note, Also: []string{strings.TrimPrefix(sh.Action, "shell:"), "shell", "ssh", "console", "terminal", "new terminal"},
+					Kind: "terminal", Machine: m.ID, Action: sh.Action})
 			}
-			out = append(out, LaunchThing{Title: p.Name + " on " + m.Name, Note: note, Also: []string{p.ID, "shell", "ssh", "terminal", "new terminal"},
-				Kind: "terminal", Machine: m.ID, Action: "shell:" + p.ID})
 		}
 		if a.showsFiles(m.ID) {
 			out = append(out, LaunchThing{Title: "Files on " + m.Name, Note: m.Note,
@@ -464,7 +454,7 @@ func (a *app) handleLaunch(in gunim.Intent) {
 		}
 		// What opens on the machine itself is what Enter opens there
 		// next: not a window of kakel's, nor a command.
-		if in.Action == "terminal" || in.Action == "files" || in.Action == "log" || strings.HasPrefix(in.Action, "shell:") {
+		if in.Action == "terminal" || in.Action == "login" || in.Action == "files" || in.Action == "log" || strings.HasPrefix(in.Action, "shell:") {
 			a.launch.last[in.Machine] = in.Action
 		}
 		if in.Action == "app:panes" {
@@ -531,6 +521,8 @@ func (a *app) launchOn(in Launch) {
 		a.handle(OpenFilesOn{Machine: in.Machine})
 	case in.Action == "log":
 		a.handle(ShowMachine{Machine: in.Machine, Row: MachineRowLog})
+	case in.Action == "login":
+		a.handle(OpenOn{Machine: in.Machine, Login: true})
 	case len(in.Action) > len("shell:") && in.Action[:len("shell:")] == "shell:":
 		a.handle(OpenShellNamed{ID: in.Action[len("shell:"):]})
 	default:

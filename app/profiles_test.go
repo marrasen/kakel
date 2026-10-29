@@ -686,7 +686,8 @@ func TestAServersProfilesAreOfferedOnIt(t *testing.T) {
 	for _, x := range ms[i].Actions {
 		actions = append(actions, x.ID)
 	}
-	if want := []string{"terminal", "shell:profile:tmux", "shell:profile:htop", "files"}; !slices.Equal(actions, want) {
+	// Each shell by its name, the server's own too; no "Terminal".
+	if want := []string{"login", "shell:profile:tmux", "shell:profile:htop", "files"}; !slices.Equal(actions, want) {
 		t.Fatalf("the launcher offers %v on the server, want %v", actions, want)
 	}
 	things := map[string]LaunchThing{}
@@ -708,7 +709,7 @@ func TestAServersProfilesAreOfferedOnIt(t *testing.T) {
 			}
 		}
 	}
-	if want := []string{"Terminal", "Files", "tmux", "htop", "Connection Log"}; !slices.Equal(tray, want) {
+	if want := []string{"Login Shell", "tmux", "htop", "Home", "Connection Log"}; !slices.Equal(tray, want) {
 		t.Fatalf("the tray offers %v on the server, want %v", tray, want)
 	}
 	sig := a.traySig()
@@ -770,5 +771,34 @@ func TestProfilesAreOfferedInTheOrderPutIn(t *testing.T) {
 	}
 	if got := a.settings.ProfileOrder()["srv"]; !slices.Equal(got, []string{LoginShell, "profile:htop", "profile:tmux"}) {
 		t.Fatalf("the order saved is %v", got)
+	}
+}
+
+// Files open at the folder made the default, never at one hidden: with
+// home hidden, at the next shown. What opens by default goes by name.
+func TestFilesOpenAtTheDefaultShown(t *testing.T) {
+	a, _ := serverWithProfiles(t)
+	a.st.Favourites = []Favourite{{Machine: "srv", Path: "/srv/www"}, {Machine: "srv", Path: "/var/log", Name: "Logs"}}
+	if got := a.defaultFiles("srv"); got.name != "Home" || a.startFolder("srv", "") != "" {
+		t.Fatalf("with nothing made the default, files open at %+v", got)
+	}
+	a.handle(SetDefaultFiles{Machine: "srv", Key: FilesFavourite + "/var/log"})
+	if got := a.startFolder("srv", ""); got != "/var/log" {
+		t.Fatalf("Logs made the default, files open at %q", got)
+	}
+	if d := a.machineDefaults()["srv"]; d.Files != "Logs" || d.FilesKey != FilesFavourite+"/var/log" {
+		t.Fatalf("the defaults say %+v", d)
+	}
+	a.handle(SetDefaultFiles{Machine: "srv", Key: FilesFound + FoundHome})
+	a.handle(HideFound{HostID: "srv", ID: FoundHome})
+	// Hiding reads the favourites again from the file; these are the
+	// test's own.
+	a.st.Favourites = []Favourite{{Machine: "srv", Path: "/srv/www"}, {Machine: "srv", Path: "/var/log", Name: "Logs"}}
+	if got := a.defaultFiles("srv"); got.name != "www" || got.path != "/srv/www" {
+		t.Fatalf("home the default and hidden, files open at %+v", got)
+	}
+	a.handle(SetDefaultProfile{Machine: "srv", ID: "profile:htop"})
+	if d := a.machineDefaults()["srv"]; d.Shell != "htop" {
+		t.Fatalf("htop the default, the shell is said to be %q", d.Shell)
 	}
 }

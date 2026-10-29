@@ -123,8 +123,12 @@ func TestTheMachineMenuLeavesTheCardsButtonsOut(t *testing.T) {
 			t.Fatalf("the menu still has %q: %q", gone, labels)
 		}
 	}
-	if !slices.Contains(labels, "New Terminal") || !slices.Contains(labels, "Tunnel…") {
+	if !slices.Contains(labels, "tmux") || !slices.Contains(labels, "Tunnel…") {
 		t.Fatalf("the menu lost what opens there: %q", labels)
+	}
+	// The default folder is listed once.
+	if n := len(slices.DeleteFunc(slices.Clone(labels), func(l string) bool { return l != "www" })); n != 1 {
+		t.Fatalf("www, the default, is listed %d times: %q", n, labels)
 	}
 }
 
@@ -180,5 +184,19 @@ func TestTheMachinesPaneGoesAtOnceWithItsTab(t *testing.T) {
 		if b, ok := lastUI.Bounds(win.cards.grid.titles[0]); ok && b.Size().W > 0 && b.Size().H > 0 {
 			t.Fatalf("frame %d after the switch, THIS COMPUTER still stands at %v", i, b)
 		}
+	}
+}
+
+// A card's buttons say what they open: the machine's default shell and
+// its default folder, by name, not Terminal and Files.
+func TestACardsButtonsSayWhatTheyOpen(t *testing.T) {
+	st := shotsState()
+	st.Defaults["s1"] = app.MachineDefaults{Shell: "tmux", Files: "Projects"}
+	win, _ := chipStage(t, st)
+	frames(2)
+	head := win.cards.cards["s1"].head
+	if got := []string{head.chips[chipTerminal].Label + head.chips[chipTerminal].Tooltip,
+		head.chips[chipFiles].Label + head.chips[chipFiles].Tooltip}; !slices.Equal(got, []string{"tmux", "Projects"}) {
+		t.Fatalf("web's buttons say %q", got)
 	}
 }

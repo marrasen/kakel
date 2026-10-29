@@ -23,7 +23,7 @@ func cardsStage(t *testing.T, size geom.Size) *Window {
 		{ID: "s2", Name: "db", Address: "10.0.0.12", User: "pg", Port: 2222},
 	}
 	st.Machines = []machines.Info{{ID: "s1", Name: "web"}, {ID: "s2", Name: "db"}}
-	publish(st)
+	publish(withDefaults(st))
 	settle()
 	return win
 }
@@ -55,7 +55,7 @@ func TestTheServerCardsTakeTheKeyboard(t *testing.T) {
 	drain()
 	lastWindow.Input(gi.KeyPress{Key: gi.KeyEnter})
 	frames(2)
-	if second.head.menu == nil || second.head.menu.Items()[1].Label != "New Terminal" {
+	if second.head.menu == nil || second.head.menu.Items()[1].Label != "bash" {
 		t.Fatalf("Enter on a card opened %+v", second.head.menu)
 	}
 	lastWindow.Input(gi.KeyPress{Key: gi.KeyDown})

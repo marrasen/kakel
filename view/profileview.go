@@ -2,6 +2,9 @@ package view
 
 import (
 	"slices"
+	"strings"
+
+	"github.com/marrasen/gunim"
 
 	"github.com/marrasen/kakel/app"
 	"github.com/marrasen/kakel/machines"
@@ -36,15 +39,6 @@ func foundOf(found []settings.FoundProfile, m machines.ID, id string) settings.F
 // hidden reports whether the found profile id on machine m is hidden.
 func (w *Window) hidden(m machines.ID, id string) bool { return foundOf(w.found, m, id).Hidden }
 
-// foundName is what the found profile id on machine m is called: the
-// name the user gave it, or else called.
-func (w *Window) foundName(m machines.ID, id, called string) string {
-	if n := foundOf(w.found, m, id).Name; n != "" {
-		return n
-	}
-	return called
-}
-
 // isServer reports whether m is a saved server, not a kakel window.
 func (w *Window) isServer(m machines.ID) bool {
 	return m != "" && slices.ContainsFunc(w.saved, func(h remote.Host) bool { return machines.ID(h.ID) == m && !h.Window })
@@ -65,4 +59,16 @@ func (w *Window) showsFiles(m machines.ID) bool { return !w.hidden(m, app.FoundH
 // terminals and its files.
 func (w *Window) offersNothing(m machines.ID) bool {
 	return w.isServer(m) && !w.offersTerminal(m) && !w.showsFiles(m)
+}
+
+// shellOpens is what opening sh on m asks: a shell or profile by its ID,
+// a server's own shell, or the shell m opens by default.
+func shellOpens(m machines.ID, sh app.ShellEntry) gunim.Intent {
+	switch {
+	case strings.HasPrefix(sh.Action, "shell:"):
+		return app.OpenShellNamed{ID: strings.TrimPrefix(sh.Action, "shell:")}
+	case sh.Action == "login":
+		return app.OpenOn{Machine: m, Login: true}
+	}
+	return app.OpenOn{Machine: m}
 }

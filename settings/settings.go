@@ -109,6 +109,11 @@ type stored struct {
 	// in it, in the order it was found or added.
 	ProfileOrder map[string][]string `json:"profileOrder,omitempty"`
 
+	// FilesDefault is the folder each machine's files open at, by the
+	// machine's id, "" for this computer: "found:" and a found folder's
+	// id, as found:home, or "fav:" and a favourite's path.
+	FilesDefault map[string]string `json:"filesDefault,omitempty"`
+
 	// Found are the user's changes to the profiles kakel finds itself,
 	// its shells, drives and each server's login shell and home, and
 	// which of them are hidden. Those are found again each run, so
@@ -864,6 +869,26 @@ func (s *Settings) ProfileOrder() map[string][]string {
 		out[k] = slices.Clone(v)
 	}
 	return out
+}
+
+// FilesDefault is the folder each machine's files open at, by the
+// machine's id.
+func (s *Settings) FilesDefault() map[string]string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return maps.Clone(s.have.FilesDefault)
+}
+
+// PutFilesDefault makes key the folder the machine hostID's files open
+// at, and saves.
+func (s *Settings) PutFilesDefault(hostID, key string) error {
+	return s.put(func(f *stored) {
+		f.FilesDefault = maps.Clone(f.FilesDefault)
+		if f.FilesDefault == nil {
+			f.FilesDefault = map[string]string{}
+		}
+		f.FilesDefault[hostID] = key
+	})
 }
 
 // PutProfileOrder keeps ids as the order of the profiles on the machine

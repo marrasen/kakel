@@ -182,6 +182,11 @@ type State struct {
 	// ProfileOrder is the order of each machine's profiles, by the
 	// machine's ID, "" for this computer: see InOrder.
 	ProfileOrder map[string][]string
+	// FilesDefault is the folder each machine's files open at, as the
+	// user made it, and Defaults the names of what opens by default on
+	// each machine known: its shell and its folder.
+	FilesDefault map[string]string
+	Defaults     map[machines.ID]MachineDefaults
 	// Found are the user's changes to the profiles kakel finds itself,
 	// and which are hidden. FoundShells are the shells found here,
 	// hidden ones too, by the names they are found by, and Drives the
@@ -1169,6 +1174,7 @@ func (a *app) loadSettings() {
 			a.st.ServerShells = s.ServerShells()
 			a.st.NoDisconnectAsk = noAskOf(s)
 			a.st.ProfileOrder = s.ProfileOrder()
+			a.st.FilesDefault = s.FilesDefault()
 			a.st.Found = s.Found()
 			a.mergeShells()
 			a.st.ThisComputer.StartFolder = s.Local()
@@ -1259,6 +1265,8 @@ func failedTitle(in gunim.Intent) string {
 		return "Couldn't save whether to ask before disconnecting"
 	case ReorderProfiles:
 		return "Couldn't save the order of the profiles"
+	case SetDefaultFiles:
+		return "Couldn't make it the default"
 	case ForgetCommand:
 		return "Couldn't remove the command"
 	case ForgetCopy:
@@ -1429,6 +1437,8 @@ func (a *app) publish() {
 	st.ServerShells = maps.Clone(a.st.ServerShells)
 	st.NoDisconnectAsk = slices.Clone(a.st.NoDisconnectAsk)
 	st.ProfileOrder = maps.Clone(a.st.ProfileOrder)
+	st.FilesDefault = maps.Clone(a.st.FilesDefault)
+	st.Defaults = a.machineDefaults()
 	st.Found = slices.Clone(a.st.Found)
 	st.FoundShells = slices.Clone(a.st.FoundShells)
 	st.Drives = slices.Clone(a.st.Drives)
@@ -1737,6 +1747,8 @@ func (a *app) handle(in gunim.Intent) {
 		err = a.setDisconnectAsk(in)
 	case ReorderProfiles:
 		err = a.reorderProfiles(in)
+	case SetDefaultFiles:
+		err = a.setDefaultFiles(in)
 	case ConnectMachine:
 		err = a.connectMachine(in.Machine)
 	case MachineRowShown:
@@ -2123,13 +2135,14 @@ func (a *app) openThen(machine machines.ID, at Placement, then func(id string, e
 	a.next++
 	id := "p" + strconv.Itoa(a.next)
 	if machine == "" {
-		title := fmt.Sprintf("Terminal %d", a.next)
 		// The shell picked for this one, or else the one kept.
 		argv := a.nextShell
 		a.nextShell = nil
 		if argv == nil {
 			argv = a.localShell()
 		}
+		// Called after its shell, until the shell names the pane.
+		title := a.freeTitle(a.localShellName(argv))
 		dir := a.dirHere()
 		if a.nextDir != "" {
 			dir = a.nextDir

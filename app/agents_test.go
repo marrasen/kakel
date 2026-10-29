@@ -304,7 +304,7 @@ func TestAnAgentOpensAShellBesideACommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	shell := a.st.Panes[len(a.st.Panes)-1]
-	if _, isCommand := a.commands[shell.ID]; isCommand || shell.Command || !strings.HasPrefix(opened.Label, "Terminal ") {
+	if _, isCommand := a.commands[shell.ID]; isCommand || shell.Command || !strings.HasPrefix(opened.Label, a.localShellName(nil)) {
 		t.Fatalf("opened %+v, as pane %+v", opened, shell)
 	}
 }

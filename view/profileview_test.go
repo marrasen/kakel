@@ -350,9 +350,12 @@ func TestAServersProfilesOpenFromThePalette(t *testing.T) {
 			{ID: "profile:tmux", HostID: "s1", Name: "tmux", Command: []string{"tmux"}},
 			{ID: "profile:htop", HostID: "s1", Name: "htop", Command: []string{"htop"}},
 		},
-		ServerShells: map[string]string{"s1": "profile:htop"}})
+		ServerShells: map[string]string{"s1": "profile:htop"},
+		Defaults: map[machines.ID]app.MachineDefaults{"s1": {Shell: "htop", Files: "Home", Shells: []app.ShellEntry{
+			{Action: "login", Name: "Login Shell"}, {Action: "shell:profile:tmux", Name: "tmux"},
+			{Action: "shell:profile:htop", Name: "htop", Default: true}}}}})
 	at := slices.Index(win.paletteIDs, "machine:s1")
-	if at < 0 || !slices.Equal(win.palette.Items[at].Chips, []string{"Terminal", "tmux", "htop", "Files", "Connect", "Settings", "Remove"}) {
+	if at < 0 || !slices.Equal(win.palette.Items[at].Chips, []string{"Login Shell", "tmux", "htop", "Home", "Connect", "Settings", "Remove"}) {
 		t.Fatalf("prod's line is %+v", win.palette.Items[max(at, 0)])
 	}
 	line := slices.IndexFunc(win.palette.Items, func(it widget.PaletteItem) bool { return it.Title == "tmux" })
@@ -608,5 +611,22 @@ func TestATunnelsTrafficIsOnItsPage(t *testing.T) {
 	}
 	if mp.tunnelLog == nil || mp.tunnelLog.End() != 5 {
 		t.Fatalf("the tunnel's page shows its account to %v", mp.tunnelLog)
+	}
+}
+
+// A folder's star makes it where Files opens; the default's is lit, and
+// a hidden one's cannot be pressed.
+func TestAFolderIsMadeWhereFilesOpens(t *testing.T) {
+	st := app.State{Saved: []remote.Host{{ID: "s1", Name: "prod", Address: "prod.example"}},
+		Favourites: []app.Favourite{{Machine: "s1", Path: "/srv/www"}},
+		Defaults:   map[machines.ID]app.MachineDefaults{"s1": {Files: "Home", FilesKey: app.FilesFound + app.FoundHome}}}
+	_, mp, _ := machinePaneOf(t, st, "s1", false)
+	home := rowOf(t, mp, mpFolder+"found:"+app.FoundHome)
+	if home.star.Ink.Key() != widget.Accent.Key() {
+		t.Fatal("Home, the default, has no lit star")
+	}
+	www := rowOf(t, mp, mpFolder+"fav:/srv/www")
+	if in := www.star.OnClick(lastUI); in != (app.SetDefaultFiles{Machine: "s1", Key: app.FilesFavourite + "/srv/www"}) {
+		t.Fatalf("www's star sent %#v", in)
 	}
 }

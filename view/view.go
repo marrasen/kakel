@@ -300,8 +300,10 @@ type Window struct {
 	tunnels         []app.Tunnel
 	fileJobs        []app.Job
 	noDisconnectAsk []machines.ID
-	// profileOrder is the order of each machine's profiles.
+	// profileOrder is the order of each machine's profiles, and defaults
+	// what opens by default on each machine, by name.
 	profileOrder map[string][]string
+	defaults     map[machines.ID]app.MachineDefaults
 	// logSeen is how far each machine's connection log has been read,
 	// as its end then: a machine's pane counts the problems after it.
 	logSeen   map[machines.ID]int64
@@ -1320,15 +1322,26 @@ func (w *Window) servers(saved []remote.Host) {
 				chip(sh.Title, shellIDs[i])
 			}
 		} else {
-			if w.offersTerminal(m) {
-				chip("Terminal", "conn.terminal."+cmd)
-			}
-			for _, p := range w.profilesOn(m) {
-				chip(p.Name, shellfind.CommandID(p.ID))
+			// Its shells, each by its name, in the order the user put
+			// them in.
+			for _, sh := range w.defaults[m].Shells {
+				switch {
+				case strings.HasPrefix(sh.Action, "shell:"):
+					chip(sh.Name, shellfind.CommandID(strings.TrimPrefix(sh.Action, "shell:")))
+				case sh.Action == "login":
+					chip(sh.Name, "conn.login."+cmd)
+				default:
+					chip(sh.Name, "conn.terminal."+cmd)
+				}
 			}
 		}
 		if w.showsFiles(m) {
-			chip("Files", "conn.files."+cmd)
+			// Called after the folder they open at.
+			files := w.defaults[m].Files
+			if files == "" {
+				files = "Files"
+			}
+			chip(files, "conn.files."+cmd)
 		}
 		if m == "" {
 			chip("Settings", "app.thisComputer")
@@ -1485,6 +1498,10 @@ func (w *Window) runItem(id string, u *gunim.UI) bool {
 	case strings.HasPrefix(id, "conn.log."):
 		if m, ok := machineNamed(strings.TrimPrefix(id, "conn.log.")); ok {
 			u.Send(w, app.ShowMachine{Machine: m, Row: app.MachineRowLog})
+		}
+	case strings.HasPrefix(id, "conn.login."):
+		if m, ok := machineNamed(strings.TrimPrefix(id, "conn.login.")); ok {
+			u.Send(w, app.OpenOn{Machine: m, Login: true})
 		}
 	case strings.HasPrefix(id, "conn.terminal."):
 		if m, ok := machineNamed(strings.TrimPrefix(id, "conn.terminal.")); ok {
@@ -2069,9 +2086,9 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 		w.servers(w.saved)
 	}
 	if !reflect.DeepEqual(st.Profiles, w.profiles) || !maps.Equal(st.ServerShells, w.serverShells) || !reflect.DeepEqual(st.Found, w.found) ||
-		!slices.Equal(st.FoundShells, w.foundShells) || !slices.Equal(st.Drives, w.drives) || !reflect.DeepEqual(st.ProfileOrder, w.profileOrder) {
+		!slices.Equal(st.FoundShells, w.foundShells) || !slices.Equal(st.Drives, w.drives) || !reflect.DeepEqual(st.ProfileOrder, w.profileOrder) || !reflect.DeepEqual(st.Defaults, w.defaults) {
 		w.profiles, w.serverShells, w.found, w.foundShells, w.drives = st.Profiles, st.ServerShells, st.Found, st.FoundShells, st.Drives
-		w.profileOrder = st.ProfileOrder
+		w.profileOrder, w.defaults = st.ProfileOrder, st.Defaults
 		w.servers(w.saved)
 	}
 	w.tunnels, w.fileJobs, w.noDisconnectAsk = st.Tunnels, st.Jobs, st.NoDisconnectAsk
@@ -3721,42 +3738,23 @@ func (w *Window) openMachineMenu(r *sideRow, u *gunim.UI) {
 	// what goes through the connection, then the connection and the
 	// saved server.
 	heading := func(title string) { add(nil, title, nil) }
-	heading("Terminal")
-	if w.offersTerminal(m) {
-		add(icon.SquareTerminal, "New Terminal", send(app.OpenOn{Machine: m}))
+	// Its shells, each by its name, in the order the user put them in.
+	heading("Shells")
+	for _, sh := range w.defaults[m].Shells {
+		add(icon.SquareTerminal, sh.Name, send(shellOpens(m, sh)))
 	}
 	add(icon.SquareChevronRight, "Command…", func(u *gunim.UI) { w.commandDialogOn(m, u) })
-	if m == "" && len(w.shellChoices) > 1 {
-		// This computer's shells, each to open a terminal with.
-		heading("Shells")
-		for _, sh := range w.shellChoices {
-			add(icon.SquareTerminal, sh.Title, send(app.OpenShellNamed{ID: sh.ID}))
-		}
-	}
-	if profiles := w.profilesOn(m); len(profiles) > 0 {
-		// A server's profiles and its account's own shell, in the order
-		// the user put them in.
-		heading("Shells")
-		type shell struct {
-			id, name string
-			open     gunim.Intent
-		}
-		var shells []shell
-		if !w.hidden(m, app.LoginShell) {
-			shells = append(shells, shell{app.LoginShell, w.foundName(m, app.LoginShell, "Login Shell"), app.OpenOn{Machine: m, Login: true}})
-		}
-		for _, p := range profiles {
-			shells = append(shells, shell{p.ID, p.Name, app.OpenShellNamed{ID: p.ID}})
-		}
-		for _, sh := range app.InOrder(shells, func(s shell) string { return s.id }, w.profileOrder[string(m)]) {
-			add(icon.SquareTerminal, sh.name, send(sh.open))
-		}
-	}
 	heading("Files")
-	if w.showsFiles(m) {
-		add(icon.House, w.foundName(m, app.FoundHome, "Home"), send(app.OpenFilesOn{Machine: m}))
+	// The folder its files open at, by its name, first.
+	def := w.defaults[m].Files
+	if w.showsFiles(m) && def != "" {
+		add(icon.House, def, send(app.OpenFilesOn{Machine: m}))
 	}
 	for _, f := range w.foldersOn(m) {
+		if app.FilesFavourite+f.Path == w.defaults[m].FilesKey {
+			// The default, listed first already.
+			continue
+		}
 		ic := icon.Folder
 		if slices.Contains(w.favourites, f) {
 			ic = icon.Star
