@@ -358,6 +358,9 @@ The whole list. The [README](README.md) has the short version.
   failure a pop-up told of. It keeps the last 2,000 lines, until the
   window closes. Find in Scrollback searches it, and a connection log,
   as it does a terminal.
+- **A crash log.** Should kakel crash, what it said as it died is kept
+  in `crash.log`, in `%LOCALAPPDATA%\kakel` on Windows and kakel's
+  settings folder elsewhere, under the version and when it started.
 
 ![selecting text with the mouse](docs/selection.png)
 

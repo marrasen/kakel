@@ -136,6 +136,8 @@ func run() error {
 				// Gone before the process is, so the next kakel does not
 				// find it.
 				defer stop()
+				// The one kakel, and so the one to keep its crashes.
+				app.KeepCrashes()
 			}
 		}
 	}
