@@ -46,7 +46,7 @@ const trafficFloor = 4 << 10
 
 func newConnSwitch(w *Window, of func() (machines.ID, *cardInfo), graph bool) *connSwitch {
 	c := &connSwitch{sw: widget.NewStatusSwitch(""), w: w, of: of}
-	c.sw.OnToggle = func(_ bool, u *gunim.UI) gunim.Intent { return c.act(u) }
+	c.sw.OnChange = func(_ bool, u *gunim.UI) gunim.Intent { return c.act(u) }
 	if graph {
 		c.graph = widget.NewLiveGraph(500*time.Millisecond, 30)
 		c.graph.Compact, c.graph.Width, c.graph.Floor = true, 34, trafficFloor
@@ -69,8 +69,9 @@ func stateInk(c cardInfo) theme.Token[color.NRGBA] {
 	return look.Faint
 }
 
-// sync makes the switch say the machine's state at now.
-func (c *connSwitch) sync(now time.Time) {
+// sync makes the switch say the machine's state at now; u may be nil,
+// as from a layout.
+func (c *connSwitch) sync(now time.Time, u *gunim.UI) {
 	_, card := c.of()
 	if card == nil {
 		return
@@ -82,8 +83,8 @@ func (c *connSwitch) sync(now time.Time) {
 	}
 	s := c.sw
 	s.Label, s.Ink = words, stateInk(info)
-	s.Checked = info.state == cardConnected || info.state == cardDialing
-	s.Busy = info.state == cardDialing
+	s.SetChecked(info.state == cardConnected || info.state == cardDialing, u)
+	s.SetBusy(info.state == cardDialing, u)
 	switch info.state {
 	case cardOff:
 		s.Tooltip = "Not connected. Click to connect."

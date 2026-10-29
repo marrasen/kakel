@@ -49,6 +49,10 @@ github.com/marrasen/gunim v0.0.0-20261029121926-73bf94c7b61d h1:n7v/mUidmU48nnCc
 github.com/marrasen/gunim v0.0.0-20261029121926-73bf94c7b61d/go.mod h1:EnaqqAd8J60E6mgBiFqIq/MC0vwLAiG3PQb1acEgTK8=
 github.com/marrasen/gunim v0.0.0-20261029122522-85774e086f04 h1:ci9W1GWOevieucrlv/1X7Qs4O8CG5foDDb3Vo7UgJO0=
 github.com/marrasen/gunim v0.0.0-20261029122522-85774e086f04/go.mod h1:EnaqqAd8J60E6mgBiFqIq/MC0vwLAiG3PQb1acEgTK8=
+github.com/marrasen/gunim v0.0.0-20261029123440-3858a47cceb4 h1:1NYyfNVZyAzpR9CvdHuwO3KxCqi4ENk0PfE9vUGWL/g=
+github.com/marrasen/gunim v0.0.0-20261029123440-3858a47cceb4/go.mod h1:EnaqqAd8J60E6mgBiFqIq/MC0vwLAiG3PQb1acEgTK8=
+github.com/marrasen/gunim v0.0.0-20261029124015-937431a1521e h1:Kqu3m65d4heMox51xHE4JJ+x7B3XD6q3RmnumqEONg0=
+github.com/marrasen/gunim v0.0.0-20261029124015-937431a1521e/go.mod h1:EnaqqAd8J60E6mgBiFqIq/MC0vwLAiG3PQb1acEgTK8=
 github.com/marrasen/oto/v3 v3.5.1-gunim.5 h1:plT8vA7YvC94GQ5FgcVFntrnSoN7DpRQOeauDBqjA8Y=
 github.com/marrasen/oto/v3 v3.5.1-gunim.5/go.mod h1:9Kr9SPGrjo18cdaKxjd2kaf99e1Ln2CUKgbJP5TpiBU=
 github.com/mewkiz/flac v1.0.14 h1:hyRGAM8NCKznoPmIi9zz2jyO+nfmxY2ErqBnHZ+gxh4=
