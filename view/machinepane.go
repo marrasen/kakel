@@ -169,7 +169,9 @@ type machinePane struct {
 	// said; logSeen is the end of the log when it was last looked at.
 	rowAt int
 	// tunnelsBefore are the tunnels open as addedTunnel was asked for,
-	// and tunnelNow says what the tunnel picked is doing.
+	// and tunnelNow says what the tunnel picked is doing. It and
+	// overviewLine are the shown page's: each page makes its own, as a
+	// node is in one place only and the page going stays as it fades.
 	tunnelsBefore map[string]bool
 	tunnelNow     *widget.Label
 	// card is what the machine's card says of it, for the switch at the
@@ -642,6 +644,9 @@ func (mp *machinePane) folderRows() []mpItem {
 
 // machineSide is the right side for the machine's own row.
 func (mp *machinePane) machineSide(u *gunim.UI) gunim.Node {
+	// A line of this page's own: the page before still shows its line
+	// as it fades.
+	mp.overviewLine = faintLabel(mp.overviewLine.Text)
 	h, saved := mp.host()
 	if !mp.draft && !saved && mp.machine != machines.Local {
 		// Connected to by its address, and not saved: its connection.
