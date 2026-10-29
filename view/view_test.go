@@ -22,7 +22,6 @@ import (
 	"github.com/marrasen/gunim/widget"
 
 	"github.com/marrasen/kakel/logs"
-	"github.com/marrasen/kakel/settings"
 	"github.com/marrasen/kakel/ui/files"
 	"github.com/marrasen/kakel/vt"
 )
@@ -290,42 +289,6 @@ func TestTheSidebarWorksFromTheKeyboard(t *testing.T) {
 	press(gi.KeyDelete)
 	if in, ok := nextIntentPast(t).(app.ClosePane); !ok || in.Pane != "p1" {
 		t.Fatalf("Delete sent %#v", in)
-	}
-}
-
-func TestTheTunnelDialogOffersTheTunnelsSavedForTheServer(t *testing.T) {
-	win, sh, publish := windowStage(t)
-	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
-	s := sessiontest.New()
-	sh.Set("p1", screen.Open(s, vt.DefaultPalette(), quiet))
-	t.Cleanup(func() { _ = sh.Get("p1").T.Close() })
-	publish(app.State{
-		Panes: []app.Pane{{ID: "p1", Title: "Terminal 1", Machine: "srv"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1",
-		SavedTunnels: []settings.SavedTunnel{
-			{Host: "srv", Kind: "remote", Listen: ":8080", Target: "127.0.0.1:80"},
-			{Host: "other", Kind: "local", Listen: ":9000", Target: "db:5432"},
-		},
-	})
-	win.tunnelDialog(false, lastUI)
-	for range 3 {
-		lastWindow.Frame(time.Second / 60)
-	}
-	fields := formOf(win.dialog.Body).Focusables()
-	if len(fields) != 5 {
-		t.Fatalf("the dialog has %d fields, want listen, target, direction, saved and the box", len(fields))
-	}
-	pick := fields[3].(*widget.Dropdown)
-	if items := pick.Items(); len(items) != 2 || items[1].Label != "remote :8080 → 127.0.0.1:80" {
-		t.Fatalf("Saved offers %+v, want the one tunnel kept for srv", items)
-	}
-	lastUI.Focus(pick)
-	for _, k := range []gi.Key{gi.KeyDown, gi.KeyDown, gi.KeyEnter} {
-		lastWindow.Input(gi.KeyPress{Key: k})
-		lastWindow.Frame(time.Second / 60)
-	}
-	listen, target := fields[0].(*widget.TextField), fields[1].(*widget.TextField)
-	if listen.Text() != ":8080" || target.Text() != "127.0.0.1:80" || fields[2].(*widget.Dropdown).Selected() != 1 {
-		t.Fatalf("picked, the form reads %q, %q, direction %d", listen.Text(), target.Text(), fields[2].(*widget.Dropdown).Selected())
 	}
 }
 

@@ -268,7 +268,7 @@ func (a *app) reachWindow(in ConnectWindow, quiet bool, then func(error)) error 
 				case quiet || errors.Is(err, errDeclined) || errors.Is(err, context.Canceled):
 				case in.InPlace:
 					a.post(Notice{Kind: NoticeFailed, Title: "Couldn't connect to the window at " + shown, Body: err.Error(),
-						Action: "Show Log", On: ShowLog{Machine: name}})
+						Action: "Show Log", On: ShowMachine{Machine: name, Row: MachineRowLog}})
 					a.problem()
 				default:
 					a.failed("Couldn't connect to the window at "+shown, err.Error())

@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
@@ -19,6 +20,7 @@ import (
 	"github.com/marrasen/kakel/app"
 	"github.com/marrasen/kakel/look"
 	"github.com/marrasen/kakel/machines"
+	"github.com/marrasen/kakel/meter"
 	"github.com/marrasen/kakel/remote"
 	"github.com/marrasen/kakel/settings"
 	"github.com/marrasen/kakel/words"
@@ -67,6 +69,10 @@ type mpItem struct {
 	profile mpProfileOf
 	folder  mpFolderOf
 	saved   *mpSavedOf
+	// tunnel is a tunnel's or SOCKS proxy's, and plus the key of the row
+	// a heading's + picks.
+	tunnel *mpTunnelOf
+	plus   string
 }
 
 // mpSavedOf is something the machine keeps for next time: a command, a
@@ -149,7 +155,23 @@ type machinePane struct {
 	// added is the name of a profile just added, and addedDir the path
 	// of a folder just saved, to pick once it comes.
 	added, addedDir string
-	st              app.State
+	// addedTunnel is a tunnel just opened from the + form, to pick once
+	// its row comes.
+	addedTunnel *remote.Tunnel
+	// rowAt counts the rows the program asked for, as the pane last
+	// said; logSeen is the end of the log when it was last looked at.
+	rowAt int
+	// tunnelsBefore are the tunnels open as addedTunnel was asked for,
+	// and tunnelNow says what the tunnel picked is doing.
+	tunnelsBefore map[string]bool
+	tunnelNow     *widget.Label
+	// card is what the machine's card says of it, for the switch at the
+	// bottom of the sidebar, and overviewLine the line at the top of
+	// the machine's own page, kept up to date in place.
+	card         cardInfo
+	foot         *sideFoot
+	overviewLine *widget.Label
+	st           app.State
 }
 
 func newMachinePane(w *Window, id string) *machinePane {
@@ -161,8 +183,12 @@ func newMachinePane(w *Window, id string) *machinePane {
 		}
 		return nil
 	}
-	side := widget.NewPad(widget.NewScroll(mp.list))
-	side.Padding = mpSidePad
+	list := widget.NewPad(widget.NewScroll(mp.list))
+	list.Padding = mpSidePad
+	mp.foot = &sideFoot{mp: mp, chip: newConnChip(w, func() (machines.ID, *cardInfo) { return mp.machine, &mp.card })}
+	side := widget.Column(list, mp.foot).Grow(list, 1)
+	side.Cross = widget.CrossStretch
+	mp.overviewLine, mp.tunnelNow = faintLabel(""), widget.NewLabel("")
 	mp.right.child = &emptyNode{}
 	rightPad := widget.NewPad(widget.NewScroll(mp.right))
 	rightPad.Padding = mpPad
@@ -199,7 +225,7 @@ func (mp *machinePane) item(k string) (mpItem, bool) {
 
 // pick shows row k's settings on the right.
 func (mp *machinePane) pick(k string, u *gunim.UI) {
-	mp.sel = k
+	mp.sel, mp.addedTunnel = k, nil
 	mp.refresh(u)
 }
 
@@ -214,7 +240,17 @@ func (mp *machinePane) show(st app.State, u *gunim.UI) {
 				mp.shown = ""
 			}
 			mp.machine, mp.draft = p.Machine, p.Draft
+			if p.RowAt != mp.rowAt && p.Row != "" {
+				// Shown once: the program forgets the row, so the pane
+				// moved to another window does not show it again.
+				mp.sel, mp.shown, mp.addedTunnel = p.Row, "", nil
+				u.Send(mp.list, app.MachineRowShown{Pane: mp.id})
+			}
+			mp.rowAt = p.RowAt
 		}
+	}
+	if mp.machine != machines.Local {
+		mp.card = mp.w.cardFor(mp.machine, mp.w.nameOf(mp.machine))
 	}
 	mp.refresh(u)
 }
@@ -228,10 +264,26 @@ func (mp *machinePane) refresh(u *gunim.UI) {
 			mp.sel, mp.added = it.key, ""
 		case mp.addedDir != "" && it.folder.fav != nil && it.folder.fav.Path == mp.addedDir:
 			mp.sel, mp.addedDir, mp.shown = it.key, "", ""
+		case mp.addedTunnel != nil && it.tunnel != nil && it.tunnel.open != nil && !mp.tunnelsBefore[it.tunnel.open.ID] &&
+			it.tunnel.open.As.Kind == mp.addedTunnel.Kind.String() &&
+			it.tunnel.open.As.Listen == mp.addedTunnel.Listen && it.tunnel.open.As.Target == mp.addedTunnel.Target:
+			mp.sel, mp.addedTunnel, mp.shown = it.key, nil, ""
 		}
 	}
-	if _, ok := mp.item(mp.sel); !ok {
+	adding := (mp.sel == mpAddTunnel || mp.sel == mpAddSOCKS) && mp.machine != machines.Local && !mp.draft
+	if _, ok := mp.item(mp.sel); !ok && !adding {
 		mp.sel = mpMachine
+	}
+	if mp.sel == mpLog && mp.st.Logs[mp.machine] != nil {
+		mp.w.sawLog(mp.machine, mp.st.Logs[mp.machine].End())
+	}
+	if mp.machine != machines.Local {
+		mp.overviewLine.Text = mp.overview(time.Now())
+	}
+	// What a tunnel is doing changes as bytes go through: said in
+	// place, so its page is not built again each second.
+	if it, ok := mp.item(mp.sel); ok && it.tunnel != nil {
+		mp.tunnelNow.Text = it.tunnel.now()
 	}
 	widget.Sync(mp.list, u, mp.items, func(it mpItem) widget.Key { return widget.Key(it.key) },
 		func(it mpItem) *mpRow { r := newMPRow(mp); r.set(it, mp.sel == it.key, nil); return r },
@@ -245,6 +297,12 @@ func (mp *machinePane) refresh(u *gunim.UI) {
 	switch {
 	case mp.sel == mpMachine:
 		mp.right.set(mp.machineSide(u), u)
+	case mp.sel == mpLog:
+		mp.right.set(mp.logSide(), u)
+	case adding:
+		mp.right.set(mp.addTunnelSide(mp.sel == mpAddSOCKS), u)
+	case it.tunnel != nil:
+		mp.right.set(mp.tunnelSide(*it.tunnel), u)
 	case mp.sel == mpAdd:
 		mp.right.set(mp.profileSide(mpProfileOf{}, true, u), u)
 	case mp.sel == mpAddDir:
@@ -262,6 +320,14 @@ func (mp *machinePane) refresh(u *gunim.UI) {
 // machine as saved, and the picked row's profile.
 func (mp *machinePane) signature() string {
 	var b strings.Builder
+	switch mp.sel {
+	case mpLog:
+		// The log's page comes alive as the first line arrives.
+		b.WriteString(boolWord(mp.st.Logs[mp.machine] != nil))
+	case mpAddTunnel, mpAddSOCKS:
+		// Open waits on the connection.
+		b.WriteString(boolWord(mp.card.state == cardConnected))
+	}
 	if h, ok := mp.host(); ok && mp.sel == mpMachine {
 		fmt.Fprintf(&b, "%+v", h)
 		b.WriteString(boolWord(slices.Contains(mp.st.NoDisconnectAsk, mp.machine)))
@@ -278,6 +344,9 @@ func (mp *machinePane) signature() string {
 		b.WriteString(p.edit.Folder + strings.Join(p.edit.Env, ";") + boolWord(p.def) + boolWord(p.edit.Hidden))
 		if p.edit.Setup != nil {
 			b.WriteString(boolWord(*p.edit.Setup))
+		}
+		if t := it.tunnel; t != nil {
+			b.WriteString("\x04" + t.title() + boolWord(t.live()) + boolWord(t.open != nil) + boolWord(t.saved != nil))
 		}
 		if s := it.saved; s != nil && s.copy != nil {
 			b.WriteString("\x03" + app.CopiedWhere(*s.copy, mp.w.nameOf))
@@ -326,11 +395,15 @@ func (mp *machinePane) rows() []mpItem {
 		if h.Window {
 			head.icon = icon.AppWindow
 			// A kakel window's terminals are its own; its files are
-			// offered here.
-			return append([]mpItem{head}, mp.folderRows()...)
+			// offered here, and tunnels go through it.
+			out := append([]mpItem{head, mp.logRow()}, mp.folderRows()...)
+			return append(append(out, mp.tunnelRows(false)...), mp.tunnelRows(true)...)
 		}
 	case mp.machine != "":
-		return []mpItem{head}
+		// Connected to and not saved: its connection only.
+		head.title, head.icon = mp.w.nameOf(mp.machine), icon.Server
+		out := []mpItem{head, mp.logRow()}
+		return append(append(out, mp.tunnelRows(false)...), mp.tunnelRows(true)...)
 	}
 	var profiles []mpProfileOf
 	if mp.machine == "" {
@@ -370,18 +443,30 @@ func (mp *machinePane) rows() []mpItem {
 		}
 		return 1
 	})
-	out := []mpItem{head, {key: mpProfiles, title: "Profiles", heading: true}}
+	out := []mpItem{head}
+	if mp.machine != machines.Local {
+		out = append(out, mp.logRow())
+	}
+	out = append(out, mpItem{key: mpProfiles, title: "Profiles", heading: true})
 	for _, p := range profiles {
 		out = append(out, mpItem{key: mpProfile + p.id, title: p.title(), icon: icon.SquareTerminal, profile: p})
 	}
 	out = append(out, mpItem{key: mpAdd, title: "Add Profile", icon: icon.Plus})
 	out = append(out, mp.folderRows()...)
+	if mp.machine != machines.Local {
+		out = append(append(out, mp.tunnelRows(false)...), mp.tunnelRows(true)...)
+	}
 	return append(out, mp.savedRows()...)
 }
 
+// logRow is the row of the machine's connection log.
+func (mp *machinePane) logRow() mpItem {
+	return mpItem{key: mpLog, title: "Connection log", icon: icon.ScrollText}
+}
+
 // savedRows are what the machine keeps for next time, each kind under
-// its heading when it has any: the commands run on it, the copies to or
-// from it, and the tunnels through it.
+// its heading when it has any: the commands run on it, and the copies
+// to or from it. Its tunnels have their own sections.
 func (mp *machinePane) savedRows() []mpItem {
 	st, m := mp.st, mp.machine
 	h, _ := mp.host()
@@ -399,7 +484,7 @@ func (mp *machinePane) savedRows() []mpItem {
 		}
 		return machines.ID(id) == m || id == "" && name != "" && name == h.Name
 	}
-	var cmds, copies, tunnels []mpItem
+	var cmds, copies []mpItem
 	for i, c := range st.SavedCommands {
 		if on(c.HostID, c.Host, "") {
 			cmds = append(cmds, mpItem{key: mpSaved + fmt.Sprintf("cmd:%#v", c), title: c.Line, icon: icon.SquareChevronRight,
@@ -412,17 +497,11 @@ func (mp *machinePane) savedRows() []mpItem {
 				saved: &mpSavedOf{copy: &st.SavedCopies[i]}})
 		}
 	}
-	for i, t := range st.SavedTunnels {
-		if m != "" && on(t.HostID, t.Host, "") {
-			tunnels = append(tunnels, mpItem{key: mpSaved + fmt.Sprintf("tunnel:%#v", t), title: tunnelTitle(t), icon: icon.Cable,
-				saved: &mpSavedOf{tunnel: &st.SavedTunnels[i]}})
-		}
-	}
 	var out []mpItem
 	for _, sec := range []struct {
 		title string
 		rows  []mpItem
-	}{{"Commands", cmds}, {"Copies", copies}, {"Tunnels", tunnels}} {
+	}{{"Commands", cmds}, {"Copies", copies}} {
 		if len(sec.rows) > 0 {
 			out = append(out, mpItem{key: "head:" + sec.title, title: sec.title, heading: true})
 			out = append(out, sec.rows...)
@@ -521,12 +600,14 @@ func (mp *machinePane) folderRows() []mpItem {
 // machineSide is the right side for the machine's own row.
 func (mp *machinePane) machineSide(u *gunim.UI) gunim.Node {
 	h, saved := mp.host()
+	if !mp.draft && !saved && mp.machine != machines.Local {
+		// Connected to by its address, and not saved: its connection.
+		col := widget.Column(heading(mp.w.nameOf(mp.machine)), faintLabel(mp.card.sub), mp.overviewLine)
+		col.Cross, col.Gap = widget.CrossStretch, mpGap
+		return widget.NewSized(col, 640, 0)
+	}
 	if !mp.draft && !saved {
-		title := heading("This computer")
-		if mp.machine != "" {
-			title = heading(mp.w.nameOf(mp.machine))
-		}
-		col := widget.Column(title, faintLabel(localWho()),
+		col := widget.Column(heading("This computer"), faintLabel(localWho()),
 			faintLabel("Its terminals are its profiles, on the left: the star marks the one a new terminal opens."))
 		col.Cross, col.Gap = widget.CrossStretch, mpGap
 		return widget.NewSized(col, 640, 0)
@@ -572,15 +653,13 @@ func (mp *machinePane) machineSide(u *gunim.UI) gunim.Node {
 	save.OnClick, connect.OnClick = send(false), send(true)
 	actions := []gunim.Node{save, connect}
 	title := "New server"
+	parts := []gunim.Node{heading(title)}
 	if saved {
-		title = h.Name
-		connect.Label = "Connect"
-		connect.OnClick = func(u *gunim.UI) gunim.Intent { return app.OpenOn{Machine: mp.machine} }
-		remove := widget.NewButton("Remove…")
-		remove.OnClick = func(u *gunim.UI) gunim.Intent { mp.w.confirmRemove(mp.machine, u); return nil }
-		actions = append(actions, remove)
+		// Connecting is the switch at the bottom left.
+		actions = actions[:1]
+		parts = []gunim.Node{heading(h.Name), mp.overviewLine}
 	}
-	parts := []gunim.Node{heading(title), widget.NewCard(f.form), problem, buttons(actions...)}
+	parts = append(parts, widget.NewCard(f.form), problem, buttons(actions...))
 	if saved {
 		// Saved at once, as the question's own tick is.
 		ask := widget.NewCheckbox("Ask before disconnecting while something is open")
@@ -588,7 +667,16 @@ func (mp *machinePane) machineSide(u *gunim.UI) gunim.Node {
 		ask.OnChange = func(on bool, _ *gunim.UI) gunim.Intent {
 			return app.SetDisconnectAsk{Machine: mp.machine, Ask: on}
 		}
-		parts = slices.Insert(parts, 2, gunim.Node(ask))
+		what := "server"
+		if h.Window {
+			what = "window"
+		}
+		remove := widget.NewButton("Remove…")
+		remove.Kind = widget.ButtonDanger
+		remove.OnClick = func(u *gunim.UI) gunim.Intent { mp.w.confirmRemove(mp.machine, u); return nil }
+		gone := widget.Column(faintLabel("Removing this "+what+" removes it from the list, with its profiles and favourites."), buttons(remove))
+		gone.Cross, gone.Gap = widget.CrossStretch, mpGap
+		parts = append(parts, widget.NewCard(ask), sectionHeading("Remove"), widget.NewCard(gone))
 	}
 	col := widget.Column(parts...)
 	col.Cross, col.Gap = widget.CrossStretch, mpGap
@@ -875,13 +963,15 @@ func (mp *machinePane) confirmForget(s mpSavedOf, u *gunim.UI) {
 		title, forget = "the command "+shortened(s.command.Line, 50), app.ForgetCommand{Saved: *s.command}
 	case s.copy != nil:
 		title, forget = "the copy of "+shortened(app.CopiedWhat(*s.copy), 50), app.ForgetCopy{Saved: *s.copy}
+	case s.tunnel != nil && s.tunnel.Target == "":
+		title, forget = "the SOCKS proxy on "+s.tunnel.Listen, app.ForgetTunnel{Saved: *s.tunnel}
 	case s.tunnel != nil:
 		title, forget = "the tunnel "+tunnelTitle(*s.tunnel), app.ForgetTunnel{Saved: *s.tunnel}
 	default:
 		return
 	}
 	d := widget.NewDialog("Remove " + title + "?")
-	d.Body = widget.NewLabel("It comes off the list kept for next time.")
+	d.Body = widget.NewLabel("It is removed from the saved list.")
 	d.SetButtons("Remove", "Cancel")
 	d.Danger = true
 	d.OnAccept = widget.Sends(forget)
@@ -909,6 +999,13 @@ func (mp *machinePane) confirmDelete(p settings.Profile, u *gunim.UI) {
 	d.OnAccept = widget.Sends(app.RemoveProfile{ID: p.ID})
 	d.OnDismiss = widget.Sends(app.DialogClosed{})
 	mp.w.openDialog(d, u)
+}
+
+// sectionHeading is the title of a part of a page.
+func sectionHeading(s string) *widget.Label {
+	l := widget.NewLabel(s)
+	l.Face, l.Color = widget.BoldFont, look.Faint
+	return l
 }
 
 // heading is a page's title.
@@ -941,13 +1038,18 @@ func (mp *machinePane) setupOn() bool {
 // mpRow is a row of a machine pane's sidebar: its icon and name, and
 // for a profile, its star, eye and bin.
 type mpRow struct {
-	mp       *machinePane
-	inner    *widget.Flex
-	icon     *widget.Icon
-	title    *widget.Label
-	star     *widget.IconButton
-	eye      *widget.IconButton
-	bin      *widget.IconButton
+	mp    *machinePane
+	inner *widget.Flex
+	icon  *widget.Icon
+	title *widget.Label
+	star  *widget.IconButton
+	eye   *widget.IconButton
+	bin   *widget.IconButton
+	// plus is a heading's +, mark a tunnel's state and traffic, and
+	// badge the problems in a log not looked at yet.
+	plus     *widget.IconButton
+	mark     *liveMark
+	badge    *countBadge
 	heading  bool
 	selected bool
 	it       mpItem
@@ -961,6 +1063,9 @@ func newMPRow(mp *machinePane) *mpRow {
 	r.star = widget.NewIconButton(icon.Star, "New terminals open it")
 	r.eye = widget.NewIconButton(icon.Eye, "Hide it")
 	r.bin = widget.NewIconButton(icon.Trash2, "Delete it")
+	r.plus = widget.NewIconButton(icon.Plus, "")
+	r.plus.OnClick = func(u *gunim.UI) gunim.Intent { r.mp.pick(r.it.plus, u); return nil }
+	r.mark, r.badge = &liveMark{}, &countBadge{}
 	r.star.OnClick = func(*gunim.UI) gunim.Intent {
 		return app.SetDefaultProfile{Machine: r.mp.machine, ID: r.it.profile.id}
 	}
@@ -1001,9 +1106,27 @@ func (r *mpRow) set(it mpItem, picked bool, u *gunim.UI) {
 	case it.heading:
 		r.title.Face, r.title.Color = widget.BoldFont, look.Faint
 		kids = append(kids, r.title)
+		if it.plus != "" {
+			r.plus.Tooltip = map[string]string{mpAddTunnel: "Add a tunnel", mpAddSOCKS: "Add a SOCKS proxy"}[it.plus]
+			kids = append(kids, widget.NewSpacer(), r.plus)
+		}
 	default:
 		r.icon.Icon = it.icon
 		kids = append(kids, r.icon, r.title)
+	}
+	if it.tunnel != nil {
+		if meterOf(r.mark.t) != meterOf(*it.tunnel) {
+			r.mark.rate = meter.Rate{}
+		}
+		r.mark.t = *it.tunnel
+		if !it.tunnel.live() && it.tunnel.open == nil {
+			r.title.Color, r.icon.Color = look.Faint, look.Faint
+		}
+		kids = append(kids, widget.NewSpacer(), r.mark)
+	}
+	if it.key == mpLog {
+		r.badge.n = unseenBad(r.mp.st.Logs[r.mp.machine], r.mp.w.logSeen[r.mp.machine])
+		kids = append(kids, widget.NewSpacer(), r.badge)
 	}
 	r.bin.Tooltip = "Delete it"
 	if it.saved != nil {
@@ -1075,6 +1198,10 @@ func fmtType(n gunim.Node) string {
 		return "I"
 	case *widget.Spacer:
 		return "S"
+	case *liveMark:
+		return "M"
+	case *countBadge:
+		return "B"
 	}
 	return fmt.Sprintf("%p", n)
 }

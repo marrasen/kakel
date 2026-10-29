@@ -120,6 +120,40 @@ func (l *Lines) Held() int {
 	return len(l.kept)
 }
 
+// Snapshot is the lines kept now, oldest first, each without its
+// newline, and end the sequence number past the last: it grows with each
+// line written, so a reader can tell a log that changed.
+func (l *Lines) Snapshot() (lines []string, end int64) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	lines = make([]string, len(l.kept))
+	for i, k := range l.kept {
+		lines[i] = string(bytes.TrimRight(k, "\r\n"))
+	}
+	return lines, l.first + int64(len(l.kept))
+}
+
+// Since is the lines kept from sequence number from on, at most the
+// last most of them, and end the sequence number past the last.
+func (l *Lines) Since(from int64, most int) (lines []string, end int64) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	end = l.first + int64(len(l.kept))
+	start := max(int(from-l.first), 0, len(l.kept)-most)
+	for _, k := range l.kept[min(start, len(l.kept)):] {
+		lines = append(lines, string(bytes.TrimRight(k, "\r\n")))
+	}
+	return lines, end
+}
+
+// End is the sequence number past the last line kept: it grows with
+// each line written.
+func (l *Lines) End() int64 {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.first + int64(len(l.kept))
+}
+
 // Open returns a reader over the log: everything kept so far, and then
 // each line as it is written.
 //

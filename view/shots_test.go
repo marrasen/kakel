@@ -12,6 +12,7 @@ import (
 	gi "github.com/marrasen/gunim/input"
 
 	"github.com/marrasen/kakel/app"
+	"github.com/marrasen/kakel/logs"
 	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/meter"
 	"github.com/marrasen/kakel/remote"
@@ -59,7 +60,25 @@ func shotsState() app.State {
 		{ID: "u1", Machine: "s1", Label: ":8080 → localhost:80", Note: "2 streams", Live: true, Meter: m},
 		{ID: "u2", Machine: "s2", Label: "SOCKS :1080", Note: "idle", Live: true, Meter: meter.New()},
 	}
-	st.SavedTunnels = []settings.SavedTunnel{{HostID: "s1", Kind: "local", Listen: ":8080", Target: "localhost:80"}}
+	st.Tunnels[0].As = settings.SavedTunnel{Host: "web", HostID: "s1", Kind: "local", Listen: ":8080", Target: "localhost:80"}
+	st.Tunnels[1].As = settings.SavedTunnel{Host: "db-primary", HostID: "s2", Kind: "socks", Listen: ":1080"}
+	st.SavedTunnels = []settings.SavedTunnel{
+		{Host: "web", HostID: "s1", Kind: "local", Listen: ":8080", Target: "localhost:80"},
+		{Host: "web", HostID: "s1", Kind: "local", Listen: ":5432", Target: "db.internal:5432"},
+		{Host: "web", HostID: "s1", Kind: "socks", Listen: ":1080"},
+	}
+	l := logs.New(0, nil)
+	for _, line := range []string{
+		"09:12:03  connecting to web",
+		"09:12:03  trying the key ~/.ssh/id_ed25519",
+		"09:12:04  \x1b[32mconnected in 410ms\x1b[0m",
+		"10:41:57  \x1b[31mping unanswered for 15 s\x1b[0m",
+		"10:42:02  answering again, 31 ms",
+	} {
+		_, _ = l.Write([]byte(line + "\n"))
+	}
+	st.Accounts = []machines.ID{"s1"}
+	st.Logs = map[machines.ID]*logs.Lines{"s1": l}
 	return st
 }
 
@@ -98,17 +117,24 @@ func TestShots(t *testing.T) {
 		settle()
 		shot("disconnect-ask")
 	}
-	for _, m := range []machines.ID{"s1", "", "s3"} {
+	for _, c := range []struct {
+		m        machines.ID
+		row, out string
+	}{
+		{"s1", "", "pane-s1"},
+		{"", "", "pane-local"},
+		{"s3", "", "pane-s3"},
+		{"s1", app.MachineRowLog, "pane-s1-log"},
+		{"s1", app.MachineRowAddTunnel, "pane-s1-addtunnel"},
+		{"s1", "tunnel:open:u1", "pane-s1-tunnel"},
+		{"s1", app.MachineRowAddSOCKS, "pane-s1-addsocks"},
+	} {
 		_, _, publish := windowStageOf(t, geom.Sz(1300, 860))
 		st := shotsState()
-		st.Panes = append(st.Panes, app.Pane{ID: "mp", Title: "machine", Kind: app.KindMachine, Machine: m})
+		st.Panes = append(st.Panes, app.Pane{ID: "mp", Title: "machine", Kind: app.KindMachine, Machine: c.m, Row: c.row, RowAt: 1})
 		st.Stage, st.Focus = &app.Box{Pane: "mp"}, "mp"
 		publish(st)
 		settle()
-		name := string(m)
-		if name == "" {
-			name = "local"
-		}
-		shot("pane-" + name)
+		shot(c.out)
 	}
 }

@@ -300,8 +300,11 @@ type Window struct {
 	tunnels         []app.Tunnel
 	fileJobs        []app.Job
 	noDisconnectAsk []machines.ID
-	sideOrder       []string
-	sw              *switcher
+	// logSeen is how far each machine's connection log has been read,
+	// as its end then: a machine's pane counts the problems after it.
+	logSeen   map[machines.ID]int64
+	sideOrder []string
+	sw        *switcher
 	// winID numbers the window among kakel's own, and behind says
 	// another is in front. dropLit is how lit the window is for a pane
 	// dragged over it from another window.
@@ -2075,6 +2078,12 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 		w.servers(w.saved)
 	}
 	w.tunnels, w.fileJobs, w.noDisconnectAsk = st.Tunnels, st.Jobs, st.NoDisconnectAsk
+	// A log read in a pane of its own is read.
+	for _, p := range st.Panes {
+		if p.ID == st.Focus && p.Kind == app.KindLog && st.Logs[p.Machine] != nil {
+			w.sawLog(p.Machine, st.Logs[p.Machine].End())
+		}
+	}
 	// A new terminal and Files are named for what they open, which
 	// follows the pane in front.
 	if st.HereMachine != w.hereMachine || st.HereShell != w.hereShell {

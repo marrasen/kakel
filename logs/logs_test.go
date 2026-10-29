@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"log"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -444,5 +445,32 @@ func TestAlsoMovesWhereTheCopyGoes(t *testing.T) {
 	}
 	if got, want := second.String(), "after the change\n"; got != want {
 		t.Errorf("the second writer got %q, want %q", got, want)
+	}
+}
+
+// A snapshot is the lines kept, without their newlines, and the end
+// grows with each line written.
+func TestASnapshotIsTheLinesKept(t *testing.T) {
+	l := New(2, nil)
+	for _, s := range []string{"one\n", "two\n", "three\n"} {
+		_, _ = l.Write([]byte(s))
+	}
+	lines, end := l.Snapshot()
+	if !slices.Equal(lines, []string{"two", "three"}) || end != 3 || l.End() != 3 {
+		t.Fatalf("the snapshot is %q to %d", lines, end)
+	}
+}
+
+// Since is the lines from a sequence number on, no more than asked.
+func TestSinceIsTheLinesFromASequenceNumber(t *testing.T) {
+	l := New(10, nil)
+	for _, s := range []string{"a\n", "b\n", "c\n", "d\n"} {
+		_, _ = l.Write([]byte(s))
+	}
+	if lines, end := l.Since(1, 10); !slices.Equal(lines, []string{"b", "c", "d"}) || end != 4 {
+		t.Fatalf("since 1: %q to %d", lines, end)
+	}
+	if lines, _ := l.Since(0, 2); !slices.Equal(lines, []string{"c", "d"}) {
+		t.Fatalf("the last 2: %q", lines)
 	}
 }

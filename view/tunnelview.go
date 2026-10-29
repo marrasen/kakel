@@ -9,7 +9,6 @@ import (
 	"github.com/marrasen/kakel/tunnel"
 
 	"github.com/marrasen/kakel/machines"
-	"github.com/marrasen/kakel/words"
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
@@ -30,26 +29,36 @@ func (w *Window) tunnelDialog(socks bool, u *gunim.UI) {
 	w.tunnelDialogOn(w.filesKeyOf(w.focused), socks, u)
 }
 
-// tunnelDialogOn asks for a tunnel over machine's connection.
+// tunnelDialogOn goes to the place tunnels are added: the + under
+// Tunnels, or SOCKS proxies, in machine's pane.
 func (w *Window) tunnelDialogOn(machine machines.ID, socks bool, u *gunim.UI) {
 	if machine == "" {
 		w.toast(widget.Toast{Title: "Tunnels run over a server's connection",
 			Body: "Open one from a pane on a server."}, u)
 		return
 	}
+	row := app.MachineRowAddTunnel
+	if socks {
+		row = app.MachineRowAddSOCKS
+	}
+	u.Send(w, app.ShowMachine{Machine: machine, Row: row})
+}
+
+// tunnelFields are the fields that describe a tunnel over machine's
+// connection, or with socks a SOCKS proxy: a form of them, the tunnel
+// they say, and the tick that saves it.
+func (w *Window) tunnelFields(machine machines.ID, socks bool) (form *widget.Form, fields []*widget.TextField, tunnelOf func() remote.Tunnel, keep *widget.Checkbox, way *widget.Dropdown) {
 	listen, target := widget.NewTextField(), widget.NewTextField()
 	listen.Placeholder, target.Placeholder = "[address:]port", "host:port"
 	called := w.nameOf(machine)
-	way := widget.NewDropdown(widget.Labels("Local — listen here", "Remote — listen on "+called))
+	way = widget.NewDropdown(widget.Labels("Local — listen here", "Remote — listen on "+called))
 	way.Label = "Direction"
-	keep := widget.NewCheckbox("Save this tunnel")
-	form := widget.NewForm()
-	title := "Tunnel via " + called
+	keep = widget.NewCheckbox("Save this tunnel")
+	form = widget.NewForm()
 	if socks {
-		title = "SOCKS proxy via " + called
+		keep.Label = "Save this SOCKS proxy"
 		listen.SetText("1080", nil)
-		note := widget.NewLabel("A SOCKS port here. Connections go out from " + called + ".")
-		form.Add("", note).Add("Listen on", listen)
+		form.Add("Listen on", listen)
 	} else {
 		form.Add("Listen on", listen).Add("Forward to", target)
 		// Through a kakel window, the far end cannot be asked to
@@ -59,42 +68,8 @@ func (w *Window) tunnelDialogOn(machine machines.ID, socks bool, u *gunim.UI) {
 			form.Add("Direction", way)
 		}
 	}
-	// The tunnels kept for this server, so one is a pick away rather
-	// than two addresses to remember.
-	var kept []settings.SavedTunnel
-	for _, t := range w.savedTunnels {
-		if w.keptFor(t.Host, t.HostID, machine) && (t.Kind == remote.DynamicForward.String()) == socks {
-			kept = append(kept, t)
-		}
-	}
-	if len(kept) > 0 {
-		names := []string{"A new one"}
-		for _, t := range kept {
-			if tu, err := tunnel.Read(t); err == nil {
-				names = append(names, tu.String())
-			}
-		}
-		pick := widget.NewDropdown(widget.Labels(names...))
-		pick.Label = "Saved"
-		pick.OnChange = func(i int, u *gunim.UI) gunim.Intent {
-			if i == 0 || i > len(kept) {
-				return nil
-			}
-			t := kept[i-1]
-			listen.SetText(t.Listen, nil)
-			target.SetText(t.Target, nil)
-			way.SetSelected(0, nil)
-			if t.Kind == remote.RemoteForward.String() {
-				way.SetSelected(1, nil)
-			}
-			keep.SetChecked(true, u)
-			u.Invalidate()
-			return nil
-		}
-		form.Add("Saved", pick)
-	}
 	form.Add("", keep)
-	tunnel := func() remote.Tunnel {
+	tunnelOf = func() remote.Tunnel {
 		t := remote.Tunnel{Kind: remote.LocalForward, Listen: strings.TrimSpace(listen.Text()), Target: strings.TrimSpace(target.Text())}
 		// A port alone is that port on the listening machine only.
 		if _, err := strconv.Atoi(t.Listen); err == nil {
@@ -108,20 +83,7 @@ func (w *Window) tunnelDialogOn(machine machines.ID, socks bool, u *gunim.UI) {
 		}
 		return t
 	}
-	d := widget.NewDialog(title)
-	d.Body = form
-	d.SetButtons("Open", "Cancel")
-	d.Check = func() string {
-		if err := tunnel().Validate(); err != nil {
-			return words.UpperFirst(err.Error()) + "."
-		}
-		return ""
-	}
-	d.OnAccept = func(u *gunim.UI) gunim.Intent {
-		return app.OpenTunnel{Machine: machine, Tunnel: tunnel(), Keep: keep.Checked()}
-	}
-	d.OnDismiss = widget.Sends(app.DialogClosed{})
-	w.openDialog(d, u)
+	return form, []*widget.TextField{listen, target}, tunnelOf, keep, way
 }
 
 // machineOf returns the server pane id is on, "" for this computer.

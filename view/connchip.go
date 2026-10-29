@@ -27,7 +27,10 @@ import (
 // connChip is a card's status chip.
 type connChip struct {
 	anim.Group
-	r *sideRow
+	w *Window
+	// of is the machine and what its card says of it, nil where there
+	// is none.
+	of func() (machines.ID, *cardInfo)
 	// hover runs to 1 as the pointer comes over it, ring as the
 	// keyboard's ring grows round it, and knob from off to on.
 	hover, ring, knob *anim.Float
@@ -43,8 +46,8 @@ type connChip struct {
 	acted time.Time
 }
 
-func newConnChip(r *sideRow) *connChip {
-	c := &connChip{r: r, hover: anim.NewFloat(0), ring: anim.NewFloat(0), knob: anim.NewFloat(-1)}
+func newConnChip(w *Window, of func() (machines.ID, *cardInfo)) *connChip {
+	c := &connChip{w: w, of: of, hover: anim.NewFloat(0), ring: anim.NewFloat(0), knob: anim.NewFloat(-1)}
 	c.Add(c.hover, c.ring, c.knob)
 	return c
 }
@@ -62,9 +65,9 @@ type chipState struct {
 
 // state is what the chip shows and does now.
 func (c *connChip) state(now time.Time, th *theme.Live) chipState {
-	r := c.r
-	info := *r.card
-	w, m := r.w, r.machine
+	m, card := c.of()
+	info := *card
+	w, r := c.w, gunim.Node(c)
 	words, ink := pillFor(info, now, th)
 	if c.short && info.state == cardConnected && !info.silent && info.rtt > 0 {
 		words = roundTrip(info.rtt)
@@ -103,7 +106,10 @@ func (c *connChip) state(now time.Time, th *theme.Live) chipState {
 
 // Focusable implements [gunim.Focusable]: the chip takes the keyboard
 // where it does something.
-func (c *connChip) Focusable() bool { return c.r.card != nil && c.r.card.state != cardLocal }
+func (c *connChip) Focusable() bool {
+	_, card := c.of()
+	return card != nil && card.state != cardLocal
+}
 
 // The chip's measures: its height, the room at its ends, and its
 // switch's track.
@@ -128,7 +134,7 @@ func (c *connChip) width(now time.Time, th *theme.Live) float32 {
 
 // Layout implements [gunim.Node].
 func (c *connChip) Layout(cs gunim.Constraints, f gunim.Frame, _ gunim.Children) geom.Size {
-	if c.r.machine == machines.Local {
+	if m, card := c.of(); m == machines.Local || card == nil {
 		// This computer has no connection to make.
 		c.size = geom.Size{}
 		return c.size
@@ -160,7 +166,7 @@ func (c *connChip) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, _ gunim
 	}
 	th := f.Theme
 	s := c.state(f.Now, th)
-	if c.r.card.state == cardConnected && !c.r.card.since.IsZero() {
+	if _, card := c.of(); card.state == cardConnected && !card.since.IsZero() {
 		f.RedrawAt(f.Now.Add(time.Minute))
 	}
 	lit := min(max(c.hover.Value(), c.ring.Value()), 1)
@@ -200,7 +206,7 @@ func (c *connChip) paintSwitch(p *paint.Painter, f gunim.Frame, track geom.Rect,
 	th := f.Theme
 	t := min(max(c.knob.Value(), 0), 1)
 	off := look.Faint.Get(th)
-	if c.r.card.state == cardLost {
+	if _, card := c.of(); card.state == cardLost {
 		off = s.ink
 	}
 	on := s.ink
@@ -240,7 +246,7 @@ func (c *connChip) act(s chipState, u *gunim.UI) {
 // Handle implements [gunim.Handler]: a click, or Space or Enter with
 // the keyboard on it, flips the switch.
 func (c *connChip) Handle(e input.Event, u *gunim.UI) bool {
-	if c.r.card == nil {
+	if _, card := c.of(); card == nil {
 		return false
 	}
 	th := u.Theme()

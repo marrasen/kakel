@@ -154,7 +154,7 @@ func (w *Window) cardFor(m machines.ID, name string) cardInfo {
 	case slices.Contains(w.connected, m) || slices.ContainsFunc(w.remoteWindows, func(rw app.RemoteWindow) bool { return rw.Name == m }):
 		c.state = cardConnected
 	default:
-		if _, _, far := m.Far(); far {
+		if win, _, far := m.Far(); far && w.isConnected(win) {
 			// Reached by another window, which says it is connected.
 			c.state = cardConnected
 		} else {
@@ -695,25 +695,23 @@ func (r *sideRow) makeButtons() {
 	gear.OnClick = func(u *gunim.UI) gunim.Intent { u.Send(r, app.ShowMachine{Machine: r.machine}); return nil }
 	more.OnClick = func(u *gunim.UI) gunim.Intent { r.w.openMachineMenu(r, u); return nil }
 	r.chips = []*widget.Button{gear, more, term, files}
-	r.conn = newConnChip(r)
+	r.conn = newConnChip(r.w, func() (machines.ID, *cardInfo) { return r.machine, r.card })
 }
 
 // buttonsShown says which of the header's buttons its machine has: a
-// saved kakel window not connected has nothing more than Files, and
-// only a saved server and this computer have settings.
+// saved kakel window not connected has nothing more than Files and its
+// settings.
 func (r *sideRow) buttonsShown() [4]bool {
 	var shown [4]bool
-	shown[chipTerminal], shown[chipFiles], shown[chipMore] = true, true, true
+	shown[chipTerminal], shown[chipFiles], shown[chipMore], shown[chipGear] = true, true, true, true
 	m := r.machine
 	if m == machines.Local {
-		shown[chipGear] = true
 		return shown
 	}
 	for _, h := range r.w.saved {
 		if machines.ID(h.ID) != m {
 			continue
 		}
-		shown[chipGear] = true
 		if h.Window && !slices.ContainsFunc(r.w.remoteWindows, func(rw app.RemoteWindow) bool { return rw.Name == m }) {
 			shown[chipTerminal], shown[chipMore] = false, false
 		}
@@ -1057,9 +1055,7 @@ func (r *sideRow) cardKey(e input.KeyPress, u *gunim.UI) bool {
 	case input.KeyF:
 		u.Send(w, app.OpenFilesOn{Machine: m})
 	case input.KeyE:
-		if m == machines.Local || slices.ContainsFunc(w.saved, func(h remote.Host) bool { return machines.ID(h.ID) == m }) {
-			u.Send(w, app.ShowMachine{Machine: m})
-		}
+		u.Send(w, app.ShowMachine{Machine: m})
 	case input.KeyDelete:
 		if m != machines.Local && slices.ContainsFunc(w.saved, func(h remote.Host) bool { return machines.ID(h.ID) == m }) {
 			w.confirmRemove(m, u)
