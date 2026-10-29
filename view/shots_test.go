@@ -191,6 +191,13 @@ func TestShotsTunnelTraffic(t *testing.T) {
 	st := shotsState()
 	m := st.Tunnels[0].Meter
 	st.SavedTunnels[0].Auto = true
+	account := logs.New(0, nil)
+	for _, line := range []string{"opened :8080 → localhost:80 over web", "watching what goes through it",
+		"→ 78 bytes", "GET / HTTP/1.1", "Host: localhost:8080", "User-Agent: curl/8.5.0", "Accept: */*", "",
+		"← 120 bytes", "HTTP/1.1 200 OK", "Content-Type: text/html", "Content-Length: 44", "", "<html><body>Hello from web</body></html>"} {
+		_, _ = account.Write([]byte(line + "\n"))
+	}
+	st.Tunnels[0].Account, st.Tunnels[0].Watching = account, true
 	st.Panes = append(st.Panes, app.Pane{ID: "mp", Title: "machine", Kind: app.KindMachine, Machine: "s1",
 		Row: tunnelKey("local", ":8080", "localhost:80"), RowAt: 1})
 	st.Stage, st.Focus = &app.Box{Pane: "mp"}, "mp"

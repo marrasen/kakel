@@ -14,6 +14,7 @@ import (
 	"github.com/marrasen/kakel/serve"
 	"github.com/marrasen/kakel/tunnel"
 
+	"github.com/marrasen/kakel/logs"
 	"github.com/marrasen/kakel/machines"
 
 	"github.com/marrasen/kakel/meter"
@@ -45,6 +46,9 @@ type Tunnel struct {
 	// As is the tunnel as the saved list writes it, to tell a saved
 	// one that is open.
 	As settings.SavedTunnel
+	// Account is what it has written of itself, and of its traffic while
+	// it is watched, for its page to show.
+	Account *logs.Lines
 }
 
 // Intents for tunnels.
@@ -183,11 +187,13 @@ func (a *app) openTunnel(in OpenTunnel) error {
 		return err
 	}
 	open.Started(f)
+	// Its page follows what it writes, as a connection's log page does.
+	open.Account().Notify(a.logWritten)
 	a.tunnels[id] = open
 	label := open.Label()
 	open.Say("opened " + label + " over " + a.machines.Name(in.Machine))
 	as := tunnel.Saved(a.keptAs(in.Machine), a.serverID(in.Machine), t)
-	a.st.Tunnels = append(slices.Clone(a.st.Tunnels), Tunnel{ID: id, Machine: in.Machine, Label: label, Note: open.Note(), Live: true, Meter: open.Meter(), As: as})
+	a.st.Tunnels = append(slices.Clone(a.st.Tunnels), Tunnel{ID: id, Machine: in.Machine, Label: label, Note: open.Note(), Live: true, Meter: open.Meter(), As: as, Account: open.Account()})
 	a.worked("Tunnel open", label+", over "+a.machines.Name(in.Machine), "")
 	a.tickTunnels()
 	return nil

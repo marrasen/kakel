@@ -2972,7 +2972,7 @@ func sidebarRows(panes []app.Pane, tunnels []app.Tunnel, share app.Share, window
 		// headings of their own.
 		for _, t := range tunnels {
 			if t.Machine == m {
-				out = append(out, sideItem{key: "tunnel:" + t.ID, text: t.Label, note: t.Note, pane: t.Pane, click: app.ShowTunnel{ID: t.ID}, closes: app.CloseTunnel{ID: t.ID}, dim: !t.Live})
+				out = append(out, sideItem{key: "tunnel:" + t.ID, text: t.Label, note: t.Note, pane: t.Pane, click: app.ShowMachine{Machine: t.Machine, Row: tunnelKey(t.As.Kind, t.As.Listen, t.As.Target)}, closes: app.CloseTunnel{ID: t.ID}, dim: !t.Live})
 			}
 		}
 		var far []string

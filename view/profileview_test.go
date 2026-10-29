@@ -579,3 +579,34 @@ func TestATunnelStaysPickedAsItOpens(t *testing.T) {
 		t.Fatalf("the open tunnel's page has %d graphs of its traffic", graphs)
 	}
 }
+
+// An open tunnel's page has its traffic in it: a switch that watches it,
+// and what it wrote, both ways.
+func TestATunnelsTrafficIsOnItsPage(t *testing.T) {
+	as := settings.SavedTunnel{Host: "prod", HostID: "s1", Kind: "local", Listen: ":9000", Target: "db:5432"}
+	account := logs.New(0, nil)
+	for _, line := range []string{"opened :9000 → db:5432 over prod", "→ 5 bytes", "hello", "← 5 bytes", "HELLO"} {
+		_, _ = account.Write([]byte(line + "\n"))
+	}
+	st := app.State{Saved: []remote.Host{{ID: "s1", Name: "prod", Address: "prod.example"}},
+		Machines: []machines.Info{{ID: "s1", Name: "prod"}}, Connected: []machines.ID{"s1"},
+		SavedTunnels: []settings.SavedTunnel{as},
+		Tunnels:      []app.Tunnel{{ID: "t1", Machine: "s1", Live: true, As: as, Meter: meter.New(), Account: account}}}
+	_, mp, _ := machinePaneOf(t, st, "s1", false)
+	mp.pick(tunnelKey("local", ":9000", "db:5432"), lastUI)
+	var watch *widget.Switch
+	walkNodes(mp.right, func(n gunim.Node) {
+		if s, ok := n.(*widget.Switch); ok {
+			watch = s
+		}
+	})
+	if watch == nil {
+		t.Fatal("the tunnel's page has no switch to watch its traffic")
+	}
+	if in := watch.OnChange(true, lastUI); in != (app.WatchTunnel{ID: "t1", On: true}) {
+		t.Fatalf("watching sends %#v", in)
+	}
+	if mp.tunnelLog == nil || mp.tunnelLog.End() != 5 {
+		t.Fatalf("the tunnel's page shows its account to %v", mp.tunnelLog)
+	}
+}

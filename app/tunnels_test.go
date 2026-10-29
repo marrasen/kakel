@@ -269,9 +269,10 @@ func TestWatchingATunnelWritesItsTrafficDown(t *testing.T) {
 		t.Fatal("watching, the row says it is not")
 	}
 	say(t, c, "loud")
-	// The line saying watching began, then a chunk each way.
-	if got := open.Account().Held() - before; got != 3 {
-		t.Fatalf("watching, %d entries were written, want 3", got)
+	// The line saying watching began, then a chunk each way, a line
+	// each: its heading, and what it held.
+	if got := open.Account().Held() - before; got != 5 {
+		t.Fatalf("watching, %d entries were written, want 5", got)
 	}
 	held := open.Account().Held()
 	a.handle(WatchTunnel{ID: id})

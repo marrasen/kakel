@@ -18,6 +18,7 @@ import (
 	"github.com/marrasen/gunim/widget"
 
 	"github.com/marrasen/kakel/app"
+	"github.com/marrasen/kakel/logs"
 	"github.com/marrasen/kakel/look"
 	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/meter"
@@ -167,6 +168,11 @@ type machinePane struct {
 	// rowAt counts the rows the program asked for, as the pane last
 	// said; logSeen is the end of the log when it was last looked at.
 	rowAt int
+	// tunnelLog shows the account of the tunnel picked, of tunnelLogOf,
+	// as far as tunnelLogShown.
+	tunnelLog      *widget.LogView
+	tunnelLogOf    *logs.Lines
+	tunnelLogShown int64
 	// tunnelNow says what the tunnel picked is doing. It and
 	// overviewLine are the shown page's: each page makes its own, as a
 	// node is in one place only and the page going stays as it fades.
@@ -321,6 +327,8 @@ func (mp *machinePane) refresh(u *gunim.UI) {
 	// place, so its page is not built again each second.
 	if it, ok := mp.item(mp.sel); ok && it.tunnel != nil {
 		mp.tunnelNow.Text = it.tunnel.now()
+		// What it writes grows in at the bottom of its page.
+		mp.showTunnelLog(u)
 	}
 	// The list draws the picked row's fill, gliding to the next picked.
 	picked := widget.Key(mp.sel)
