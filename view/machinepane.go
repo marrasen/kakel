@@ -208,7 +208,8 @@ func newMachinePane(w *Window, id string) *machinePane {
 	side := widget.Column(list, mp.foot).Grow(list, 1)
 	side.Cross = widget.CrossStretch
 	mp.overviewLine, mp.tunnelNow = faintLabel(""), widget.NewLabel("")
-	rightPad := widget.NewPad(widget.NewScroll(mp.right))
+	// Each page scrolls by itself, but the log, which is all the room.
+	rightPad := widget.NewPad(mp.right)
 	rightPad.Padding = mpPad
 	row := widget.Row(widget.NewSized(side, 280, 0), &divider{width: 1}, rightPad).Grow(rightPad, 1)
 	row.Cross = widget.CrossStretch
@@ -353,6 +354,9 @@ func (mp *machinePane) refresh(u *gunim.UI) {
 		page = mp.savedSide(*it.saved)
 	default:
 		page = mp.profileSide(it.profile, false, u)
+	}
+	if mp.sel != mpLog {
+		page = widget.NewScroll(page)
 	}
 	mp.right.Show(page, from, u)
 }

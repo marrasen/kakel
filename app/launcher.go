@@ -523,7 +523,7 @@ func (a *app) launchOn(in Launch) {
 	case in.Action == "files":
 		a.handle(OpenFilesOn{Machine: in.Machine})
 	case in.Action == "log":
-		a.handle(ShowLog{Machine: in.Machine})
+		a.handle(ShowMachine{Machine: in.Machine, Row: MachineRowLog})
 	case len(in.Action) > len("shell:") && in.Action[:len("shell:")] == "shell:":
 		a.handle(OpenShellNamed{ID: in.Action[len("shell:"):]})
 	default:

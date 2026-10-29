@@ -246,6 +246,7 @@ func (mp *machinePane) logSide(u *gunim.UI) gunim.Node {
 	m := mp.machine
 	lines := mp.st.Logs[m]
 	lv := widget.NewLogView()
+	lv.Plain = true
 	lv.OnSeen = func(end int64, u *gunim.UI) gunim.Intent {
 		mp.w.sawLog(m, end)
 		// Read to its newest line: the row's count of problems goes.
@@ -256,7 +257,7 @@ func (mp *machinePane) logSide(u *gunim.UI) gunim.Node {
 	}
 	mp.logView, mp.logShown = lv, -1
 	mp.showLog(u)
-	copyIt := widget.NewButton("Copy")
+	copyIt := widget.NewIconButton(icon.Copy, "Copy the log")
 	copyIt.OnClick = func(u *gunim.UI) gunim.Intent {
 		if lines != nil {
 			lines, _ := lines.Snapshot()
@@ -267,25 +268,28 @@ func (mp *machinePane) logSide(u *gunim.UI) gunim.Node {
 		}
 		return nil
 	}
-	pane := widget.NewButton("Open")
-	pane.Tooltip = "Open the log in a pane of its own"
-	pane.OnClick = widget.Sends(app.ShowLog{Machine: m})
-	_, _, far := m.Far()
-	copyIt.Disabled, pane.Disabled = lines == nil, lines == nil && !far
-	note := "Newest at the bottom."
+	copyIt.Disabled = lines == nil
+	gap := widget.NewSpacer()
+	head := widget.Row(heading("Connection log"), gap, copyIt).Grow(gap, 1)
+	head.Cross = widget.CrossCenter
 	var body gunim.Node = lv
-	switch {
-	case lines == nil && far:
-		window, _, _ := m.Far()
-		note = "Kept by " + mp.w.nameOf(window) + ". Open shows it in a pane."
-		body = &emptyNode{}
-	case lines == nil:
-		note = "No connection log yet."
-		body = &emptyNode{}
+	if lines == nil {
+		note := "No connection log yet."
+		if window, _, far := m.Far(); far {
+			// Its log is the window's, shown in a pane of that window's.
+			note = "Kept by " + mp.w.nameOf(window) + "."
+			open := widget.NewButton("Show")
+			open.OnClick = widget.Sends(app.ShowLog{Machine: m})
+			col := widget.Column(head, faintLabel(note), buttons(open))
+			col.Cross, col.Gap = widget.CrossStretch, mpGap
+			return col
+		}
+		body = faintLabel(note)
 	}
-	col := widget.Column(heading("Connection log"), faintLabel(note), body, buttons(copyIt, pane))
+	// The log is the page: all the room under its heading.
+	col := widget.Column(head, body).Grow(body, 1)
 	col.Cross, col.Gap = widget.CrossStretch, mpGap
-	return widget.NewSized(col, 900, 0)
+	return col
 }
 
 // The colours a log's lines are written in, as logLine writes them.

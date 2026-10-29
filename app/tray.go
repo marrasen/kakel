@@ -208,7 +208,7 @@ func (a *app) trayMenu(gen int) ([]gunim.TrayItem, map[int]func()) {
 				id := p.ID
 				sub = append(sub, gunim.TrayItem{Title: p.Name, ID: act(func() { a.toTray(func() { a.handle(OpenShellNamed{ID: id}) }) })})
 			}
-			sub = append(sub, gunim.TrayItem{Title: "Connection Log", ID: act(func() { a.toTray(func() { a.handle(ShowLog{Machine: m}) }) })})
+			sub = append(sub, gunim.TrayItem{Title: "Connection Log", ID: act(func() { a.toTray(func() { a.handle(ShowMachine{Machine: m, Row: MachineRowLog}) }) })})
 		}
 		return gunim.TrayItem{Title: title, Items: sub}
 	}
