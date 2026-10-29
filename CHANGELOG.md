@@ -9,6 +9,14 @@ change how something behaves.
 
 ## Unreleased
 
+### Added
+
+**A crash is shown the next time kakel starts.** A window of its own,
+from the tray too, shows what kakel said as it crashed, which version
+it was and where the log is. Copy copies all of it; Report on GitHub
+opens a new issue with the version, the system and the trace filled
+in, for you to say what you were doing.
+
 ### Fixed
 
 **Taking an open tunnel off the saved list no longer crashes kakel.**

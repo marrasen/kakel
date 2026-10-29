@@ -80,7 +80,7 @@ func (a *app) askThen(ctx context.Context, q Ask, then func(AskAnswered)) {
 // askAction does what a question's button that keeps it open asks.
 func (a *app) askAction(in AskAction) error {
 	for _, q := range a.st.Asks {
-		if q.ID == in.ID && in.Action == "Open Link" && q.Link != "" {
+		if q.ID == in.ID && (in.Action == "Open Link" || in.Action == reportCrash) && q.Link != "" {
 			return openInBrowser(q.Link)
 		}
 	}

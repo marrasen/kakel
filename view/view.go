@@ -1129,7 +1129,13 @@ func askDialog(q app.Ask, from gunim.Node) *widget.Dialog {
 			// scrolled sideways where they are wider than the dialog.
 			note.Face, note.Selectable, note.NoWrap = widget.MonoFont, true, true
 		}
-		form.Add("", note)
+		var shown gunim.Node = note
+		if q.Preformatted && strings.Count(q.Text, "\n") >= mostPromptLines {
+			// A long one, as a crash's trace, scrolls in a room of its
+			// own rather than making the dialog taller than the screen.
+			shown = &linesHigh{child: widget.NewScroll(note), lines: mostPromptLines}
+		}
+		form.Add("", shown)
 	}
 	for _, line := range q.Small {
 		l := widget.NewLabel(line)

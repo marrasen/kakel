@@ -2,6 +2,7 @@ package view
 
 import (
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -98,6 +99,10 @@ func TestAPromptFitsItsQuestion(t *testing.T) {
 		{ID: 6, Title: "Exit kakel?", Danger: true, Yes: "Exit", Text: "Still open: 2 copies running, 3 panes and a tunnel."},
 		{ID: 7, Title: "Waiting for server", Yes: "Close", No: "Cancel", Actions: []string{"Open Link", "Copy"},
 			Text: "rdp@marras-skylake:\n\n# Tailscale SSH requires an additional check.\n# To authenticate, visit: https://login.tailscale.com/a/l135a30b43b7720\n\nContinues by itself when you are done."},
+		// A crash's trace, longer than a question shows: it scrolls.
+		{ID: 8, Title: "kakel crashed", Yes: "Close", Plain: true, Actions: []string{"Copy", "Report on GitHub"}, Preformatted: true,
+			Text:  "panic: runtime error: index out of range [9] with length 9\n\ngoroutine 166 [running]:" + strings.Repeat("\ngithub.com/marrasen/gunim/widget.(*Form).Layout(…)\n\tgithub.com/marrasen/gunim@v0.0.0/widget/form.go:77", 40),
+			Small: []string{"kakel v0.12.2-beta.8, started 13:04 on 29 October, stopped saying this. All of it is in C:\\Users\\me\\AppData\\Local\\kakel\\crash.log."}},
 	} {
 		for _, th := range all {
 			p, _, ui := promptStage(t, q, th)
@@ -137,5 +142,24 @@ func TestAPromptOpensWhereTheUserWorks(t *testing.T) {
 	}
 	if r := at(&driver.Placement{Bounds: geom.Rc(-100, 900, 300, 100)}); r.Min.X < 0 || r.Max.Y > 1040 {
 		t.Errorf("over a window half off the screen it opens at %v", r)
+	}
+}
+
+// A preformatted text past the lines a question shows scrolls: the
+// window is as tall for a trace of any length as for one that fills it.
+func TestALongPreformattedTextScrollsInAWindowOfItsSize(t *testing.T) {
+	lines := func(n int) app.Ask {
+		return app.Ask{ID: 9, Title: "kakel crashed", Yes: "Close", Plain: true, Preformatted: true, Text: strings.Repeat("main.deeper(…)\n", n-1) + "main.main()"}
+	}
+	th := look.Themed{}
+	if full, long := PromptSize(lines(mostPromptLines), th.Theme), PromptSize(lines(10*mostPromptLines), th.Theme); long != full {
+		t.Fatalf("a trace of %d lines opens %v, past the %v of one that fills the room", 10*mostPromptLines, long, full)
+	}
+	p, _, ui := promptStage(t, lines(10*mostPromptLines), th)
+	if _, ok := formOf(p.dialog.Body).Children()[1].(*linesHigh); !ok {
+		t.Fatalf("the trace is a %T, not a room it scrolls in", formOf(p.dialog.Body).Children()[1])
+	}
+	if form, _ := ui.Bounds(formOf(p.dialog.Body)); form.Empty() {
+		t.Fatal("the form is not drawn")
 	}
 }

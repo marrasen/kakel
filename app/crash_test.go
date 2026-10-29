@@ -41,8 +41,8 @@ func TestEachStartWritesItsHeadingUnderTheLastCrash(t *testing.T) {
 		_ = debug.SetCrashOutput(nil, debug.CrashOptions{})
 	})
 	for range 2 {
-		if err := keepCrashesIn(path, then); err != nil {
-			t.Fatal(err)
+		if crash, err := keepCrashesIn(path, then); err != nil || crash != "" {
+			t.Fatalf("a quiet start found the crash %q, %v", crash, err)
 		}
 	}
 	b, err := os.ReadFile(path)
@@ -58,12 +58,21 @@ func TestEachStartWritesItsHeadingUnderTheLastCrash(t *testing.T) {
 	}
 	_, _ = f.WriteString("panic: oh no\n")
 	_ = f.Close()
-	if err := keepCrashesIn(path, then); err != nil {
+	crash, err := keepCrashesIn(path, then)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if !strings.HasPrefix(crash, crashHeading+"v1.2.3, started ") || !strings.HasSuffix(crash, "\npanic: oh no\n") {
+		t.Fatalf("the start after a crash found %q, want the crash under its heading", crash)
 	}
 	b, _ = os.ReadFile(path)
 	if got := string(b); strings.Count(got, crashHeading) != 2 || !strings.Contains(got, "panic: oh no\n"+crashHeading) {
 		t.Fatalf("after a crash and a start the log is %q, want the crash under its heading and a new one", got)
+	}
+	// Shown once: the start after a quiet run finds none, though the
+	// crash before it is still in the log.
+	if crash, err := keepCrashesIn(path, then); err != nil || crash != "" {
+		t.Fatalf("the start after a quiet run found the crash %q, %v", crash, err)
 	}
 }
 
@@ -71,7 +80,7 @@ func TestEachStartWritesItsHeadingUnderTheLastCrash(t *testing.T) {
 // run again, to keep its crashes there and panic.
 func TestAPanicIsKeptInTheCrashLog(t *testing.T) {
 	if path := os.Getenv("KAKEL_CRASH_TO"); path != "" {
-		if err := keepCrashesIn(path, time.Now()); err != nil {
+		if _, err := keepCrashesIn(path, time.Now()); err != nil {
 			t.Fatal(err)
 		}
 		done := make(chan struct{})
