@@ -101,7 +101,7 @@ func TestShots(t *testing.T) {
 		}
 		// The pointer on each card's chip: what a click would do.
 		for _, m := range []machines.ID{"s1", "s3", "s4", "s5"} {
-			box, ok := lastUI.Bounds(win.cards.cards[m].head.conn)
+			box, ok := lastUI.Bounds(win.cards.cards[m].head.conn.sw)
 			if !ok {
 				t.Fatalf("no chip on %s", m)
 			}
@@ -111,7 +111,7 @@ func TestShots(t *testing.T) {
 		}
 		// Disconnect asks, with web's terminals and pi through it.
 		lastWindow.Input(gi.PointerMove{Pos: geom.Pt(5, 5)})
-		box, _ := lastUI.Bounds(win.cards.cards["s1"].head.conn)
+		box, _ := lastUI.Bounds(win.cards.cards["s1"].head.conn.sw)
 		lastWindow.Input(gi.PointerDown{Pos: box.Center(), Button: gi.ButtonPrimary})
 		lastWindow.Input(gi.PointerUp{Pos: box.Center(), Button: gi.ButtonPrimary})
 		settle()

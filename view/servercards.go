@@ -698,7 +698,10 @@ func (r *sideRow) makeButtons() {
 	gear.OnClick = func(u *gunim.UI) gunim.Intent { u.Send(r, app.ShowMachine{Machine: r.machine}); return nil }
 	more.OnClick = func(u *gunim.UI) gunim.Intent { r.w.openMachineMenu(r, u); return nil }
 	r.chips = []*widget.Button{gear, more, term, files}
-	r.conn = newConnChip(r.w, func() (machines.ID, *cardInfo) { return r.machine, r.card })
+	if r.machine != machines.Local {
+		// This computer has no connection to make.
+		r.conn = newConnSwitch(r.w, func() (machines.ID, *cardInfo) { return r.machine, r.card }, false)
+	}
 }
 
 // buttonsShown says which of the header's buttons its machine has: a
@@ -742,10 +745,16 @@ func (r *sideRow) layoutCard(c gunim.Constraints, f gunim.Frame, kids gunim.Chil
 	// they are cut.
 	kids.At(0).Layout(gunim.Constraints{})
 	kids.At(1).Layout(gunim.Constraints{})
-	conn := kids.At(2 + len(r.chips))
-	r.conn.compact, r.conn.short = compact, false
-	// This computer has no connection to make: no chip.
-	local := r.machine == machines.Local
+	// The status switch, when the machine has one: laid out with what
+	// it says now, as short as room asks.
+	var conn gunim.Child
+	if r.conn != nil {
+		conn = kids.At(2 + len(r.chips))
+		r.conn.short, r.conn.sw.Bare = false, compact
+		r.conn.sync(f.Now)
+	}
+	// This computer has no connection to make: no switch.
+	local := r.conn == nil
 	if len(r.chipRects) != len(r.chips) {
 		r.chipRects = make([]geom.Rect, len(r.chips))
 	}
@@ -777,7 +786,6 @@ func (r *sideRow) layoutCard(c gunim.Constraints, f gunim.Frame, kids gunim.Chil
 			var s geom.Size
 			if i < 0 {
 				if local {
-					conn.Layout(gunim.Constraints{})
 					continue
 				}
 				s = conn.Layout(gunim.Constraints{Max: geom.Sz(c.Max.W, cardChipHeight)})
@@ -817,7 +825,7 @@ func (r *sideRow) layoutCard(c gunim.Constraints, f gunim.Frame, kids gunim.Chil
 		var cs, ts, fs geom.Size
 		fit := func() bool {
 			if local {
-				cs = conn.Layout(gunim.Constraints{})
+				cs = geom.Size{}
 			} else {
 				cs = conn.Layout(gunim.Constraints{Max: geom.Sz(room, cardChipHeight)})
 			}
@@ -828,16 +836,19 @@ func (r *sideRow) layoutCard(c gunim.Constraints, f gunim.Frame, kids gunim.Chil
 		// been connected, then its words, leaving the switch in the
 		// state's colour. Then the buttons lose theirs.
 		words(true)
-		r.conn.bare = false
-		if !fit() {
+		fits := fit()
+		if !fits && !local {
 			r.conn.short = true
-			if !fit() {
-				r.conn.bare = true
-				if !fit() {
-					words(false)
-					fit()
-				}
-			}
+			r.conn.sync(f.Now)
+			fits = fit()
+		}
+		if !fits && !local {
+			r.conn.sw.Bare = true
+			fits = fit()
+		}
+		if !fits {
+			words(false)
+			fit()
 		}
 		x = cardPad
 		for _, b := range []struct {
@@ -851,7 +862,9 @@ func (r *sideRow) layoutCard(c gunim.Constraints, f gunim.Frame, kids gunim.Chil
 			r.chipRects[i] = geom.Rc(x, y, s.W, s.H)
 			x += s.W + cardChipGap
 		}
-		conn.Place(geom.Pt(c.Max.W-cardPad-cs.W, y+(cardChipHeight-cs.H)/2))
+		if !local {
+			conn.Place(geom.Pt(c.Max.W-cardPad-cs.W, y+(cardChipHeight-cs.H)/2))
+		}
 	}
 	for i := range r.chips {
 		kids.At(2 + i).Place(r.chipRects[i].Min)

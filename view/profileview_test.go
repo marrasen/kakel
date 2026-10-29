@@ -420,13 +420,13 @@ func TestTheLogsRowCountsProblemsNotSeen(t *testing.T) {
 	st := app.State{Saved: []remote.Host{{ID: "s1", Name: "prod", Address: "prod.example"}},
 		Machines: []machines.Info{{ID: "s1", Name: "prod"}}, Logs: map[machines.ID]*logs.Lines{"s1": l}}
 	_, mp, again := machinePaneOf(t, st, "s1", false)
-	if n := rowOf(t, mp, mpLog).badge.n; n != 1 {
-		t.Fatalf("the log's row counts %d problems", n)
+	if b := rowOf(t, mp, mpLog).badge; b.Hidden || b.Text != "1 problem" {
+		t.Fatalf("the log's row says %q, hidden %v", b.Text, b.Hidden)
 	}
 	mp.pick(mpLog, lastUI)
 	again(st)
-	if n := rowOf(t, mp, mpLog).badge.n; n != 0 {
-		t.Fatalf("looked at, the log's row still counts %d problems", n)
+	if b := rowOf(t, mp, mpLog).badge; !b.Hidden {
+		t.Fatalf("looked at, the log's row still says %q", b.Text)
 	}
 }
 

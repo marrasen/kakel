@@ -56,6 +56,13 @@ var (
 	mpPad     = theme.Insets("kakel.machine.pad", geom.Insets{Left: 28, Right: 28, Top: 20, Bottom: 28})
 	mpGap     = theme.Length("kakel.machine.gap", 12)
 	mpRowGap  = theme.Length("kakel.machine.row", 8)
+	// mpHeadSize is the machine's name's size at the top of the
+	// sidebar, mpHeadIcon its icon's, and mpHeadHeight that row's height.
+	mpHeadSize   = theme.Length("kakel.machine.head.size", 20)
+	mpHeadIcon   = theme.Length("kakel.machine.head.icon", 28)
+	mpHeadHeight = theme.Length("kakel.machine.head.height", 64)
+	// mpFootPad is the room round the status switch under the sidebar.
+	mpFootPad = theme.Insets("kakel.machine.foot", geom.Uniform(10))
 )
 
 // mpItem is one row of a machine pane's sidebar: the machine, a
@@ -168,8 +175,11 @@ type machinePane struct {
 	// card is what the machine's card says of it, for the switch at the
 	// bottom of the sidebar, and overviewLine the line at the top of
 	// the machine's own page, kept up to date in place.
-	card         cardInfo
-	foot         *sideFoot
+	card cardInfo
+	// conn is the machine's status switch, at the bottom of the
+	// sidebar in foot, which folds away on this computer and a draft.
+	conn         *connSwitch
+	foot         *widget.Fold
 	overviewLine *widget.Label
 	st           app.State
 }
@@ -185,8 +195,10 @@ func newMachinePane(w *Window, id string) *machinePane {
 	}
 	list := widget.NewPad(widget.NewScroll(mp.list))
 	list.Padding = mpSidePad
-	mp.foot = &sideFoot{mp: mp, chip: newConnChip(w, func() (machines.ID, *cardInfo) { return mp.machine, &mp.card })}
-	mp.foot.chip.graph = true
+	mp.conn = newConnSwitch(w, func() (machines.ID, *cardInfo) { return mp.machine, &mp.card }, true)
+	foot := widget.NewPad(mp.conn.sw)
+	foot.Padding = mpFootPad
+	mp.foot = widget.NewFold(foot, false)
 	side := widget.Column(list, mp.foot).Grow(list, 1)
 	side.Cross = widget.CrossStretch
 	mp.overviewLine, mp.tunnelNow = faintLabel(""), widget.NewLabel("")
@@ -249,9 +261,12 @@ func (mp *machinePane) show(st app.State, u *gunim.UI) {
 			mp.rowAt = p.RowAt
 		}
 	}
-	if mp.machine != machines.Local {
+	remote := mp.machine != machines.Local && !mp.draft
+	if remote {
 		mp.card = mp.w.cardFor(mp.machine, mp.w.nameOf(mp.machine))
+		mp.conn.sync(time.Now())
 	}
+	mp.foot.SetOpen(remote, u)
 	mp.refresh(u)
 }
 
@@ -313,7 +328,7 @@ func (mp *machinePane) refresh(u *gunim.UI) {
 	case mp.sel == mpMachine:
 		page = mp.machineSide(u)
 	case mp.sel == mpLog:
-		page = mp.logSide()
+		page = mp.logSide(u)
 	case adding:
 		page = mp.addTunnelSide(mp.sel == mpAddSOCKS)
 	case it.tunnel != nil:
@@ -1073,11 +1088,17 @@ type mpRow struct {
 	star  *widget.IconButton
 	eye   *widget.IconButton
 	bin   *widget.IconButton
-	// plus is a heading's +, mark a tunnel's state and traffic, and
-	// badge the problems in a log not looked at yet.
+	// sub is who and where the machine is, under its name on the
+	// machine's own row.
+	sub   *widget.Label
+	words *widget.Flex
+	// plus is a heading's +, traffic a tunnel's last seconds, from
+	// rate and rated, and badge the problems in a log not read yet.
 	plus     *widget.IconButton
-	mark     *liveMark
-	badge    *countBadge
+	traffic  *widget.LiveGraph
+	rate     meter.Rate
+	rated    *meter.Meter
+	badge    *widget.Badge
 	heading  bool
 	selected bool
 	it       mpItem
@@ -1087,13 +1108,29 @@ type mpRow struct {
 }
 
 func newMPRow(mp *machinePane) *mpRow {
-	r := &mpRow{mp: mp, icon: widget.NewIcon(icon.SquareTerminal, ""), title: widget.NewLabel("")}
+	r := &mpRow{mp: mp, icon: widget.NewIcon(icon.SquareTerminal, ""), title: widget.NewLabel(""), sub: faintLabel("")}
+	r.sub.Size = smallText
+	r.words = widget.Column(r.title, r.sub)
 	r.star = widget.NewIconButton(icon.Star, "New terminals open it")
 	r.eye = widget.NewIconButton(icon.Eye, "Hide it")
 	r.bin = widget.NewIconButton(icon.Trash2, "Delete it")
 	r.plus = widget.NewIconButton(icon.Plus, "")
 	r.plus.OnClick = func(u *gunim.UI) gunim.Intent { r.mp.pick(r.it.plus, u); return nil }
-	r.mark, r.badge = &liveMark{}, newCountBadge()
+	r.traffic = widget.NewLiveGraph(500*time.Millisecond, 30)
+	r.traffic.Compact, r.traffic.Width, r.traffic.Ink = true, 30, widget.ToastSuccessInk
+	r.traffic.Sample = func() float64 {
+		if r.rated == nil {
+			return 0
+		}
+		r.rate.Sample(r.rated, time.Now())
+		past := r.rate.Past()
+		if len(past) == 0 {
+			return 0
+		}
+		return float64(past[len(past)-1])
+	}
+	r.badge = widget.NewBadge("")
+	r.badge.Ink = widget.DialogDangerInk
 	r.star.OnClick = func(*gunim.UI) gunim.Intent {
 		return app.SetDefaultProfile{Machine: r.mp.machine, ID: r.it.profile.id}
 	}
@@ -1125,9 +1162,9 @@ func (r *mpRow) set(it mpItem, picked bool, u *gunim.UI) {
 	old := r.inner
 	r.it, r.selected, r.heading = it, picked, it.heading
 	r.title.Text = it.title
-	r.title.Face = widget.Font
+	r.title.Face, r.title.Size = widget.Font, widget.TextSize
 	r.title.Color = widget.Ink
-	r.icon.Color = widget.Ink
+	r.icon.Color, r.icon.Size = widget.Ink, widget.IconSize
 	p := it.profile
 	kids := []gunim.Node{}
 	switch {
@@ -1138,22 +1175,41 @@ func (r *mpRow) set(it mpItem, picked bool, u *gunim.UI) {
 			r.plus.Tooltip = map[string]string{mpAddTunnel: "Add a tunnel", mpAddSOCKS: "Add a SOCKS proxy"}[it.plus]
 			kids = append(kids, widget.NewSpacer(), r.plus)
 		}
+	case it.key == mpMachine:
+		// The machine heads its pane: bigger, bold, with who and where
+		// it is under its name.
+		r.icon.Icon, r.icon.Size = it.icon, mpHeadIcon
+		r.title.Face, r.title.Size = widget.BoldFont, mpHeadSize
+		r.sub.Text = r.mp.headSub()
+		kids = append(kids, r.icon, r.words)
 	default:
 		r.icon.Icon = it.icon
 		kids = append(kids, r.icon, r.title)
 	}
-	if it.tunnel != nil {
-		if meterOf(r.mark.t) != meterOf(*it.tunnel) {
-			r.mark.rate = meter.Rate{}
-		}
-		r.mark.t = *it.tunnel
-		if !it.tunnel.live() && it.tunnel.open == nil {
+	if t := it.tunnel; t != nil {
+		// Its icon says how it is: green while it forwards, red once it
+		// stopped, faint while it is only saved.
+		switch {
+		case t.live():
+			r.icon.Color = widget.ToastSuccessInk
+		case t.open != nil:
+			r.icon.Color = widget.DialogDangerInk
+		default:
 			r.title.Color, r.icon.Color = look.Faint, look.Faint
 		}
-		kids = append(kids, widget.NewSpacer(), r.mark)
+		if m := meterOf(*t); m != r.rated {
+			// Another tunnel's traffic counts from nothing.
+			r.rate, r.rated = meter.Rate{}, m
+		}
+		r.traffic.SetRunning(t.live() && r.rated != nil)
+		kids = append(kids, widget.NewSpacer(), r.traffic)
 	}
 	if it.key == mpLog {
-		r.badge.n = unseenBad(r.mp.st.Logs[r.mp.machine], r.mp.w.logSeen[r.mp.machine])
+		n := unseenBad(r.mp.st.Logs[r.mp.machine], r.mp.w.logSeen[r.mp.machine])
+		r.badge.Hidden = n == 0
+		if n > 0 {
+			r.badge.Text = words.ManyOf(n, "problem", "problems")
+		}
 		kids = append(kids, widget.NewSpacer(), r.badge)
 	}
 	r.bin.Tooltip = "Delete it"
@@ -1217,6 +1273,18 @@ func (r *mpRow) set(it mpItem, picked bool, u *gunim.UI) {
 	}
 }
 
+// headSub is what the machine's own row says under its name: who and
+// where it is, as its card says.
+func (mp *machinePane) headSub() string {
+	switch {
+	case mp.draft:
+		return "Not saved yet"
+	case mp.machine == machines.Local:
+		return localWho()
+	}
+	return mp.card.sub
+}
+
 // fmtType names n's type, and which of the row's buttons it is.
 func fmtType(n gunim.Node) string {
 	switch n.(type) {
@@ -1226,9 +1294,9 @@ func fmtType(n gunim.Node) string {
 		return "I"
 	case *widget.Spacer:
 		return "S"
-	case *liveMark:
-		return "M"
-	case *countBadge:
+	case *widget.LiveGraph:
+		return "G"
+	case *widget.Badge:
 		return "B"
 	}
 	return fmt.Sprintf("%p", n)
@@ -1241,8 +1309,11 @@ func (r *mpRow) Children() []gunim.Node { return []gunim.Node{r.inner} }
 // heading with room above it.
 func (r *mpRow) Layout(c gunim.Constraints, f gunim.Frame, kids gunim.Children) geom.Size {
 	height, top := look.SidebarRow.Get(f.Theme)+4, float32(0)
-	if r.heading {
+	switch {
+	case r.heading:
 		top = 12
+	case r.it.key == mpMachine:
+		height = mpHeadHeight.Get(f.Theme)
 	}
 	for k := range kids.All {
 		if k.Node() != r.inner {
