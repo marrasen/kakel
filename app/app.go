@@ -21,6 +21,7 @@ import (
 
 	"github.com/marrasen/kakel/screen"
 
+	"github.com/marrasen/kakel/logs"
 	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/words"
 
@@ -130,6 +131,9 @@ type State struct {
 	// Accounts are the machines with a connection log, in the order
 	// their first connection began.
 	Accounts []machines.ID
+	// Logs are those machines' connection logs, for a machine's pane to
+	// read.
+	Logs map[machines.ID]*logs.Lines
 	// Secrets is what the vault holds, by name.
 	Secrets Secrets
 	// Share is the panes shared with an agent.
@@ -364,6 +368,10 @@ type Pane struct {
 	SplitFrom string
 	// Draft says a machine's pane holds a server not saved yet.
 	Draft bool
+	// Row is the row a machine's pane is asked to show, and RowAt
+	// counts the asks, so the same row asked for again is shown again.
+	Row   string
+	RowAt int
 }
 
 // Box is one part of an arrangement: a pane, or a split of two boxes.
@@ -1245,6 +1253,8 @@ func failedTitle(in gunim.Intent) string {
 		return "Couldn't remove the copy"
 	case ForgetTunnel:
 		return "Couldn't remove the tunnel"
+	case SaveTunnel:
+		return "Couldn't save the tunnel"
 	case SaveFavourite:
 		return "Couldn't save the favourite"
 	case RemoveFavourite:
@@ -1390,6 +1400,12 @@ func (a *app) publish() {
 	st.Tunnels = slices.Clone(a.st.Tunnels)
 	st.Jobs = slices.Clone(a.st.Jobs)
 	st.Accounts = slices.Clone(a.st.Accounts)
+	st.Logs = make(map[machines.ID]*logs.Lines, len(st.Accounts))
+	for _, m := range st.Accounts {
+		if l := a.machines.Get(m).Log; l != nil {
+			st.Logs[m] = l
+		}
+	}
 	st.Share.Panes = slices.Clone(a.st.Share.Panes)
 	st.Serving.Clients = slices.Clone(a.st.Serving.Clients)
 	st.Serving.Allowed = slices.Clone(a.st.Serving.Allowed)
@@ -1696,7 +1712,7 @@ func (a *app) handle(in gunim.Intent) {
 	case HideFound:
 		err = a.hideFound(in)
 	case ShowMachine:
-		err = a.showMachine(in.Machine)
+		err = a.showMachine(in.Machine, in.Row)
 	case AddServer:
 		a.addServer()
 	case DraftTyped:
@@ -1711,6 +1727,8 @@ func (a *app) handle(in gunim.Intent) {
 		err = a.forgetCommand(in.Saved)
 	case ForgetTunnel:
 		err = a.forgetTunnel(in.Saved)
+	case SaveTunnel:
+		err = a.saveTunnel(in.Saved)
 	case SaveFavourite:
 		err = a.saveFavourite(in)
 	case RemoveFavourite:

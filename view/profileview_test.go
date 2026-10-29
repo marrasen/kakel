@@ -13,6 +13,7 @@ import (
 	"github.com/marrasen/gunim/widget"
 
 	"github.com/marrasen/kakel/app"
+	"github.com/marrasen/kakel/logs"
 	"github.com/marrasen/kakel/look"
 	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/remote"
@@ -121,7 +122,7 @@ func TestAProfileIsAddedOnItsServer(t *testing.T) {
 		Profiles:     []settings.Profile{{ID: "profile:htop", HostID: "s1", Name: "htop", Command: []string{"htop"}}},
 		ServerShells: map[string]string{"s1": "profile:htop"}}
 	_, mp, _ := machinePaneOf(t, st, "s1", false)
-	if got, want := titlesOf(mp), []string{"prod", "Profiles", "htop", "Login Shell", "Add Profile", "Files", "Home", "Add Folder"}; !slices.Equal(got, want) {
+	if got, want := titlesOf(mp), []string{"prod", "Connection log", "Profiles", "htop", "Login Shell", "Add Profile", "Files", "Home", "Add Folder", "Tunnels", "SOCKS proxies"}; !slices.Equal(got, want) {
 		t.Fatalf("the rows are %q, want %q", got, want)
 	}
 	mp.pick(mpAdd, lastUI)
@@ -230,17 +231,17 @@ func TestAServersKeptThingsAreListedInItsPane(t *testing.T) {
 	got := titlesOf(mp)
 	// A command beyond prod, kept under prod's ID through it, is not
 	// prod's; a copy kept before IDs is, by its name.
-	want := []string{"Commands", "make test", "Copies", "Copy site.zip", "Copy old.txt", "Tunnels", "localhost:5432 → db:5432"}
+	want := []string{"Tunnels", "localhost:5432 → db:5432", "SOCKS proxies", "Commands", "make test", "Copies", "Copy site.zip", "Copy old.txt"}
 	if len(got) < len(want) || !slices.Equal(got[len(got)-len(want):], want) {
 		t.Fatalf("the rows are %q, want them to end %q", got, want)
 	}
 	for k, wantIn := range map[string]gunim.Intent{
-		mpSaved + fmt.Sprintf("cmd:%#v", cmd):    app.RunSavedCommand{Saved: cmd},
-		mpSaved + fmt.Sprintf("tunnel:%#v", tun): app.OpenSavedTunnel{Saved: tun},
+		mpSaved + fmt.Sprintf("cmd:%#v", cmd):  app.RunSavedCommand{Saved: cmd},
+		mpTunnelKept + fmt.Sprintf("%#v", tun): app.OpenSavedTunnel{Saved: tun},
 	} {
 		mp.pick(k, lastUI)
 		label := "Run"
-		if strings.Contains(k, "tunnel:") {
+		if strings.HasPrefix(k, mpTunnelKept) {
 			label = "Open"
 		}
 		if in := findButton(t, mp.right, label).OnClick(lastUI); !reflect.DeepEqual(in, wantIn) {
@@ -258,7 +259,7 @@ func TestAServersKeptThingsAreListedInItsPane(t *testing.T) {
 // from the pane it was typed in.
 func TestANewServersPaneSavesIntoItself(t *testing.T) {
 	_, mp, _ := machinePaneOf(t, app.State{Saved: []remote.Host{{ID: "w1", Name: "desk", Address: "desk.example", Window: true}}}, "w1", false)
-	if got := titlesOf(mp); !slices.Equal(got, []string{"desk", "Files", "Home", "Add Folder"}) {
+	if got := titlesOf(mp); !slices.Equal(got, []string{"desk", "Connection log", "Files", "Home", "Add Folder", "Tunnels", "SOCKS proxies"}) {
 		t.Fatalf("a window's rows are %q", got)
 	}
 	_, mp, _ = machinePaneOf(t, app.State{}, "", true)
@@ -367,5 +368,64 @@ func TestAServersProfilesOpenFromThePalette(t *testing.T) {
 	}
 	if in, ok := nextIntent(t).(app.OpenShellNamed); !ok || in.ID != "profile:tmux" {
 		t.Fatalf("tmux's line sent %#v", in)
+	}
+}
+
+// A server's pane lists the tunnels saved for it, by its ID or, saved
+// before servers had IDs, by its name; another server's are not there.
+// One open is listed once, as open, saved or not.
+func TestAServersTunnelsAreListedInItsPane(t *testing.T) {
+	byName := settings.SavedTunnel{Host: "prod", Kind: "remote", Listen: ":8080", Target: "127.0.0.1:80"}
+	open := settings.SavedTunnel{Host: "prod", HostID: "s1", Kind: "local", Listen: ":9000", Target: "db:5432"}
+	st := app.State{Saved: []remote.Host{{ID: "s1", Name: "prod", Address: "prod.example"}},
+		Machines: []machines.Info{{ID: "s1", Name: "prod"}},
+		SavedTunnels: []settings.SavedTunnel{byName, open,
+			{Host: "other", Kind: "local", Listen: ":9001", Target: "db:5432"},
+			{Host: "prod", HostID: "s1", Kind: "socks", Listen: ":1080"}},
+		Tunnels: []app.Tunnel{{ID: "t1", Machine: "s1", Live: true, As: open}}}
+	_, mp, _ := machinePaneOf(t, st, "s1", false)
+	got := titlesOf(mp)
+	want := []string{"Tunnels", ":9000 → db:5432", ":8080 → 127.0.0.1:80", "SOCKS proxies", ":1080"}
+	if !slices.Equal(got[len(got)-len(want):], want) {
+		t.Fatalf("the rows are %q, want them to end %q", got, want)
+	}
+	it, ok := mp.item(mpTunnelOpen + "t1")
+	if !ok || it.tunnel.saved == nil || !it.tunnel.live() {
+		t.Fatalf("the open tunnel's row is %+v", it)
+	}
+}
+
+// The + under Tunnels shows the fields, and Open opens the tunnel over
+// the machine, saved unless the tick is taken off.
+func TestATunnelIsAddedFromThePlus(t *testing.T) {
+	st := app.State{Saved: []remote.Host{{ID: "s1", Name: "prod", Address: "prod.example"}},
+		Machines: []machines.Info{{ID: "s1", Name: "prod"}}, Connected: []machines.ID{"s1"}}
+	_, mp, _ := machinePaneOf(t, st, "s1", false)
+	mp.pick(mpAddTunnel, lastUI)
+	fields := fieldsIn(mp.right)
+	fields[0].SetText("8080", lastUI)
+	fields[1].SetText("localhost:80", lastUI)
+	in := findButton(t, mp.right, "Open").OnClick(lastUI)
+	want := app.OpenTunnel{Machine: "s1", Tunnel: remote.Tunnel{Kind: remote.LocalForward, Listen: ":8080", Target: "localhost:80"}, Keep: true}
+	if !reflect.DeepEqual(in, want) {
+		t.Fatalf("Open sent %#v, want %#v", in, want)
+	}
+}
+
+// The log's row counts the problems in it not looked at yet; looking
+// clears the count.
+func TestTheLogsRowCountsProblemsNotSeen(t *testing.T) {
+	l := logs.New(0, nil)
+	_, _ = l.Write([]byte("09:00:00  \x1b[31mcould not connect\x1b[0m\n"))
+	st := app.State{Saved: []remote.Host{{ID: "s1", Name: "prod", Address: "prod.example"}},
+		Machines: []machines.Info{{ID: "s1", Name: "prod"}}, Logs: map[machines.ID]*logs.Lines{"s1": l}}
+	_, mp, again := machinePaneOf(t, st, "s1", false)
+	if n := rowOf(t, mp, mpLog).badge.n; n != 1 {
+		t.Fatalf("the log's row counts %d problems", n)
+	}
+	mp.pick(mpLog, lastUI)
+	again(st)
+	if n := rowOf(t, mp, mpLog).badge.n; n != 0 {
+		t.Fatalf("looked at, the log's row still counts %d problems", n)
 	}
 }

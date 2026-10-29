@@ -42,6 +42,9 @@ type Tunnel struct {
 	Pane string
 	// Meter counts what goes through it, for the sidebar to draw.
 	Meter *meter.Meter
+	// As is the tunnel as the saved list writes it, to tell a saved
+	// one that is open.
+	As settings.SavedTunnel
 }
 
 // Intents for tunnels.
@@ -59,6 +62,8 @@ type (
 	}
 	// OpenSavedTunnel opens a tunnel kept from before.
 	OpenSavedTunnel struct{ Saved settings.SavedTunnel }
+	// SaveTunnel puts a tunnel open now on the saved list.
+	SaveTunnel struct{ Saved settings.SavedTunnel }
 	// CloseTunnel closes a tunnel, or clears the row of one stopped.
 	CloseTunnel struct{ ID string }
 	// WatchTunnel starts or stops writing a tunnel's traffic into its
@@ -162,7 +167,8 @@ func (a *app) openTunnel(in OpenTunnel) error {
 	a.tunnels[id] = open
 	label := open.Label()
 	open.Say("opened " + label + " over " + a.machines.Name(in.Machine))
-	a.st.Tunnels = append(slices.Clone(a.st.Tunnels), Tunnel{ID: id, Machine: in.Machine, Label: label, Note: open.Note(), Live: true, Meter: open.Meter()})
+	as := tunnel.Saved(a.keptAs(in.Machine), a.serverID(in.Machine), t)
+	a.st.Tunnels = append(slices.Clone(a.st.Tunnels), Tunnel{ID: id, Machine: in.Machine, Label: label, Note: open.Note(), Live: true, Meter: open.Meter(), As: as})
 	a.worked("Tunnel open", label+", over "+a.machines.Name(in.Machine), "")
 	a.tickTunnels()
 	return nil
@@ -382,6 +388,16 @@ func (a *app) openSavedTunnel(saved settings.SavedTunnel) error {
 		return err
 	}
 	return a.openTunnel(OpenTunnel{Machine: machine, Tunnel: t, Keep: true, Saved: true})
+}
+
+// saveTunnel puts saved on the saved list.
+func (a *app) saveTunnel(saved settings.SavedTunnel) error {
+	if a.settings == nil {
+		return errors.New("the settings could not be read, so nothing can be saved")
+	}
+	err := a.settings.KeepTunnel(saved, mostSavedTunnels)
+	a.st.SavedTunnels = a.settings.Tunnels()
+	return err
 }
 
 // serverID is the ID of the saved server named machine, or "".

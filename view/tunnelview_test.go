@@ -3,7 +3,6 @@ package view
 import (
 	"slices"
 	"testing"
-	"time"
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/widget"
@@ -20,14 +19,7 @@ func TestATunnelThroughAWindowListensHere(t *testing.T) {
 	publish(app.State{Connected: []machines.ID{"srv"}, Windows: []app.RemoteWindow{{Name: "desk"}}})
 	directions := func(m machines.ID) bool {
 		t.Helper()
-		win.tunnelDialogOn(m, false, lastUI)
-		for range 3 {
-			lastWindow.Frame(time.Second / 60)
-		}
-		form, ok := formOf(win.dialog.Body), formOf(win.dialog.Body) != nil
-		if !ok {
-			t.Fatalf("the dialog's body is a %T", win.dialog.Body)
-		}
+		form, _, _, _, _ := win.tunnelFields(m, false)
 		return slices.ContainsFunc(form.Children(), func(c gunim.Node) bool {
 			d, ok := c.(*widget.Dropdown)
 			return ok && d.Label == "Direction"
@@ -40,6 +32,12 @@ func TestATunnelThroughAWindowListensHere(t *testing.T) {
 		if directions(m) {
 			t.Fatalf("through the window, %q offers a Direction", m)
 		}
+	}
+	// Tunnel… goes to the + of the machine's pane.
+	drain()
+	win.tunnelDialogOn("srv", true, lastUI)
+	if in := nextIntent(t); in != (app.ShowMachine{Machine: "srv", Row: app.MachineRowAddSOCKS}) {
+		t.Fatalf("SOCKS Proxy… sent %#v", in)
 	}
 }
 

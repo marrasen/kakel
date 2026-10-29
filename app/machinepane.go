@@ -23,7 +23,12 @@ const KindMachine = "machine"
 // Intents for the machine panes.
 type (
 	// ShowMachine goes to Machine's pane, opening it when it is closed.
-	ShowMachine struct{ Machine machines.ID }
+	ShowMachine struct {
+		Machine machines.ID
+		// Row is the row to show, as MachineRowLog; "" for the
+		// machine's own.
+		Row string
+	}
 	// AddServer opens a pane for a server not saved yet.
 	AddServer struct{}
 	// DraftTyped says whether anything has been typed into the draft
@@ -51,14 +56,24 @@ type (
 	}
 )
 
+// The rows of a machine's pane a ShowMachine can ask for.
+const (
+	MachineRowLog       = "log"
+	MachineRowAddTunnel = "add:tunnel"
+	MachineRowAddSOCKS  = "add:socks"
+)
+
 // showMachine goes to m's pane, opening it in the window in front when
-// it is closed.
-func (a *app) showMachine(m machines.ID) error {
+// it is closed, at row.
+func (a *app) showMachine(m machines.ID, row string) error {
 	if m != machines.Local {
-		if _, ok := a.machines.Saved(m); !ok {
-			return errors.New(a.machines.Name(m) + " is not a saved server")
+		_, saved := a.machines.Saved(m)
+		known := slices.ContainsFunc(a.machines.Infos(), func(i machines.Info) bool { return i.ID == m })
+		if !saved && !known {
+			return errors.New(a.machines.Name(m) + " is not connected, and not a saved server")
 		}
 	}
+	defer a.askRow(m, row)
 	if m == machines.Local {
 		// The drives here, for its Files, as they are now: off the
 		// program's goroutine, as a drive can be slow to answer.
@@ -116,6 +131,15 @@ func (a *app) machinePane(m machines.ID) string {
 		}
 	}
 	return ""
+}
+
+// askRow has m's pane show row.
+func (a *app) askRow(m machines.ID, row string) {
+	id := a.machinePane(m)
+	if id == "" || row == "" {
+		return
+	}
+	a.setPane(id, func(p *Pane) { p.Row, p.RowAt = row, p.RowAt+1 })
 }
 
 // machineTitle is what the pane of machine m is called.

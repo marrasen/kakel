@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -454,5 +455,38 @@ func TestDontAskAgainIsKeptAndRemovedWithTheServer(t *testing.T) {
 	a.handle(RemoveServer{ID: "srv"})
 	if len(a.st.NoDisconnectAsk) != 0 || len(set.NoDisconnectAsk()) != 0 {
 		t.Fatalf("removed, still kept as %v, in the file %v", a.st.NoDisconnectAsk, set.NoDisconnectAsk())
+	}
+}
+
+// A machine's pane opens at the row asked for, and goes there again when
+// asked again; a connection made by address, not saved, has one too.
+func TestAMachinesPaneOpensAtTheRowAsked(t *testing.T) {
+	a, answering := dialApp(t)
+	a.handle(ConnectTo{Target: "tester@" + a.st.Saved[0].Address + ":" + strconv.Itoa(a.st.Saved[0].Port), Only: true, InPlace: true})
+	var quick machines.ID
+	waitFor(t, a, "the connection", func() bool {
+		answering()
+		for _, i := range a.machines.Infos() {
+			if i.Quick && a.machines.Get(i.ID).Conn != nil {
+				quick = i.ID
+			}
+		}
+		return quick != ""
+	})
+	a.handle(ShowMachine{Machine: quick, Row: MachineRowLog})
+	id := a.machinePane(quick)
+	if id == "" {
+		t.Fatalf("no pane for the connection made by address; notices %+v", a.st.Notices)
+	}
+	at := func() Pane {
+		i := slices.IndexFunc(a.st.Panes, func(p Pane) bool { return p.ID == id })
+		return a.st.Panes[i]
+	}
+	if p := at(); p.Row != MachineRowLog || p.RowAt != 1 {
+		t.Fatalf("the pane was asked for %q, %d times", p.Row, p.RowAt)
+	}
+	a.handle(ShowMachine{Machine: quick, Row: MachineRowLog})
+	if p := at(); p.RowAt != 2 {
+		t.Fatalf("asked again, the pane counts %d asks", p.RowAt)
 	}
 }
