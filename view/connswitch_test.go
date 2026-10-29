@@ -162,3 +162,23 @@ func TestThePaletteHasNoBareConnectionLog(t *testing.T) {
 		t.Fatal("conn.log is still a command")
 	}
 }
+
+// Switching from the Machines pane to a machine's, the Machines pane is
+// gone at once: its cards fading out of the tree do not hold its
+// headings, its search field and its buttons on screen over the next.
+func TestTheMachinesPaneGoesAtOnceWithItsTab(t *testing.T) {
+	win, _, publish := windowStageOf(t, geom.Sz(1000, 700))
+	st := shotsState()
+	publish(st)
+	settle()
+	next := st
+	next.Panes = append(slices.Clone(st.Panes), app.Pane{ID: "mp", Title: "web", Kind: app.KindMachine, Machine: "s1"})
+	next.Stage, next.Focus = &app.Box{Pane: "mp"}, "mp"
+	publish(next)
+	for i := range 20 {
+		frames(1)
+		if b, ok := lastUI.Bounds(win.cards.grid.titles[0]); ok && b.Size().W > 0 && b.Size().H > 0 {
+			t.Fatalf("frame %d after the switch, THIS COMPUTER still stands at %v", i, b)
+		}
+	}
+}
