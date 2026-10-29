@@ -2,7 +2,6 @@ package view
 
 import (
 	"image/color"
-	"slices"
 	"time"
 
 	"github.com/marrasen/gunim"
@@ -47,6 +46,7 @@ type connChip struct {
 	// the switch, from rate.
 	graph bool
 	rate  meter.Rate
+	rated *meter.Meter
 	// acted is when it last did what a click does, so a second click,
 	// or a key held down, does not undo it at once.
 	acted time.Time
@@ -209,22 +209,33 @@ func (c *connChip) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, _ gunim
 	c.paintSwitch(p, f, geom.Rc(x, box.H/2-trackH/2, trackW, trackH), s)
 }
 
+// trafficFloor is the speed, in bytes a second, that fills the graph at
+// least: the pings an idle connection answers draw low, not full height.
+const trafficFloor = 4 << 10
+
 // paintTraffic draws the last seconds of what went over the connection
 // as bars in r, when anything has moved.
 func (c *connChip) paintTraffic(p *paint.Painter, f gunim.Frame, r geom.Rect, m *meter.Meter, ink color.NRGBA) {
-	f.RedrawAt(f.Now.Add(250 * time.Millisecond))
+	if c.rated != m {
+		// A new connection counts from nothing.
+		c.rate, c.rated = meter.Rate{}, m
+	}
+	// The speeds change once a second.
+	f.RedrawAt(f.Now.Add(500 * time.Millisecond))
 	c.rate.Sample(m, f.Now)
 	past := c.rate.Past()
-	if !slices.ContainsFunc(past, func(s uint64) bool { return s > 0 }) {
-		return
+	peak := uint64(trafficFloor)
+	for _, s := range past {
+		peak = max(peak, s)
 	}
-	const most = 8
-	bars := meter.Bars(past, most)
 	ink.A = 0xc0
 	w := r.Size().W / float32(meter.Samples)
-	for i, b := range bars {
-		h := r.Size().H * float32(b) / most
-		x := r.Max.X - float32(len(bars)-i)*w
+	for i, s := range past {
+		if s == 0 {
+			continue
+		}
+		h := max(r.Size().H*float32(s)/float32(peak), 1)
+		x := r.Max.X - float32(len(past)-i)*w
 		p.RRect(geom.Rc(x, r.Max.Y-h, max(w-1, 1), h), 0, paint.Solid(ink))
 	}
 }

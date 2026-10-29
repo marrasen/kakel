@@ -267,6 +267,11 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 		// before it is the window's way in, not one to dial through.
 		start, from = nil, behind+1
 	}
+	if from >= len(hops) {
+		// The machine is connected already, as the jump host of another:
+		// that connection, dialled with nothing counting it, is taken.
+		traffic = nil
+	}
 	// Held while the dial goes through it, so it does not close under
 	// the dial when what else went through it goes.
 	a.machines.Hold(start)
