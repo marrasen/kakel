@@ -7,6 +7,40 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
+## v0.12.2-beta.10
+
+### Added
+
+**Each machine has its own folders in Files.** A machine's pane has a
+This machine list: the folders kakel found there, its home and here
+its drives, and locations, folders saved for that machine alone. Add
+Location adds one. Drag them into order in the pane, or in the file
+manager's sidebar. The file manager lists them at the top of its
+sidebar under the name of the machine it shows, as PICARD, where it
+said This computer; the heading fades to the new name as a window
+moves to another machine.
+
+**Favourites are their own list.** A machine's pane lists its
+favourites under File favourites, with Add Favourite. The file manager
+lists them whichever machine it shows, and its sidebar still puts the
+favourites of every machine in order. Favourites saved before stay
+favourites.
+
+**Folders have a colour and an icon in a machine's pane.** Each
+folder's page, found folders' too, has the colour and icon pickers of
+the file manager's Edit favourite dialog. The rows show them.
+
+**Files have a default.** The star beside a folder in a machine's pane
+makes it where Files opens. A hidden folder is never the default: Files
+opens at the first one shown.
+
+### Changed
+
+**No more "Terminal".** A machine's buttons and menus say the name of
+the shell it opens, as tmux or PowerShell, and the name of its default
+folder for Files. A terminal here is named after its shell, not
+Terminal 4.
+
 ## v0.12.2-beta.9
 
 ### Added
