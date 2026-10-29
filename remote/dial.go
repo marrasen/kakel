@@ -303,3 +303,25 @@ func describeHostKeyError(err error, addr string) error {
 		"The host may have been rebuilt, or this may be a "+
 		"man-in-the-middle: %w", addr, ke)
 }
+
+// countedConn tells moved the bytes that go through a connection.
+type countedConn struct {
+	net.Conn
+	moved func(in, out int)
+}
+
+func (c countedConn) Read(p []byte) (int, error) {
+	n, err := c.Conn.Read(p)
+	if n > 0 {
+		c.moved(n, 0)
+	}
+	return n, err
+}
+
+func (c countedConn) Write(p []byte) (int, error) {
+	n, err := c.Conn.Write(p)
+	if n > 0 {
+		c.moved(0, n)
+	}
+	return n, err
+}

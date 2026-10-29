@@ -16,6 +16,7 @@ import (
 	"github.com/marrasen/kakel/app"
 	"github.com/marrasen/kakel/look"
 	"github.com/marrasen/kakel/machines"
+	"github.com/marrasen/kakel/meter"
 )
 
 // A card's status chip says how its machine's connection is, and holds
@@ -41,6 +42,11 @@ type connChip struct {
 	// where its words leave the buttons beside it too little room; short
 	// leaves out how long it has been connected.
 	compact, bare, short bool
+	// graph draws the last seconds of the connection's traffic before
+	// the switch, from rate.
+	graph bool
+	rate  meter.Rate
+	rated *meter.Meter
 	// acted is when it last did what a click does, so a second click,
 	// or a key held down, does not undo it at once.
 	acted time.Time
@@ -196,8 +202,42 @@ func (c *connChip) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, _ gunim
 	} else {
 		run := text.Default().Shape(s.words, smallText.Get(th))
 		run.Paint(p, geom.Pt(connPad, box.H/2-run.Height()/2), s.ink)
+		if _, card := c.of(); c.graph && card.traffic != nil && card.state == cardConnected {
+			c.paintTraffic(p, f, geom.Rc(x-10-graphRoom-6, box.H/2-6, graphRoom+6, 12), card.traffic, s.ink)
+		}
 	}
 	c.paintSwitch(p, f, geom.Rc(x, box.H/2-trackH/2, trackW, trackH), s)
+}
+
+// trafficFloor is the speed, in bytes a second, that fills the graph at
+// least: the pings an idle connection answers draw low, not full height.
+const trafficFloor = 4 << 10
+
+// paintTraffic draws the last seconds of what went over the connection
+// as bars in r, when anything has moved.
+func (c *connChip) paintTraffic(p *paint.Painter, f gunim.Frame, r geom.Rect, m *meter.Meter, ink color.NRGBA) {
+	if c.rated != m {
+		// A new connection counts from nothing.
+		c.rate, c.rated = meter.Rate{}, m
+	}
+	// The speeds change once a second.
+	f.RedrawAt(f.Now.Add(500 * time.Millisecond))
+	c.rate.Sample(m, f.Now)
+	past := c.rate.Past()
+	peak := uint64(trafficFloor)
+	for _, s := range past {
+		peak = max(peak, s)
+	}
+	ink.A = 0xc0
+	w := r.Size().W / float32(meter.Samples)
+	for i, s := range past {
+		if s == 0 {
+			continue
+		}
+		h := max(r.Size().H*float32(s)/float32(peak), 1)
+		x := r.Max.X - float32(len(past)-i)*w
+		p.RRect(geom.Rc(x, r.Max.Y-h, max(w-1, 1), h), 0, paint.Solid(ink))
+	}
 }
 
 // paintSwitch draws the switch in track: filled in the state's colour

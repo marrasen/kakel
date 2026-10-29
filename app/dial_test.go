@@ -490,3 +490,18 @@ func TestAMachinesPaneOpensAtTheRowAsked(t *testing.T) {
 		t.Fatalf("asked again, the pane counts %d asks", p.RowAt)
 	}
 }
+
+// A connection counts what goes over it, for its traffic to be drawn.
+func TestAConnectionCountsItsTraffic(t *testing.T) {
+	a, answering := dialApp(t)
+	a.handle(ConnectMachine{Machine: "srv"})
+	waitFor(t, a, "the connection", func() bool { answering(); return a.machines.Get("srv").Conn != nil })
+	i := slices.IndexFunc(a.machines.Infos(), func(i machines.Info) bool { return i.ID == "srv" })
+	m := a.machines.Infos()[i].Traffic
+	if m == nil {
+		t.Fatal("nothing counts the connection's traffic")
+	}
+	if in, out := m.Totals(); in == 0 || out == 0 {
+		t.Fatalf("signing in moved %d bytes in and %d out", in, out)
+	}
+}

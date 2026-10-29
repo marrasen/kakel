@@ -186,6 +186,7 @@ func newMachinePane(w *Window, id string) *machinePane {
 	list := widget.NewPad(widget.NewScroll(mp.list))
 	list.Padding = mpSidePad
 	mp.foot = &sideFoot{mp: mp, chip: newConnChip(w, func() (machines.ID, *cardInfo) { return mp.machine, &mp.card })}
+	mp.foot.chip.graph = true
 	side := widget.Column(list, mp.foot).Grow(list, 1)
 	side.Cross = widget.CrossStretch
 	mp.overviewLine, mp.tunnelNow = faintLabel(""), widget.NewLabel("")
