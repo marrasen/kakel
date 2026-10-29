@@ -148,3 +148,17 @@ func TestARowAskedForIsShownOnce(t *testing.T) {
 		}
 	}
 }
+
+// The palette has no Connection Log of its own, which had nothing to
+// show on this computer: a server's log is its pane's log row.
+func TestThePaletteHasNoBareConnectionLog(t *testing.T) {
+	win, _ := chipStage(t, shotsState())
+	for i, it := range win.palette.Items {
+		if it.Title == "Connection Log" {
+			t.Fatalf("the palette offers %q, as %q", it.Title, win.paletteIDs[i])
+		}
+	}
+	if win.run("conn.log", lastUI) {
+		t.Fatal("conn.log is still a command")
+	}
+}
