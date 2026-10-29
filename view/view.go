@@ -294,9 +294,11 @@ type Window struct {
 	// panes are the panes as last published, sideOrder them as the
 	// sidebar lists them, and sw the switcher while it is open.
 	panes []app.Pane
-	// tunnels are the tunnels open and stopped, and noDisconnectAsk the
-	// machines whose Disconnect does not ask first.
+	// tunnels are the tunnels open and stopped, fileJobs the copies,
+	// moves and deletes, and noDisconnectAsk the machines whose
+	// Disconnect does not ask first.
 	tunnels         []app.Tunnel
+	fileJobs        []app.Job
 	noDisconnectAsk []machines.ID
 	sideOrder       []string
 	sw              *switcher
@@ -592,7 +594,7 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 		case !ok:
 			w.toast(widget.Toast{Title: "No row selected", Body: "Close Selected Row works on the row the Machines pane has the keyboard on."}, u)
 		case row.closes == nil:
-			w.toast(widget.Toast{Title: "That row cannot be closed", Body: "A machine's heading goes with Disconnect, from its menu."}, u)
+			w.toast(widget.Toast{Title: "That row cannot be closed", Body: "Disconnect the machine from the status button on its card."}, u)
 		default:
 			u.Send(row, row.closes)
 		}
@@ -2072,7 +2074,7 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 		w.profiles, w.serverShells, w.found, w.foundShells, w.drives = st.Profiles, st.ServerShells, st.Found, st.FoundShells, st.Drives
 		w.servers(w.saved)
 	}
-	w.tunnels, w.noDisconnectAsk = st.Tunnels, st.NoDisconnectAsk
+	w.tunnels, w.fileJobs, w.noDisconnectAsk = st.Tunnels, st.Jobs, st.NoDisconnectAsk
 	// A new terminal and Files are named for what they open, which
 	// follows the pane in front.
 	if st.HereMachine != w.hereMachine || st.HereShell != w.hereShell {

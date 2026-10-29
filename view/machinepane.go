@@ -264,6 +264,7 @@ func (mp *machinePane) signature() string {
 	var b strings.Builder
 	if h, ok := mp.host(); ok && mp.sel == mpMachine {
 		fmt.Fprintf(&b, "%+v", h)
+		b.WriteString(boolWord(slices.Contains(mp.st.NoDisconnectAsk, mp.machine)))
 	}
 	if it, ok := mp.item(mp.sel); ok {
 		p := it.profile
@@ -579,7 +580,17 @@ func (mp *machinePane) machineSide(u *gunim.UI) gunim.Node {
 		remove.OnClick = func(u *gunim.UI) gunim.Intent { mp.w.confirmRemove(mp.machine, u); return nil }
 		actions = append(actions, remove)
 	}
-	col := widget.Column(heading(title), widget.NewCard(f.form), problem, buttons(actions...))
+	parts := []gunim.Node{heading(title), widget.NewCard(f.form), problem, buttons(actions...)}
+	if saved {
+		// Saved at once, as the question's own tick is.
+		ask := widget.NewCheckbox("Ask before disconnecting while something is open")
+		ask.SetChecked(!slices.Contains(mp.st.NoDisconnectAsk, mp.machine), nil)
+		ask.OnChange = func(on bool, _ *gunim.UI) gunim.Intent {
+			return app.SetDisconnectAsk{Machine: mp.machine, Ask: on}
+		}
+		parts = slices.Insert(parts, 2, gunim.Node(ask))
+	}
+	col := widget.Column(parts...)
 	col.Cross, col.Gap = widget.CrossStretch, mpGap
 	return widget.NewSized(col, 640, 0)
 }

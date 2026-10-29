@@ -425,7 +425,7 @@ func TestAServersPanesAreNamedAfterIt(t *testing.T) {
 // pane of its log while it connects, and no terminal once it has.
 func TestConnectingInPlaceOpensNothing(t *testing.T) {
 	a, answering := dialApp(t)
-	a.handle(ConnectTo{Server: "srv", Only: true, InPlace: true})
+	a.handle(ConnectMachine{Machine: "srv"})
 	waitFor(t, a, "the connection", func() bool {
 		answering()
 		if len(a.st.Panes) != 0 {

@@ -66,6 +66,9 @@ type (
 		NoAsk bool
 		// Only connects, and opens nothing on it.
 		Only bool
+		// InPlace opens no pane of the log while it connects, as
+		// ConnectTo.InPlace.
+		InPlace bool
 	}
 	// DisconnectWindow lets go of a window, by its ID, closing the
 	// panes on it.
@@ -213,7 +216,7 @@ func (a *app) reachWindow(in ConnectWindow, quiet bool, then func(error)) error 
 	shown := relay.Shown(addr)
 	logLine(acct, "", "connecting to the window at "+shown)
 	logPane := ""
-	if !quiet {
+	if !quiet && !in.InPlace {
 		logPane = a.watchDial(name)
 	}
 	began := time.Now()
@@ -261,7 +264,13 @@ func (a *app) reachWindow(in ConnectWindow, quiet bool, then func(error)) error 
 					// failure leaves the log up, saying why.
 					a.closePane(logPane)
 				}
-				if !quiet && !errors.Is(err, errDeclined) && !errors.Is(err, context.Canceled) {
+				switch {
+				case quiet || errors.Is(err, errDeclined) || errors.Is(err, context.Canceled):
+				case in.InPlace:
+					a.post(Notice{Kind: NoticeFailed, Title: "Couldn't connect to the window at " + shown, Body: err.Error(),
+						Action: "Show Log", On: ShowLog{Machine: name}})
+					a.problem()
+				default:
 					a.failed("Couldn't connect to the window at "+shown, err.Error())
 					a.problem()
 				}

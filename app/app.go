@@ -1235,8 +1235,10 @@ func failedTitle(in gunim.Intent) string {
 		return "Couldn't open the machine's settings"
 	case SetDefaultProfile:
 		return "Couldn't make it the default"
+	case ConnectMachine:
+		return "Couldn't connect"
 	case SetDisconnectAsk:
-		return "Couldn't keep whether to ask before disconnecting"
+		return "Couldn't save whether to ask before disconnecting"
 	case ForgetCommand:
 		return "Couldn't remove the command"
 	case ForgetCopy:
@@ -1703,6 +1705,8 @@ func (a *app) handle(in gunim.Intent) {
 		err = a.setDefaultProfile(in)
 	case SetDisconnectAsk:
 		err = a.setDisconnectAsk(in)
+	case ConnectMachine:
+		err = a.connectMachine(in.Machine)
 	case ForgetCommand:
 		err = a.forgetCommand(in.Saved)
 	case ForgetTunnel:

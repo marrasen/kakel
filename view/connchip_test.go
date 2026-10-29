@@ -47,8 +47,8 @@ func TestTheChipConnectsWithoutOpeningAnything(t *testing.T) {
 		m    machines.ID
 		want any
 	}{
-		{"s5", app.ConnectTo{Server: "s5", Only: true, InPlace: true}},
-		{"s4", app.ConnectTo{Server: "s4", Only: true, InPlace: true}},
+		{"s5", app.ConnectMachine{Machine: "s5"}},
+		{"s4", app.ConnectMachine{Machine: "s4"}},
 		{"s3", app.Disconnect{Machine: "s3"}},
 	} {
 		click(c.m)
@@ -73,7 +73,7 @@ func TestDisconnectAsksWhileSomethingIsOpen(t *testing.T) {
 	}
 	body := d.Body.(*widget.Flex).Children()
 	said := body[0].(*widget.Label).Text
-	for _, want := range []string{"closes 2 terminals and 1 tunnel on web", "pi is reached through web, so it disconnects too, with 1 terminal."} {
+	for _, want := range []string{"This closes 2 terminals and 1 tunnel on web, and disconnects pi (1 terminal), which uses web as a jump host."} {
 		if !strings.Contains(said, want) {
 			t.Fatalf("the question says %q, without %q", said, want)
 		}
@@ -106,8 +106,8 @@ func TestDisconnectGoesAtOnceWhenNotToAsk(t *testing.T) {
 	}
 }
 
-// The machine's menu keeps what opens there: its settings, its log,
-// Disconnect and Remove are on the card and in its pane.
+// The machine's menu keeps what opens there: its settings and
+// Disconnect are on the card, and Remove in its settings.
 func TestTheMachineMenuLeavesTheCardsButtonsOut(t *testing.T) {
 	win, _ := chipStage(t, shotsState())
 	head := win.cards.cards["s1"].head

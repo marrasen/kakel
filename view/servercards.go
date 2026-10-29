@@ -665,13 +665,14 @@ const (
 	cardBadge      = 36
 )
 
-// The header's buttons, in r.chips: Terminal and Files along the bottom,
-// the gear and ⋯ at the top right.
+// The header's buttons, in r.chips, in the order the keyboard reaches
+// them: the gear and ⋯ at the top right, Terminal and Files along the
+// bottom. The status chip comes after them.
 const (
-	chipTerminal = iota
-	chipFiles
-	chipGear
+	chipGear = iota
 	chipMore
+	chipTerminal
+	chipFiles
 )
 
 // makeButtons gives a header its buttons, once: Terminal and Files,
@@ -693,7 +694,7 @@ func (r *sideRow) makeButtons() {
 	files.OnClick = func(u *gunim.UI) gunim.Intent { u.Send(r, app.OpenFilesOn{Machine: r.machine}); return nil }
 	gear.OnClick = func(u *gunim.UI) gunim.Intent { u.Send(r, app.ShowMachine{Machine: r.machine}); return nil }
 	more.OnClick = func(u *gunim.UI) gunim.Intent { r.w.openMachineMenu(r, u); return nil }
-	r.chips = []*widget.Button{term, files, gear, more}
+	r.chips = []*widget.Button{gear, more, term, files}
 	r.conn = newConnChip(r)
 }
 
@@ -701,7 +702,8 @@ func (r *sideRow) makeButtons() {
 // saved kakel window not connected has nothing more than Files, and
 // only a saved server and this computer have settings.
 func (r *sideRow) buttonsShown() [4]bool {
-	shown := [4]bool{true, true, false, true}
+	var shown [4]bool
+	shown[chipTerminal], shown[chipFiles], shown[chipMore] = true, true, true
 	m := r.machine
 	if m == machines.Local {
 		shown[chipGear] = true
@@ -719,9 +721,9 @@ func (r *sideRow) buttonsShown() [4]bool {
 	return shown
 }
 
-// chipWords are the bottom buttons' words, which a narrow card says as
-// the pointer rests on them instead.
-var chipWords = []string{"Terminal", "Files"}
+// chipWords are the bottom buttons' words, by button, which a narrow
+// card says as the pointer rests on them instead.
+var chipWords = map[int]string{chipTerminal: "Terminal", chipFiles: "Files"}
 
 // layoutCard lays a header out. On a card: the badge and the name, with
 // the gear and ⋯ at the top right; who and where under the name; along
@@ -821,16 +823,27 @@ func (r *sideRow) layoutCard(c gunim.Constraints, f gunim.Frame, kids gunim.Chil
 			ts, fs = layout(chipTerminal), layout(chipFiles)
 			return ts.W+fs.W+2*cardChipGap+cs.W <= room
 		}
+		// Short of room, the chip says less first: how long it has
+		// been connected, then its words, leaving the switch in the
+		// state's colour. Then the buttons lose theirs.
 		words(true)
+		r.conn.bare = false
 		if !fit() {
 			r.conn.short = true
 			if !fit() {
-				words(false)
-				fit()
+				r.conn.bare = true
+				if !fit() {
+					words(false)
+					fit()
+				}
 			}
 		}
 		x = cardPad
-		for i, s := range []geom.Size{ts, fs} {
+		for _, b := range []struct {
+			i int
+			s geom.Size
+		}{{chipTerminal, ts}, {chipFiles, fs}} {
+			i, s := b.i, b.s
 			if s.W == 0 {
 				continue
 			}
@@ -925,21 +938,21 @@ func pillOf(s cardState, th *theme.Live) (string, color.NRGBA) {
 func pillFor(c cardInfo, now time.Time, th *theme.Live) (string, color.NRGBA) {
 	switch c.state {
 	case cardLocal:
-		return "Local", widget.ToastSuccessInk.Get(th)
+		return "local", widget.ToastSuccessInk.Get(th)
 	case cardConnected:
 		if c.silent {
-			return "Not answering", widget.ToastWarningInk.Get(th)
+			return "not answering", widget.ToastWarningInk.Get(th)
 		}
 		if c.rtt > 0 && !c.since.IsZero() {
 			return roundTrip(c.rtt) + " · " + connectedFor(now.Sub(c.since)), widget.ToastSuccessInk.Get(th)
 		}
-		return "Connected", widget.ToastSuccessInk.Get(th)
+		return "connected", widget.ToastSuccessInk.Get(th)
 	case cardDialing:
-		return "Connecting…", widget.ToastWarningInk.Get(th)
+		return "connecting", widget.ToastWarningInk.Get(th)
 	case cardLost:
-		return "Lost", widget.DialogDangerInk.Get(th)
+		return "connection lost", widget.DialogDangerInk.Get(th)
 	}
-	return "Not connected", look.Faint.Get(th)
+	return "not connected", look.Faint.Get(th)
 }
 
 // roundTrip says a ping's round trip: in milliseconds, or seconds once
@@ -1140,8 +1153,11 @@ func (s *serverCards) first() gunim.Node {
 // menuAnchor is where a heading's menu opens from: its ⋯ on a card, its
 // plus otherwise.
 func (r *sideRow) menuAnchor(box geom.Size, _ *theme.Live) geom.Rect {
-	if r.card != nil {
+	if r.card != nil && len(r.chipRects) == len(r.chips) {
 		// Its ⋯, or the last button shown where it has none.
+		if !r.chipRects[chipMore].Empty() {
+			return r.chipRects[chipMore]
+		}
 		for i := len(r.chipRects) - 1; i >= 0; i-- {
 			if !r.chipRects[i].Empty() {
 				return r.chipRects[i]

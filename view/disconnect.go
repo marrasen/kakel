@@ -9,6 +9,7 @@ import (
 
 	"github.com/marrasen/kakel/app"
 	"github.com/marrasen/kakel/machines"
+	"github.com/marrasen/kakel/remote"
 	"github.com/marrasen/kakel/words"
 )
 
@@ -19,11 +20,11 @@ import (
 
 // closing is what disconnecting a machine closes.
 type closing struct {
-	terminals, files, other, tunnels int
-	// through are the machines reached through it, which go with it,
-	// and beyond what is open on them.
+	terminals, files, other, tunnels, copies int
+	// through are the machines that use it as a jump host, which
+	// disconnect with it, and beyond what is open on each.
 	through []machines.ID
-	beyond  *closing
+	beyond  map[machines.ID]*closing
 }
 
 // empty reports whether nothing is open.
@@ -45,7 +46,7 @@ func paneOn(p app.Pane, m machines.ID) bool {
 func (w *Window) closingOn(m machines.ID) closing {
 	var c closing
 	w.countOn(m, &c)
-	c.beyond = &closing{}
+	c.beyond = map[machines.ID]*closing{}
 	// A server saved as reached through m, connected now, goes with it,
 	// and so on along the chain.
 	seen := map[machines.ID]bool{m: true}
@@ -60,7 +61,8 @@ func (w *Window) closingOn(m machines.ID) closing {
 			}
 			seen[id] = true
 			c.through = append(c.through, id)
-			w.countOn(id, c.beyond)
+			c.beyond[id] = &closing{}
+			w.countOn(id, c.beyond[id])
 			queue = append(queue, id)
 		}
 	}
@@ -96,6 +98,16 @@ func (w *Window) countOn(m machines.ID, c *closing) {
 			c.tunnels++
 		}
 	}
+	for _, j := range w.fileJobs {
+		if !j.Done && (j.From.On == m || j.To.On == m) {
+			c.copies++
+		}
+	}
+}
+
+// isSaved reports whether m is a saved server or window.
+func (w *Window) isSaved(m machines.ID) bool {
+	return slices.ContainsFunc(w.saved, func(h remote.Host) bool { return machines.ID(h.ID) == m })
 }
 
 // isConnected reports whether m is connected, or a window reached.
@@ -119,37 +131,40 @@ func (c closing) open() string {
 	if c.tunnels > 0 {
 		parts = append(parts, words.Count(c.tunnels, "tunnel"))
 	}
+	if c.copies > 0 {
+		parts = append(parts, words.ManyOf(c.copies, "running copy", "running copies"))
+	}
 	return joinAnd(parts)
 }
 
-// says is what closing c on the machine called name closes, as
-// sentences, or "" when nothing does.
+// says is what closing c on the machine called name closes, as one
+// sentence, or "" when nothing does.
 func (c closing) says(name string, nameOf func(machines.ID) string) string {
-	said := ""
+	var parts []string
 	if open := c.open(); open != "" {
-		said = "This closes " + open + " on " + name + "."
+		parts = append(parts, "closes "+open+" on "+name)
 	}
 	if len(c.through) > 0 {
 		var names []string
 		for _, id := range c.through {
-			names = append(names, nameOf(id))
-		}
-		if said != "" {
-			said += " "
-		}
-		if len(names) == 1 {
-			said += names[0] + " is reached through " + name + ", so it disconnects too"
-		} else {
-			said += joinAnd(names) + " are reached through " + name + ", so they disconnect too"
-		}
-		if c.beyond != nil {
-			if open := c.beyond.open(); open != "" {
-				said += ", with " + open
+			called := nameOf(id)
+			if b := c.beyond[id]; b != nil {
+				if open := b.open(); open != "" {
+					called += " (" + open + ")"
+				}
 			}
+			names = append(names, called)
 		}
-		said += "."
+		uses := "uses"
+		if len(names) > 1 {
+			uses = "use"
+		}
+		parts = append(parts, "disconnects "+joinAnd(names)+", which "+uses+" "+name+" as a jump host")
 	}
-	return said
+	if len(parts) == 0 {
+		return ""
+	}
+	return "This " + strings.Join(parts, ", and ") + "."
 }
 
 // joinAnd joins parts as a list in a sentence: "a, b and c".
@@ -187,10 +202,17 @@ func (w *Window) disconnect(m machines.ID, u *gunim.UI) {
 	}
 	name := w.nameOf(m)
 	d := widget.NewDialog("Disconnect " + name + "?")
+	said := widget.NewLabel(c.says(name, w.nameOf))
 	stop := widget.NewCheckbox("Don't ask again for " + name)
-	body := widget.Column(widget.NewLabel(c.says(name, w.nameOf)), stop)
-	body.Cross, body.Gap = widget.CrossStretch, mpGap
-	d.Body = body
+	// Saved under the machine's ID: a quick connection's is new each
+	// time, so it is not offered there.
+	if w.isSaved(m) {
+		body := widget.Column(said, stop)
+		body.Cross, body.Gap = widget.CrossStretch, mpGap
+		d.Body = body
+	} else {
+		d.Body = said
+	}
 	d.SetButtons("Disconnect", "Cancel")
 	d.Danger = true
 	d.OnAccept = func(u *gunim.UI) gunim.Intent {
@@ -216,16 +238,4 @@ func (w *Window) confirmFarDisconnect(m machines.ID, u *gunim.UI) {
 	d.OnAccept = widget.Sends(app.Disconnect{Machine: m})
 	d.OnDismiss = widget.Sends(app.DialogClosed{})
 	w.openDialog(d, u)
-}
-
-// connectInPlace is the intent that connects to m and opens nothing,
-// its card or pane saying how it goes: a saved server by its ID, one
-// typed in by where it was.
-func (w *Window) connectInPlace(m machines.ID) gunim.Intent {
-	for _, info := range w.machineList {
-		if info.ID == m && info.Quick {
-			return app.ConnectTo{Target: info.Target, As: m, Only: true, InPlace: true}
-		}
-	}
-	return app.ConnectTo{Server: m, Only: true, InPlace: true}
 }
