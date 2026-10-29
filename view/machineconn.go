@@ -143,6 +143,7 @@ func (mp *machinePane) tunnelSide(t mpTunnelOf) gunim.Node {
 		save.Kind = widget.ButtonPrimary
 		save.OnClick = widget.Sends(app.SaveTunnel{Saved: as})
 		parts = append(parts, widget.NewCard(form), buttons(append([]gunim.Node{save}, actions...)...))
+		parts = append(parts, mp.tunnelTraffic(t)...)
 		col := widget.Column(append([]gunim.Node{heading(t.title())}, parts...)...)
 		col.Cross, col.Gap = widget.CrossStretch, mpGap
 		return widget.NewSized(col, 640, 0)
@@ -185,9 +186,55 @@ func (mp *machinePane) tunnelSide(t mpTunnelOf) gunim.Node {
 	remove.OnClick = func(u *gunim.UI) gunim.Intent { mp.confirmForget(mpSavedOf{tunnel: &saved}, u); return nil }
 	actions = append([]gunim.Node{save}, append(actions, remove)...)
 	parts = append(parts, widget.NewCard(form), problem, buttons(actions...))
+	parts = append(parts, mp.tunnelTraffic(t)...)
 	col := widget.Column(append([]gunim.Node{heading(t.title())}, parts...)...)
 	col.Cross, col.Gap = widget.CrossStretch, mpGap
 	return widget.NewSized(col, 640, 0)
+}
+
+// tunnelTraffic is the part of an open tunnel's page that tells what it
+// did and, while watched, what went through it: a switch that watches,
+// and its account, following new lines. None for one not open.
+func (mp *machinePane) tunnelTraffic(t mpTunnelOf) []gunim.Node {
+	mp.tunnelLog = nil
+	if t.open == nil || t.open.Account == nil {
+		return nil
+	}
+	parts := []gunim.Node{sectionHeading("Traffic")}
+	if t.live() {
+		watch := widget.NewSwitch("Watch the traffic")
+		watch.Tooltip = "Write down what goes through it, both ways, as it goes"
+		watch.SetChecked(t.open.Watching, nil)
+		id := t.open.ID
+		watch.OnChange = func(on bool, _ *gunim.UI) gunim.Intent { return app.WatchTunnel{ID: id, On: on} }
+		parts = append(parts, watch)
+	}
+	mp.tunnelLog, mp.tunnelLogOf, mp.tunnelLogShown = widget.NewLogView(), t.open.Account, -1
+	mp.showTunnelLog(nil)
+	return append(parts, mp.tunnelLog)
+}
+
+// showTunnelLog gives the tunnel page's log what the tunnel has written,
+// when it has written more than the page shows.
+func (mp *machinePane) showTunnelLog(u *gunim.UI) {
+	l := mp.tunnelLogOf
+	if mp.tunnelLog == nil || l == nil || l.End() == mp.tunnelLogShown {
+		return
+	}
+	lines, end := l.Since(0, logs.DefaultKeep)
+	out := make([]widget.LogLine, len(lines))
+	for i, line := range lines {
+		out[i] = widget.LogLine{Text: line}
+		// What went out, and what came back, each in a colour.
+		switch {
+		case strings.HasPrefix(line, "→ "):
+			out[i].Ink = widget.Accent
+		case strings.HasPrefix(line, "← "):
+			out[i].Ink = widget.ToastSuccessInk
+		}
+	}
+	mp.tunnelLog.SetLines(out, end, u)
+	mp.tunnelLogShown = end
 }
 
 // trafficGraph is a graph of what goes through a tunnel each second,

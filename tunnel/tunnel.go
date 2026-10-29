@@ -205,10 +205,14 @@ func (t *trafficTap) stop() { t.watch(nil) }
 // the streams' goroutines.
 func (t *trafficTap) saw(out bool, p []byte) {
 	t.mu.Lock()
-	to := t.to
-	t.mu.Unlock()
-	if to != nil {
-		_, _ = to.Write(chunkLines(out, p))
+	defer t.mu.Unlock()
+	if t.to == nil {
+		return
+	}
+	// A line each, so a view of the account shows a line a row; under
+	// the lock, so one stream's chunk is not cut by another's.
+	for _, line := range strings.SplitAfter(strings.TrimSuffix(string(chunkLines(out, p)), "\n"), "\n") {
+		_, _ = t.to.Write([]byte(strings.TrimSuffix(line, "\n") + "\n"))
 	}
 }
 
