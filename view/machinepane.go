@@ -144,7 +144,7 @@ type machinePane struct {
 	machine machines.ID
 	draft   bool
 	list    *widget.List
-	right   *swapNode
+	right   *widget.Pages
 	root    gunim.Node
 	items   []mpItem
 	sel     string
@@ -175,7 +175,7 @@ type machinePane struct {
 }
 
 func newMachinePane(w *Window, id string) *machinePane {
-	mp := &machinePane{w: w, id: id, list: widget.NewList(), right: &swapNode{}, sel: mpMachine}
+	mp := &machinePane{w: w, id: id, list: widget.NewList(), right: widget.NewPages(&emptyNode{}), sel: mpMachine}
 	mp.list.ClickOnce = true
 	mp.list.OnActivate = func(k widget.Key, u *gunim.UI) gunim.Intent {
 		if it, ok := mp.item(string(k)); ok && !it.heading {
@@ -190,7 +190,6 @@ func newMachinePane(w *Window, id string) *machinePane {
 	side := widget.Column(list, mp.foot).Grow(list, 1)
 	side.Cross = widget.CrossStretch
 	mp.overviewLine, mp.tunnelNow = faintLabel(""), widget.NewLabel("")
-	mp.right.child = &emptyNode{}
 	rightPad := widget.NewPad(widget.NewScroll(mp.right))
 	rightPad.Padding = mpPad
 	row := widget.Row(widget.NewSized(side, 280, 0), &divider{width: 1}, rightPad).Grow(rightPad, 1)
@@ -286,6 +285,11 @@ func (mp *machinePane) refresh(u *gunim.UI) {
 	if it, ok := mp.item(mp.sel); ok && it.tunnel != nil {
 		mp.tunnelNow.Text = it.tunnel.now()
 	}
+	// The list draws the picked row's fill, gliding to the next picked.
+	mp.list.Selected = widget.Key(mp.sel)
+	if adding {
+		mp.list.Selected = ""
+	}
 	widget.Sync(mp.list, u, mp.items, func(it mpItem) widget.Key { return widget.Key(it.key) },
 		func(it mpItem) *mpRow { r := newMPRow(mp); r.set(it, mp.sel == it.key, nil); return r },
 		func(r *mpRow, it mpItem, u *gunim.UI) { r.set(it, mp.sel == it.key, u) })
@@ -293,28 +297,51 @@ func (mp *machinePane) refresh(u *gunim.UI) {
 	if of == mp.shownOf && mp.shown == mp.sel {
 		return
 	}
+	// The page comes from the side its row lies on, from the one shown
+	// before; the same row's page built again fades in where it is.
+	from := geom.Point{}
+	if was, now := mp.rowIndex(mp.shown), mp.rowIndex(mp.sel); mp.shown != mp.sel && was >= 0 && now >= 0 {
+		from.Y = 1
+		if now < was {
+			from.Y = -1
+		}
+	}
 	mp.shown, mp.shownOf = mp.sel, of
+	var page gunim.Node
 	it, _ := mp.item(mp.sel)
 	switch {
 	case mp.sel == mpMachine:
-		mp.right.set(mp.machineSide(u), u)
+		page = mp.machineSide(u)
 	case mp.sel == mpLog:
-		mp.right.set(mp.logSide(), u)
+		page = mp.logSide()
 	case adding:
-		mp.right.set(mp.addTunnelSide(mp.sel == mpAddSOCKS), u)
+		page = mp.addTunnelSide(mp.sel == mpAddSOCKS)
 	case it.tunnel != nil:
-		mp.right.set(mp.tunnelSide(*it.tunnel), u)
+		page = mp.tunnelSide(*it.tunnel)
 	case mp.sel == mpAdd:
-		mp.right.set(mp.profileSide(mpProfileOf{}, true, u), u)
+		page = mp.profileSide(mpProfileOf{}, true, u)
 	case mp.sel == mpAddDir:
-		mp.right.set(mp.folderSide(mpFolderOf{}, true), u)
+		page = mp.folderSide(mpFolderOf{}, true)
 	case strings.HasPrefix(mp.sel, mpFolder):
-		mp.right.set(mp.folderSide(it.folder, false), u)
+		page = mp.folderSide(it.folder, false)
 	case it.saved != nil:
-		mp.right.set(mp.savedSide(*it.saved), u)
+		page = mp.savedSide(*it.saved)
 	default:
-		mp.right.set(mp.profileSide(it.profile, false, u), u)
+		page = mp.profileSide(it.profile, false, u)
 	}
+	mp.right.Show(page, from, u)
+}
+
+// rowIndex is where row k stands in the sidebar, or -1; a + row
+// stands under its heading.
+func (mp *machinePane) rowIndex(k string) int {
+	switch k {
+	case mpAddTunnel:
+		k = mpTunnels
+	case mpAddSOCKS:
+		k = mpSOCKS
+	}
+	return slices.IndexFunc(mp.items, func(it mpItem) bool { return it.key == k })
 }
 
 // signature changes when what the right side shows changes: the
@@ -1066,7 +1093,7 @@ func newMPRow(mp *machinePane) *mpRow {
 	r.bin = widget.NewIconButton(icon.Trash2, "Delete it")
 	r.plus = widget.NewIconButton(icon.Plus, "")
 	r.plus.OnClick = func(u *gunim.UI) gunim.Intent { r.mp.pick(r.it.plus, u); return nil }
-	r.mark, r.badge = &liveMark{}, &countBadge{}
+	r.mark, r.badge = &liveMark{}, newCountBadge()
 	r.star.OnClick = func(*gunim.UI) gunim.Intent {
 		return app.SetDefaultProfile{Machine: r.mp.machine, ID: r.it.profile.id}
 	}
@@ -1228,57 +1255,11 @@ func (r *mpRow) Layout(c gunim.Constraints, f gunim.Frame, kids gunim.Children) 
 	return c.Constrain(geom.Sz(c.Max.W, top+height))
 }
 
-// Paint implements [gunim.Node]: the picked row's fill, then the row.
-func (r *mpRow) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gunim.Children) {
-	if r.selected && !r.heading {
-		p.RRect(geom.Rect{Min: geom.Pt(2, 1), Max: geom.Pt(box.W-2, box.H-1)}, look.RowRadius.Get(f.Theme), paint.Solid(look.RowActive.Get(f.Theme)))
-	}
+// Paint implements [gunim.Node]: the row; the list draws the fill of
+// the one picked.
+func (r *mpRow) Paint(p *paint.Painter, _ gunim.Frame, _ geom.Size, kids gunim.Children) {
 	for k := range kids.All {
 		if k.Node() == r.inner {
-			k.Paint(p)
-		}
-	}
-}
-
-// swapNode shows one child, which can change: the one before leaves
-// the tree as the next comes in.
-type swapNode struct{ child gunim.Node }
-
-// set shows n in place of what was shown.
-func (s *swapNode) set(n gunim.Node, u *gunim.UI) {
-	old := s.child
-	s.child = n
-	if u != nil && old != n {
-		if old != nil {
-			u.Remove(old)
-		}
-		u.Insert(s, n)
-		u.Invalidate()
-	}
-}
-
-// Children implements [gunim.Composite].
-func (s *swapNode) Children() []gunim.Node { return []gunim.Node{s.child} }
-
-// Layout implements [gunim.Node]: the child shown; one leaving takes
-// no room.
-func (s *swapNode) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children) geom.Size {
-	var sz geom.Size
-	for k := range kids.All {
-		if k.Node() != s.child {
-			k.Layout(gunim.Constraints{})
-			continue
-		}
-		sz = k.Layout(c)
-		k.Place(geom.Pt(0, 0))
-	}
-	return sz
-}
-
-// Paint implements [gunim.Node].
-func (s *swapNode) Paint(p *paint.Painter, _ gunim.Frame, _ geom.Size, kids gunim.Children) {
-	for k := range kids.All {
-		if k.Node() == s.child {
 			k.Paint(p)
 		}
 	}

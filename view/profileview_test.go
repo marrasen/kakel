@@ -439,10 +439,10 @@ func TestATunnelsPageStaysAsItsTrafficChanges(t *testing.T) {
 		Tunnels: []app.Tunnel{{ID: "t1", Machine: "s1", Live: true, As: as, Note: "1 stream"}}}
 	_, mp, again := machinePaneOf(t, st, "s1", false)
 	mp.pick(mpTunnelOpen+"t1", lastUI)
-	page := mp.right.child
+	page := mp.right.Page()
 	st.Tunnels = []app.Tunnel{{ID: "t1", Machine: "s1", Live: true, As: as, Note: "2 streams, 4 KB"}}
 	again(st)
-	if mp.right.child != page {
+	if mp.right.Page() != page {
 		t.Fatal("the tunnel's page was built again as its traffic changed")
 	}
 	if mp.tunnelNow.Text != "Open · 2 streams, 4 KB" {
@@ -465,6 +465,6 @@ func TestAMachineBeyondAWindowTakesTunnels(t *testing.T) {
 		fields[i].OnChange(s, lastUI)
 	}
 	if findButton(t, mp.right, "Open").Disabled {
-		t.Fatalf("beyond a connected window, Open is greyed out; card %+v, problem in %T", mp.card, mp.right.child)
+		t.Fatalf("beyond a connected window, Open is greyed out; card %+v, problem in %T", mp.card, mp.right.Page())
 	}
 }

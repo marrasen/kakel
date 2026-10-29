@@ -129,12 +129,23 @@ func TestShots(t *testing.T) {
 		{"s1", "tunnel:open:u1", "pane-s1-tunnel"},
 		{"s1", app.MachineRowAddSOCKS, "pane-s1-addsocks"},
 	} {
-		_, _, publish := windowStageOf(t, geom.Sz(1300, 860))
+		win, _, publish := windowStageOf(t, geom.Sz(1300, 860))
 		st := shotsState()
 		st.Panes = append(st.Panes, app.Pane{ID: "mp", Title: "machine", Kind: app.KindMachine, Machine: c.m, Row: c.row, RowAt: 1})
 		st.Stage, st.Focus = &app.Box{Pane: "mp"}, "mp"
 		publish(st)
 		settle()
 		shot(c.out)
+		if c.out != "pane-s1" {
+			continue
+		}
+		// Picking a row further down: the selection glides down, and
+		// the page comes up from below as the one before fades.
+		mp := win.machinePanes["mp"]
+		mp.pick(mpTunnelOpen+"u1", lastUI)
+		for i := 1; i <= 4; i++ {
+			frames(3)
+			shot("motion-" + strconv.Itoa(i))
+		}
 	}
 }
