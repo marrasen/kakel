@@ -7,9 +7,28 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
-## Unreleased
+## v0.12.2-beta.9
 
 ### Added
+
+**Tunnels are saved, and open by themselves or by hand.** Adding a
+tunnel or SOCKS proxy saves it: the button is Save, and its Connect
+automatically tick says whether it opens whenever its machine
+connects, and at once if it is connected. Without the tick it waits to
+be opened. A tunnel's page has its settings, to change and save; one
+open whose ports change opens again as it is now.
+
+**Everything about a tunnel is on its page.** An open tunnel's page
+shows how it is doing, a graph of its traffic, and a Traffic section:
+Watch the traffic writes what goes through it, both ways, into its log
+on the page, which follows new lines. A tunnel's line on a machine's
+card opens that page.
+
+**Profiles go in the order you drag them into.** In a machine's pane,
+drag a profile up or down among the others, or move it with Alt+Up and
+Alt+Down. The pane, the ⋯ menu, the palette, the launcher and the tray
+all list them in that order, a server's Login Shell too. The default
+keeps its place; the star says which it is.
 
 **A crash is shown the next time kakel starts.** A window of its own,
 from the tray too, shows what kakel said as it crashed, which version
@@ -17,7 +36,36 @@ it was and where the log is. Copy copies all of it; Report on GitHub
 opens a new issue with the version, the system and the trace filled
 in, for you to say what you were doing.
 
+### Changed
+
+**The connection log is the page itself.** A machine's Connection log
+row shows its log over all of the right side, scrolled wherever the
+pointer is on it and fitting a narrow window; Copy is beside the
+heading. The palette's Connection Log, which only said logs belong to
+servers, is gone: a server's own log line in the palette, the launcher
+and the tray opens its pane's log.
+
+**A machine heads its pane.** The machine's row at the top of its
+pane's sidebar is larger and bold, with who and where it is under it.
+
+**A terminal running a profile is called after it**, as "tmux on
+Picard", until its shell names it; before, it was "Picard" whichever
+profile ran.
+
+**The status switch, the traffic graphs, the log and the problem count
+are gunim's own**, and move as gunim's widgets do: the switch fades
+from one state's colour to the next, and new log lines grow in.
+
 ### Fixed
+
+**Switching tabs leaves nothing of the tab before.** Going from the
+Machines tab to a machine's, the Machines page's headings, search field
+and buttons stood over the new tab until its cards had faded. A
+machine's pane also opens with its sidebar whole, not unfolding row by
+row.
+
+**Opening a tunnel keeps it picked** in the machine's pane; it sent the
+selection to the machine's row.
 
 **Taking an open tunnel off the saved list no longer crashes kakel.**
 Since its pages fade from one to the next, a tunnel's page built again
