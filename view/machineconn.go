@@ -245,12 +245,17 @@ func (mp *machinePane) addTunnelSide(socks bool) gunim.Node {
 func (mp *machinePane) logSide(u *gunim.UI) gunim.Node {
 	m := mp.machine
 	lines := mp.st.Logs[m]
-	var th *theme.Live
-	if u != nil {
-		th = u.Theme()
+	lv := widget.NewLogView()
+	lv.OnSeen = func(end int64, u *gunim.UI) gunim.Intent {
+		mp.w.sawLog(m, end)
+		// Read to its newest line: the row's count of problems goes.
+		if r, ok := widget.RowOf[*mpRow](mp.list, widget.Key(mpLog)); ok {
+			r.badge.SetHidden(unseenBad(mp.st.Logs[m], end) == 0, u)
+		}
+		return nil
 	}
-	lv := widget.NewLogView(logSource(lines, th))
-	lv.OnSeen = func(end int64, _ *gunim.UI) gunim.Intent { mp.w.sawLog(m, end); return nil }
+	mp.logView, mp.logShown = lv, -1
+	mp.showLog(u)
 	copyIt := widget.NewButton("Copy")
 	copyIt.OnClick = func(u *gunim.UI) gunim.Intent {
 		if lines != nil {
@@ -297,31 +302,38 @@ func plainLine(l string) string {
 	return l
 }
 
-// logSource gives a log's lines to gunim's LogView: each line's time
-// apart, and its colour from how it went, in th's colours.
-func logSource(l *logs.Lines, th *theme.Live) widget.LogSource {
-	if l == nil {
-		return nil
-	}
-	return func(most int) ([]widget.LogLine, int64) {
-		lines, end := l.Since(0, most)
-		out := make([]widget.LogLine, len(lines))
-		for i, line := range lines {
-			var ink color.NRGBA
-			switch {
-			case strings.Contains(line, logBad):
-				ink = widget.DialogDangerInk.Get(th)
-			case strings.Contains(line, logWell):
-				ink = widget.ToastSuccessInk.Get(th)
-			}
-			line = plainLine(line)
-			out[i] = widget.LogLine{Text: line, Ink: ink}
-			if stamp, rest, ok := strings.Cut(line, "  "); ok && len(stamp) == 8 {
-				out[i].Lead, out[i].Text = stamp, rest
-			}
+// logLines are a log's last lines as gunim's LogView takes them: each
+// line's time apart, and its colour from how it went.
+func logLines(l *logs.Lines) ([]widget.LogLine, int64) {
+	lines, end := l.Since(0, logs.DefaultKeep)
+	out := make([]widget.LogLine, len(lines))
+	for i, line := range lines {
+		var ink theme.Token[color.NRGBA]
+		switch {
+		case strings.Contains(line, logBad):
+			ink = widget.DialogDangerInk
+		case strings.Contains(line, logWell):
+			ink = widget.ToastSuccessInk
 		}
-		return out, end
+		line = plainLine(line)
+		out[i] = widget.LogLine{Text: line, Ink: ink}
+		if stamp, rest, ok := strings.Cut(line, "  "); ok && len(stamp) == 8 {
+			out[i].Lead, out[i].Text = stamp, rest
+		}
 	}
+	return out, end
+}
+
+// showLog gives the log page the machine's log as far as it has got,
+// when it has got further than the page shows.
+func (mp *machinePane) showLog(u *gunim.UI) {
+	l := mp.st.Logs[mp.machine]
+	if mp.logView == nil || l == nil || mp.st.LogEnds[mp.machine] == mp.logShown {
+		return
+	}
+	lines, end := logLines(l)
+	mp.logView.SetLines(lines, end, u)
+	mp.logShown = end
 }
 
 // unseenBad counts the lines gone badly in m's log since seen, its end

@@ -474,3 +474,15 @@ func TestSinceIsTheLinesFromASequenceNumber(t *testing.T) {
 		t.Fatalf("the last 2: %q", lines)
 	}
 }
+
+// Notify is told each line written, after it is kept.
+func TestNotifyIsToldEachLine(t *testing.T) {
+	l := New(10, nil)
+	var ends []int64
+	l.Notify(func() { ends = append(ends, l.End()) })
+	_, _ = l.Write([]byte("a\n"))
+	_, _ = l.Write([]byte("b\n"))
+	if !slices.Equal(ends, []int64{1, 2}) {
+		t.Fatalf("told at ends %v", ends)
+	}
+}

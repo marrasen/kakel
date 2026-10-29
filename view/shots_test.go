@@ -79,6 +79,7 @@ func shotsState() app.State {
 	}
 	st.Accounts = []machines.ID{"s1"}
 	st.Logs = map[machines.ID]*logs.Lines{"s1": l}
+	st.LogEnds = map[machines.ID]int64{"s1": l.End()}
 	return st
 }
 
