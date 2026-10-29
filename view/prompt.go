@@ -69,6 +69,11 @@ func (p *Prompt) Step(dt time.Duration) bool { return p.live.Step(dt) }
 
 // Layout implements [gunim.Node]: the dialog fills the window.
 func (p *Prompt) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children) geom.Size {
+	if p.dialog != nil {
+		// As wide as the window, which PromptSize made as wide as the
+		// question needs: wider than a dialog for a long line.
+		p.dialog.Width = c.Max.W
+	}
 	for kid := range kids.All {
 		kid.Layout(gunim.Tight(c.Max))
 		kid.Place(geom.Point{})
@@ -115,6 +120,14 @@ func PromptSize(q app.Ask, th theme.Theme) geom.Size {
 		row += wide(b) + 2*widget.ButtonPadding.Get(l) + widget.DialogGap.Get(l)
 	}
 	width := max(widget.DialogWidth.Get(l), row+2*pad)
+	if q.Preformatted {
+		// As wide as its longest line, up to a wide window's: a trace's
+		// lines are long, and read better whole.
+		mono := widget.MonoFont.Get(l)
+		for _, line := range strings.Split(q.Text, "\n") {
+			width = max(width, min(mono.Shape(line, size).Advance+2*pad, widestPrompt))
+		}
+	}
 	inner := width - 2*pad
 
 	// The form's labels make a column as wide as the widest, two fifths
@@ -137,11 +150,15 @@ func PromptSize(q app.Ask, th theme.Theme) geom.Size {
 	var rows []float32
 	if q.Text != "" {
 		if q.Preformatted {
-			lines := float32(strings.Count(q.Text, "\n") + 1)
+			// A long one scrolls in that many lines: see askDialog.
+			lines := float32(min(strings.Count(q.Text, "\n")+1, mostPromptLines))
 			rows = append(rows, lines*widget.MonoFont.Get(l).Layout("M", text.Style{Size: size}, inner).LineHeight)
 		} else {
 			rows = append(rows, high(face, q.Text, size, fieldW))
 		}
+	}
+	for _, line := range q.Small {
+		rows = append(rows, high(face, line, smallText.Get(l), fieldW))
 	}
 	for _, f := range q.Facts {
 		h := high(bold, f.Name, size, fieldW)
@@ -224,3 +241,36 @@ func PromptPlace(monitors []driver.Monitor, near *driver.Placement, size geom.Si
 	y := min(max(c.Y-h/2, area.Min.Y), area.Max.Y-h)
 	return &driver.Placement{Bounds: geom.Rc(x, y, w, h)}
 }
+
+// mostPromptLines is how many lines of a preformatted text a question
+// shows before the rest scrolls.
+const mostPromptLines = 18
+
+// linesHigh holds child to lines of the fixed-width face tall, at the
+// width it is given: a Scroll's room, sized as the theme's words are.
+type linesHigh struct {
+	child gunim.Node
+	lines int
+}
+
+// Children implements [gunim.Composite].
+func (l *linesHigh) Children() []gunim.Node { return []gunim.Node{l.child} }
+
+// Layout implements [gunim.Node].
+func (l *linesHigh) Layout(c gunim.Constraints, fr gunim.Frame, kids gunim.Children) geom.Size {
+	line := widget.MonoFont.Get(fr.Theme).Layout("M", text.Style{Size: widget.TextSize.Get(fr.Theme)}, 0).LineHeight
+	h := float32(l.lines) * line
+	k := kids.At(0)
+	s := k.Layout(gunim.Constraints{Min: geom.Sz(c.Min.W, h), Max: geom.Sz(c.Max.W, h)})
+	k.Place(geom.Point{})
+	return c.Constrain(geom.Sz(s.W, h))
+}
+
+// Paint implements [gunim.Node].
+func (l *linesHigh) Paint(p *paint.Painter, _ gunim.Frame, _ geom.Size, kids gunim.Children) {
+	kids.At(0).Paint(p)
+}
+
+// widestPrompt is as wide as a question's window grows for the lines of
+// a preformatted text.
+const widestPrompt = 860

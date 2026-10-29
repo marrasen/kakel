@@ -361,6 +361,8 @@ The whole list. The [README](README.md) has the short version.
 - **A crash log.** Should kakel crash, what it said as it died is kept
   in `crash.log`, in `%LOCALAPPDATA%\kakel` on Windows and kakel's
   settings folder elsewhere, under the version and when it started.
+  The next kakel to start shows it in a window of its own, to copy, or
+  to report as a GitHub issue filled in with the version and the trace.
 
 ![selecting text with the mouse](docs/selection.png)
 

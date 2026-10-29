@@ -1024,6 +1024,7 @@ func (a *app) run(ctx context.Context) error {
 	}
 	a.takeLauncherKey()
 	a.startUpdates()
+	a.sayCrashed()
 	a.startPings()
 	a.startGit()
 	switch {
