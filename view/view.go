@@ -293,9 +293,15 @@ type Window struct {
 	keysEdits uint64
 	// panes are the panes as last published, sideOrder them as the
 	// sidebar lists them, and sw the switcher while it is open.
-	panes     []app.Pane
-	sideOrder []string
-	sw        *switcher
+	panes []app.Pane
+	// tunnels are the tunnels open and stopped, fileJobs the copies,
+	// moves and deletes, and noDisconnectAsk the machines whose
+	// Disconnect does not ask first.
+	tunnels         []app.Tunnel
+	fileJobs        []app.Job
+	noDisconnectAsk []machines.ID
+	sideOrder       []string
+	sw              *switcher
 	// winID numbers the window among kakel's own, and behind says
 	// another is in front. dropLit is how lit the window is for a pane
 	// dragged over it from another window.
@@ -588,7 +594,7 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 		case !ok:
 			w.toast(widget.Toast{Title: "No row selected", Body: "Close Selected Row works on the row the Machines pane has the keyboard on."}, u)
 		case row.closes == nil:
-			w.toast(widget.Toast{Title: "That row cannot be closed", Body: "A machine's heading goes with Disconnect, from its menu."}, u)
+			w.toast(widget.Toast{Title: "That row cannot be closed", Body: "Disconnect the machine from the status button on its card."}, u)
 		default:
 			u.Send(row, row.closes)
 		}
@@ -658,7 +664,7 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 		return true
 	case "conn.disconnect":
 		if m := w.machineOf(w.focused); m != "" {
-			u.Send(w, app.Disconnect{Machine: m})
+			w.disconnect(m, u)
 		} else {
 			w.toast(widget.Toast{Title: "This pane is on this computer", Body: "Disconnect closes the connection to a server or a window."}, u)
 		}
@@ -1570,21 +1576,6 @@ func (w *Window) savingClashes(h remote.Host, old *remote.Host) string {
 	return ""
 }
 
-// confirmFarDisconnect asks before closing another window's connection
-// to the machine m it reaches: whoever uses that window loses what is
-// open there too.
-func (w *Window) confirmFarDisconnect(m machines.ID, u *gunim.UI) {
-	window, _, _ := m.Far()
-	d := widget.NewDialog("Disconnect " + w.farHostName(m) + " on " + w.nameOf(window) + "?")
-	d.Body = widget.NewLabel("This closes " + w.nameOf(window) + "'s own connection to " + w.farHostName(m) +
-		", and everything open on it there and on any server reached through it, for anyone working in that window too.")
-	d.SetButtons("Disconnect", "Cancel")
-	d.Danger = true
-	d.OnAccept = widget.Sends(app.Disconnect{Machine: m})
-	d.OnDismiss = widget.Sends(app.DialogClosed{})
-	w.openDialog(d, u)
-}
-
 // confirmRemove asks before forgetting the saved server with ID id.
 func (w *Window) confirmRemove(id machines.ID, u *gunim.UI) {
 	d := widget.NewDialog("Remove " + w.nameOf(id) + "?")
@@ -2083,6 +2074,7 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 		w.profiles, w.serverShells, w.found, w.foundShells, w.drives = st.Profiles, st.ServerShells, st.Found, st.FoundShells, st.Drives
 		w.servers(w.saved)
 	}
+	w.tunnels, w.fileJobs, w.noDisconnectAsk = st.Tunnels, st.Jobs, st.NoDisconnectAsk
 	// A new terminal and Files are named for what they open, which
 	// follows the pane in front.
 	if st.HereMachine != w.hereMachine || st.HereShell != w.hereShell {
@@ -3084,6 +3076,16 @@ type sideRow struct {
 	card      *cardInfo
 	chips     []*widget.Button
 	chipRects []geom.Rect
+	// conn is a card's status chip, which connects and disconnects.
+	conn *connChip
+	// textX is where a card's name and who and where start, and
+	// nameRoom and subRoom how wide each can be; nameAt and subAt are
+	// where they were drawn, and nameCut and subCut say they were cut,
+	// for cutTip to say them whole.
+	textX, nameRoom, subRoom float32
+	nameAt, subAt            geom.Rect
+	nameCut, subCut          bool
+	cutTip                   widget.PartTip
 }
 
 // noteFor is how long a sidebar row's note stands before it goes quiet.
@@ -3169,6 +3171,9 @@ func (r *sideRow) Children() []gunim.Node {
 	out := []gunim.Node{r.title, r.note}
 	for _, b := range r.chips {
 		out = append(out, b)
+	}
+	if r.conn != nil {
+		out = append(out, r.conn)
 	}
 	return out
 }
@@ -3683,11 +3688,8 @@ func (w *Window) openMachineMenu(r *sideRow, u *gunim.UI) {
 	for _, h := range w.saved {
 		if machines.ID(h.ID) == m && h.Window && !window {
 			// Saved as a window and not connected: nothing that needs a
-			// shell applies.
-			add(icon.Plug, "Connect", send(app.ConnectTo{Server: m, Only: true}))
+			// shell applies, and its card's buttons do the rest.
 			add(icon.Folder, "Files", send(app.OpenFilesOn{Machine: m}))
-			add(icon.Settings, "Settings…", send(app.ShowMachine{Machine: m}))
-			add(icon.Trash2, "Remove This Window…", func(u *gunim.UI) { w.confirmRemove(m, u) })
 			w.showMachineMenu(r, items, icons, acts, u)
 			return
 		}
@@ -3736,35 +3738,10 @@ func (w *Window) openMachineMenu(r *sideRow, u *gunim.UI) {
 		add(icon.Cable, "Tunnel…", func(u *gunim.UI) { w.tunnelDialogOn(m, false, u) })
 		add(icon.Network, "SOCKS Proxy…", func(u *gunim.UI) { w.tunnelDialogOn(m, true, u) })
 	}
-	if m != "" {
+	if slices.Contains(w.dropped, m) {
+		// Its connection went: the row stays until this clears it.
 		heading("Connection")
-		add(icon.ScrollText, "Connection Log", send(app.ShowLog{Machine: m}))
-		if slices.Contains(w.dropped, m) {
-			// Its connection went: the row stays until this clears it.
-			add(icon.X, "Clear", send(app.ClearMachine{ID: m}))
-		} else {
-			if _, _, far := m.Far(); far {
-				// Another window's connection: asked about first.
-				add(icon.Unplug, "Disconnect…", func(u *gunim.UI) { w.confirmFarDisconnect(m, u) })
-			} else {
-				add(icon.Unplug, "Disconnect", send(app.Disconnect{Machine: m}))
-			}
-		}
-		for _, h := range w.saved {
-			if machines.ID(h.ID) == m {
-				what := "Server"
-				if h.Window {
-					what = "Window"
-				}
-				heading(what)
-				add(icon.Settings, "Settings…", send(app.ShowMachine{Machine: m}))
-				add(icon.Trash2, "Remove This "+what+"…", func(u *gunim.UI) { w.confirmRemove(m, u) })
-			}
-		}
-	}
-	if m == "" {
-		heading("This Computer")
-		add(icon.Settings, "Settings…", send(app.ShowMachine{}))
+		add(icon.X, "Clear", send(app.ClearMachine{ID: m}))
 	}
 	w.showMachineMenu(r, items, icons, acts, u)
 }

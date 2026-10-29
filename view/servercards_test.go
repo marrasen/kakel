@@ -135,7 +135,7 @@ func TestAConnectedPillSaysTheRoundTripAndHowLong(t *testing.T) {
 		t.Fatalf("the pill says %q", got)
 	}
 	c.rtt = 0
-	if got, _ := pillFor(c, now, nil); got != "Connected" {
+	if got, _ := pillFor(c, now, nil); got != "connected" {
 		t.Fatalf("before a ping the pill says %q", got)
 	}
 	for d, want := range map[time.Duration]string{30 * time.Second: "just now", 12 * time.Minute: "12 min", 3 * time.Hour: "3 h", 50 * time.Hour: "2 d 2 h"} {

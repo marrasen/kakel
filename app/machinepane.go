@@ -39,6 +39,16 @@ type (
 		Machine machines.ID
 		ID      string
 	}
+	// ConnectMachine connects to Machine and opens nothing on it, its
+	// card or pane showing how that goes: a saved server or window, or
+	// a quick connection again, at its address.
+	ConnectMachine struct{ Machine machines.ID }
+	// SetDisconnectAsk has Disconnect on Machine ask before closing what
+	// is open on it, or with Ask false close it at once.
+	SetDisconnectAsk struct {
+		Machine machines.ID
+		Ask     bool
+	}
 )
 
 // showMachine goes to m's pane, opening it in the window in front when
@@ -159,6 +169,36 @@ func (a *app) setDefaultProfile(in SetDefaultProfile) error {
 	err := a.settings.PutServerShell(string(in.Machine), id)
 	a.st.ServerShells = a.settings.ServerShells()
 	return err
+}
+
+// connectMachine connects to m in place.
+func (a *app) connectMachine(m machines.ID) error {
+	if target, window, ok := a.machines.Quick(m); ok {
+		if window {
+			return a.reachWindow(ConnectWindow{Addr: target, ID: m, Only: true, InPlace: true}, false, nil)
+		}
+		return a.connect(ConnectTo{Target: target, As: m, Only: true, InPlace: true})
+	}
+	return a.connect(ConnectTo{Server: m, Only: true, InPlace: true})
+}
+
+// setDisconnectAsk saves whether Disconnect on a machine asks first.
+func (a *app) setDisconnectAsk(in SetDisconnectAsk) error {
+	if a.settings == nil {
+		return errors.New("the settings could not be read, so nothing can be kept")
+	}
+	err := a.settings.PutDisconnectAsk(string(in.Machine), in.Ask)
+	a.st.NoDisconnectAsk = noAskOf(a.settings)
+	return err
+}
+
+// noAskOf are the machines s says Disconnect does not ask about.
+func noAskOf(s *settings.Settings) []machines.ID {
+	var out []machines.ID
+	for _, id := range s.NoDisconnectAsk() {
+		out = append(out, machines.ID(id))
+	}
+	return out
 }
 
 // setupOn is whether a shell on machine m is taught by default, before

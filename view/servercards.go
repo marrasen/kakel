@@ -289,7 +289,7 @@ func (c *serverCard) Children() []gunim.Node {
 const (
 	cardPad   = 10
 	cardGap   = 12
-	cardWidth = 300
+	cardWidth = 330
 )
 
 // Layout implements [gunim.Node]: the header, then the rows.
@@ -650,137 +650,282 @@ var cardTitleSize = theme.Length("kakel.card.title", 15)
 // cardHeadHeight is a card's header's height: the name, who and where,
 // and the buttons; compactHeadHeight a compact card's, a line.
 const (
-	cardHeadHeight    = 92
+	cardHeadHeight    = 98
 	compactHeadHeight = 50
 )
 
 // compactBelow is how narrow the pane is when its cards go compact.
 const compactBelow = 420
 
-// The header's buttons: their height, and the room between them.
+// The header's buttons: their height, the room between them, and the
+// badge's size.
 const (
 	cardChipHeight = 32
 	cardChipGap    = 6
+	cardBadge      = 36
+)
+
+// The header's buttons, in r.chips, in the order the keyboard reaches
+// them: the gear and ⋯ at the top right, Terminal and Files along the
+// bottom. The status chip comes after them.
+const (
+	chipGear = iota
+	chipMore
+	chipTerminal
+	chipFiles
 )
 
 // makeButtons gives a header its buttons, once: Terminal and Files,
-// which connect first where they have to, and ⋯, the machine's menu.
-// They are gunim's, so they press on release, show the keyboard's ring,
-// and say what they do as the pointer rests on them.
+// which connect first where they have to; the gear, the machine's
+// settings; ⋯, the machine's menu; and the status chip, which connects
+// and disconnects. They press on release, show the keyboard's ring, and
+// say what they do as the pointer rests on them.
 func (r *sideRow) makeButtons() {
 	if r.chips != nil {
 		return
 	}
 	term := iconButton(icon.SquareTerminal, "Terminal")
 	files := iconButton(icon.Folder, "Files")
+	gear := iconButton(icon.Settings, "")
+	gear.Ghost, gear.Tooltip = true, "Settings"
 	more := iconButton(icon.Ellipsis, "")
-	more.Tooltip = "Everything that opens here"
+	more.Ghost, more.Tooltip = true, "Everything that opens here"
 	term.OnClick = func(u *gunim.UI) gunim.Intent { u.Send(r, app.OpenOn{Machine: r.machine}); return nil }
 	files.OnClick = func(u *gunim.UI) gunim.Intent { u.Send(r, app.OpenFilesOn{Machine: r.machine}); return nil }
+	gear.OnClick = func(u *gunim.UI) gunim.Intent { u.Send(r, app.ShowMachine{Machine: r.machine}); return nil }
 	more.OnClick = func(u *gunim.UI) gunim.Intent { r.w.openMachineMenu(r, u); return nil }
-	r.chips = []*widget.Button{term, files, more}
+	r.chips = []*widget.Button{gear, more, term, files}
+	r.conn = newConnChip(r)
 }
 
-// chipWords are the buttons' words, which a compact card says as the
-// pointer rests on its buttons instead.
-var chipWords = []string{"Terminal", "Files"}
+// buttonsShown says which of the header's buttons its machine has: a
+// saved kakel window not connected has nothing more than Files, and
+// only a saved server and this computer have settings.
+func (r *sideRow) buttonsShown() [4]bool {
+	var shown [4]bool
+	shown[chipTerminal], shown[chipFiles], shown[chipMore] = true, true, true
+	m := r.machine
+	if m == machines.Local {
+		shown[chipGear] = true
+		return shown
+	}
+	for _, h := range r.w.saved {
+		if machines.ID(h.ID) != m {
+			continue
+		}
+		shown[chipGear] = true
+		if h.Window && !slices.ContainsFunc(r.w.remoteWindows, func(rw app.RemoteWindow) bool { return rw.Name == m }) {
+			shown[chipTerminal], shown[chipMore] = false, false
+		}
+	}
+	return shown
+}
 
-// layoutCard lays a header out: the badge and the name on the first
-// line, who and where under it, the buttons along the bottom; compact,
-// all on one line, the buttons icons at its end.
+// chipWords are the bottom buttons' words, by button, which a narrow
+// card says as the pointer rests on them instead.
+var chipWords = map[int]string{chipTerminal: "Terminal", chipFiles: "Files"}
+
+// layoutCard lays a header out. On a card: the badge and the name, with
+// the gear and ⋯ at the top right; who and where under the name; along
+// the bottom Terminal and Files, and the status chip at the end. As
+// room runs short, the chip leaves out how long it has been connected,
+// then Terminal and Files leave out their words. Compact, all on one
+// line, the buttons icons at its end.
 func (r *sideRow) layoutCard(c gunim.Constraints, f gunim.Frame, kids gunim.Children) geom.Size {
 	compact := r.w.cards.compact
-	for i, word := range chipWords {
-		if compact {
-			r.chips[i].Label, r.chips[i].Tooltip = "", word
-		} else {
-			r.chips[i].Label, r.chips[i].Tooltip = word, ""
+	shown := r.buttonsShown()
+	for i, b := range r.chips {
+		b.Disabled = !shown[i]
+	}
+	// The name and who and where are drawn by the card, fading where
+	// they are cut.
+	kids.At(0).Layout(gunim.Constraints{})
+	kids.At(1).Layout(gunim.Constraints{})
+	conn := kids.At(2 + len(r.chips))
+	r.conn.compact, r.conn.short = compact, false
+	// This computer has no connection to make: no chip.
+	local := r.machine == machines.Local
+	if len(r.chipRects) != len(r.chips) {
+		r.chipRects = make([]geom.Rect, len(r.chips))
+	}
+	clear(r.chipRects)
+	layout := func(i int) geom.Size {
+		if !shown[i] {
+			kids.At(2 + i).Layout(gunim.Constraints{})
+			return geom.Size{}
+		}
+		return kids.At(2 + i).Layout(gunim.Constraints{Max: geom.Sz(c.Max.W, cardChipHeight)})
+	}
+	words := func(on bool) {
+		for i, word := range chipWords {
+			if on {
+				r.chips[i].Label, r.chips[i].Tooltip = word, ""
+			} else {
+				r.chips[i].Label, r.chips[i].Tooltip = "", word
+			}
 		}
 	}
-	sizes := make([]geom.Size, len(r.chips))
-	for i := range r.chips {
-		sizes[i] = kids.At(2 + i).Layout(gunim.Constraints{Max: geom.Sz(c.Max.W, cardChipHeight)})
-	}
-	r.chipRects = r.chipRects[:0]
+	h := float32(cardHeadHeight)
+	badge := float32(cardBadge)
 	if compact {
-		const badge = 30
-		h := float32(compactHeadHeight)
+		h, badge = compactHeadHeight, 30
+		words(false)
+		// From the end: ⋯, the gear, the chip, Files, Terminal.
 		x := c.Max.W - cardPad
-		rects := make([]geom.Rect, len(r.chips))
-		for i := len(r.chips) - 1; i >= 0; i-- {
-			x -= sizes[i].W
-			rects[i] = geom.Rc(x, (h-sizes[i].H)/2, sizes[i].W, sizes[i].H)
-			x -= cardChipGap
+		for _, i := range []int{chipMore, chipGear, -1, chipFiles, chipTerminal} {
+			var s geom.Size
+			if i < 0 {
+				if local {
+					conn.Layout(gunim.Constraints{})
+					continue
+				}
+				s = conn.Layout(gunim.Constraints{Max: geom.Sz(c.Max.W, cardChipHeight)})
+				x -= s.W
+				conn.Place(geom.Pt(x, (h-s.H)/2))
+				x -= cardChipGap
+				continue
+			}
+			if s = layout(i); s.W == 0 {
+				continue
+			}
+			x -= s.W
+			r.chipRects[i] = geom.Rc(x, (h-s.H)/2, s.W, s.H)
+			x -= 2
 		}
-		r.chipRects = append(r.chipRects, rects...)
-		tx := float32(cardPad + badge + 10)
-		room := max(0, x-tx)
-		ts := kids.At(0).Layout(gunim.Constraints{Max: geom.Sz(room, 22)})
-		ns := kids.At(1).Layout(gunim.Constraints{Max: geom.Sz(room, 18)})
-		top := (h - ts.H - ns.H - 1) / 2
-		kids.At(0).Place(geom.Pt(tx, top))
-		kids.At(1).Place(geom.Pt(tx, top+ts.H+1))
+		r.textX = cardPad + badge + 10
+		r.nameRoom, r.subRoom = max(0, x-4-r.textX), max(0, x-4-r.textX)
 	} else {
-		const badge = 36
-		h := float32(cardHeadHeight)
-		x := float32(cardPad)
-		for i := range len(r.chips) - 1 {
-			r.chipRects = append(r.chipRects, geom.Rc(x, h-cardPad-sizes[i].H, sizes[i].W, sizes[i].H))
-			x += sizes[i].W + cardChipGap
+		// The gear and ⋯ at the top right, close to the edge, as their
+		// fill shows only under the pointer.
+		x := c.Max.W - cardPad + 4
+		for _, i := range []int{chipMore, chipGear} {
+			s := layout(i)
+			if s.W == 0 {
+				continue
+			}
+			x -= s.W
+			r.chipRects[i] = geom.Rc(x, cardPad-4, s.W, s.H)
 		}
-		last := sizes[len(sizes)-1]
-		r.chipRects = append(r.chipRects, geom.Rc(c.Max.W-cardPad-last.W, h-cardPad-last.H, last.W, last.H))
-		tx := float32(cardPad + badge + 10)
-		// The name stops short of the pill, as wide as its words are now.
-		pill := pillWidth(*r.card, f) + 8
-		ts := kids.At(0).Layout(gunim.Constraints{Max: geom.Sz(max(0, c.Max.W-tx-cardPad-pill), 24)})
-		kids.At(0).Place(geom.Pt(tx, cardPad+1))
-		kids.At(1).Layout(gunim.Constraints{Max: geom.Sz(max(0, c.Max.W-tx-cardPad), 20)})
-		kids.At(1).Place(geom.Pt(tx, cardPad+ts.H+3))
+		r.textX = cardPad + badge + 10
+		r.nameRoom = max(0, x-6-r.textX)
+		r.subRoom = r.nameRoom
+		// Along the bottom: as much as fits of the buttons' words and
+		// the chip's.
+		y := h - cardPad - cardChipHeight
+		room := c.Max.W - 2*cardPad
+		var cs, ts, fs geom.Size
+		fit := func() bool {
+			if local {
+				cs = conn.Layout(gunim.Constraints{})
+			} else {
+				cs = conn.Layout(gunim.Constraints{Max: geom.Sz(room, cardChipHeight)})
+			}
+			ts, fs = layout(chipTerminal), layout(chipFiles)
+			return ts.W+fs.W+2*cardChipGap+cs.W <= room
+		}
+		// Short of room, the chip says less first: how long it has
+		// been connected, then its words, leaving the switch in the
+		// state's colour. Then the buttons lose theirs.
+		words(true)
+		r.conn.bare = false
+		if !fit() {
+			r.conn.short = true
+			if !fit() {
+				r.conn.bare = true
+				if !fit() {
+					words(false)
+					fit()
+				}
+			}
+		}
+		x = cardPad
+		for _, b := range []struct {
+			i int
+			s geom.Size
+		}{{chipTerminal, ts}, {chipFiles, fs}} {
+			i, s := b.i, b.s
+			if s.W == 0 {
+				continue
+			}
+			r.chipRects[i] = geom.Rc(x, y, s.W, s.H)
+			x += s.W + cardChipGap
+		}
+		conn.Place(geom.Pt(c.Max.W-cardPad-cs.W, y+(cardChipHeight-cs.H)/2))
 	}
 	for i := range r.chips {
 		kids.At(2 + i).Place(r.chipRects[i].Min)
 	}
-	if compact {
-		return geom.Sz(c.Max.W, compactHeadHeight)
-	}
-	return geom.Sz(c.Max.W, cardHeadHeight)
+	return geom.Sz(c.Max.W, h)
 }
 
-// paintCard draws a header: the badge, the words, the status, the
-// buttons.
+// paintCard draws a header: the badge, the name and who and where,
+// faded where they are cut, and the buttons.
 func (r *sideRow) paintCard(p *paint.Painter, f gunim.Frame, box geom.Size, kids gunim.Children) {
+	th := f.Theme
 	info := r.card
 	compact := r.w.cards.compact
-	badge := float32(36)
+	badge := float32(cardBadge)
 	b := geom.Rc(cardPad, cardPad, badge, badge)
 	if compact {
 		badge = 30
 		b = geom.Rc(cardPad, (box.H-badge)/2, badge, badge)
 	}
-	// The badge: the machine's letters on its colour.
+	// The badge: the machine's letters on its colour, or this computer's
+	// laptop.
 	fill := info.hue
 	fill.A = 0x38
 	p.RRect(b, 9, paint.Solid(fill))
-	run := text.GoSans(true, false).Shape(info.badge, 14)
-	run.Paint(p, geom.Pt(b.Center().X-run.Advance/2, b.Center().Y-run.Height()/2), info.hue)
-	for i := range kids.Len() {
+	if r.machine == machines.Local {
+		drawIcon(p, icon.Laptop, b.Inset(geom.Uniform(badge/4)), info.hue, 1.8)
+	} else {
+		run := text.GoSans(true, false).Shape(info.badge, 14)
+		run.Paint(p, geom.Pt(b.Center().X-run.Advance/2, b.Center().Y-run.Height()/2), info.hue)
+	}
+	name := text.Default().Shape(info.name, cardTitleSize.Get(th))
+	sub := text.Default().Shape(info.sub, smallText.Get(th))
+	top := float32(cardPad + 1)
+	if compact {
+		top = (box.H - name.Height() - sub.Height() - 2) / 2
+	}
+	fade := widget.TextFade.Get(th)
+	at := geom.Pt(r.textX, top)
+	name.PaintFaded(p, at, widget.Ink.Get(th), r.nameRoom, fade)
+	r.nameAt = geom.Rc(at.X, at.Y, min(name.Advance, r.nameRoom), name.Height())
+	r.nameCut = name.Advance > r.nameRoom
+	at = geom.Pt(r.textX, top+name.Height()+2)
+	sub.PaintFaded(p, at, look.Faint.Get(th), r.subRoom, fade)
+	r.subAt = geom.Rc(at.X, at.Y, min(sub.Advance, r.subRoom), sub.Height())
+	r.subCut = sub.Advance > r.subRoom
+	for i := 2; i < kids.Len(); i++ {
+		if i-2 < len(r.chips) && r.chips[i-2].Disabled {
+			continue
+		}
 		kids.At(i).Paint(p)
 	}
 	if compact {
-		// The state as a dot on the badge's corner, in place of the pill.
-		_, c := pillOf(info.state, f.Theme)
+		// The state as a dot on the badge's corner.
+		_, c := pillOf(info.state, th)
 		dot := geom.Rc(b.Max.X-8, b.Max.Y-8, 11, 11)
-		p.RRect(dot, 5.5, paint.Solid(widget.CardFill.Get(f.Theme)))
+		p.RRect(dot, 5.5, paint.Solid(widget.CardFill.Get(th)))
 		p.RRect(dot.Inset(geom.Uniform(2)), 3.5, paint.Solid(c))
-	} else {
-		r.paintPill(p, f, box)
 	}
 	if t := r.ring.Value(); t > 0.01 {
-		c := widget.Accent.Get(f.Theme)
+		c := widget.Accent.Get(th)
 		c.A = uint8(float32(c.A) * min(t, 1))
 		p.RRectStroke(geom.Rect{Max: box.Point()}.Inset(geom.Uniform(1)), 9, paint.Fill{}, paint.Stroke{Width: 1.5, Color: c})
 	}
+}
+
+// cutWords is the whole of the name or of who and where under the
+// pointer at pos, where it is cut, for its tooltip; "" elsewhere.
+func (r *sideRow) cutWords(pos geom.Point) string {
+	switch {
+	case r.nameCut && r.nameAt.Contains(pos):
+		return r.card.name
+	case r.subCut && r.subAt.Contains(pos):
+		return r.card.sub
+	}
+	return ""
 }
 
 // pillOf is a state's words and colour.
@@ -793,21 +938,21 @@ func pillOf(s cardState, th *theme.Live) (string, color.NRGBA) {
 func pillFor(c cardInfo, now time.Time, th *theme.Live) (string, color.NRGBA) {
 	switch c.state {
 	case cardLocal:
-		return "Local", widget.ToastSuccessInk.Get(th)
+		return "local", widget.ToastSuccessInk.Get(th)
 	case cardConnected:
 		if c.silent {
-			return "Not answering", widget.ToastWarningInk.Get(th)
+			return "not answering", widget.ToastWarningInk.Get(th)
 		}
 		if c.rtt > 0 && !c.since.IsZero() {
 			return roundTrip(c.rtt) + " · " + connectedFor(now.Sub(c.since)), widget.ToastSuccessInk.Get(th)
 		}
-		return "Connected", widget.ToastSuccessInk.Get(th)
+		return "connected", widget.ToastSuccessInk.Get(th)
 	case cardDialing:
-		return "Connecting…", widget.ToastWarningInk.Get(th)
+		return "connecting", widget.ToastWarningInk.Get(th)
 	case cardLost:
-		return "Lost", widget.DialogDangerInk.Get(th)
+		return "connection lost", widget.DialogDangerInk.Get(th)
 	}
-	return "Not connected", look.Faint.Get(th)
+	return "not connected", look.Faint.Get(th)
 }
 
 // roundTrip says a ping's round trip: in milliseconds, or seconds once
@@ -844,35 +989,16 @@ func connectedFor(d time.Duration) string {
 	return s
 }
 
-// pillWidth is how wide a card's pill is at f's time.
-func pillWidth(c cardInfo, f gunim.Frame) float32 {
-	words, _ := pillFor(c, f.Now, f.Theme)
-	return 8 + 6 + 6 + text.Default().Shape(words, smallText.Get(f.Theme)).Advance + 10
-}
-
-// paintPill draws the state's pill at the header's top right. A
-// connected machine's says how long it has been connected, so it is
-// drawn again each minute.
-func (r *sideRow) paintPill(p *paint.Painter, f gunim.Frame, box geom.Size) {
-	words, c := pillFor(*r.card, f.Now, f.Theme)
-	run := text.Default().Shape(words, smallText.Get(f.Theme))
-	w := pillWidth(*r.card, f)
-	if r.card.state == cardConnected && !r.card.since.IsZero() {
-		f.RedrawAt(f.Now.Add(time.Minute))
-	}
-	pr := geom.Rc(box.W-cardPad-w, cardPad+4, w, 22)
-	fill := c
-	fill.A = 0x22
-	p.RRect(pr, 11, paint.Solid(fill))
-	dot := geom.Rc(pr.Min.X+9, pr.Center().Y-3, 6, 6)
-	p.RRect(dot, 3, paint.Solid(c))
-	run.Paint(p, geom.Pt(dot.Max.X+6, pr.Center().Y-run.Height()/2), c)
-}
-
 // handleCard is a header's answer to the pointer and the keys: a press
 // on its room gives it the keyboard; its buttons answer for themselves.
 func (r *sideRow) handleCard(e input.Event, u *gunim.UI) bool {
 	switch e := e.(type) {
+	case input.PointerMove:
+		r.cutTip.Handle(e, u, r, r.cutWords(e.Pos))
+		return false
+	case input.PointerLeave:
+		r.cutTip.Handle(e, u, r, "")
+		return false
 	case input.PointerDown:
 		if e.Button != input.ButtonPrimary {
 			return false
@@ -1027,8 +1153,16 @@ func (s *serverCards) first() gunim.Node {
 // menuAnchor is where a heading's menu opens from: its ⋯ on a card, its
 // plus otherwise.
 func (r *sideRow) menuAnchor(box geom.Size, _ *theme.Live) geom.Rect {
-	if r.card != nil && len(r.chipRects) > 0 {
-		return r.chipRects[len(r.chipRects)-1]
+	if r.card != nil && len(r.chipRects) == len(r.chips) {
+		// Its ⋯, or the last button shown where it has none.
+		if !r.chipRects[chipMore].Empty() {
+			return r.chipRects[chipMore]
+		}
+		for i := len(r.chipRects) - 1; i >= 0; i-- {
+			if !r.chipRects[i].Empty() {
+				return r.chipRects[i]
+			}
+		}
 	}
 	return geom.Rect{Min: geom.Pt(box.W-plusWidth-6, 0), Max: box.Point()}
 }

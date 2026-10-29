@@ -98,6 +98,11 @@ type stored struct {
 	// does not know, so they are kept here.
 	ServerShells map[string]string `json:"serverShells,omitempty"`
 
+	// NoDisconnectAsk are the machines, by id, whose Disconnect closes
+	// what is open on them without asking first: "" is never one, as
+	// this computer has no connection to close.
+	NoDisconnectAsk []string `json:"noDisconnectAsk,omitempty"`
+
 	// Found are the user's changes to the profiles kakel finds itself,
 	// its shells, drives and each server's login shell and home, and
 	// which of them are hidden. Those are found again each run, so
@@ -831,6 +836,35 @@ func (s *Settings) PutServerShell(hostID, profileID string) error {
 			s.have.ServerShells = map[string]string{}
 		}
 		s.have.ServerShells[hostID] = profileID
+	}
+	if err := s.saveLocked(); err != nil {
+		s.have = before
+		return err
+	}
+	return nil
+}
+
+// NoDisconnectAsk are the machines, by id, whose Disconnect does not
+// ask first.
+func (s *Settings) NoDisconnectAsk() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.have.NoDisconnectAsk)
+}
+
+// PutDisconnectAsk has Disconnect on the machine id ask first, or not,
+// and saves.
+func (s *Settings) PutDisconnectAsk(id string, ask bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// The file first, for the same reason PutServe reads it first.
+	if err := s.rereadLocked(); err != nil {
+		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
+	}
+	before := s.have
+	s.have.NoDisconnectAsk = slices.DeleteFunc(slices.Clone(s.have.NoDisconnectAsk), func(at string) bool { return at == id })
+	if !ask && id != "" {
+		s.have.NoDisconnectAsk = append(s.have.NoDisconnectAsk, id)
 	}
 	if err := s.saveLocked(); err != nil {
 		s.have = before
