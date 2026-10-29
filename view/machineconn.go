@@ -1,7 +1,6 @@
 package view
 
 import (
-	"fmt"
 	"image/color"
 	"slices"
 	"strings"
@@ -28,14 +27,21 @@ import (
 
 // Keys of the connection's rows.
 const (
-	mpLog        = app.MachineRowLog
-	mpAddTunnel  = app.MachineRowAddTunnel
-	mpAddSOCKS   = app.MachineRowAddSOCKS
-	mpTunnels    = "head:tunnels"
-	mpSOCKS      = "head:socks"
-	mpTunnelOpen = "tunnel:open:"
-	mpTunnelKept = "tunnel:saved:"
+	mpLog       = app.MachineRowLog
+	mpAddTunnel = app.MachineRowAddTunnel
+	mpAddSOCKS  = app.MachineRowAddSOCKS
+	mpTunnels   = "head:tunnels"
+	mpSOCKS     = "head:socks"
+	// mpTunnel starts a tunnel's key, by what it is, so its row stays
+	// the one picked as it opens and closes, and is saved or not.
+	mpTunnel = "tunnel:"
 )
+
+// tunnelKey is the key of the row of a tunnel saved as kind, listening
+// on listen and reaching target.
+func tunnelKey(kind, listen, target string) string {
+	return mpTunnel + kind + "\x00" + listen + "\x00" + target
+}
 
 // mpTunnelOf is a tunnel as a machine's pane lists it: one open, one
 // saved, or one open that is saved too.
@@ -88,86 +94,119 @@ func (mp *machinePane) tunnelRows(socks bool) []mpItem {
 			of.saved = &mp.st.SavedTunnels[j]
 		}
 		open = append(open, t.As)
-		out = append(out, mpItem{key: mpTunnelOpen + t.ID, title: of.title(), icon: ic, tunnel: &of})
+		out = append(out, mpItem{key: tunnelKey(t.As.Kind, t.As.Listen, t.As.Target), title: of.title(), icon: ic, tunnel: &of})
 	}
 	for i, t := range mp.st.SavedTunnels {
 		if isSOCKS(t.Kind) != socks || !mp.w.keptFor(t.Host, t.HostID, mp.machine) || slices.ContainsFunc(open, t.Same) {
 			continue
 		}
 		of := mpTunnelOf{saved: &mp.st.SavedTunnels[i], socks: socks}
-		out = append(out, mpItem{key: mpTunnelKept + fmt.Sprintf("%#v", t), title: of.title(), icon: ic, tunnel: &of})
+		out = append(out, mpItem{key: tunnelKey(t.Kind, t.Listen, t.Target), title: of.title(), icon: ic, tunnel: &of})
 	}
 	return out
 }
 
-// tunnelSide is the right side for a tunnel's row: what it is, how it
-// is doing, and the buttons that close or open it, save it or take it
-// off the saved list.
+// tunnelSide is the right side for a tunnel's row: how it is doing,
+// with a graph of its traffic while it is open; its fields, to change
+// and save; and the buttons that open or close it, or remove it.
 func (mp *machinePane) tunnelSide(t mpTunnelOf) gunim.Node {
 	as := t.as()
-	called := mp.w.nameOf(mp.machine)
-	form := widget.NewForm()
-	kind := map[string]string{
-		"local":  "A port here, reaching through " + called,
-		"remote": "A port on " + called + ", reaching back here",
-		"socks":  "A SOCKS proxy here, its connections going out from " + called,
-	}[as.Kind]
-	if kind == "" {
-		kind = as.Kind
-	}
-	form.Add("Kind", widget.NewLabel(kind))
-	form.Add("Listen on", widget.NewLabel(as.Listen))
-	if as.Target != "" {
-		form.Add("Forward to", widget.NewLabel(as.Target))
-	}
-	var actions []gunim.Node
+	var parts []gunim.Node
 	if t.open != nil {
 		// What it is doing, said in place as it changes. Each page has
 		// its own: the page before still shows its line as it fades.
-		mp.tunnelNow = widget.NewLabel(t.now())
-		form.Add("Now", mp.tunnelNow)
+		mp.tunnelNow = faintLabel(t.now())
+		parts = append(parts, mp.tunnelNow)
 	}
+	if t.live() && t.open.Meter != nil {
+		parts = append(parts, trafficGraph(t.open.Meter))
+	}
+	var actions []gunim.Node
 	switch {
 	case t.live():
-		traffic := widget.NewButton("Show")
-		traffic.Tooltip = "Show its traffic in a pane"
-		traffic.OnClick = widget.Sends(app.ShowTunnel{ID: t.open.ID})
-		form.Add("Traffic", buttons(traffic))
 		closeIt := widget.NewButton("Close")
 		closeIt.OnClick = widget.Sends(app.CloseTunnel{ID: t.open.ID})
 		actions = append(actions, closeIt)
-	case t.open != nil:
+	case t.saved != nil:
 		open := widget.NewButton("Open")
-		open.Kind = widget.ButtonPrimary
-		open.OnClick = widget.Sends(app.OpenSavedTunnel{Saved: as})
-		closeIt := widget.NewButton("Close")
-		closeIt.Tooltip = "Close its row"
-		closeIt.OnClick = widget.Sends(app.CloseTunnel{ID: t.open.ID})
-		actions = append(actions, open, closeIt)
-	default:
-		open := widget.NewButton("Open")
-		open.Kind = widget.ButtonPrimary
 		open.OnClick = widget.Sends(app.OpenSavedTunnel{Saved: as})
 		open.Disabled = mp.card.state != cardConnected
 		actions = append(actions, open)
 	}
-	if t.saved != nil {
-		saved := *t.saved
-		remove := widget.NewButton("Remove…")
-		remove.OnClick = func(u *gunim.UI) gunim.Intent { mp.confirmForget(mpSavedOf{tunnel: &saved}, u); return nil }
-		actions = append(actions, remove)
-	} else {
-		save := widget.NewButton("Save")
-		save.OnClick = widget.Sends(app.SaveTunnel{Saved: as})
-		actions = append(actions, save)
-	}
-	what := "Saved: it opens again from here."
 	if t.saved == nil {
-		what = "Open until it is closed."
+		// Open, and not saved: what it is, and Save.
+		form := widget.NewForm().Add("Listen on", widget.NewLabel(as.Listen))
+		if as.Target != "" {
+			form.Add("Forward to", widget.NewLabel(as.Target))
+		}
+		save := widget.NewButton("Save")
+		save.Kind = widget.ButtonPrimary
+		save.OnClick = widget.Sends(app.SaveTunnel{Saved: as})
+		parts = append(parts, widget.NewCard(form), buttons(append([]gunim.Node{save}, actions...)...))
+		col := widget.Column(append([]gunim.Node{heading(t.title())}, parts...)...)
+		col.Cross, col.Gap = widget.CrossStretch, mpGap
+		return widget.NewSized(col, 640, 0)
 	}
-	col := widget.Column(heading(t.title()), faintLabel(what), widget.NewCard(form), buttons(actions...))
+	// Saved: its fields, to change and save.
+	saved := *t.saved
+	form, fields, tunnelOf, auto, way := mp.w.tunnelFields(mp.machine, t.socks, &saved)
+	save := widget.NewButton("Save")
+	save.Kind = widget.ButtonPrimary
+	problem := faintLabel("")
+	check := func(u *gunim.UI) {
+		now := tunnelOf()
+		err := now.Validate()
+		problem.Text = ""
+		if err != nil {
+			problem.Text = words.UpperFirst(err.Error())
+		}
+		save.Disabled = err != nil || now.Kind.String() == saved.Kind && now.Listen == saved.Listen &&
+			now.Target == saved.Target && auto.Checked() == saved.Auto
+		if u != nil {
+			u.Invalidate()
+		}
+	}
+	for _, f := range fields {
+		f.OnChange = func(_ string, u *gunim.UI) gunim.Intent { check(u); return nil }
+	}
+	way.OnChange = func(_ int, u *gunim.UI) gunim.Intent { check(u); return nil }
+	auto.OnChange = func(_ bool, u *gunim.UI) gunim.Intent { check(u); return nil }
+	check(nil)
+	save.OnClick = func(*gunim.UI) gunim.Intent {
+		now := tunnelOf()
+		if now.Validate() != nil {
+			return nil
+		}
+		// Its row is the one picked as it is now.
+		mp.wantSel = tunnelKey(now.Kind.String(), now.Listen, now.Target)
+		return app.EditTunnel{Was: saved, Machine: mp.machine, Tunnel: now, Auto: auto.Checked()}
+	}
+	remove := widget.NewButton("Remove…")
+	remove.OnClick = func(u *gunim.UI) gunim.Intent { mp.confirmForget(mpSavedOf{tunnel: &saved}, u); return nil }
+	actions = append([]gunim.Node{save}, append(actions, remove)...)
+	parts = append(parts, widget.NewCard(form), problem, buttons(actions...))
+	col := widget.Column(append([]gunim.Node{heading(t.title())}, parts...)...)
 	col.Cross, col.Gap = widget.CrossStretch, mpGap
 	return widget.NewSized(col, 640, 0)
+}
+
+// trafficGraph is a graph of what goes through a tunnel each second,
+// both ways, saying the speed now.
+func trafficGraph(m *meter.Meter) gunim.Node {
+	var rate meter.Rate
+	g := widget.NewLiveGraph(500*time.Millisecond, 120)
+	g.Floor = trafficFloor
+	g.Sample = func() float64 {
+		rate.Sample(m, time.Now())
+		past := rate.Past()
+		if len(past) == 0 {
+			return 0
+		}
+		return float64(past[len(past)-1])
+	}
+	g.Label = func(v float64) string { return words.Size(int64(v)) + "/s" }
+	g.SetRunning(true)
+	return g
 }
 
 // now is what an open tunnel is doing, for its page.
@@ -194,23 +233,19 @@ func meterOf(t mpTunnelOf) *meter.Meter {
 }
 
 // addTunnelSide is the right side for the + of Tunnels, or with socks
-// of SOCKS proxies: the fields, and Open.
+// of SOCKS proxies: the fields, and Save. One saved to connect
+// automatically opens at once, with the machine connected.
 func (mp *machinePane) addTunnelSide(socks bool) gunim.Node {
-	form, fields, tunnelOf, keep, way := mp.w.tunnelFields(mp.machine, socks)
-	keep.SetChecked(true, nil)
-	open := widget.NewButton("Open")
-	open.Kind = widget.ButtonPrimary
+	form, fields, tunnelOf, auto, way := mp.w.tunnelFields(mp.machine, socks, nil)
+	save := widget.NewButton("Save")
+	save.Kind = widget.ButtonPrimary
 	problem := faintLabel("")
 	check := func(u *gunim.UI) {
 		problem.Text = ""
 		err := tunnelOf().Validate()
-		connected := mp.card.state == cardConnected
-		open.Disabled = err != nil || !connected
-		switch {
-		case err != nil && strings.TrimSpace(fields[0].Text()) != "":
+		save.Disabled = err != nil
+		if err != nil && strings.TrimSpace(fields[0].Text()) != "" {
 			problem.Text = words.UpperFirst(err.Error())
-		case !connected:
-			problem.Text = "Not connected"
 		}
 		if u != nil {
 			u.Invalidate()
@@ -221,22 +256,20 @@ func (mp *machinePane) addTunnelSide(socks bool) gunim.Node {
 	}
 	way.OnChange = func(_ int, u *gunim.UI) gunim.Intent { check(u); return nil }
 	check(nil)
-	open.OnClick = func(*gunim.UI) gunim.Intent {
+	save.OnClick = func(*gunim.UI) gunim.Intent {
 		t := tunnelOf()
 		if t.Validate() != nil {
 			return nil
 		}
-		mp.addedTunnel, mp.tunnelsBefore = &t, map[string]bool{}
-		for _, open := range mp.st.Tunnels {
-			mp.tunnelsBefore[open.ID] = true
-		}
-		return app.OpenTunnel{Machine: mp.machine, Tunnel: t, Keep: keep.Checked()}
+		// Its row is picked once it comes.
+		mp.wantSel = tunnelKey(t.Kind.String(), t.Listen, t.Target)
+		return app.AddTunnel{Machine: mp.machine, Tunnel: t, Auto: auto.Checked()}
 	}
 	title, note := "Add Tunnel", "A port that forwards over the connection to "+mp.w.nameOf(mp.machine)+"."
 	if socks {
 		title, note = "Add SOCKS Proxy", "A SOCKS proxy here: programs set to use it reach the network from "+mp.w.nameOf(mp.machine)+"."
 	}
-	col := widget.Column(heading(title), faintLabel(note), widget.NewCard(form), problem, buttons(open))
+	col := widget.Column(heading(title), faintLabel(note), widget.NewCard(form), problem, buttons(save))
 	col.Cross, col.Gap = widget.CrossStretch, mpGap
 	return widget.NewSized(col, 640, 0)
 }

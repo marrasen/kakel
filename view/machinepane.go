@@ -162,18 +162,15 @@ type machinePane struct {
 	// added is the name of a profile just added, and addedDir the path
 	// of a folder just saved, to pick once it comes.
 	added, addedDir string
-	// addedTunnel is a tunnel just opened from the + form, to pick once
-	// its row comes.
-	addedTunnel *remote.Tunnel
+	// wantSel is a row to pick once it comes, as a tunnel just saved.
+	wantSel string
 	// rowAt counts the rows the program asked for, as the pane last
 	// said; logSeen is the end of the log when it was last looked at.
 	rowAt int
-	// tunnelsBefore are the tunnels open as addedTunnel was asked for,
-	// and tunnelNow says what the tunnel picked is doing. It and
+	// tunnelNow says what the tunnel picked is doing. It and
 	// overviewLine are the shown page's: each page makes its own, as a
 	// node is in one place only and the page going stays as it fades.
-	tunnelsBefore map[string]bool
-	tunnelNow     *widget.Label
+	tunnelNow *widget.Label
 	// logView is the log page's view of the log, while it shows, and
 	// logShown the log's end as it was last given.
 	logView  *widget.LogView
@@ -261,7 +258,7 @@ func (mp *machinePane) item(k string) (mpItem, bool) {
 
 // pick shows row k's settings on the right.
 func (mp *machinePane) pick(k string, u *gunim.UI) {
-	mp.sel, mp.addedTunnel = k, nil
+	mp.sel, mp.wantSel = k, ""
 	mp.refresh(u)
 }
 
@@ -279,7 +276,7 @@ func (mp *machinePane) show(st app.State, u *gunim.UI) {
 			if p.RowAt != mp.rowAt && p.Row != "" {
 				// Shown once: the program forgets the row, so the pane
 				// moved to another window does not show it again.
-				mp.sel, mp.shown, mp.addedTunnel = p.Row, "", nil
+				mp.sel, mp.shown, mp.wantSel = p.Row, "", ""
 				u.Send(mp.list, app.MachineRowShown{Pane: mp.id})
 			}
 			mp.rowAt = p.RowAt
@@ -303,10 +300,8 @@ func (mp *machinePane) refresh(u *gunim.UI) {
 			mp.sel, mp.added = it.key, ""
 		case mp.addedDir != "" && it.folder.fav != nil && it.folder.fav.Path == mp.addedDir:
 			mp.sel, mp.addedDir, mp.shown = it.key, "", ""
-		case mp.addedTunnel != nil && it.tunnel != nil && it.tunnel.open != nil && !mp.tunnelsBefore[it.tunnel.open.ID] &&
-			it.tunnel.open.As.Kind == mp.addedTunnel.Kind.String() &&
-			it.tunnel.open.As.Listen == mp.addedTunnel.Listen && it.tunnel.open.As.Target == mp.addedTunnel.Target:
-			mp.sel, mp.addedTunnel, mp.shown = it.key, nil, ""
+		case mp.wantSel != "" && it.key == mp.wantSel:
+			mp.sel, mp.wantSel, mp.shown = it.key, "", ""
 		}
 	}
 	adding := (mp.sel == mpAddTunnel || mp.sel == mpAddSOCKS) && mp.machine != machines.Local && !mp.draft

@@ -64,6 +64,21 @@ type (
 	OpenSavedTunnel struct{ Saved settings.SavedTunnel }
 	// SaveTunnel puts a tunnel open now on the saved list.
 	SaveTunnel struct{ Saved settings.SavedTunnel }
+	// AddTunnel saves a tunnel over Machine, which opens whenever the
+	// machine connects with Auto, and now, if it is connected.
+	AddTunnel struct {
+		Machine machines.ID
+		Tunnel  remote.Tunnel
+		Auto    bool
+	}
+	// EditTunnel saves the tunnel Was, over Machine, as Tunnel and Auto
+	// say now. Open, it opens again as it is now, when its ports changed.
+	EditTunnel struct {
+		Was     settings.SavedTunnel
+		Machine machines.ID
+		Tunnel  remote.Tunnel
+		Auto    bool
+	}
 	// CloseTunnel closes a tunnel, or clears the row of one stopped.
 	CloseTunnel struct{ ID string }
 	// WatchTunnel starts or stops writing a tunnel's traffic into its
@@ -127,6 +142,10 @@ func (a *app) openTunnel(in OpenTunnel) error {
 	}
 	if a.settings != nil && !in.Saved {
 		saved := tunnel.Saved(a.keptAs(in.Machine), a.serverID(in.Machine), t)
+		// Saved before, it keeps whether it opens by itself.
+		if i := slices.IndexFunc(a.settings.Tunnels(), saved.Same); i >= 0 {
+			saved.Auto = a.settings.Tunnels()[i].Auto
+		}
 		switch {
 		case in.Keep:
 			if err := a.settings.KeepTunnel(saved, mostSavedTunnels); err != nil {
@@ -388,6 +407,86 @@ func (a *app) openSavedTunnel(saved settings.SavedTunnel) error {
 		return err
 	}
 	return a.openTunnel(OpenTunnel{Machine: machine, Tunnel: t, Keep: true, Saved: true})
+}
+
+// addTunnel saves a tunnel, and opens it at once when it opens by
+// itself and its machine is connected.
+func (a *app) addTunnel(in AddTunnel) error {
+	if err := in.Tunnel.Validate(); err != nil {
+		return err
+	}
+	if a.settings == nil {
+		return errors.New("the settings could not be read, so nothing can be saved")
+	}
+	saved := tunnel.Saved(a.keptAs(in.Machine), a.serverID(in.Machine), in.Tunnel)
+	saved.Auto = in.Auto
+	err := a.settings.KeepTunnel(saved, mostSavedTunnels)
+	a.st.SavedTunnels = a.settings.Tunnels()
+	if err != nil || !in.Auto || !a.reachable(in.Machine) {
+		return err
+	}
+	return a.openTunnel(OpenTunnel{Machine: in.Machine, Tunnel: in.Tunnel, Keep: true, Saved: true})
+}
+
+// editTunnel saves the tunnel edited, and opens it again as it is now
+// where it was open and its ports changed.
+func (a *app) editTunnel(in EditTunnel) error {
+	if err := in.Tunnel.Validate(); err != nil {
+		return err
+	}
+	if a.settings == nil {
+		return errors.New("the settings could not be read, so nothing can be saved")
+	}
+	now := tunnel.Saved(a.keptAs(in.Machine), a.serverID(in.Machine), in.Tunnel)
+	now.Auto = in.Auto
+	err := a.settings.ReplaceTunnel(in.Was, now, mostSavedTunnels)
+	a.st.SavedTunnels = a.settings.Tunnels()
+	if err != nil || now.Same(in.Was) {
+		return err
+	}
+	for _, t := range a.st.Tunnels {
+		if t.Live && t.As.Same(in.Was) {
+			if err := a.closeTunnel(t.ID); err != nil {
+				return err
+			}
+			return a.openTunnel(OpenTunnel{Machine: in.Machine, Tunnel: in.Tunnel, Keep: true, Saved: true})
+		}
+	}
+	return nil
+}
+
+// reachable reports whether a tunnel can be opened over m now: a
+// connection of this window's to it, or a kakel window that reaches it.
+func (a *app) reachable(m machines.ID) bool {
+	through, _, far := m.Far()
+	if !far {
+		through = m
+	}
+	if a.machines.Get(through).Window != nil {
+		return true
+	}
+	_, ok, err := a.connOf(m)
+	return ok && err == nil
+}
+
+// openAutoTunnels opens the tunnels saved to open by themselves over m,
+// as m connects. One that cannot open says why, and the rest go on.
+func (a *app) openAutoTunnels(m machines.ID) {
+	for _, saved := range a.st.SavedTunnels {
+		if !saved.Auto || !(saved.HostID == string(m) || saved.HostID == "" && saved.Host == a.keptAs(m)) {
+			continue
+		}
+		if slices.ContainsFunc(a.st.Tunnels, func(t Tunnel) bool { return t.Live && t.As.Same(saved) }) {
+			continue
+		}
+		t, err := tunnel.Read(saved)
+		if err == nil {
+			err = a.openTunnel(OpenTunnel{Machine: m, Tunnel: t, Keep: true, Saved: true})
+		}
+		if err != nil {
+			a.failed("Couldn't open the tunnel "+saved.Listen, err.Error())
+		}
+	}
 }
 
 // saveTunnel puts saved on the saved list.

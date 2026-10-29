@@ -19,7 +19,7 @@ func TestATunnelThroughAWindowListensHere(t *testing.T) {
 	publish(app.State{Connected: []machines.ID{"srv"}, Windows: []app.RemoteWindow{{Name: "desk"}}})
 	directions := func(m machines.ID) bool {
 		t.Helper()
-		form, _, _, _, _ := win.tunnelFields(m, false)
+		form, _, _, _, _ := win.tunnelFields(m, false, nil)
 		return slices.ContainsFunc(form.Children(), func(c gunim.Node) bool {
 			d, ok := c.(*widget.Dropdown)
 			return ok && d.Label == "Direction"

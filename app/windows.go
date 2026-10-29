@@ -292,6 +292,7 @@ func (a *app) reachWindow(in ConnectWindow, quiet bool, then func(error)) error 
 			}
 			a.holdWindow(name, addr, in.KeyFile, in.Via, win)
 			a.dialed(logPane, name, terminal)
+			a.openAutoTunnels(name)
 		}
 	}()
 	return nil

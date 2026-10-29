@@ -45,19 +45,30 @@ func (w *Window) tunnelDialogOn(machine machines.ID, socks bool, u *gunim.UI) {
 }
 
 // tunnelFields are the fields that describe a tunnel over machine's
-// connection, or with socks a SOCKS proxy: a form of them, the tunnel
-// they say, and the tick that saves it.
-func (w *Window) tunnelFields(machine machines.ID, socks bool) (form *widget.Form, fields []*widget.TextField, tunnelOf func() remote.Tunnel, keep *widget.Checkbox, way *widget.Dropdown) {
+// connection, or with socks a SOCKS proxy, filled in from was when it
+// is one saved: a form of them, the tunnel they say, the tick that has
+// it open whenever the machine connects, and the direction.
+func (w *Window) tunnelFields(machine machines.ID, socks bool, was *settings.SavedTunnel) (form *widget.Form, fields []*widget.TextField, tunnelOf func() remote.Tunnel, auto *widget.Checkbox, way *widget.Dropdown) {
 	listen, target := widget.NewTextField(), widget.NewTextField()
 	listen.Placeholder, target.Placeholder = "[address:]port", "host:port"
 	called := w.nameOf(machine)
 	way = widget.NewDropdown(widget.Labels("Local — listen here", "Remote — listen on "+called))
 	way.Label = "Direction"
-	keep = widget.NewCheckbox("Save this tunnel")
+	auto = widget.NewCheckbox("Connect automatically")
+	auto.Tooltip = "Open it whenever " + called + " connects"
 	form = widget.NewForm()
+	if was != nil {
+		listen.SetText(was.Listen, nil)
+		target.SetText(was.Target, nil)
+		auto.SetChecked(was.Auto, nil)
+		if was.Kind == remote.RemoteForward.String() {
+			way.SetSelected(1, nil)
+		}
+	}
 	if socks {
-		keep.Label = "Save this SOCKS proxy"
-		listen.SetText("1080", nil)
+		if was == nil {
+			listen.SetText("1080", nil)
+		}
 		form.Add("Listen on", listen)
 	} else {
 		form.Add("Listen on", listen).Add("Forward to", target)
@@ -68,7 +79,7 @@ func (w *Window) tunnelFields(machine machines.ID, socks bool) (form *widget.For
 			form.Add("Direction", way)
 		}
 	}
-	form.Add("", keep)
+	form.Add("", auto)
 	tunnelOf = func() remote.Tunnel {
 		t := remote.Tunnel{Kind: remote.LocalForward, Listen: strings.TrimSpace(listen.Text()), Target: strings.TrimSpace(target.Text())}
 		// A port alone is that port on the listening machine only.
@@ -83,7 +94,7 @@ func (w *Window) tunnelFields(machine machines.ID, socks bool) (form *widget.For
 		}
 		return t
 	}
-	return form, []*widget.TextField{listen, target}, tunnelOf, keep, way
+	return form, []*widget.TextField{listen, target}, tunnelOf, auto, way
 }
 
 // machineOf returns the server pane id is on, "" for this computer.

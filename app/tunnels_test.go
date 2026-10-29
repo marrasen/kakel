@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -300,5 +301,63 @@ func TestOpeningASavedTunnelLeavesTheListInItsOrder(t *testing.T) {
 	}
 	if got := set.Tunnels(); len(got) != 2 || !got[0].Same(first) {
 		t.Fatalf("opened, the saved list is %+v", got)
+	}
+}
+
+// A tunnel added is saved. Left to be opened by hand, it waits; to
+// connect automatically, it opens at once with its machine connected,
+// and again as the machine connects.
+func TestATunnelAddedOpensAsItSays(t *testing.T) {
+	a, _, echo := tunnelApp(t)
+	set, err := settingsIn(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.settings = set
+	byHand := remote.Tunnel{Kind: remote.LocalForward, Listen: "127.0.0.1:0", Target: echo}
+	a.handle(AddTunnel{Machine: "srv", Tunnel: byHand})
+	if len(a.st.SavedTunnels) != 1 || a.st.SavedTunnels[0].Auto || len(a.st.Tunnels) != 0 {
+		t.Fatalf("added by hand: saved %+v, open %+v; notices %+v", a.st.SavedTunnels, a.st.Tunnels, a.st.Notices)
+	}
+	a.handle(EditTunnel{Was: a.st.SavedTunnels[0], Machine: "srv", Tunnel: byHand, Auto: true})
+	if len(a.st.SavedTunnels) != 1 || !a.st.SavedTunnels[0].Auto || len(a.st.Tunnels) != 0 {
+		t.Fatalf("made automatic: saved %+v, open %+v", a.st.SavedTunnels, a.st.Tunnels)
+	}
+	// As srv connects, it opens.
+	a.openAutoTunnels("srv")
+	if len(a.st.Tunnels) != 1 || !a.st.Tunnels[0].Live {
+		t.Fatalf("srv connected, the tunnels open are %+v; notices %+v", a.st.Tunnels, a.st.Notices)
+	}
+	// Connecting again opens no second one.
+	a.openAutoTunnels("srv")
+	if len(a.st.Tunnels) != 1 {
+		t.Fatalf("connected again, the tunnels open are %+v", a.st.Tunnels)
+	}
+}
+
+// An open tunnel edited to reach elsewhere is saved so, and opens again
+// as it is now.
+func TestAnOpenTunnelEditedOpensAgain(t *testing.T) {
+	a, _, echo := tunnelApp(t)
+	set, err := settingsIn(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.settings = set
+	was := remote.Tunnel{Kind: remote.LocalForward, Listen: "127.0.0.1:0", Target: echo}
+	a.handle(AddTunnel{Machine: "srv", Tunnel: was, Auto: true})
+	if len(a.st.Tunnels) != 1 || !a.st.Tunnels[0].Live {
+		t.Fatalf("added to connect automatically, the tunnels open are %+v; notices %+v", a.st.Tunnels, a.st.Notices)
+	}
+	other := echoServer(t)
+	now := was
+	now.Target = other
+	a.handle(EditTunnel{Was: a.st.SavedTunnels[0], Machine: "srv", Tunnel: now, Auto: true})
+	if len(a.st.SavedTunnels) != 1 || a.st.SavedTunnels[0].Target != other {
+		t.Fatalf("edited, the saved tunnels are %+v", a.st.SavedTunnels)
+	}
+	live := slices.IndexFunc(a.st.Tunnels, func(t Tunnel) bool { return t.Live })
+	if live < 0 || a.st.Tunnels[live].As.Target != other {
+		t.Fatalf("edited, the tunnels open are %+v", a.st.Tunnels)
 	}
 }

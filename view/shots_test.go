@@ -1,6 +1,7 @@
 package view
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -129,7 +130,7 @@ func TestShots(t *testing.T) {
 		{"s3", "", "pane-s3"},
 		{"s1", app.MachineRowLog, "pane-s1-log"},
 		{"s1", app.MachineRowAddTunnel, "pane-s1-addtunnel"},
-		{"s1", "tunnel:open:u1", "pane-s1-tunnel"},
+		{"s1", tunnelKey("local", ":8080", "localhost:80"), "pane-s1-tunnel"},
 		{"s1", app.MachineRowAddSOCKS, "pane-s1-addsocks"},
 		{"s1", app.MachineRowLog, "pane-s1-log-narrow"},
 	} {
@@ -150,7 +151,7 @@ func TestShots(t *testing.T) {
 		// Picking a row further down: the selection glides down, and
 		// the page comes up from below as the one before fades.
 		mp := win.machinePanes["mp"]
-		mp.pick(mpTunnelOpen+"u1", lastUI)
+		mp.pick(tunnelKey("local", ":8080", "localhost:80"), lastUI)
 		for i := 1; i <= 4; i++ {
 			frames(3)
 			shot("motion-" + strconv.Itoa(i))
@@ -177,4 +178,31 @@ func TestShotsTabSwitch(t *testing.T) {
 		frames(2)
 		gunimtest.WritePNG(t, filepath.Join(dir, "switch-"+strconv.Itoa(i)+".png"), gunimtest.Pixels(t, lastWindow))
 	}
+}
+
+// TestShotsTunnelTraffic writes an open tunnel's page as bytes go
+// through it, to see its graph.
+func TestShotsTunnelTraffic(t *testing.T) {
+	dir := os.Getenv("KAKEL_SHOTS")
+	if dir == "" {
+		t.Skip("KAKEL_SHOTS names no folder to write the screenshots to")
+	}
+	_, _, publish := windowStageOf(t, geom.Sz(1300, 860))
+	st := shotsState()
+	m := st.Tunnels[0].Meter
+	st.SavedTunnels[0].Auto = true
+	st.Panes = append(st.Panes, app.Pane{ID: "mp", Title: "machine", Kind: app.KindMachine, Machine: "s1",
+		Row: tunnelKey("local", ":8080", "localhost:80"), RowAt: 1})
+	st.Stage, st.Focus = &app.Box{Pane: "mp"}, "mp"
+	publish(st)
+	// Five seconds of traffic, rising and falling, as frames go by.
+	for i := range 300 {
+		m.Moved(2000+int(math.Abs(math.Sin(float64(i)/20))*40000), 800, time.Now())
+		lastWindow.Frame(time.Second / 60)
+		time.Sleep(time.Second / 60)
+	}
+	shot := func(name string) {
+		gunimtest.WritePNG(t, filepath.Join(dir, name+".png"), gunimtest.Pixels(t, lastWindow))
+	}
+	shot("pane-s1-tunnel-traffic")
 }
