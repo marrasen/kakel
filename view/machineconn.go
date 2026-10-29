@@ -122,7 +122,9 @@ func (mp *machinePane) tunnelSide(t mpTunnelOf) gunim.Node {
 	}
 	var actions []gunim.Node
 	if t.open != nil {
-		// What it is doing, said in place as it changes.
+		// What it is doing, said in place as it changes. Each page has
+		// its own: the page before still shows its line as it fades.
+		mp.tunnelNow = widget.NewLabel(t.now())
 		form.Add("Now", mp.tunnelNow)
 	}
 	switch {

@@ -7,6 +7,15 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
+## Unreleased
+
+### Fixed
+
+**Taking an open tunnel off the saved list no longer crashes kakel.**
+Since its pages fade from one to the next, a tunnel's page built again
+while it was showing, as Remove… does to one that is open, crashed
+kakel as the page before faded out.
+
 ## v0.12.2-beta.8
 
 ### Changed

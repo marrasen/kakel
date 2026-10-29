@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/icon"
@@ -447,6 +448,38 @@ func TestATunnelsPageStaysAsItsTrafficChanges(t *testing.T) {
 	}
 	if mp.tunnelNow.Text != "Open · 2 streams, 4 KB" {
 		t.Fatalf("the page says it is %q", mp.tunnelNow.Text)
+	}
+}
+
+// A tunnel's page built again, as an open tunnel taken off the saved
+// list is, fades in over the one it replaces: each says what the
+// tunnel is doing on a line of its own, as a line can be on one page
+// only.
+func TestAnOpenTunnelTakenOffTheListKeepsBothPagesWhole(t *testing.T) {
+	as := settings.SavedTunnel{Host: "prod", HostID: "s1", Kind: "local", Listen: ":9000", Target: "db:5432"}
+	st := app.State{Saved: []remote.Host{{ID: "s1", Name: "prod", Address: "prod.example"}},
+		Machines: []machines.Info{{ID: "s1", Name: "prod"}}, Connected: []machines.ID{"s1"},
+		Tunnels:      []app.Tunnel{{ID: "t1", Machine: "s1", Live: true, As: as, Note: "1 stream"}},
+		SavedTunnels: []settings.SavedTunnel{as}}
+	_, mp, again := machinePaneOf(t, st, "s1", false)
+	mp.pick(mpTunnelOpen+"t1", lastUI)
+	// Shown in full, so it has a fade to go out with.
+	frames := func() {
+		for range 60 {
+			lastWindow.Frame(time.Second / 60)
+		}
+	}
+	frames()
+	page := mp.right.Page()
+	st.SavedTunnels = nil
+	again(st)
+	if mp.right.Page() == page {
+		t.Fatal("taken off the list, the tunnel's page was not built again")
+	}
+	// Drawn through the fade, with both pages laid out.
+	frames()
+	if mp.tunnelNow.Text != "Open · 1 stream" {
+		t.Fatalf("the new page says it is %q", mp.tunnelNow.Text)
 	}
 }
 
