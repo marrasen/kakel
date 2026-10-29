@@ -354,6 +354,7 @@ func Of(t themes.Theme) (Themed, error) {
 		theme.Set(widget.PaletteMark, alpha(accent, 0x50)),
 		theme.Set(SidebarFill, sideFill),
 		theme.Set(RowActive, rowActive),
+		theme.Set(widget.ListSelected, rowActive),
 		theme.Set(RowActiveInk, activeInk),
 		theme.Set(RowHover, rowHover),
 		theme.Set(Faint, faint),

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/marrasen/gunim"
+	"github.com/marrasen/gunim/anim"
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/icon"
 	"github.com/marrasen/gunim/input"
@@ -481,32 +482,51 @@ func (m *liveMark) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, _ gunim
 	}
 }
 
-// countBadge is a small count, in red, such as the lines gone badly in
-// a log not looked at yet.
-type countBadge struct{ n int }
+// countBadge is a small count, in red, such as the problems in a log
+// not read yet. It grows and fades in as the count comes, and out as it
+// goes, keeping its last words while it does.
+type countBadge struct {
+	anim.Group
+	n     int
+	said  string
+	shown *anim.Float
+}
+
+func newCountBadge() *countBadge {
+	b := &countBadge{shown: anim.NewFloat(0)}
+	b.Add(b.shown)
+	return b
+}
 
 // Layout implements [gunim.Node].
 func (b *countBadge) Layout(c gunim.Constraints, f gunim.Frame, _ gunim.Children) geom.Size {
-	if b.n == 0 {
+	if b.n > 0 {
+		b.said = words.ManyOf(b.n, "problem", "problems")
+		b.shown.Animate(1, widget.Quick.Get(f.Theme))
+	} else {
+		b.shown.Animate(0, widget.Settle.Get(f.Theme))
+	}
+	t := min(max(b.shown.Value(), 0), 1)
+	if t < 0.001 || b.said == "" {
 		return geom.Size{}
 	}
-	run := text.Default().Shape(b.words(), smallText.Get(f.Theme))
-	return c.Constrain(geom.Sz(run.Advance+14, 18))
+	run := text.Default().Shape(b.said, smallText.Get(f.Theme))
+	return c.Constrain(geom.Sz((run.Advance+14)*t, 18))
 }
-
-func (b *countBadge) words() string { return words.ManyOf(b.n, "problem", "problems") }
 
 // Paint implements [gunim.Node].
 func (b *countBadge) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, _ gunim.Children) {
-	if b.n == 0 || box.W == 0 {
+	t := min(max(b.shown.Value(), 0), 1)
+	if t < 0.001 || box.W == 0 {
 		return
 	}
+	defer p.Layer(paint.LayerOpts{Bounds: geom.Rect{Max: box.Point()}, Opacity: t})()
 	ink := widget.DialogDangerInk.Get(f.Theme)
 	fill := ink
 	fill.A = 0x2c
 	p.RRect(geom.Rect{Max: box.Point()}, box.H/2, paint.Solid(fill))
-	run := text.Default().Shape(b.words(), smallText.Get(f.Theme))
-	run.Paint(p, geom.Pt(7, box.H/2-run.Height()/2), ink)
+	run := text.Default().Shape(b.said, smallText.Get(f.Theme))
+	run.PaintFaded(p, geom.Pt(7, box.H/2-run.Height()/2), ink, box.W-7, widget.TextFade.Get(f.Theme))
 }
 
 // sideFoot is the bottom of a machine's sidebar: a line, and the
