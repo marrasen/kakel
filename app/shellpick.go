@@ -119,17 +119,6 @@ func (a *app) shellHere() string {
 	return ""
 }
 
-// shellsDefaultFirst are the shells here, the one a new terminal starts
-// first.
-func (a *app) shellsDefaultFirst() []ShellChoice {
-	out := slices.Clone(a.st.Shells)
-	if i := slices.IndexFunc(out, func(s ShellChoice) bool { return s.ID == a.defaultShell() }); i > 0 {
-		def := out[i]
-		out = slices.Insert(slices.Delete(out, i, i+1), 0, def)
-	}
-	return out
-}
-
 // localShell is the command a new terminal here starts, when the pane
 // in front runs no shell to start another of (see likeHere): the shell
 // kept, or nil for the user's own.

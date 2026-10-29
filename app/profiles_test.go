@@ -674,9 +674,8 @@ func TestAServerProfileRunningAnUnknownProgramIsNotTaught(t *testing.T) {
 	}
 }
 
-// A server's profiles are offered in the launcher and the tray, the
-// one its new terminal runs first, and the tray's menu changes with
-// them.
+// A server's profiles are offered in the launcher and the tray, in the
+// order the user put them in, and the tray's menu changes with them.
 func TestAServersProfilesAreOfferedOnIt(t *testing.T) {
 	a, _ := serverWithProfiles(t)
 	h, _ := a.book.Lookup("srv")
@@ -687,7 +686,7 @@ func TestAServersProfilesAreOfferedOnIt(t *testing.T) {
 	for _, x := range ms[i].Actions {
 		actions = append(actions, x.ID)
 	}
-	if want := []string{"terminal", "shell:profile:htop", "shell:profile:tmux", "files"}; !slices.Equal(actions, want) {
+	if want := []string{"terminal", "shell:profile:tmux", "shell:profile:htop", "files"}; !slices.Equal(actions, want) {
 		t.Fatalf("the launcher offers %v on the server, want %v", actions, want)
 	}
 	things := map[string]LaunchThing{}
@@ -709,7 +708,7 @@ func TestAServersProfilesAreOfferedOnIt(t *testing.T) {
 			}
 		}
 	}
-	if want := []string{"Terminal", "Files", "htop", "tmux", "Connection Log"}; !slices.Equal(tray, want) {
+	if want := []string{"Terminal", "Files", "tmux", "htop", "Connection Log"}; !slices.Equal(tray, want) {
 		t.Fatalf("the tray offers %v on the server, want %v", tray, want)
 	}
 	sig := a.traySig()
@@ -738,5 +737,38 @@ func TestRemovingAServerRemovesItsProfiles(t *testing.T) {
 	}
 	if len(a.st.ServerShells) != 0 || a.settings.ServerShell("srv") != "" {
 		t.Fatalf("the server removed, it runs %v", a.st.ServerShells)
+	}
+}
+
+// A terminal running a profile is called after it and its server, until
+// its shell names it.
+func TestAProfilesTerminalIsCalledAfterIt(t *testing.T) {
+	a, answering := serverWithProfiles(t)
+	a.handle(OpenShellNamed{ID: "profile:htop"})
+	waitFor(t, a, "htop's terminal", func() bool {
+		answering()
+		return slices.ContainsFunc(a.st.Panes, func(p Pane) bool { return p.Machine == "srv" && p.Kind == KindTerminal })
+	})
+	i := slices.IndexFunc(a.st.Panes, func(p Pane) bool { return p.Machine == "srv" && p.Kind == KindTerminal })
+	if got := a.st.Panes[i].Title; got != "htop on srv" {
+		t.Fatalf("htop's terminal is called %q", got)
+	}
+}
+
+// The order the profiles are put in is the order they are offered in,
+// the default standing where it was put.
+func TestProfilesAreOfferedInTheOrderPutIn(t *testing.T) {
+	a, _ := serverWithProfiles(t)
+	a.handle(SetDefaultProfile{Machine: "srv", ID: "profile:tmux"})
+	a.handle(ReorderProfiles{Machine: "srv", IDs: []string{LoginShell, "profile:htop", "profile:tmux"}})
+	var names []string
+	for _, p := range a.profilesOn("srv") {
+		names = append(names, p.Name)
+	}
+	if !slices.Equal(names, []string{"htop", "tmux"}) {
+		t.Fatalf("the profiles are offered as %v", names)
+	}
+	if got := a.settings.ProfileOrder()["srv"]; !slices.Equal(got, []string{LoginShell, "profile:htop", "profile:tmux"}) {
+		t.Fatalf("the order saved is %v", got)
 	}
 }

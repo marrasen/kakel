@@ -103,6 +103,12 @@ type stored struct {
 	// this computer has no connection to close.
 	NoDisconnectAsk []string `json:"noDisconnectAsk,omitempty"`
 
+	// ProfileOrder is the order of each machine's profiles, by the
+	// machine's id, "" for this computer, as the profiles' ids: the
+	// user's own and those kakel finds. One left out comes after those
+	// in it, in the order it was found or added.
+	ProfileOrder map[string][]string `json:"profileOrder,omitempty"`
+
 	// Found are the user's changes to the profiles kakel finds itself,
 	// its shells, drives and each server's login shell and home, and
 	// which of them are hidden. Those are found again each run, so
@@ -837,6 +843,40 @@ func (s *Settings) PutServerShell(hostID, profileID string) error {
 		}
 		s.have.ServerShells[hostID] = profileID
 	}
+	if err := s.saveLocked(); err != nil {
+		s.have = before
+		return err
+	}
+	return nil
+}
+
+// ProfileOrder is the order of each machine's profiles, by the
+// machine's id.
+func (s *Settings) ProfileOrder() map[string][]string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make(map[string][]string, len(s.have.ProfileOrder))
+	for k, v := range s.have.ProfileOrder {
+		out[k] = slices.Clone(v)
+	}
+	return out
+}
+
+// PutProfileOrder keeps ids as the order of the profiles on the machine
+// hostID, and saves.
+func (s *Settings) PutProfileOrder(hostID string, ids []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// The file first, for the same reason PutServe reads it first.
+	if err := s.rereadLocked(); err != nil {
+		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
+	}
+	before := s.have
+	s.have.ProfileOrder = maps.Clone(s.have.ProfileOrder)
+	if s.have.ProfileOrder == nil {
+		s.have.ProfileOrder = map[string][]string{}
+	}
+	s.have.ProfileOrder[hostID] = slices.Clone(ids)
 	if err := s.saveLocked(); err != nil {
 		s.have = before
 		return err

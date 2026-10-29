@@ -242,6 +242,8 @@ func (a *app) mergeShells() {
 		}
 		a.st.Shells = append(a.st.Shells, choice)
 	}
+	// In the order the user put them in.
+	a.st.Shells = InOrder(a.st.Shells, func(s ShellChoice) string { return s.ID }, a.st.ProfileOrder[""])
 }
 
 // profileShell is a profile as one of the shells here.
@@ -383,8 +385,8 @@ func (a *app) likeFar(id string) {
 	a.nextFar[m] = run
 }
 
-// profilesOn are the profiles on the saved server m, the one its new
-// terminal runs first; none on this computer or a kakel window.
+// profilesOn are the profiles on the saved server m, in the order the
+// user put them in; none on this computer or a kakel window.
 func (a *app) profilesOn(m machines.ID) []settings.Profile {
 	if h, ok := a.machines.Saved(m); !ok || h.Window {
 		return nil
@@ -395,10 +397,7 @@ func (a *app) profilesOn(m machines.ID) []settings.Profile {
 			out = append(out, p)
 		}
 	}
-	if i := slices.IndexFunc(out, func(p settings.Profile) bool { return p.ID == a.st.ServerShells[string(m)] }); i > 0 {
-		def := out[i]
-		out = slices.Insert(slices.Delete(out, i, i+1), 0, def)
-	}
+	out = InOrder(out, func(p settings.Profile) string { return p.ID }, a.st.ProfileOrder[string(m)])
 	return out
 }
 

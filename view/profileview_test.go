@@ -11,6 +11,7 @@ import (
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/icon"
+	gi "github.com/marrasen/gunim/input"
 	"github.com/marrasen/gunim/widget"
 
 	"github.com/marrasen/kakel/app"
@@ -63,7 +64,7 @@ func rowOf(t *testing.T, mp *machinePane, k string) *mpRow {
 }
 
 // This computer's pane lists the machine, then its profiles: the shells
-// found and those made here, the default first, none of a server's. The
+// found and those made here, as found and made, none of a server's. The
 // star makes one the default, the eye hides or shows one found, and a
 // hidden one stays listed, faint.
 func TestThisComputersPaneListsItsProfiles(t *testing.T) {
@@ -78,7 +79,7 @@ func TestThisComputersPaneListsItsProfiles(t *testing.T) {
 		Saved: []remote.Host{{ID: "s1", Name: "prod", Address: "prod.example"}},
 	}
 	_, mp, _ := machinePaneOf(t, st, "", false)
-	want := []string{"This computer", "Profiles", "PowerShell", "Command Prompt", "Nushell", "Add Profile", "Files", "Home", "Add Folder"}
+	want := []string{"This computer", "Profiles", "Command Prompt", "PowerShell", "Nushell", "Add Profile", "Files", "Home", "Add Folder"}
 	if got := titlesOf(mp); !slices.Equal(got, want) {
 		t.Fatalf("the rows are %q, want %q", got, want)
 	}
@@ -123,7 +124,7 @@ func TestAProfileIsAddedOnItsServer(t *testing.T) {
 		Profiles:     []settings.Profile{{ID: "profile:htop", HostID: "s1", Name: "htop", Command: []string{"htop"}}},
 		ServerShells: map[string]string{"s1": "profile:htop"}}
 	_, mp, _ := machinePaneOf(t, st, "s1", false)
-	if got, want := titlesOf(mp), []string{"prod", "Connection log", "Profiles", "htop", "Login Shell", "Add Profile", "Files", "Home", "Add Folder", "Tunnels", "SOCKS proxies"}; !slices.Equal(got, want) {
+	if got, want := titlesOf(mp), []string{"prod", "Connection log", "Profiles", "Login Shell", "htop", "Add Profile", "Files", "Home", "Add Folder", "Tunnels", "SOCKS proxies"}; !slices.Equal(got, want) {
 		t.Fatalf("the rows are %q, want %q", got, want)
 	}
 	mp.pick(mpAdd, lastUI)
@@ -350,7 +351,7 @@ func TestAServersProfilesOpenFromThePalette(t *testing.T) {
 		},
 		ServerShells: map[string]string{"s1": "profile:htop"}})
 	at := slices.Index(win.paletteIDs, "machine:s1")
-	if at < 0 || !slices.Equal(win.palette.Items[at].Chips, []string{"Terminal", "htop", "tmux", "Files", "Connect", "Settings", "Remove"}) {
+	if at < 0 || !slices.Equal(win.palette.Items[at].Chips, []string{"Terminal", "tmux", "htop", "Files", "Connect", "Settings", "Remove"}) {
 		t.Fatalf("prod's line is %+v", win.palette.Items[max(at, 0)])
 	}
 	line := slices.IndexFunc(win.palette.Items, func(it widget.PaletteItem) bool { return it.Title == "tmux" })
@@ -360,7 +361,7 @@ func TestAServersProfilesOpenFromThePalette(t *testing.T) {
 	for len(lastWindow.Client().Intents()) > 0 {
 		<-lastWindow.Client().Intents()
 	}
-	win.palette.OnChip(at, 2, lastUI)
+	win.palette.OnChip(at, 1, lastUI)
 	if in, ok := nextIntent(t).(app.OpenShellNamed); !ok || in.ID != "profile:tmux" {
 		t.Fatalf("prod's tmux chip sent %#v", in)
 	}
@@ -501,5 +502,46 @@ func TestAMachineBeyondAWindowTakesTunnels(t *testing.T) {
 	}
 	if findButton(t, mp.right, "Open").Disabled {
 		t.Fatalf("beyond a connected window, Open is greyed out; card %+v, problem in %T", mp.card, mp.right.Page())
+	}
+}
+
+// A profile's row moves among the profiles, by Alt and an arrow as by a
+// drag, and the order goes to the program; the star stays where it is.
+func TestAProfileIsMovedAmongTheProfiles(t *testing.T) {
+	st := app.State{Saved: []remote.Host{{ID: "s1", Name: "prod", Address: "prod.example"}},
+		Profiles: []settings.Profile{
+			{ID: "profile:tmux", HostID: "s1", Name: "tmux", Command: []string{"tmux"}},
+			{ID: "profile:htop", HostID: "s1", Name: "htop", Command: []string{"htop"}},
+		},
+		ServerShells: map[string]string{"s1": "profile:htop"}}
+	_, mp, _ := machinePaneOf(t, st, "s1", false)
+	if got := titlesOf(mp)[3:6]; !slices.Equal(got, []string{"Login Shell", "tmux", "htop"}) {
+		t.Fatalf("the profiles stand as %q, the default not first", got)
+	}
+	lastUI.Focus(mp.list)
+	frames(1)
+	box, _ := lastUI.Bounds(rowOf(t, mp, mpProfile+"profile:tmux"))
+	lastWindow.Input(gi.PointerDown{Pos: box.Center(), Button: gi.ButtonPrimary})
+	lastWindow.Input(gi.PointerUp{Pos: box.Center(), Button: gi.ButtonPrimary})
+	frames(2)
+	drainIntents()
+	lastWindow.Input(gi.KeyPress{Key: gi.KeyDown, Mods: gi.ModAlt})
+	frames(1)
+	in, ok := nextIntent(t).(app.ReorderProfiles)
+	if !ok || in.Machine != "s1" || !slices.Equal(in.IDs, []string{app.LoginShell, "profile:htop", "profile:tmux"}) {
+		t.Fatalf("Alt+Down on tmux sent %#v", in)
+	}
+	// Past the last profile, it goes no further: Add Profile stays put.
+	lastWindow.Input(gi.KeyPress{Key: gi.KeyDown, Mods: gi.ModAlt})
+	frames(1)
+	if len(lastWindow.Client().Intents()) > 0 {
+		t.Fatalf("Alt+Down past the last profile sent %#v", nextIntent(t))
+	}
+}
+
+// drainIntents empties what the window has sent so far.
+func drainIntents() {
+	for len(lastWindow.Client().Intents()) > 0 {
+		<-lastWindow.Client().Intents()
 	}
 }

@@ -286,9 +286,9 @@ func (a *app) launchMachines() []LaunchMachine {
 			}
 		}
 		if m == machines.Local {
-			// Each shell by its name, the one a new terminal starts
-			// first: "Terminal" would not say which.
-			for _, sh := range a.shellsDefaultFirst() {
+			// Each shell by its name, in the order the user put them
+			// in: "Terminal" would not say which.
+			for _, sh := range a.st.Shells {
 				out = append(out, LaunchAction{ID: "shell:" + sh.ID, Title: sh.Title})
 			}
 			if len(out) == 0 {
@@ -314,6 +314,13 @@ func (a *app) launchMachines() []LaunchMachine {
 	}
 	withDefault := func(lm LaunchMachine) LaunchMachine {
 		lm.Actions = actions(lm.ID)
+		// Enter opens what a new terminal opens, wherever the user put
+		// it in the order, until something else was used.
+		if lm.ID == machines.Local {
+			if i := slices.IndexFunc(lm.Actions, func(x LaunchAction) bool { return x.ID == "shell:"+a.defaultShell() }); i >= 0 {
+				lm.Default = i
+			}
+		}
 		if last := a.launch.last[lm.ID]; last != "" {
 			if i := slices.IndexFunc(lm.Actions, func(x LaunchAction) bool { return x.ID == last }); i >= 0 {
 				lm.Default = i
@@ -349,7 +356,7 @@ func (a *app) launchMachines() []LaunchMachine {
 // commands, copies and tunnels, and kakel's own windows.
 func (a *app) launchThings(ms []LaunchMachine) []LaunchThing {
 	var out []LaunchThing
-	for _, sh := range a.shellsDefaultFirst() {
+	for _, sh := range a.st.Shells {
 		also := []string{sh.ID, "shell", "terminal", "new terminal", "terminal on this computer"}
 		if strings.HasPrefix(sh.ID, "wsl:") {
 			also = append(also, "wsl", "linux")

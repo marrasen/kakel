@@ -193,6 +193,23 @@ type machinePane struct {
 func newMachinePane(w *Window, id string) *machinePane {
 	mp := &machinePane{w: w, id: id, list: widget.NewList(), right: widget.NewPages(&emptyNode{}), sel: mpMachine}
 	mp.list.ClickOnce = true
+	// The profiles are dragged into the order every list of them shows,
+	// among themselves alone.
+	mp.list.ReorderGroup = func(k widget.Key) string {
+		if strings.HasPrefix(string(k), mpProfile) {
+			return mpProfiles
+		}
+		return ""
+	}
+	mp.list.OnReorder = func(keys []widget.Key, _ *gunim.UI) gunim.Intent {
+		var ids []string
+		for _, k := range keys {
+			if id, ok := strings.CutPrefix(string(k), mpProfile); ok {
+				ids = append(ids, id)
+			}
+		}
+		return app.ReorderProfiles{Machine: mp.machine, IDs: ids}
+	}
 	mp.list.OnActivate = func(k widget.Key, u *gunim.UI) gunim.Intent {
 		if it, ok := mp.item(string(k)); ok && !it.heading {
 			mp.pick(string(k), u)
@@ -491,15 +508,9 @@ func (mp *machinePane) rows() []mpItem {
 			}
 		}
 	}
-	slices.SortStableFunc(profiles, func(a, b mpProfileOf) int {
-		switch {
-		case a.def == b.def:
-			return 0
-		case a.def:
-			return -1
-		}
-		return 1
-	})
+	// In the order the user dragged them into: the star says which is
+	// the default, wherever it stands.
+	profiles = app.InOrder(profiles, func(p mpProfileOf) string { return p.id }, st.ProfileOrder[string(mp.machine)])
 	out := []mpItem{head}
 	if mp.machine != machines.Local {
 		out = append(out, mp.logRow())

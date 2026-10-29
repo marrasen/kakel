@@ -179,6 +179,9 @@ type State struct {
 	// NoDisconnectAsk are the machines whose Disconnect closes what is
 	// open on them without asking first.
 	NoDisconnectAsk []machines.ID
+	// ProfileOrder is the order of each machine's profiles, by the
+	// machine's ID, "" for this computer: see InOrder.
+	ProfileOrder map[string][]string
 	// Found are the user's changes to the profiles kakel finds itself,
 	// and which are hidden. FoundShells are the shells found here,
 	// hidden ones too, by the names they are found by, and Drives the
@@ -1165,6 +1168,7 @@ func (a *app) loadSettings() {
 			a.st.Profiles = s.Profiles()
 			a.st.ServerShells = s.ServerShells()
 			a.st.NoDisconnectAsk = noAskOf(s)
+			a.st.ProfileOrder = s.ProfileOrder()
 			a.st.Found = s.Found()
 			a.mergeShells()
 			a.st.ThisComputer.StartFolder = s.Local()
@@ -1253,6 +1257,8 @@ func failedTitle(in gunim.Intent) string {
 		return "Couldn't connect"
 	case SetDisconnectAsk:
 		return "Couldn't save whether to ask before disconnecting"
+	case ReorderProfiles:
+		return "Couldn't save the order of the profiles"
 	case ForgetCommand:
 		return "Couldn't remove the command"
 	case ForgetCopy:
@@ -1422,6 +1428,7 @@ func (a *app) publish() {
 	st.Profiles = slices.Clone(a.st.Profiles)
 	st.ServerShells = maps.Clone(a.st.ServerShells)
 	st.NoDisconnectAsk = slices.Clone(a.st.NoDisconnectAsk)
+	st.ProfileOrder = maps.Clone(a.st.ProfileOrder)
 	st.Found = slices.Clone(a.st.Found)
 	st.FoundShells = slices.Clone(a.st.FoundShells)
 	st.Drives = slices.Clone(a.st.Drives)
@@ -1728,6 +1735,8 @@ func (a *app) handle(in gunim.Intent) {
 		err = a.setDefaultProfile(in)
 	case SetDisconnectAsk:
 		err = a.setDisconnectAsk(in)
+	case ReorderProfiles:
+		err = a.reorderProfiles(in)
 	case ConnectMachine:
 		err = a.connectMachine(in.Machine)
 	case MachineRowShown:
@@ -2160,8 +2169,13 @@ func (a *app) openThen(machine machines.ID, at Placement, then func(id string, e
 				a.farRuns[id] = profile.ID
 			}
 			a.paneAt[id] = a.machines.Get(machine).Reached
-			// Called after the server, until its shell names the pane.
-			title := a.freeTitle(a.machines.Name(machine))
+			// Called after the server, and the profile it runs, until its
+			// shell names the pane: "tmux on Picard".
+			called := a.machines.Name(machine)
+			if profile.ID != "" {
+				called = profile.Name + " on " + called
+			}
+			title := a.freeTitle(called)
 			a.addPane(Pane{ID: id, Title: title, Machine: machine}, screen.Open(sess, a.palette, a.withLinks(a.hooks(id), id, machine)), at)
 			then(id, nil)
 		}
