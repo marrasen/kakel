@@ -160,8 +160,11 @@ type machinePane struct {
 	addedTunnel *remote.Tunnel
 	// rowAt counts the rows the program asked for, as the pane last
 	// said; logSeen is the end of the log when it was last looked at.
-	rowAt   int
-	logSeen int64
+	rowAt int
+	// tunnelsBefore are the tunnels open as addedTunnel was asked for,
+	// and tunnelNow says what the tunnel picked is doing.
+	tunnelsBefore map[string]bool
+	tunnelNow     *widget.Label
 	// card is what the machine's card says of it, for the switch at the
 	// bottom of the sidebar, and overviewLine the line at the top of
 	// the machine's own page, kept up to date in place.
@@ -185,7 +188,7 @@ func newMachinePane(w *Window, id string) *machinePane {
 	mp.foot = &sideFoot{mp: mp, chip: newConnChip(w, func() (machines.ID, *cardInfo) { return mp.machine, &mp.card })}
 	side := widget.Column(list, mp.foot).Grow(list, 1)
 	side.Cross = widget.CrossStretch
-	mp.overviewLine = faintLabel("")
+	mp.overviewLine, mp.tunnelNow = faintLabel(""), widget.NewLabel("")
 	mp.right.child = &emptyNode{}
 	rightPad := widget.NewPad(widget.NewScroll(mp.right))
 	rightPad.Padding = mpPad
@@ -222,7 +225,7 @@ func (mp *machinePane) item(k string) (mpItem, bool) {
 
 // pick shows row k's settings on the right.
 func (mp *machinePane) pick(k string, u *gunim.UI) {
-	mp.sel = k
+	mp.sel, mp.addedTunnel = k, nil
 	mp.refresh(u)
 }
 
@@ -237,9 +240,13 @@ func (mp *machinePane) show(st app.State, u *gunim.UI) {
 				mp.shown = ""
 			}
 			mp.machine, mp.draft = p.Machine, p.Draft
-			if p.RowAt != mp.rowAt {
-				mp.rowAt, mp.sel, mp.shown = p.RowAt, p.Row, ""
+			if p.RowAt != mp.rowAt && p.Row != "" {
+				// Shown once: the program forgets the row, so the pane
+				// moved to another window does not show it again.
+				mp.sel, mp.shown, mp.addedTunnel = p.Row, "", nil
+				u.Send(mp.list, app.MachineRowShown{Pane: mp.id})
 			}
+			mp.rowAt = p.RowAt
 		}
 	}
 	if mp.machine != machines.Local {
@@ -257,7 +264,8 @@ func (mp *machinePane) refresh(u *gunim.UI) {
 			mp.sel, mp.added = it.key, ""
 		case mp.addedDir != "" && it.folder.fav != nil && it.folder.fav.Path == mp.addedDir:
 			mp.sel, mp.addedDir, mp.shown = it.key, "", ""
-		case mp.addedTunnel != nil && it.tunnel != nil && it.tunnel.open != nil &&
+		case mp.addedTunnel != nil && it.tunnel != nil && it.tunnel.open != nil && !mp.tunnelsBefore[it.tunnel.open.ID] &&
+			it.tunnel.open.As.Kind == mp.addedTunnel.Kind.String() &&
 			it.tunnel.open.As.Listen == mp.addedTunnel.Listen && it.tunnel.open.As.Target == mp.addedTunnel.Target:
 			mp.sel, mp.addedTunnel, mp.shown = it.key, nil, ""
 		}
@@ -267,10 +275,15 @@ func (mp *machinePane) refresh(u *gunim.UI) {
 		mp.sel = mpMachine
 	}
 	if mp.sel == mpLog && mp.st.Logs[mp.machine] != nil {
-		mp.logSeen = mp.st.Logs[mp.machine].End()
+		mp.w.sawLog(mp.machine, mp.st.Logs[mp.machine].End())
 	}
 	if mp.machine != machines.Local {
 		mp.overviewLine.Text = mp.overview(time.Now())
+	}
+	// What a tunnel is doing changes as bytes go through: said in
+	// place, so its page is not built again each second.
+	if it, ok := mp.item(mp.sel); ok && it.tunnel != nil {
+		mp.tunnelNow.Text = it.tunnel.now()
 	}
 	widget.Sync(mp.list, u, mp.items, func(it mpItem) widget.Key { return widget.Key(it.key) },
 		func(it mpItem) *mpRow { r := newMPRow(mp); r.set(it, mp.sel == it.key, nil); return r },
@@ -307,6 +320,14 @@ func (mp *machinePane) refresh(u *gunim.UI) {
 // machine as saved, and the picked row's profile.
 func (mp *machinePane) signature() string {
 	var b strings.Builder
+	switch mp.sel {
+	case mpLog:
+		// The log's page comes alive as the first line arrives.
+		b.WriteString(boolWord(mp.st.Logs[mp.machine] != nil))
+	case mpAddTunnel, mpAddSOCKS:
+		// Open waits on the connection.
+		b.WriteString(boolWord(mp.card.state == cardConnected))
+	}
 	if h, ok := mp.host(); ok && mp.sel == mpMachine {
 		fmt.Fprintf(&b, "%+v", h)
 		b.WriteString(boolWord(slices.Contains(mp.st.NoDisconnectAsk, mp.machine)))
@@ -325,10 +346,7 @@ func (mp *machinePane) signature() string {
 			b.WriteString(boolWord(*p.edit.Setup))
 		}
 		if t := it.tunnel; t != nil {
-			b.WriteString("\x04" + t.title() + boolWord(t.live()) + boolWord(t.saved != nil))
-			if t.open != nil {
-				b.WriteString(t.open.Note)
-			}
+			b.WriteString("\x04" + t.title() + boolWord(t.live()) + boolWord(t.open != nil) + boolWord(t.saved != nil))
 		}
 		if s := it.saved; s != nil && s.copy != nil {
 			b.WriteString("\x03" + app.CopiedWhere(*s.copy, mp.w.nameOf))
@@ -584,8 +602,7 @@ func (mp *machinePane) machineSide(u *gunim.UI) gunim.Node {
 	h, saved := mp.host()
 	if !mp.draft && !saved && mp.machine != machines.Local {
 		// Connected to by its address, and not saved: its connection.
-		col := widget.Column(heading(mp.w.nameOf(mp.machine)), mp.overviewLine,
-			faintLabel("Connected to by its address, and not saved. Its log and tunnels are on the left."))
+		col := widget.Column(heading(mp.w.nameOf(mp.machine)), faintLabel(mp.card.sub), mp.overviewLine)
 		col.Cross, col.Gap = widget.CrossStretch, mpGap
 		return widget.NewSized(col, 640, 0)
 	}
@@ -657,7 +674,7 @@ func (mp *machinePane) machineSide(u *gunim.UI) gunim.Node {
 		remove := widget.NewButton("Remove…")
 		remove.Kind = widget.ButtonDanger
 		remove.OnClick = func(u *gunim.UI) gunim.Intent { mp.w.confirmRemove(mp.machine, u); return nil }
-		gone := widget.Column(faintLabel("Removing this "+what+" takes it off the list, with its profiles and favourites."), buttons(remove))
+		gone := widget.Column(faintLabel("Removing this "+what+" removes it from the list, with its profiles and favourites."), buttons(remove))
 		gone.Cross, gone.Gap = widget.CrossStretch, mpGap
 		parts = append(parts, widget.NewCard(ask), sectionHeading("Remove"), widget.NewCard(gone))
 	}
@@ -946,13 +963,15 @@ func (mp *machinePane) confirmForget(s mpSavedOf, u *gunim.UI) {
 		title, forget = "the command "+shortened(s.command.Line, 50), app.ForgetCommand{Saved: *s.command}
 	case s.copy != nil:
 		title, forget = "the copy of "+shortened(app.CopiedWhat(*s.copy), 50), app.ForgetCopy{Saved: *s.copy}
+	case s.tunnel != nil && s.tunnel.Target == "":
+		title, forget = "the SOCKS proxy on "+s.tunnel.Listen, app.ForgetTunnel{Saved: *s.tunnel}
 	case s.tunnel != nil:
 		title, forget = "the tunnel "+tunnelTitle(*s.tunnel), app.ForgetTunnel{Saved: *s.tunnel}
 	default:
 		return
 	}
 	d := widget.NewDialog("Remove " + title + "?")
-	d.Body = widget.NewLabel("It comes off the list kept for next time.")
+	d.Body = widget.NewLabel("It is removed from the saved list.")
 	d.SetButtons("Remove", "Cancel")
 	d.Danger = true
 	d.OnAccept = widget.Sends(forget)
@@ -1096,7 +1115,7 @@ func (r *mpRow) set(it mpItem, picked bool, u *gunim.UI) {
 		kids = append(kids, r.icon, r.title)
 	}
 	if it.tunnel != nil {
-		if r.mark.t.open != it.tunnel.open {
+		if meterOf(r.mark.t) != meterOf(*it.tunnel) {
 			r.mark.rate = meter.Rate{}
 		}
 		r.mark.t = *it.tunnel
@@ -1106,7 +1125,7 @@ func (r *mpRow) set(it mpItem, picked bool, u *gunim.UI) {
 		kids = append(kids, widget.NewSpacer(), r.mark)
 	}
 	if it.key == mpLog {
-		r.badge.n = unseenBad(r.mp.st.Logs[r.mp.machine], r.mp.logSeen)
+		r.badge.n = unseenBad(r.mp.st.Logs[r.mp.machine], r.mp.w.logSeen[r.mp.machine])
 		kids = append(kids, widget.NewSpacer(), r.badge)
 	}
 	r.bin.Tooltip = "Delete it"

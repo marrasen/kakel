@@ -119,41 +119,37 @@ func (mp *machinePane) tunnelSide(t mpTunnelOf) gunim.Node {
 		kind = as.Kind
 	}
 	form.Add("Kind", widget.NewLabel(kind))
-	form.Add("Listens on", widget.NewLabel(as.Listen))
+	form.Add("Listen on", widget.NewLabel(as.Listen))
 	if as.Target != "" {
-		form.Add("Forwards to", widget.NewLabel(as.Target))
+		form.Add("Forward to", widget.NewLabel(as.Target))
 	}
 	var actions []gunim.Node
-	note := ""
+	if t.open != nil {
+		// What it is doing, said in place as it changes.
+		form.Add("Now", mp.tunnelNow)
+	}
 	switch {
 	case t.live():
-		note = "Open"
-		if t.open.Note != "" {
-			note += " · " + t.open.Note
-		}
-		form.Add("Now", widget.NewLabel(note))
+		traffic := widget.NewButton("Show")
+		traffic.Tooltip = "Show its traffic in a pane"
+		traffic.OnClick = widget.Sends(app.ShowTunnel{ID: t.open.ID})
+		form.Add("Traffic", buttons(traffic))
 		closeIt := widget.NewButton("Close")
-		id := t.open.ID
-		closeIt.OnClick = widget.Sends(app.CloseTunnel{ID: id})
-		traffic := widget.NewButton("Show Traffic")
-		traffic.OnClick = widget.Sends(app.ShowTunnel{ID: id})
-		actions = append(actions, closeIt, traffic)
+		closeIt.OnClick = widget.Sends(app.CloseTunnel{ID: t.open.ID})
+		actions = append(actions, closeIt)
 	case t.open != nil:
-		note = "Stopped"
-		if t.open.Note != "" {
-			note = t.open.Note
-		}
-		form.Add("Now", widget.NewLabel(note))
 		open := widget.NewButton("Open")
 		open.Kind = widget.ButtonPrimary
 		open.OnClick = widget.Sends(app.OpenSavedTunnel{Saved: as})
-		clearIt := widget.NewButton("Clear")
-		clearIt.OnClick = widget.Sends(app.CloseTunnel{ID: t.open.ID})
-		actions = append(actions, open, clearIt)
+		closeIt := widget.NewButton("Close")
+		closeIt.Tooltip = "Close its row"
+		closeIt.OnClick = widget.Sends(app.CloseTunnel{ID: t.open.ID})
+		actions = append(actions, open, closeIt)
 	default:
 		open := widget.NewButton("Open")
 		open.Kind = widget.ButtonPrimary
 		open.OnClick = widget.Sends(app.OpenSavedTunnel{Saved: as})
+		open.Disabled = mp.card.state != cardConnected
 		actions = append(actions, open)
 	}
 	if t.saved != nil {
@@ -166,13 +162,36 @@ func (mp *machinePane) tunnelSide(t mpTunnelOf) gunim.Node {
 		save.OnClick = widget.Sends(app.SaveTunnel{Saved: as})
 		actions = append(actions, save)
 	}
-	what := "Saved for next time."
+	what := "Saved: it opens again from here."
 	if t.saved == nil {
-		what = "Open for now. Save keeps it for next time."
+		what = "Open until it is closed."
 	}
 	col := widget.Column(heading(t.title()), faintLabel(what), widget.NewCard(form), buttons(actions...))
 	col.Cross, col.Gap = widget.CrossStretch, mpGap
 	return widget.NewSized(col, 640, 0)
+}
+
+// now is what an open tunnel is doing, for its page.
+func (t mpTunnelOf) now() string {
+	switch {
+	case t.open == nil:
+		return ""
+	case !t.live() && t.open.Note == "":
+		return "Stopped"
+	case !t.live():
+		return words.UpperFirst(t.open.Note)
+	case t.open.Note == "":
+		return "Open"
+	}
+	return "Open · " + t.open.Note
+}
+
+// meterOf is what counts a tunnel's traffic, nil for one not open.
+func meterOf(t mpTunnelOf) *meter.Meter {
+	if t.open == nil {
+		return nil
+	}
+	return t.open.Meter
 }
 
 // addTunnelSide is the right side for the + of Tunnels, or with socks
@@ -186,12 +205,13 @@ func (mp *machinePane) addTunnelSide(socks bool) gunim.Node {
 	check := func(u *gunim.UI) {
 		problem.Text = ""
 		err := tunnelOf().Validate()
-		open.Disabled = err != nil || !mp.w.isConnected(mp.machine)
+		connected := mp.card.state == cardConnected
+		open.Disabled = err != nil || !connected
 		switch {
 		case err != nil && strings.TrimSpace(fields[0].Text()) != "":
 			problem.Text = words.UpperFirst(err.Error())
-		case !mp.w.isConnected(mp.machine):
-			problem.Text = "Connect " + mp.w.nameOf(mp.machine) + " first, with the switch at the bottom left."
+		case !connected:
+			problem.Text = "Not connected"
 		}
 		if u != nil {
 			u.Invalidate()
@@ -207,7 +227,10 @@ func (mp *machinePane) addTunnelSide(socks bool) gunim.Node {
 		if t.Validate() != nil {
 			return nil
 		}
-		mp.addedTunnel = &t
+		mp.addedTunnel, mp.tunnelsBefore = &t, map[string]bool{}
+		for _, open := range mp.st.Tunnels {
+			mp.tunnelsBefore[open.ID] = true
+		}
 		return app.OpenTunnel{Machine: mp.machine, Tunnel: t, Keep: keep.Checked()}
 	}
 	title, note := "Add Tunnel", "A port that forwards over the connection to "+mp.w.nameOf(mp.machine)+"."
@@ -222,7 +245,7 @@ func (mp *machinePane) addTunnelSide(socks bool) gunim.Node {
 // logSide is the right side for the connection log's row.
 func (mp *machinePane) logSide() gunim.Node {
 	m := mp.machine
-	lv := &logView{lines: mp.st.Logs[m]}
+	lv := &logView{w: mp.w, m: m, lines: mp.st.Logs[m]}
 	copyIt := widget.NewButton("Copy")
 	copyIt.OnClick = func(u *gunim.UI) gunim.Intent {
 		if lv.lines != nil {
@@ -234,24 +257,40 @@ func (mp *machinePane) logSide() gunim.Node {
 		}
 		return nil
 	}
-	pane := widget.NewButton("Open as Pane")
+	pane := widget.NewButton("Open")
+	pane.Tooltip = "Open the log in a pane of its own"
 	pane.OnClick = widget.Sends(app.ShowLog{Machine: m})
-	copyIt.Disabled, pane.Disabled = lv.lines == nil, lv.lines == nil
-	note := "What happened on the connection to " + mp.w.nameOf(m) + ", newest at the bottom."
-	if lv.lines == nil {
-		note = "Nothing yet: " + mp.w.nameOf(m) + " has not been connected to since kakel started."
+	_, _, far := m.Far()
+	copyIt.Disabled, pane.Disabled = lv.lines == nil, lv.lines == nil && !far
+	note := "Newest at the bottom."
+	var body gunim.Node = lv
+	switch {
+	case lv.lines == nil && far:
+		window, _, _ := m.Far()
+		note = "Kept by " + mp.w.nameOf(window) + ". Open shows it in a pane."
+		body = &emptyNode{}
+	case lv.lines == nil:
+		note = "No connection log yet."
+		body = &emptyNode{}
 	}
-	col := widget.Column(heading("Connection log"), faintLabel(note), lv, buttons(copyIt, pane))
+	col := widget.Column(heading("Connection log"), faintLabel(note), body, buttons(copyIt, pane))
 	col.Cross, col.Gap = widget.CrossStretch, mpGap
 	return widget.NewSized(col, 900, 0)
 }
 
 // logView shows a connection log's last lines, newest at the bottom,
-// following new ones as they come; the wheel scrolls back.
+// following new ones as they come; the wheel scrolls back, and what it
+// was scrolled back to stays put as lines come.
 type logView struct {
+	w     *Window
+	m     machines.ID
 	lines *logs.Lines
-	// back is how many lines it is scrolled up from the newest.
-	back int
+	// back is how many lines it is scrolled up from the newest, end the
+	// log's end as last drawn, and wheel what the wheel has turned short
+	// of a line.
+	back  int
+	end   int64
+	wheel float32
 }
 
 // logViewHeight is the log's height.
@@ -276,6 +315,14 @@ func plainLine(l string) string {
 	return l
 }
 
+// The log's text: its size, the room a line takes, and the room round
+// the lines.
+const (
+	logText = 12.5
+	logStep = logText * 1.55
+	logPad  = 12
+)
+
 // Paint implements [gunim.Node]: a box of the lines that fit, each
 // one's time faint and the rest in its colour.
 func (v *logView) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, _ gunim.Children) {
@@ -288,18 +335,26 @@ func (v *logView) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, _ gunim.
 	}
 	// New lines are looked for twice a second.
 	f.RedrawAt(f.Now.Add(500 * time.Millisecond))
-	lines, _ := v.lines.Snapshot()
 	face := text.GoMono(false, false)
-	size := float32(12.5)
-	step := size * 1.55
-	const pad = 12
+	size, step, pad := float32(logText), float32(logStep), float32(logPad)
 	fits := int((box.H - 2*pad) / step)
+	// Scrolled back, the lines looked at stay where they are as more
+	// come; at the bottom, the newest show.
+	if now := v.lines.End(); v.back > 0 && v.end > 0 {
+		v.back += int(now - v.end)
+	}
+	lines, end := v.lines.Since(0, fits+v.back)
+	v.end = end
 	v.back = min(v.back, max(0, len(lines)-fits))
-	end := len(lines) - v.back
-	start := max(0, end-fits)
+	last := len(lines) - v.back
+	start := max(0, last-fits)
+	if v.back == 0 {
+		// Read to the end: what is in it has been seen.
+		v.w.sawLog(v.m, end)
+	}
 	y := float32(pad)
 	faint := look.Faint.Get(th)
-	for _, l := range lines[start:end] {
+	for _, l := range lines[start:last] {
 		ink := widget.Ink.Get(th)
 		switch {
 		case strings.Contains(l, logBad):
@@ -324,14 +379,27 @@ func (v *logView) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, _ gunim.
 // log, and down to the newest, which it then follows.
 func (v *logView) Handle(e input.Event, u *gunim.UI) bool {
 	s, ok := e.(input.Scroll)
-	if !ok || v.lines == nil {
+	if !ok || v.lines == nil || s.Mods != 0 {
 		return false
 	}
 	n := s.Notches.Y
 	if n == 0 {
 		n = s.Delta.Y / 40
 	}
-	v.back = max(0, v.back+int(n*3))
+	// Up a notch is back three lines. What falls short of a line is
+	// kept for the next turn, as a touchpad turns in fractions.
+	v.wheel += n * 3
+	whole := int(v.wheel)
+	v.wheel -= float32(whole)
+	held := v.lines.End()
+	switch {
+	case whole > 0 && int64(v.back) >= held:
+		// At the top: the page scrolls instead.
+		return false
+	case whole < 0 && v.back == 0:
+		return false
+	}
+	v.back = max(0, v.back+whole)
 	u.Invalidate()
 	return true
 }
@@ -342,15 +410,23 @@ func unseenBad(l *logs.Lines, seen int64) int {
 	if l == nil {
 		return 0
 	}
-	lines, end := l.Snapshot()
-	first := end - int64(len(lines))
+	lines, _ := l.Since(seen, logs.DefaultKeep)
 	n := 0
-	for i, line := range lines {
-		if first+int64(i) >= seen && strings.Contains(line, logBad) {
+	for _, line := range lines {
+		if strings.Contains(line, logBad) {
 			n++
 		}
 	}
 	return n
+}
+
+// sawLog notes m's log as read to end, so its row counts no problems
+// before it.
+func (w *Window) sawLog(m machines.ID, end int64) {
+	if w.logSeen == nil {
+		w.logSeen = map[machines.ID]int64{}
+	}
+	w.logSeen[m] = max(w.logSeen[m], end)
 }
 
 // liveMark is a tunnel row's mark: a dot, green while it forwards and
@@ -473,11 +549,13 @@ func (mp *machinePane) overview(now time.Time) string {
 	m := mp.machine
 	info := mp.w.cardFor(m, mp.w.nameOf(m))
 	words, _ := pillFor(info, now, nil)
-	switch info.state {
-	case cardConnected:
+	switch {
+	case info.state == cardConnected && info.silent:
+		words = "Connected, not answering"
+	case info.state == cardConnected:
 		words = "Connected"
-		if !info.since.IsZero() {
-			words += " for " + connectedFor(now.Sub(info.since))
+		if since := now.Sub(info.since); !info.since.IsZero() && since >= time.Minute {
+			words += " for " + connectedFor(since)
 		}
 		if info.rtt > 0 {
 			words += ", round trip " + roundTrip(info.rtt)

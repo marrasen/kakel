@@ -11,6 +11,7 @@ import (
 
 	"github.com/marrasen/kakel/app"
 	"github.com/marrasen/kakel/machines"
+	"github.com/marrasen/kakel/remote"
 )
 
 // chipStage is the Machines pane with st, and a click on m's chip.
@@ -124,5 +125,26 @@ func TestTheMachineMenuLeavesTheCardsButtonsOut(t *testing.T) {
 	}
 	if !slices.Contains(labels, "New Terminal") || !slices.Contains(labels, "Tunnel…") {
 		t.Fatalf("the menu lost what opens there: %q", labels)
+	}
+}
+
+// A row the program asks a machine's pane for is shown once, and the
+// pane says so, so a pane moved to another window does not show it
+// again.
+func TestARowAskedForIsShownOnce(t *testing.T) {
+	st := app.State{Saved: []remote.Host{{ID: "s1", Name: "prod", Address: "prod.example"}}}
+	win, _, publish := windowStage(t)
+	st.Panes = []app.Pane{{ID: "mp", Kind: app.KindMachine, Machine: "s1", Row: app.MachineRowLog, RowAt: 1}}
+	st.Stage, st.Focus = &app.Box{Pane: "mp"}, "mp"
+	publish(st)
+	frames(2)
+	if mp := win.machinePanes["mp"]; mp == nil || mp.sel != app.MachineRowLog {
+		t.Fatalf("the pane shows %q", win.machinePanes["mp"].sel)
+	}
+	for {
+		in := nextIntent(t)
+		if in == (app.MachineRowShown{Pane: "mp"}) {
+			return
+		}
 	}
 }

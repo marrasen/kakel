@@ -44,6 +44,9 @@ type (
 		Machine machines.ID
 		ID      string
 	}
+	// MachineRowShown says machine pane Pane has shown the row it was
+	// asked for, so the pane does not show it again when it moves.
+	MachineRowShown struct{ Pane string }
 	// ConnectMachine connects to Machine and opens nothing on it, its
 	// card or pane showing how that goes: a saved server or window, or
 	// a quick connection again, at its address.
@@ -70,7 +73,13 @@ func (a *app) showMachine(m machines.ID, row string) error {
 		_, saved := a.machines.Saved(m)
 		known := slices.ContainsFunc(a.machines.Infos(), func(i machines.Info) bool { return i.ID == m })
 		if !saved && !known {
-			return errors.New(a.machines.Name(m) + " is not connected, and not a saved server")
+			if row == MachineRowLog && a.machines.Get(m).Log != nil {
+				// A connection made by address that failed: its log
+				// is all there is of it.
+				a.showLog(m)
+				return nil
+			}
+			return errors.New("machine not found")
 		}
 	}
 	defer a.askRow(m, row)

@@ -429,3 +429,42 @@ func TestTheLogsRowCountsProblemsNotSeen(t *testing.T) {
 		t.Fatalf("looked at, the log's row still counts %d problems", n)
 	}
 }
+
+// A tunnel's page says what it is doing in place: traffic changing its
+// note does not build the page again.
+func TestATunnelsPageStaysAsItsTrafficChanges(t *testing.T) {
+	as := settings.SavedTunnel{Host: "prod", HostID: "s1", Kind: "local", Listen: ":9000", Target: "db:5432"}
+	st := app.State{Saved: []remote.Host{{ID: "s1", Name: "prod", Address: "prod.example"}},
+		Machines: []machines.Info{{ID: "s1", Name: "prod"}}, Connected: []machines.ID{"s1"},
+		Tunnels: []app.Tunnel{{ID: "t1", Machine: "s1", Live: true, As: as, Note: "1 stream"}}}
+	_, mp, again := machinePaneOf(t, st, "s1", false)
+	mp.pick(mpTunnelOpen+"t1", lastUI)
+	page := mp.right.child
+	st.Tunnels = []app.Tunnel{{ID: "t1", Machine: "s1", Live: true, As: as, Note: "2 streams, 4 KB"}}
+	again(st)
+	if mp.right.child != page {
+		t.Fatal("the tunnel's page was built again as its traffic changed")
+	}
+	if mp.tunnelNow.Text != "Open · 2 streams, 4 KB" {
+		t.Fatalf("the page says it is %q", mp.tunnelNow.Text)
+	}
+}
+
+// Beyond a kakel window that is connected, a machine takes tunnels:
+// the + form's Open is there to press.
+func TestAMachineBeyondAWindowTakesTunnels(t *testing.T) {
+	far := machines.FarID("desk", "k1")
+	st := app.State{Windows: []app.RemoteWindow{{Name: "desk"}},
+		Machines: []machines.Info{{ID: "desk", Name: "desk"}, {ID: far, Name: "db"}}}
+	_, mp, _ := machinePaneOf(t, st, far, false)
+	mp.pick(mpAddTunnel, lastUI)
+	fields := fieldsIn(mp.right)
+	for i, s := range []string{"8080", "localhost:80"} {
+		// As typed: each change checks the fields again.
+		fields[i].SetText(s, lastUI)
+		fields[i].OnChange(s, lastUI)
+	}
+	if findButton(t, mp.right, "Open").Disabled {
+		t.Fatalf("beyond a connected window, Open is greyed out; card %+v, problem in %T", mp.card, mp.right.child)
+	}
+}

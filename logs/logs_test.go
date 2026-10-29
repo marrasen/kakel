@@ -460,3 +460,17 @@ func TestASnapshotIsTheLinesKept(t *testing.T) {
 		t.Fatalf("the snapshot is %q to %d", lines, end)
 	}
 }
+
+// Since is the lines from a sequence number on, no more than asked.
+func TestSinceIsTheLinesFromASequenceNumber(t *testing.T) {
+	l := New(10, nil)
+	for _, s := range []string{"a\n", "b\n", "c\n", "d\n"} {
+		_, _ = l.Write([]byte(s))
+	}
+	if lines, end := l.Since(1, 10); !slices.Equal(lines, []string{"b", "c", "d"}) || end != 4 {
+		t.Fatalf("since 1: %q to %d", lines, end)
+	}
+	if lines, _ := l.Since(0, 2); !slices.Equal(lines, []string{"c", "d"}) {
+		t.Fatalf("the last 2: %q", lines)
+	}
+}

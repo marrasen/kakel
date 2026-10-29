@@ -133,6 +133,19 @@ func (l *Lines) Snapshot() (lines []string, end int64) {
 	return lines, l.first + int64(len(l.kept))
 }
 
+// Since is the lines kept from sequence number from on, at most the
+// last most of them, and end the sequence number past the last.
+func (l *Lines) Since(from int64, most int) (lines []string, end int64) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	end = l.first + int64(len(l.kept))
+	start := max(int(from-l.first), 0, len(l.kept)-most)
+	for _, k := range l.kept[min(start, len(l.kept)):] {
+		lines = append(lines, string(bytes.TrimRight(k, "\r\n")))
+	}
+	return lines, end
+}
+
 // End is the sequence number past the last line kept: it grows with
 // each line written.
 func (l *Lines) End() int64 {

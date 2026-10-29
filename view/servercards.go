@@ -154,7 +154,7 @@ func (w *Window) cardFor(m machines.ID, name string) cardInfo {
 	case slices.Contains(w.connected, m) || slices.ContainsFunc(w.remoteWindows, func(rw app.RemoteWindow) bool { return rw.Name == m }):
 		c.state = cardConnected
 	default:
-		if _, _, far := m.Far(); far {
+		if win, _, far := m.Far(); far && w.isConnected(win) {
 			// Reached by another window, which says it is connected.
 			c.state = cardConnected
 		} else {

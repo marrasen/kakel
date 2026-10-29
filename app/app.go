@@ -1723,6 +1723,8 @@ func (a *app) handle(in gunim.Intent) {
 		err = a.setDisconnectAsk(in)
 	case ConnectMachine:
 		err = a.connectMachine(in.Machine)
+	case MachineRowShown:
+		a.setPane(in.Pane, func(p *Pane) { p.Row = "" })
 	case ForgetCommand:
 		err = a.forgetCommand(in.Saved)
 	case ForgetTunnel:
