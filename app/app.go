@@ -170,6 +170,9 @@ type State struct {
 	// runs, by the server's ID.
 	Profiles     []settings.Profile
 	ServerShells map[string]string
+	// NoDisconnectAsk are the machines whose Disconnect closes what is
+	// open on them without asking first.
+	NoDisconnectAsk []machines.ID
 	// Found are the user's changes to the profiles kakel finds itself,
 	// and which are hidden. FoundShells are the shells found here,
 	// hidden ones too, by the names they are found by, and Drives the
@@ -552,6 +555,10 @@ type (
 		// Only connects, and opens nothing on it: no terminal when
 		// nothing else waits on the connection.
 		Only bool
+		// InPlace connects for a card or a machine's pane, which show
+		// how it is going themselves: no pane of its log opens, and a
+		// failure's toast offers the log instead.
+		InPlace bool
 		// NoAsk connects only when nothing has to be asked: a key or a
 		// secret already open is enough, and a question fails it. For
 		// a connection nobody here asked for, whose questions would
@@ -1143,6 +1150,7 @@ func (a *app) loadSettings() {
 			a.st.ChosenShell, _ = s.Shell()
 			a.st.Profiles = s.Profiles()
 			a.st.ServerShells = s.ServerShells()
+			a.st.NoDisconnectAsk = noAskOf(s)
 			a.st.Found = s.Found()
 			a.mergeShells()
 			a.st.ThisComputer.StartFolder = s.Local()
@@ -1227,6 +1235,8 @@ func failedTitle(in gunim.Intent) string {
 		return "Couldn't open the machine's settings"
 	case SetDefaultProfile:
 		return "Couldn't make it the default"
+	case SetDisconnectAsk:
+		return "Couldn't keep whether to ask before disconnecting"
 	case ForgetCommand:
 		return "Couldn't remove the command"
 	case ForgetCopy:
@@ -1386,6 +1396,7 @@ func (a *app) publish() {
 	st.Shells = slices.Clone(a.st.Shells)
 	st.Profiles = slices.Clone(a.st.Profiles)
 	st.ServerShells = maps.Clone(a.st.ServerShells)
+	st.NoDisconnectAsk = slices.Clone(a.st.NoDisconnectAsk)
 	st.Found = slices.Clone(a.st.Found)
 	st.FoundShells = slices.Clone(a.st.FoundShells)
 	st.Drives = slices.Clone(a.st.Drives)
@@ -1690,6 +1701,8 @@ func (a *app) handle(in gunim.Intent) {
 		a.draftTyped[in.Pane] = in.Typed
 	case SetDefaultProfile:
 		err = a.setDefaultProfile(in)
+	case SetDisconnectAsk:
+		err = a.setDisconnectAsk(in)
 	case ForgetCommand:
 		err = a.forgetCommand(in.Saved)
 	case ForgetTunnel:

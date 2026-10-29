@@ -237,7 +237,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 	acct := a.dialLog(name)
 	logLine(acct, "", "connecting to "+called)
 	logPane := ""
-	if !in.Quiet {
+	if !in.Quiet && !in.InPlace {
 		logPane = a.watchDial(name)
 	}
 	began := time.Now()
@@ -292,7 +292,13 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 					// failure leaves the log up, saying why.
 					a.closePane(logPane)
 				}
-				if !in.Quiet && !errors.Is(err, errDeclined) && !errors.Is(err, context.Canceled) {
+				switch {
+				case in.Quiet || errors.Is(err, errDeclined) || errors.Is(err, context.Canceled):
+				case in.InPlace:
+					a.post(Notice{Kind: NoticeFailed, Title: "Couldn't connect to " + called, Body: err.Error(),
+						Action: "Show Log", On: ShowLog{Machine: name}})
+					a.problem()
+				default:
 					a.failed("Couldn't connect to "+called, err.Error())
 					a.problem()
 				}
@@ -743,6 +749,12 @@ func (a *app) removeServer(name machines.ID) error {
 	a.closeMachinePanes(name)
 	a.dropProfilesOn(name, called)
 	a.dropFoundOn(name, called)
+	if a.settings != nil && slices.Contains(a.st.NoDisconnectAsk, name) {
+		if err := a.settings.PutDisconnectAsk(string(name), true); err != nil {
+			log.Printf("removing %s: %v", oneLine(called), err)
+		}
+		a.st.NoDisconnectAsk = noAskOf(a.settings)
+	}
 	// Named still by what is left of it, until that goes.
 	a.machines.Removed(name, called)
 	// What the window holds under the name goes with it, as the

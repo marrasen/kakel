@@ -16,6 +16,7 @@ import (
 	"github.com/marrasen/gunim/install"
 	"github.com/marrasen/kakel/internal/sshtest"
 	"github.com/marrasen/kakel/internal/testhome"
+	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/remote"
 )
 
@@ -417,5 +418,41 @@ func TestAServersPanesAreNamedAfterIt(t *testing.T) {
 	a.st.Panes[0].Title = "user@srv: ~"
 	if got := a.freeTitle(name); got != name {
 		t.Fatalf("with the first pane named by its shell, a third is called %q", got)
+	}
+}
+
+// Connected in place, from a card's chip, a server opens nothing: no
+// pane of its log while it connects, and no terminal once it has.
+func TestConnectingInPlaceOpensNothing(t *testing.T) {
+	a, answering := dialApp(t)
+	a.handle(ConnectTo{Server: "srv", Only: true, InPlace: true})
+	waitFor(t, a, "the connection", func() bool {
+		answering()
+		if len(a.st.Panes) != 0 {
+			t.Fatalf("connecting in place opened %+v", a.st.Panes)
+		}
+		return a.machines.Get("srv").Conn != nil
+	})
+	if len(a.st.Panes) != 0 {
+		t.Fatalf("connected in place, there are panes %+v", a.st.Panes)
+	}
+}
+
+// Disconnect's Don't ask again is kept by machine, and goes with the
+// server when it is removed.
+func TestDontAskAgainIsKeptAndRemovedWithTheServer(t *testing.T) {
+	a, _ := dialApp(t)
+	set, err := settingsIn(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.settings = set
+	a.handle(SetDisconnectAsk{Machine: "srv", Ask: false})
+	if !slices.Equal(a.st.NoDisconnectAsk, []machines.ID{"srv"}) || !slices.Equal(set.NoDisconnectAsk(), []string{"srv"}) {
+		t.Fatalf("kept as %v, in the file %v", a.st.NoDisconnectAsk, set.NoDisconnectAsk())
+	}
+	a.handle(RemoveServer{ID: "srv"})
+	if len(a.st.NoDisconnectAsk) != 0 || len(set.NoDisconnectAsk()) != 0 {
+		t.Fatalf("removed, still kept as %v, in the file %v", a.st.NoDisconnectAsk, set.NoDisconnectAsk())
 	}
 }
