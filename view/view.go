@@ -3751,6 +3751,10 @@ func (w *Window) openMachineMenu(r *sideRow, u *gunim.UI) {
 		add(icon.House, def, send(app.OpenFilesOn{Machine: m}))
 	}
 	for _, f := range w.foldersOn(m) {
+		if app.FilesFavourite+f.Path == w.defaults[m].FilesKey {
+			// The default, listed first already.
+			continue
+		}
 		ic := icon.Folder
 		if slices.Contains(w.favourites, f) {
 			ic = icon.Star

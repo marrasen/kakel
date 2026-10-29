@@ -123,8 +123,12 @@ func TestTheMachineMenuLeavesTheCardsButtonsOut(t *testing.T) {
 			t.Fatalf("the menu still has %q: %q", gone, labels)
 		}
 	}
-	if !slices.Contains(labels, "bash") || !slices.Contains(labels, "Tunnel…") {
+	if !slices.Contains(labels, "tmux") || !slices.Contains(labels, "Tunnel…") {
 		t.Fatalf("the menu lost what opens there: %q", labels)
+	}
+	// The default folder is listed once.
+	if n := len(slices.DeleteFunc(slices.Clone(labels), func(l string) bool { return l != "www" })); n != 1 {
+		t.Fatalf("www, the default, is listed %d times: %q", n, labels)
 	}
 }
 
