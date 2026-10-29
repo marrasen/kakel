@@ -7,7 +7,14 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
-## Unreleased
+## v0.12.2-beta.8
+
+### Changed
+
+**A machine's pane moves.** In its sidebar, the fill under the row
+picked glides to the next one. On the right, the next page slides in
+from the side its row lies on, as the one before fades out. The count
+of problems on the connection log's row grows and fades in and out.
 
 ### Fixed
 
