@@ -373,6 +373,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 				}
 			}()
 			a.dialed(logPane, name, then == nil && !in.Only)
+			a.openAutoTunnels(name)
 			if then != nil {
 				then(nil)
 			}

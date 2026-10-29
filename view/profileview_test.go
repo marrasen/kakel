@@ -18,6 +18,7 @@ import (
 	"github.com/marrasen/kakel/logs"
 	"github.com/marrasen/kakel/look"
 	"github.com/marrasen/kakel/machines"
+	"github.com/marrasen/kakel/meter"
 	"github.com/marrasen/kakel/remote"
 	"github.com/marrasen/kakel/settings"
 )
@@ -238,12 +239,12 @@ func TestAServersKeptThingsAreListedInItsPane(t *testing.T) {
 		t.Fatalf("the rows are %q, want them to end %q", got, want)
 	}
 	for k, wantIn := range map[string]gunim.Intent{
-		mpSaved + fmt.Sprintf("cmd:%#v", cmd):  app.RunSavedCommand{Saved: cmd},
-		mpTunnelKept + fmt.Sprintf("%#v", tun): app.OpenSavedTunnel{Saved: tun},
+		mpSaved + fmt.Sprintf("cmd:%#v", cmd):       app.RunSavedCommand{Saved: cmd},
+		tunnelKey(tun.Kind, tun.Listen, tun.Target): app.OpenSavedTunnel{Saved: tun},
 	} {
 		mp.pick(k, lastUI)
 		label := "Run"
-		if strings.HasPrefix(k, mpTunnelKept) {
+		if strings.HasPrefix(k, mpTunnel) {
 			label = "Open"
 		}
 		if in := findButton(t, mp.right, label).OnClick(lastUI); !reflect.DeepEqual(in, wantIn) {
@@ -391,14 +392,14 @@ func TestAServersTunnelsAreListedInItsPane(t *testing.T) {
 	if !slices.Equal(got[len(got)-len(want):], want) {
 		t.Fatalf("the rows are %q, want them to end %q", got, want)
 	}
-	it, ok := mp.item(mpTunnelOpen + "t1")
+	it, ok := mp.item(tunnelKey("local", ":9000", "db:5432"))
 	if !ok || it.tunnel.saved == nil || !it.tunnel.live() {
 		t.Fatalf("the open tunnel's row is %+v", it)
 	}
 }
 
-// The + under Tunnels shows the fields, and Open opens the tunnel over
-// the machine, saved unless the tick is taken off.
+// The + under Tunnels shows the fields, and Save saves the tunnel over
+// the machine, to open by itself as Connect automatically says.
 func TestATunnelIsAddedFromThePlus(t *testing.T) {
 	st := app.State{Saved: []remote.Host{{ID: "s1", Name: "prod", Address: "prod.example"}},
 		Machines: []machines.Info{{ID: "s1", Name: "prod"}}, Connected: []machines.ID{"s1"}}
@@ -407,10 +408,15 @@ func TestATunnelIsAddedFromThePlus(t *testing.T) {
 	fields := fieldsIn(mp.right)
 	fields[0].SetText("8080", lastUI)
 	fields[1].SetText("localhost:80", lastUI)
-	in := findButton(t, mp.right, "Open").OnClick(lastUI)
-	want := app.OpenTunnel{Machine: "s1", Tunnel: remote.Tunnel{Kind: remote.LocalForward, Listen: ":8080", Target: "localhost:80"}, Keep: true}
+	in := findButton(t, mp.right, "Save").OnClick(lastUI)
+	want := app.AddTunnel{Machine: "s1", Tunnel: remote.Tunnel{Kind: remote.LocalForward, Listen: ":8080", Target: "localhost:80"}}
 	if !reflect.DeepEqual(in, want) {
-		t.Fatalf("Open sent %#v, want %#v", in, want)
+		t.Fatalf("Save sent %#v, want %#v", in, want)
+	}
+	findCheckbox(t, mp.right).SetChecked(true, lastUI)
+	want.Auto = true
+	if in := findButton(t, mp.right, "Save").OnClick(lastUI); !reflect.DeepEqual(in, want) {
+		t.Fatalf("Save, to connect automatically, sent %#v", in)
 	}
 }
 
@@ -442,7 +448,7 @@ func TestATunnelsPageStaysAsItsTrafficChanges(t *testing.T) {
 		Machines: []machines.Info{{ID: "s1", Name: "prod"}}, Connected: []machines.ID{"s1"},
 		Tunnels: []app.Tunnel{{ID: "t1", Machine: "s1", Live: true, As: as, Note: "1 stream"}}}
 	_, mp, again := machinePaneOf(t, st, "s1", false)
-	mp.pick(mpTunnelOpen+"t1", lastUI)
+	mp.pick(tunnelKey("local", ":9000", "db:5432"), lastUI)
 	page := mp.right.Page()
 	st.Tunnels = []app.Tunnel{{ID: "t1", Machine: "s1", Live: true, As: as, Note: "2 streams, 4 KB"}}
 	again(st)
@@ -465,7 +471,7 @@ func TestAnOpenTunnelTakenOffTheListKeepsBothPagesWhole(t *testing.T) {
 		Tunnels:      []app.Tunnel{{ID: "t1", Machine: "s1", Live: true, As: as, Note: "1 stream"}},
 		SavedTunnels: []settings.SavedTunnel{as}}
 	_, mp, again := machinePaneOf(t, st, "s1", false)
-	mp.pick(mpTunnelOpen+"t1", lastUI)
+	mp.pick(tunnelKey("local", ":9000", "db:5432"), lastUI)
 	// Shown in full, so it has a fade to go out with.
 	frames := func() {
 		for range 60 {
@@ -500,8 +506,8 @@ func TestAMachineBeyondAWindowTakesTunnels(t *testing.T) {
 		fields[i].SetText(s, lastUI)
 		fields[i].OnChange(s, lastUI)
 	}
-	if findButton(t, mp.right, "Open").Disabled {
-		t.Fatalf("beyond a connected window, Open is greyed out; card %+v, problem in %T", mp.card, mp.right.Page())
+	if findButton(t, mp.right, "Save").Disabled {
+		t.Fatalf("beyond a connected window, Save is greyed out; card %+v, problem in %T", mp.card, mp.right.Page())
 	}
 }
 
@@ -543,5 +549,33 @@ func TestAProfileIsMovedAmongTheProfiles(t *testing.T) {
 func drainIntents() {
 	for len(lastWindow.Client().Intents()) > 0 {
 		<-lastWindow.Client().Intents()
+	}
+}
+
+// A saved tunnel's row stays the one picked as it opens, and its page
+// then shows its traffic as a graph, and Close.
+func TestATunnelStaysPickedAsItOpens(t *testing.T) {
+	as := settings.SavedTunnel{Host: "prod", HostID: "s1", Kind: "local", Listen: ":9000", Target: "db:5432"}
+	st := app.State{Saved: []remote.Host{{ID: "s1", Name: "prod", Address: "prod.example"}},
+		Machines: []machines.Info{{ID: "s1", Name: "prod"}}, Connected: []machines.ID{"s1"},
+		SavedTunnels: []settings.SavedTunnel{as}}
+	_, mp, again := machinePaneOf(t, st, "s1", false)
+	key := tunnelKey("local", ":9000", "db:5432")
+	mp.pick(key, lastUI)
+	findButton(t, mp.right, "Open")
+	st.Tunnels = []app.Tunnel{{ID: "t1", Machine: "s1", Live: true, As: as, Meter: meter.New()}}
+	again(st)
+	if mp.sel != key {
+		t.Fatalf("opened, the row picked is %q", mp.sel)
+	}
+	findButton(t, mp.right, "Close")
+	graphs := 0
+	walkNodes(mp.right, func(n gunim.Node) {
+		if _, ok := n.(*widget.LiveGraph); ok {
+			graphs++
+		}
+	})
+	if graphs != 1 {
+		t.Fatalf("the open tunnel's page has %d graphs of its traffic", graphs)
 	}
 }

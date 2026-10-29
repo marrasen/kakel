@@ -350,6 +350,10 @@ type SavedTunnel struct {
 	// going.
 	Listen string `json:"listen"`
 	Target string `json:"target,omitempty"`
+
+	// Auto opens it whenever its machine connects, and as it is saved
+	// with the machine connected; without it, it waits to be opened.
+	Auto bool `json:"auto,omitempty"`
 }
 
 // Same reports whether two saved tunnels are the same tunnel, which is
@@ -985,6 +989,29 @@ func (s *Settings) KeepTunnel(t SavedTunnel, most int) error {
 			want = want[:most]
 		}
 		return want
+	})
+}
+
+// ReplaceTunnel puts now in the list in was's place, as an edit does,
+// and saves; was not in it, now goes to the front.
+func (s *Settings) ReplaceTunnel(was, now SavedTunnel, most int) error {
+	return s.putTunnels(func(have []SavedTunnel) []SavedTunnel {
+		i := slices.IndexFunc(have, func(at SavedTunnel) bool { return at.Same(was) })
+		if i < 0 {
+			want := append([]SavedTunnel{now}, dropTunnel(have, now)...)
+			if most > 0 && len(want) > most {
+				want = want[:most]
+			}
+			return want
+		}
+		have[i] = now
+		// Edited into one saved already: the one edited stands for both.
+		for j := len(have) - 1; j >= 0; j-- {
+			if j != i && have[j].Same(now) {
+				have = slices.Delete(have, j, j+1)
+			}
+		}
+		return have
 	})
 }
 

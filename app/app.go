@@ -1265,7 +1265,7 @@ func failedTitle(in gunim.Intent) string {
 		return "Couldn't remove the copy"
 	case ForgetTunnel:
 		return "Couldn't remove the tunnel"
-	case SaveTunnel:
+	case SaveTunnel, AddTunnel, EditTunnel:
 		return "Couldn't save the tunnel"
 	case SaveFavourite:
 		return "Couldn't save the favourite"
@@ -1747,6 +1747,10 @@ func (a *app) handle(in gunim.Intent) {
 		err = a.forgetTunnel(in.Saved)
 	case SaveTunnel:
 		err = a.saveTunnel(in.Saved)
+	case AddTunnel:
+		err = a.addTunnel(in)
+	case EditTunnel:
+		err = a.editTunnel(in)
 	case SaveFavourite:
 		err = a.saveFavourite(in)
 	case RemoveFavourite:
