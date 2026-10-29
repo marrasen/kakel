@@ -142,7 +142,7 @@ func (a *app) fileManagerOptions(fsys filemanager.FS, path, pick string) fileman
 	a.notePlaces()
 	return filemanager.Options{
 		FS: fsys, Dir: path, Select: pick, Name: ProgramName, PrefsPath: fileManagerPrefs(),
-		Places: a.fileManagerPlaces, Visit: a.visitPlace, Favourites: a.favStore(),
+		PlacesOn: a.placesOn, PlacesArranged: a.placesArranged, Visit: a.visitPlace, Favourites: a.favStore(),
 		Transfer: a.transferFiles, FSName: a.fsName,
 		// A zip's password can come from the secrets, and go into them.
 		Password:  a.zipPassword,

@@ -2,6 +2,7 @@ package view
 
 import (
 	"fmt"
+	"image/color"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/marrasen/gunim"
+	"github.com/marrasen/gunim/filemanager"
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/icon"
 	"github.com/marrasen/gunim/paint"
@@ -42,10 +44,15 @@ const (
 	// mpProfile starts a profile's key, before its ID.
 	mpProfile = "profile:"
 	mpFiles   = "head:files"
+	mpAddLoc  = "add:location"
+	mpFavs    = "head:favourites"
 	mpAddDir  = "add:folder"
-	// mpFolder starts a folder's key: a found one's ID, or a
-	// favourite's path.
+	// mpFolder starts a folder's key, before its key as the program
+	// gives it: "found:" and a found one's ID, "loc:" and a location's
+	// path, or "fav:" and a favourite's.
 	mpFolder = "folder:"
+	// mpPlaces is the group the machine's places are dragged in.
+	mpPlaces = "places"
 	// mpSaved starts the key of a command, copy or tunnel kept.
 	mpSaved = "saved:"
 )
@@ -81,6 +88,8 @@ type mpItem struct {
 	// a heading's + picks.
 	tunnel *mpTunnelOf
 	plus   string
+	// ink is the colour of its icon, where it has one of its own.
+	ink *theme.Token[color.NRGBA]
 }
 
 // mpSavedOf is something the machine keeps for next time: a command, a
@@ -91,34 +100,61 @@ type mpSavedOf struct {
 	tunnel  *settings.SavedTunnel
 }
 
-// mpFolderOf is a folder as a machine pane's Files list it: a favourite
-// the user saved, fav, or one kakel found, its home or a drive, with
-// what the user changed of it.
+// mpFolderOf is a folder as a machine pane lists it: one of the
+// machine's places, found there or a location saved for it, or a
+// favourite saved on it, one of them set.
 type mpFolderOf struct {
-	id   string
-	fav  *app.Favourite
-	edit settings.FoundProfile
-	// name is what kakel found it as, and path where it is, for one
-	// found; path is "" for a home, which is wherever the account's is.
-	name, path string
+	place *app.MachinePlace
+	fav   *app.Favourite
 }
 
 // found reports whether kakel found the folder.
-func (f mpFolderOf) found() bool { return f.id != "" }
+func (f mpFolderOf) found() bool { return f.place != nil && f.place.FoundID != "" }
+
+// location is the location the folder is, or nil.
+func (f mpFolderOf) location() *app.Favourite {
+	if f.place == nil {
+		return nil
+	}
+	return f.place.Location
+}
 
 // title is what the folder is called.
 func (f mpFolderOf) title() string {
 	switch {
 	case f.fav != nil:
 		return f.fav.Label()
-	case f.edit.Name != "":
-		return f.edit.Name
+	case f.place != nil:
+		return f.place.Name
 	}
-	return f.name
+	return ""
+}
+
+// path is where the folder is, "" for a home, which is wherever the
+// account's is.
+func (f mpFolderOf) path() string {
+	switch {
+	case f.fav != nil:
+		return f.fav.Path
+	case f.place != nil:
+		return f.place.Path
+	}
+	return ""
+}
+
+// look is the folder's colour and icon, by the file manager's names.
+func (f mpFolderOf) look() (colour, icon string) {
+	switch {
+	case f.fav != nil:
+		return f.fav.Color, f.fav.Icon
+	case f.place != nil:
+		return f.place.Color, f.place.Icon
+	}
+	return "", ""
 }
 
 // hidden reports whether the folder is one found and hidden.
-func (f mpFolderOf) hidden() bool { return f.found() && f.edit.Hidden }
+func (f mpFolderOf) hidden() bool { return f.place != nil && f.place.Hidden }
 
 // mpProfileOf is a profile as a machine pane lists it: one the user
 // made, own, or one kakel found, with what the user changed of it.
@@ -160,7 +196,7 @@ type machinePane struct {
 	// state that changes nothing there leaves what is typed alone.
 	shown   string
 	shownOf string
-	// added is the name of a profile just added, and addedDir the path
+	// added is the name of a profile just added, and addedDir the key
 	// of a folder just saved, to pick once it comes.
 	added, addedDir string
 	// wantSel is a row to pick once it comes, as a tunnel just saved.
@@ -197,19 +233,32 @@ func newMachinePane(w *Window, id string) *machinePane {
 	mp := &machinePane{w: w, id: id, list: widget.NewList(), right: widget.NewPages(&emptyNode{}), sel: mpMachine}
 	mp.list.ClickOnce = true
 	// The profiles are dragged into the order every list of them shows,
-	// among themselves alone.
+	// among themselves alone, and the machine's places into the order the
+	// file manager lists them in.
 	mp.list.ReorderGroup = func(k widget.Key) string {
-		if strings.HasPrefix(string(k), mpProfile) {
+		switch {
+		case strings.HasPrefix(string(k), mpProfile):
 			return mpProfiles
+		case strings.HasPrefix(string(k), mpFolder+app.FilesFound), strings.HasPrefix(string(k), mpFolder+app.FilesLocation):
+			return mpPlaces
 		}
 		return ""
 	}
 	mp.list.OnReorder = func(keys []widget.Key, _ *gunim.UI) gunim.Intent {
-		var ids []string
+		var ids, places, were []string
 		for _, k := range keys {
 			if id, ok := strings.CutPrefix(string(k), mpProfile); ok {
 				ids = append(ids, id)
 			}
+			if key, ok := strings.CutPrefix(string(k), mpFolder); ok && mp.list.ReorderGroup(k) == mpPlaces {
+				places = append(places, key)
+			}
+		}
+		for _, p := range mp.st.MachinePlaces(mp.machine) {
+			were = append(were, p.Key)
+		}
+		if !slices.Equal(places, were) {
+			return app.ReorderPlaces{Machine: mp.machine, Keys: places}
 		}
 		return app.ReorderProfiles{Machine: mp.machine, IDs: ids}
 	}
@@ -304,7 +353,7 @@ func (mp *machinePane) refresh(u *gunim.UI) {
 		switch {
 		case mp.added != "" && it.profile.own != nil && it.profile.own.Name == mp.added:
 			mp.sel, mp.added = it.key, ""
-		case mp.addedDir != "" && it.folder.fav != nil && it.folder.fav.Path == mp.addedDir:
+		case mp.addedDir != "" && it.key == mp.addedDir:
 			mp.sel, mp.addedDir, mp.shown = it.key, "", ""
 		case mp.wantSel != "" && it.key == mp.wantSel:
 			mp.sel, mp.wantSel, mp.shown = it.key, "", ""
@@ -366,10 +415,10 @@ func (mp *machinePane) refresh(u *gunim.UI) {
 		page = mp.tunnelSide(*it.tunnel)
 	case mp.sel == mpAdd:
 		page = mp.profileSide(mpProfileOf{}, true, u)
-	case mp.sel == mpAddDir:
-		page = mp.folderSide(mpFolderOf{}, true)
+	case mp.sel == mpAddDir, mp.sel == mpAddLoc:
+		page = mp.folderSide(mpFolderOf{}, true, mp.sel == mpAddLoc)
 	case strings.HasPrefix(mp.sel, mpFolder):
-		page = mp.folderSide(it.folder, false)
+		page = mp.folderSide(it.folder, false, it.folder.location() != nil)
 	case it.saved != nil:
 		page = mp.savedSide(*it.saved)
 	default:
@@ -429,9 +478,10 @@ func (mp *machinePane) signature() string {
 			b.WriteString("\x03" + app.CopiedWhere(*s.copy, mp.w.nameOf))
 		}
 		f := it.folder
-		b.WriteString("\x02" + f.title() + "\x00" + f.path + boolWord(f.hidden()))
+		colour, ic := f.look()
+		b.WriteString("\x02" + f.title() + "\x00" + f.path() + boolWord(f.hidden()) + "\x00" + colour + "\x00" + ic)
 		if f.fav != nil {
-			b.WriteString(f.fav.Path + "\x00" + f.fav.Name)
+			b.WriteString(f.fav.Name)
 		}
 	}
 	return b.String()
@@ -634,38 +684,48 @@ func (mp *machinePane) savedSide(s mpSavedOf) gunim.Node {
 	return widget.NewSized(col, 640, 0)
 }
 
-// folderRows are the Files section's rows: the home folder and, here,
-// the drives, which kakel finds, then the favourites saved on the
-// machine, then the row that adds one.
+// folderRows are the rows of the machine's folders: its places, those
+// kakel found and its locations, in the order the user dragged them in,
+// and the row that adds a location; then its favourites, and the row
+// that adds one.
 func (mp *machinePane) folderRows() []mpItem {
 	st := mp.st
-	folder := func(f mpFolderOf) mpItem {
-		key := mpFolder + "found:" + f.id
-		if f.fav != nil {
-			key = mpFolder + "fav:" + f.fav.Path
-		}
+	out := []mpItem{{key: mpFiles, title: "This machine", heading: true}}
+	places := st.MachinePlaces(mp.machine)
+	for i := range places {
+		p := &places[i]
 		ic := icon.Folder
-		switch {
-		case f.id == app.FoundHome:
+		switch p.Kind {
+		case "home":
 			ic = icon.House
-		case strings.HasPrefix(f.id, "drive:"):
+		case "drive":
 			ic = icon.HardDrive
 		}
-		return mpItem{key: key, title: f.title(), icon: ic, folder: f}
+		out = append(out, folderItem(mpFolder+p.Key, mpFolderOf{place: p}, ic))
 	}
-	out := []mpItem{{key: mpFiles, title: "Files", heading: true},
-		folder(mpFolderOf{id: app.FoundHome, name: "Home", edit: foundOf(st.Found, mp.machine, app.FoundHome)})}
-	if mp.machine == "" {
-		for _, d := range st.Drives {
-			out = append(out, folder(mpFolderOf{id: d.ID, name: d.Name, path: d.Path, edit: foundOf(st.Found, "", d.ID)}))
-		}
-	}
+	out = append(out, mpItem{key: mpAddLoc, title: "Add Location", icon: icon.FolderPlus},
+		mpItem{key: mpFavs, title: "File favourites", heading: true})
 	for i, f := range st.Favourites {
 		if f.Machine == mp.machine {
-			out = append(out, folder(mpFolderOf{fav: &st.Favourites[i]}))
+			out = append(out, folderItem(mpFolder+app.FilesFavourite+f.Path, mpFolderOf{fav: &st.Favourites[i]}, icon.Folder))
 		}
 	}
-	return append(out, mpItem{key: mpAddDir, title: "Add Folder", icon: icon.FolderPlus})
+	return append(out, mpItem{key: mpAddDir, title: "Add Favourite", icon: icon.FolderPlus})
+}
+
+// folderItem is the row of the folder f, with key: its icon the one
+// given it, else ic, in its colour.
+func folderItem(key string, f mpFolderOf, ic *icon.Icon) mpItem {
+	it := mpItem{key: key, title: f.title(), icon: ic, folder: f}
+	colour, name := f.look()
+	if name != "" {
+		it.icon = filemanager.FavouriteIcon(name)
+	}
+	if colour != "" {
+		ink := filemanager.FavouriteColor(colour)
+		it.ink = &ink
+	}
+	return it
 }
 
 // machineSide is the right side for the machine's own row.
@@ -910,37 +970,58 @@ func (mp *machinePane) profileSide(p mpProfileOf, adding bool, u *gunim.UI) guni
 }
 
 // folderSide is the right side for a folder's row, or for saving one
-// with adding: a favourite's name and folder, or a found one's name.
-func (mp *machinePane) folderSide(f mpFolderOf, adding bool) gunim.Node {
+// with adding, a location with location and else a favourite: its name,
+// its folder, which for one found is where kakel found it, its colour
+// and its icon.
+func (mp *machinePane) folderSide(f mpFolderOf, adding, location bool) gunim.Node {
 	name, dir := widget.NewTextField(), widget.NewTextField()
 	name.Placeholder, dir.Placeholder = "The folder's name", "such as /srv/www"
 	if mp.machine == "" && runtime.GOOS == "windows" {
 		dir.Placeholder = `such as D:\Projects`
 	}
+	colour, ic := f.look()
+	looks := filemanager.NewFavouriteLook(colour, ic)
+	// The look is saved as picked only once the user picks one: a found
+	// folder left alone keeps its own icon.
+	touched := false
 	form := widget.NewForm().Add("Name", name)
 	switch {
-	case f.fav != nil:
-		name.SetText(f.fav.Name, nil)
-		dir.SetText(f.fav.Path, nil)
-		form.Add("Folder", dir)
 	case f.found():
-		name.SetText(f.edit.Name, nil)
-		name.Placeholder = f.name
-		where := f.path
+		if f.place.Name != f.place.Found {
+			name.SetText(f.place.Name, nil)
+		}
+		name.Placeholder = f.place.Found
+		where := f.place.Path
 		if where == "" {
 			where = "the account's home folder"
 		}
 		form.Add("Opens", widget.NewLabel(where))
+	case f.fav != nil:
+		name.SetText(f.fav.Name, nil)
+		dir.SetText(f.fav.Path, nil)
+		form.Add("Folder", dir)
+	case f.location() != nil:
+		name.SetText(f.location().Name, nil)
+		dir.SetText(f.location().Path, nil)
+		form.Add("Folder", dir)
 	default:
 		form.Add("Folder", dir)
 	}
+	form.Add("Colour", looks.Colors()).Add("Icon", looks.Icons())
 	save := widget.NewButton("Save")
 	save.Kind = widget.ButtonPrimary
 	problem := faintLabel("")
+	look := func() (string, string) {
+		if !touched {
+			return colour, ic
+		}
+		return looks.Color(), looks.Icon()
+	}
 	parse := func() (gunim.Intent, string) {
+		c, i := look()
 		if f.found() {
-			e := f.edit
-			e.HostID, e.ID, e.Name = string(mp.machine), f.id, strings.TrimSpace(name.Text())
+			e := foundOf(mp.st.Found, mp.machine, f.place.FoundID)
+			e.Name, e.Color, e.Icon = strings.TrimSpace(name.Text()), c, i
 			return app.SaveFound{Found: e}, ""
 		}
 		// Whether the folder is there is asked as it is saved, off the
@@ -950,10 +1031,11 @@ func (mp *machinePane) folderSide(f mpFolderOf, adding bool) gunim.Node {
 			return nil, "Enter a folder."
 		}
 		was := ""
-		if f.fav != nil {
-			was = f.fav.Path
+		if !adding {
+			was = f.path()
 		}
-		return app.SaveFavourite{Machine: mp.machine, Was: was, Path: path, Name: strings.TrimSpace(name.Text())}, ""
+		return app.SaveFavourite{Machine: mp.machine, Was: was, Path: path, Name: strings.TrimSpace(name.Text()),
+			Color: c, Icon: i, Location: location}, ""
 	}
 	before, _ := parse()
 	check := func(u *gunim.UI) {
@@ -966,6 +1048,11 @@ func (mp *machinePane) folderSide(f mpFolderOf, adding bool) gunim.Node {
 	}
 	changed := func(_ string, u *gunim.UI) gunim.Intent { check(u); return nil }
 	name.OnChange, dir.OnChange = changed, changed
+	looks.OnChange = func(_ filemanager.FavouriteEdit, u *gunim.UI) gunim.Intent {
+		touched = true
+		check(u)
+		return nil
+	}
 	check(nil)
 	save.OnClick = func(*gunim.UI) gunim.Intent {
 		in, why := parse()
@@ -975,32 +1062,48 @@ func (mp *machinePane) folderSide(f mpFolderOf, adding bool) gunim.Node {
 		if fav, ok := in.(app.SaveFavourite); ok {
 			// The row to pick once it is saved: where it is kept, as the
 			// program writes it.
-			mp.addedDir = savedPath(mp.machine, fav.Path)
+			kind := app.FilesFavourite
+			if location {
+				kind = app.FilesLocation
+			}
+			mp.addedDir = mpFolder + kind + savedPath(mp.machine, fav.Path)
 		}
 		return in
 	}
 	actions := []gunim.Node{save}
 	if !adding && !f.hidden() {
 		open := widget.NewButton("Open")
-		path := f.path
-		if f.fav != nil {
-			path = f.fav.Path
-		}
+		path := f.path()
 		open.OnClick = func(*gunim.UI) gunim.Intent { return app.OpenFilesOn{Machine: mp.machine, Path: path} }
 		actions = append(actions, open)
 	}
-	title, note := f.title(), "A folder you saved: it is a favourite in the file manager's sidebar too."
+	there := mp.w.machineName(mp.machine)
+	title := f.title()
+	var note string
 	switch {
+	case adding && location:
+		title, note = "Add Location", "A folder on "+there+", listed under its name at the top of the file manager while it shows "+there+"'s files."
 	case adding:
-		title, note = "Add Folder", "A folder on "+mp.w.machineName(mp.machine)+" to keep at hand: it is a favourite in the file manager's sidebar too."
+		title, note = "Add Favourite", "A folder on "+there+" to keep at hand: the file manager lists the favourites whichever machine it shows."
 	case f.hidden():
 		note = "Found by kakel, and hidden: the eye beside it in the list shows it again."
 	case f.found():
-		note = "Found by kakel. Rename it, or hide it with the eye beside it in the list."
+		note = "Found by kakel. Rename it, give it a colour and an icon, or hide it with the eye beside it in the list. Drag it in the list to move it."
+	case location:
+		note = "A location: the file manager lists it under " + there + "'s name while it shows " + there + "'s files. Drag it in the list to move it."
+	default:
+		note = "A favourite: the file manager lists it whichever machine it shows. Its sidebar puts the favourites of every machine in order."
 	}
-	if f.fav != nil {
+	if !adding && (f.fav != nil || f.location() != nil) {
 		del := widget.NewButton("Remove…")
-		del.OnClick = func(u *gunim.UI) gunim.Intent { mp.confirmUnsave(*f.fav, u); return nil }
+		del.OnClick = func(u *gunim.UI) gunim.Intent {
+			if f.fav != nil {
+				mp.confirmUnsave(*f.fav, false, u)
+			} else {
+				mp.confirmUnsave(*f.location(), true, u)
+			}
+			return nil
+		}
 		actions = append(actions, del)
 	}
 	col := widget.Column(heading(title), faintLabel(note), widget.NewCard(form), problem, buttons(actions...))
@@ -1053,13 +1156,17 @@ func (mp *machinePane) confirmForget(s mpSavedOf, u *gunim.UI) {
 	mp.w.openDialog(d, u)
 }
 
-// confirmUnsave asks before taking the favourite f off the list.
-func (mp *machinePane) confirmUnsave(f app.Favourite, u *gunim.UI) {
+// confirmUnsave asks before taking the favourite f, or with location
+// the location f, off its list.
+func (mp *machinePane) confirmUnsave(f app.Favourite, location bool, u *gunim.UI) {
 	d := widget.NewDialog("Remove " + f.Label() + "?")
 	d.Body = widget.NewLabel("It comes off the favourites. The folder and what is in it stay where they are.")
+	if location {
+		d.Body = widget.NewLabel("It comes off " + mp.w.machineName(mp.machine) + "'s locations. The folder and what is in it stay where they are.")
+	}
 	d.SetButtons("Remove", "Cancel")
 	d.Danger = true
-	d.OnAccept = widget.Sends(app.RemoveFavourite{Machine: f.Machine, Path: f.Path})
+	d.OnAccept = widget.Sends(app.RemoveFavourite{Machine: f.Machine, Path: f.Path, Location: location})
 	d.OnDismiss = widget.Sends(app.DialogClosed{})
 	mp.w.openDialog(d, u)
 }
@@ -1170,7 +1277,7 @@ func newMPRow(mp *machinePane) *mpRow {
 	}
 	r.eye.OnClick = func(*gunim.UI) gunim.Intent {
 		if f := r.it.folder; f.found() {
-			return app.HideFound{HostID: string(r.mp.machine), ID: f.id, Show: f.edit.Hidden}
+			return app.HideFound{HostID: string(r.mp.machine), ID: f.place.FoundID, Show: f.place.Hidden}
 		}
 		p := r.it.profile
 		return app.HideFound{HostID: string(r.mp.machine), ID: p.id, Show: p.edit.Hidden}
@@ -1180,7 +1287,10 @@ func newMPRow(mp *machinePane) *mpRow {
 			r.mp.confirmDelete(*p, u)
 		}
 		if f := r.it.folder.fav; f != nil {
-			r.mp.confirmUnsave(*f, u)
+			r.mp.confirmUnsave(*f, false, u)
+		}
+		if l := r.it.folder.location(); l != nil {
+			r.mp.confirmUnsave(*l, true, u)
 		}
 		if s := r.it.saved; s != nil {
 			r.mp.confirmForget(*s, u)
@@ -1218,6 +1328,9 @@ func (r *mpRow) set(it mpItem, picked bool, u *gunim.UI) {
 		kids = append(kids, r.icon, r.words)
 	default:
 		r.icon.Icon = it.icon
+		if it.ink != nil {
+			r.icon.Color = *it.ink
+		}
 		kids = append(kids, r.icon, r.title)
 	}
 	if t := it.tunnel; t != nil {
@@ -1264,6 +1377,9 @@ func (r *mpRow) set(it mpItem, picked bool, u *gunim.UI) {
 		}
 		kids = append(kids, widget.NewSpacer(), r.star)
 		switch {
+		case f.fav != nil:
+			r.bin.Tooltip = "Take it off the favourites"
+			kids = append(kids, r.bin)
 		case f.found():
 			r.eye.Icon, r.eye.Tooltip = icon.Eye, "Hide it everywhere"
 			if f.hidden() {
@@ -1272,6 +1388,7 @@ func (r *mpRow) set(it mpItem, picked bool, u *gunim.UI) {
 			}
 			kids = append(kids, r.eye)
 		default:
+			r.bin.Tooltip = "Remove the location"
 			kids = append(kids, r.bin)
 		}
 	}

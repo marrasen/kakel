@@ -207,8 +207,13 @@ type State struct {
 	// starts.
 	ThisComputer ThisComputer
 	// Favourites are the folders saved on any machine, in the user's
-	// order.
-	Favourites []Favourite
+	// order. Locations are those saved for one machine alone, which its
+	// files list under its name, and LocationOrder the order of each
+	// machine's, with the folders found there, by the machine's ID: see
+	// MachinePlaces.
+	Favourites    []Favourite
+	Locations     []Favourite
+	LocationOrder map[string][]string
 	// ShellSetup says new shells here are taught to say what they are
 	// doing, and TermProgram what they are told the terminal is called,
 	// "" for kakel's own name.
@@ -1228,7 +1233,7 @@ func (a *app) keep(what string, err error) {
 // was being done: "Couldn't change the theme" says more than that
 // something did not work.
 func failedTitle(in gunim.Intent) string {
-	switch in.(type) {
+	switch in := in.(type) {
 	case NewTerminal, OpenOn, OpenShellNamed, OpenDefaultShell:
 		return "Couldn't open a terminal"
 	case SplitPane:
@@ -1267,6 +1272,8 @@ func failedTitle(in gunim.Intent) string {
 		return "Couldn't save the order of the profiles"
 	case SetDefaultFiles:
 		return "Couldn't make it the default"
+	case ReorderPlaces:
+		return "Couldn't save the order of the folders"
 	case ForgetCommand:
 		return "Couldn't remove the command"
 	case ForgetCopy:
@@ -1276,8 +1283,14 @@ func failedTitle(in gunim.Intent) string {
 	case SaveTunnel, AddTunnel, EditTunnel:
 		return "Couldn't save the tunnel"
 	case SaveFavourite:
+		if in.Location {
+			return "Couldn't save the location"
+		}
 		return "Couldn't save the favourite"
 	case RemoveFavourite:
+		if in.Location {
+			return "Couldn't remove the location"
+		}
 		return "Couldn't remove the favourite"
 	case SetLauncherKey:
 		return "Couldn't change the launcher's key"
@@ -1442,6 +1455,8 @@ func (a *app) publish() {
 	st.Found = slices.Clone(a.st.Found)
 	st.FoundShells = slices.Clone(a.st.FoundShells)
 	st.Drives = slices.Clone(a.st.Drives)
+	st.Locations = slices.Clone(a.st.Locations)
+	st.LocationOrder = maps.Clone(a.st.LocationOrder)
 	st.DefaultShell = a.defaultShell()
 	st.HereMachine, st.HereShell = a.filesKey(a.st.Focus), a.shellHere()
 	st.MachinesUsed = slices.Clone(a.lastOn)
@@ -1749,6 +1764,8 @@ func (a *app) handle(in gunim.Intent) {
 		err = a.reorderProfiles(in)
 	case SetDefaultFiles:
 		err = a.setDefaultFiles(in)
+	case ReorderPlaces:
+		err = a.reorderPlaces(in)
 	case ConnectMachine:
 		err = a.connectMachine(in.Machine)
 	case MachineRowShown:

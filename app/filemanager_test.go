@@ -82,7 +82,7 @@ func TestFilesOpenInAFileManagerPane(t *testing.T) {
 	if a.groupOf[second.ID] != a.groupOf[first.ID] {
 		t.Fatal("a second file manager pane didn't open beside the one in front")
 	}
-	places, _ := files.opened[0].Places()
+	places, _ := files.opened[0].PlacesOn("")
 	i := slices.IndexFunc(places, func(p filemanager.Place) bool { return p.Group == "Machines" })
 	if i < 0 || places[i].Name != "web" || places[i].Note != "Not connected" || places[i].FS != serverFS+"s1" {
 		t.Fatalf("the places are %+v", places)

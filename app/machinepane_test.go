@@ -213,7 +213,7 @@ func TestAFavouriteGoesByItsFoldersName(t *testing.T) {
 	}
 }
 
-// A favourite moved to another folder keeps its colour; on a server,
+// A favourite moved to another folder keeps the colour it is given; on a server,
 // a slash at the end makes no second one; renamed, a local one whose
 // folder has gone is kept.
 func TestAFavouriteMovedOrRenamedStaysOne(t *testing.T) {
@@ -223,7 +223,7 @@ func TestAFavouriteMovedOrRenamedStaysOne(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.showFavourites()
-	a.handle(SaveFavourite{Was: dir, Path: other})
+	a.handle(SaveFavourite{Was: dir, Path: other, Color: "green"})
 	if err := a.saveFavourite(SaveFavourite{Machine: "s1", Path: "/srv/www/"}); err == nil {
 		t.Fatal("/srv/www/ was kept beside /srv/www")
 	}

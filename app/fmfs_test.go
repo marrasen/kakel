@@ -272,7 +272,7 @@ func TestAServersFileManagerOpensInAWindowOfItsOwn(t *testing.T) {
 	waitFor(t, a, "the server's home", func() bool { return fm.homeDir() != "" })
 	a.notePlaces()
 	place := func() filemanager.Place {
-		places, _ := files.opened[0].Places()
+		places, _ := files.opened[0].PlacesOn("")
 		for _, p := range places {
 			if p.Group == "Machines" {
 				return p

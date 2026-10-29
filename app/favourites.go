@@ -26,6 +26,9 @@ type Favourite struct {
 	Machine machines.ID
 	Path    string
 	Name    string
+	// Color and Icon are its colour and icon, by the names the file
+	// manager gives them; empty for a plain folder.
+	Color, Icon string
 }
 
 // Label is what a menu calls the favourite: its name, or else its
@@ -59,11 +62,18 @@ func (a *app) showFavourites() {
 		return
 	}
 	kept, _ := a.settings.Favourites()
+	a.st.Favourites = favouritesOf(kept)
+	a.st.Locations = favouritesOf(a.settings.Locations())
+	a.st.LocationOrder = a.settings.LocationOrder()
+}
+
+// favouritesOf are the folders kept, as kakel's windows are told them.
+func favouritesOf(kept []settings.Favourite) []Favourite {
 	out := make([]Favourite, len(kept))
 	for i, f := range kept {
-		out[i] = Favourite{Machine: machines.ID(f.Machine), Path: f.Path, Name: f.Name}
+		out[i] = Favourite{Machine: machines.ID(f.Machine), Path: f.Path, Name: f.Name, Color: f.Color, Icon: f.Icon}
 	}
-	a.st.Favourites = out
+	return out
 }
 
 // moveFolders makes the folders saved for This Computer and for each
@@ -263,21 +273,27 @@ func (a *app) noteNames() {
 
 // Intents for favourites, the files profiles the user adds.
 type (
-	// SaveFavourite keeps a favourite: the one at Was on Machine renamed
-	// and moved to Path, or a new one where Was is empty.
+	// SaveFavourite keeps a favourite: the one at Was on Machine renamed,
+	// moved to Path and given Color and Icon, or a new one where Was is
+	// empty. With Location, it is one of the machine's locations instead,
+	// shown only while its files are.
 	SaveFavourite struct {
 		Machine         machines.ID
 		Was, Path, Name string
+		Color, Icon     string
+		Location        bool
 	}
-	// RemoveFavourite removes the favourite at Path on Machine.
+	// RemoveFavourite removes the favourite at Path on Machine, or with
+	// Location the location.
 	RemoveFavourite struct {
-		Machine machines.ID
-		Path    string
+		Machine  machines.ID
+		Path     string
+		Location bool
 	}
 )
 
-// saveFavourite keeps a favourite added or changed in Settings, its
-// colour and icon as they were.
+// saveFavourite keeps a favourite or location added or changed in a
+// machine's pane.
 func (a *app) saveFavourite(in SaveFavourite) error {
 	path := strings.TrimSpace(in.Path)
 	if path == "" {
@@ -296,40 +312,99 @@ func (a *app) saveFavourite(in SaveFavourite) error {
 	case len(path) > 1:
 		path = strings.TrimRight(path, "/")
 	}
-	return a.editFavourites(func(kept []settings.Favourite) ([]settings.Favourite, error) {
+	what, kind := "a favourite", FilesFavourite
+	if in.Location {
+		what, kind = "a location", FilesLocation
+	}
+	if in.Location && in.Machine == machines.Local {
+		// The file manager lists a location beside the folders found,
+		// which it could not be told from.
+		home, _ := os.UserHomeDir()
+		if path == home || slices.ContainsFunc(a.st.Drives, func(d FoundDrive) bool { return d.Path == path }) {
+			return errors.New("that folder is listed already, as kakel found it")
+		}
+	}
+	err := a.editFolders(in.Location, func(kept []settings.Favourite) ([]settings.Favourite, error) {
 		on := func(p string) func(settings.Favourite) bool {
 			return func(f settings.Favourite) bool { return machines.ID(f.Machine) == in.Machine && f.Path == p }
 		}
 		if path != in.Was && slices.ContainsFunc(kept, on(path)) {
-			return nil, errors.New("that folder is a favourite already")
+			return nil, errors.New("that folder is " + what + " already")
 		}
-		f := settings.Favourite{Machine: string(in.Machine), Path: path, Name: strings.TrimSpace(in.Name)}
+		f := settings.Favourite{Machine: string(in.Machine), Path: path, Name: strings.TrimSpace(in.Name), Color: in.Color, Icon: in.Icon}
 		if i := slices.IndexFunc(kept, on(in.Was)); in.Was != "" && i >= 0 {
-			f.Color, f.Icon = kept[i].Color, kept[i].Icon
 			kept[i] = f
 			return kept, nil
 		}
 		return append(kept, f), nil
 	})
+	if err != nil || in.Was == "" || in.Was == path {
+		return err
+	}
+	// Moved, it stays the default, and in its place.
+	return a.rekeyFolder(in.Machine, kind+in.Was, kind+path)
 }
 
-// removeFavourite removes a favourite, from Settings.
+// removeFavourite removes a favourite or location.
 func (a *app) removeFavourite(in RemoveFavourite) error {
-	return a.editFavourites(func(kept []settings.Favourite) ([]settings.Favourite, error) {
+	err := a.editFolders(in.Location, func(kept []settings.Favourite) ([]settings.Favourite, error) {
 		return slices.DeleteFunc(kept, func(f settings.Favourite) bool { return machines.ID(f.Machine) == in.Machine && f.Path == in.Path }), nil
 	})
+	if err != nil {
+		return err
+	}
+	kind := FilesFavourite
+	if in.Location {
+		kind = FilesLocation
+	}
+	return a.rekeyFolder(in.Machine, kind+in.Path, "")
+}
+
+// rekeyFolder has the default folder and the order of the places of
+// machine m follow a folder whose key was is now now, or forget it for
+// a now of "".
+func (a *app) rekeyFolder(m machines.ID, was, now string) error {
+	if a.settings.FilesDefault()[string(m)] == was {
+		if err := a.settings.PutFilesDefault(string(m), now); err != nil {
+			return err
+		}
+		a.st.FilesDefault = a.settings.FilesDefault()
+	}
+	order := a.settings.LocationOrder()[string(m)]
+	if i := slices.Index(order, was); i >= 0 {
+		if now == "" {
+			order = slices.Delete(order, i, i+1)
+		} else {
+			order[i] = now
+		}
+		if err := a.settings.PutLocationOrder(string(m), order); err != nil {
+			return err
+		}
+	}
+	a.showFavourites()
+	return nil
 }
 
 // editFavourites changes the favourites kept, and has the windows and
 // the file manager show them.
 func (a *app) editFavourites(edit func([]settings.Favourite) ([]settings.Favourite, error)) error {
+	return a.editFolders(false, edit)
+}
+
+// editFolders changes the favourites kept, or with locations the
+// locations, and has the windows and the file manager show them.
+func (a *app) editFolders(locations bool, edit func([]settings.Favourite) ([]settings.Favourite, error)) error {
 	if a.settings == nil {
 		return errors.New("the settings could not be read, so nothing can be kept")
 	}
 	if err := a.settings.Err(); err != nil {
 		return err
 	}
-	if err := a.settings.EditFavourites(edit); err != nil {
+	put := a.settings.EditFavourites
+	if locations {
+		put = a.settings.EditLocations
+	}
+	if err := put(edit); err != nil {
 		return err
 	}
 	a.showFavourites()
