@@ -300,6 +300,8 @@ type Window struct {
 	tunnels         []app.Tunnel
 	fileJobs        []app.Job
 	noDisconnectAsk []machines.ID
+	// profileOrder is the order of each machine's profiles.
+	profileOrder map[string][]string
 	// logSeen is how far each machine's connection log has been read,
 	// as its end then: a machine's pane counts the problems after it.
 	logSeen   map[machines.ID]int64
@@ -1312,14 +1314,10 @@ func (w *Window) servers(saved []remote.Host) {
 		var titles, ids []string
 		chip := func(title, id string) { titles, ids = append(titles, title), append(ids, id) }
 		if m == "" && len(w.shellChoices) > 0 {
-			// The shell a new terminal starts first.
+			// The shells, in the order the user put them in.
 			shellIDs := w.shellIDs()
-			for _, first := range []bool{true, false} {
-				for i, sh := range w.shellChoices {
-					if (sh.ID == w.defaultShell) == first {
-						chip(sh.Title, shellIDs[i])
-					}
-				}
+			for i, sh := range w.shellChoices {
+				chip(sh.Title, shellIDs[i])
 			}
 		} else {
 			if w.offersTerminal(m) {
@@ -2071,8 +2069,9 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 		w.servers(w.saved)
 	}
 	if !reflect.DeepEqual(st.Profiles, w.profiles) || !maps.Equal(st.ServerShells, w.serverShells) || !reflect.DeepEqual(st.Found, w.found) ||
-		!slices.Equal(st.FoundShells, w.foundShells) || !slices.Equal(st.Drives, w.drives) {
+		!slices.Equal(st.FoundShells, w.foundShells) || !slices.Equal(st.Drives, w.drives) || !reflect.DeepEqual(st.ProfileOrder, w.profileOrder) {
 		w.profiles, w.serverShells, w.found, w.foundShells, w.drives = st.Profiles, st.ServerShells, st.Found, st.FoundShells, st.Drives
+		w.profileOrder = st.ProfileOrder
 		w.servers(w.saved)
 	}
 	w.tunnels, w.fileJobs, w.noDisconnectAsk = st.Tunnels, st.Jobs, st.NoDisconnectAsk
@@ -3735,14 +3734,22 @@ func (w *Window) openMachineMenu(r *sideRow, u *gunim.UI) {
 		}
 	}
 	if profiles := w.profilesOn(m); len(profiles) > 0 {
-		// A server's profiles, and its account's own shell, which New
-		// Terminal opens only while no profile is its default.
+		// A server's profiles and its account's own shell, in the order
+		// the user put them in.
 		heading("Shells")
+		type shell struct {
+			id, name string
+			open     gunim.Intent
+		}
+		var shells []shell
 		if !w.hidden(m, app.LoginShell) {
-			add(icon.SquareTerminal, w.foundName(m, app.LoginShell, "Login Shell"), send(app.OpenOn{Machine: m, Login: true}))
+			shells = append(shells, shell{app.LoginShell, w.foundName(m, app.LoginShell, "Login Shell"), app.OpenOn{Machine: m, Login: true}})
 		}
 		for _, p := range profiles {
-			add(icon.SquareTerminal, p.Name, send(app.OpenShellNamed{ID: p.ID}))
+			shells = append(shells, shell{p.ID, p.Name, app.OpenShellNamed{ID: p.ID}})
+		}
+		for _, sh := range app.InOrder(shells, func(s shell) string { return s.id }, w.profileOrder[string(m)]) {
+			add(icon.SquareTerminal, sh.name, send(sh.open))
 		}
 	}
 	heading("Files")

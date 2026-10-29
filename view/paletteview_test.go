@@ -131,7 +131,7 @@ func TestThePaletteHasAMachineALineWithChips(t *testing.T) {
 		t.Fatalf("backup, not connected to, has chips %q", it.Chips)
 	}
 	here := slices.IndexFunc(win.palette.Items, func(it widget.PaletteItem) bool { return it.Title == "This computer" })
-	if it := win.palette.Items[max(here, 0)]; here < 0 || !slices.Equal(it.Chips, []string{"PowerShell 7", "Command Prompt", "Files", "Settings"}) {
+	if it := win.palette.Items[max(here, 0)]; here < 0 || !slices.Equal(it.Chips, []string{"Command Prompt", "PowerShell 7", "Files", "Settings"}) {
 		t.Fatalf("this computer has chips %q", it.Chips)
 	}
 	for _, it := range win.palette.Items {

@@ -51,6 +51,12 @@ type (
 	// card or pane showing how that goes: a saved server or window, or
 	// a quick connection again, at its address.
 	ConnectMachine struct{ Machine machines.ID }
+	// ReorderProfiles keeps IDs as the order of Machine's profiles: the
+	// order every list of them shows.
+	ReorderProfiles struct {
+		Machine machines.ID
+		IDs     []string
+	}
 	// SetDisconnectAsk has Disconnect on Machine ask before closing what
 	// is open on it, or with Ask false close it at once.
 	SetDisconnectAsk struct {
@@ -213,6 +219,42 @@ func (a *app) connectMachine(m machines.ID) error {
 		return a.connect(ConnectTo{Target: target, As: m, Only: true, InPlace: true})
 	}
 	return a.connect(ConnectTo{Server: m, Only: true, InPlace: true})
+}
+
+// reorderProfiles keeps the order of a machine's profiles.
+func (a *app) reorderProfiles(in ReorderProfiles) error {
+	if a.settings == nil {
+		return errors.New("the settings could not be read, so nothing can be saved")
+	}
+	err := a.settings.PutProfileOrder(string(in.Machine), in.IDs)
+	a.st.ProfileOrder = a.settings.ProfileOrder()
+	a.mergeShells()
+	return err
+}
+
+// InOrder is items sorted by where each one's id stands in order, as a
+// machine's profiles are by the order the user dragged them into. Those
+// not in it come after, as they were.
+func InOrder[T any](items []T, id func(T) string, order []string) []T {
+	at := make(map[string]int, len(order))
+	for i, o := range order {
+		at[o] = i
+	}
+	out := slices.Clone(items)
+	slices.SortStableFunc(out, func(x, y T) int {
+		ix, okx := at[id(x)]
+		iy, oky := at[id(y)]
+		switch {
+		case okx && oky:
+			return ix - iy
+		case okx:
+			return -1
+		case oky:
+			return 1
+		}
+		return 0
+	})
+	return out
 }
 
 // setDisconnectAsk saves whether Disconnect on a machine asks first.

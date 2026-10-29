@@ -203,16 +203,16 @@ func TestTheLauncherOffersShellsFilesAndWindows(t *testing.T) {
 	}
 }
 
-// The shell a new terminal starts is said, and comes first: among the
-// things found, and among what can be opened on this computer, which
-// opens it with Enter.
+// The shell a new terminal starts is said, and stands where the user
+// put it: among the things found, and among what can be opened on this
+// computer, which opens it with Enter.
 func TestTheLauncherSaysWhichShellIsTheDefault(t *testing.T) {
 	a, _, _ := twoWindowApp(t)
 	a.st.Shells = []ShellChoice{{ID: "cmd", Title: "Command Prompt"}, {ID: "pwsh", Title: "PowerShell 7"}}
 	a.ownShell = "cmd"
 	a.st.ChosenShell = "pwsh"
 	things := a.launchThings(a.launchMachines())
-	if things[0].Title != "PowerShell 7" || things[0].Note != "This computer · default" || things[1].Note != "This computer" {
+	if things[1].Title != "PowerShell 7" || things[1].Note != "This computer · default" || things[0].Note != "This computer" {
 		t.Fatalf("the shells are offered as %+v, %+v", things[0], things[1])
 	}
 	local := a.launchMachines()[0]
@@ -220,7 +220,7 @@ func TestTheLauncherSaysWhichShellIsTheDefault(t *testing.T) {
 	for _, x := range local.Actions {
 		titles = append(titles, x.Title)
 	}
-	if !slices.Equal(titles, []string{"PowerShell 7", "Command Prompt", "Files"}) || local.Default != 0 {
+	if !slices.Equal(titles, []string{"Command Prompt", "PowerShell 7", "Files"}) || local.Default != 1 {
 		t.Fatalf("this computer offers %v, Enter opening %d", titles, local.Default)
 	}
 	// With none kept, the user's own.

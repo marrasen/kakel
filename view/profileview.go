@@ -9,8 +9,8 @@ import (
 	"github.com/marrasen/kakel/settings"
 )
 
-// profilesOn are the profiles on the saved server m, the one its new
-// terminal runs first; none on this computer or a kakel window.
+// profilesOn are the profiles on the saved server m, in the order the
+// user put them in; none on this computer or a kakel window.
 func (w *Window) profilesOn(m machines.ID) []settings.Profile {
 	if m == "" || !slices.ContainsFunc(w.saved, func(h remote.Host) bool { return machines.ID(h.ID) == m && !h.Window }) {
 		return nil
@@ -21,11 +21,7 @@ func (w *Window) profilesOn(m machines.ID) []settings.Profile {
 			out = append(out, p)
 		}
 	}
-	if i := slices.IndexFunc(out, func(p settings.Profile) bool { return p.ID == w.serverShells[string(m)] }); i > 0 {
-		def := out[i]
-		out = slices.Insert(slices.Delete(out, i, i+1), 0, def)
-	}
-	return out
+	return app.InOrder(out, func(p settings.Profile) string { return p.ID }, w.profileOrder[string(m)])
 }
 
 // foundOf is what the user changed of the found profile id on machine
