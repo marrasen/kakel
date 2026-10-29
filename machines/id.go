@@ -14,6 +14,7 @@
 package machines
 
 import (
+	"github.com/marrasen/kakel/meter"
 	"strings"
 	"time"
 )
@@ -68,4 +69,7 @@ type Info struct {
 	RTT   time.Duration
 	// Silent says its last ping went unanswered.
 	Silent bool
+	// Traffic counts what goes over its connection, nil when nothing
+	// counts it.
+	Traffic *meter.Meter
 }

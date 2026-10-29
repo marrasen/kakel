@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/marrasen/kakel/meter"
 	"log"
 	"maps"
 	"net"
@@ -253,6 +254,10 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 			log.Printf("connecting to %s: %s", oneLine(called), oneLine(what))
 		}
 	}
+	// The machine's own connection, the last hop, counts what goes
+	// over it, for its traffic to be drawn.
+	traffic := meter.New()
+	hops[len(hops)-1].Moved = func(in, out int) { traffic.Moved(in, out, time.Now()) }
 	a.showStatus()
 	// From the nearest hop already connected, so a second server behind
 	// a jump host does not sign in to the jump host again.
@@ -313,7 +318,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 			if behind >= 0 {
 				m.Behind = names[behind]
 			}
-			m.Since, m.RTT = time.Now(), 0
+			m.Since, m.RTT, m.Traffic = time.Now(), 0, traffic
 			a.machines.KeepHops(conn, names, hops, made)
 			m.Dropped = false
 			m.Reached = hops[len(hops)-1].Target()

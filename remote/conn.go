@@ -110,6 +110,11 @@ type Config struct {
 	// and keeps nothing.
 	Ring *Ring
 
+	// Moved is told the bytes read and written on the connection to the
+	// machine, as they go, for showing its traffic. It is called from
+	// the connection's own goroutines. A nil one is not called.
+	Moved func(in, out int)
+
 	// HostKeyCallback replaces known-hosts checking entirely.
 	//
 	// This exists so tests can pin a generated host key. Setting it in a
@@ -314,6 +319,16 @@ func connect(ctx context.Context, to reach, via *Conn, cfg Config) (*Conn, error
 	}
 
 	addr := cfg.addr()
+	if moved := cfg.Moved; moved != nil {
+		plain := to
+		to = func(ctx context.Context, addr string) (net.Conn, error) {
+			c, err := plain(ctx, addr)
+			if err != nil {
+				return nil, err
+			}
+			return countedConn{Conn: c, moved: moved}, nil
+		}
+	}
 	client, dialErr := dial(ctx, to, addr, cfg.User, a.next, hostKey, bannerOf(ctx, cfg), cfg.Saying)
 	if dialErr != nil {
 		a.close()

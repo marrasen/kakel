@@ -2,6 +2,7 @@ package machines
 
 import (
 	"context"
+	"github.com/marrasen/kakel/meter"
 	"github.com/marrasen/kakel/relay"
 	"maps"
 	"slices"
@@ -29,6 +30,9 @@ type Machine struct {
 	// took, 0 before the first.
 	Since time.Time
 	RTT   time.Duration
+	// Traffic counts what goes over its connection, nil when nothing
+	// counts it.
+	Traffic *meter.Meter
 	// Pinging is set while a ping is on its way, and Silent once one
 	// went unanswered, until one is answered again.
 	Pinging, Silent bool
@@ -322,6 +326,7 @@ func (r *Registry) Infos() []Info {
 	for i := range out {
 		if m := r.all[out[i].ID]; m != nil && m.Conn != nil {
 			out[i].Since, out[i].RTT, out[i].Silent = m.Since, m.RTT, m.Silent
+			out[i].Traffic = m.Traffic
 		}
 	}
 	return out

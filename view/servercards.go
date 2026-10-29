@@ -14,6 +14,7 @@ import (
 	"github.com/marrasen/kakel/app"
 	"github.com/marrasen/kakel/look"
 	"github.com/marrasen/kakel/machines"
+	"github.com/marrasen/kakel/meter"
 	"github.com/marrasen/kakel/remote"
 
 	"github.com/marrasen/gunim"
@@ -66,8 +67,10 @@ type cardInfo struct {
 	// took, said on its pill.
 	since time.Time
 	rtt   time.Duration
-	// silent says its last ping went unanswered.
+	// silent says its last ping went unanswered, and traffic counts
+	// what goes over its connection.
 	silent  bool
+	traffic *meter.Meter
 	badge   string
 	hue     color.NRGBA
 	section int
@@ -171,7 +174,7 @@ func (w *Window) cardFor(m machines.ID, name string) cardInfo {
 		if info.Quick {
 			c.sub = info.Target + " · not saved"
 		}
-		c.since, c.rtt, c.silent = info.Since, info.RTT, info.Silent
+		c.since, c.rtt, c.silent, c.traffic = info.Since, info.RTT, info.Silent, info.Traffic
 	}
 	for _, h := range w.saved {
 		if machines.ID(h.ID) != m {
