@@ -540,14 +540,6 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 	case "view.theme":
 		w.pickTheme(u)
 		return true
-	case "conn.log":
-		machine := w.machineOf(w.focused)
-		if machine == "" {
-			w.toast(widget.Toast{Title: "Connection logs belong to servers", Body: "Open one from a pane on a server."}, u)
-			return true
-		}
-		u.Send(w, app.ShowLog{Machine: machine})
-		return true
 	case "agent.typed":
 		u.Send(w, app.ShowTyped{Pane: w.focused})
 		return true
@@ -1494,7 +1486,7 @@ func (w *Window) runItem(id string, u *gunim.UI) bool {
 		}
 	case strings.HasPrefix(id, "conn.log."):
 		if m, ok := machineNamed(strings.TrimPrefix(id, "conn.log.")); ok {
-			u.Send(w, app.ShowLog{Machine: m})
+			u.Send(w, app.ShowMachine{Machine: m, Row: app.MachineRowLog})
 		}
 	case strings.HasPrefix(id, "conn.terminal."):
 		if m, ok := machineNamed(strings.TrimPrefix(id, "conn.terminal.")); ok {
@@ -2349,7 +2341,7 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 // for the menus to grey out the lines that cannot.
 func (w *Window) applies(id string) bool {
 	switch id {
-	case "conn.log", "conn.disconnect":
+	case "conn.disconnect":
 		return w.machineOf(w.focused) != ""
 	case "server.editThis", "server.forget":
 		m := w.machineOf(w.focused)

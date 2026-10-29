@@ -505,3 +505,17 @@ func TestAConnectionCountsItsTraffic(t *testing.T) {
 		t.Fatalf("signing in moved %d bytes in and %d out", in, out)
 	}
 }
+
+// A connection's log writing a line sends the program an event, so the
+// windows are shown the log as it has got.
+func TestALogLineIsPublished(t *testing.T) {
+	a, answering := dialApp(t)
+	a.handle(ConnectMachine{Machine: "srv"})
+	waitFor(t, a, "the connection", func() bool { answering(); return a.machines.Get("srv").Conn != nil })
+	waitFor(t, a, "what connecting logged to be shown", func() bool { return !a.logOwed.Load() })
+	logLine(a.machines.Get("srv").Log, "", "one more")
+	if !a.logOwed.Load() {
+		t.Fatal("a line written sent nothing")
+	}
+	waitFor(t, a, "the event the line sent", func() bool { return !a.logOwed.Load() })
+}

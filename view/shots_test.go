@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -79,6 +80,7 @@ func shotsState() app.State {
 	}
 	st.Accounts = []machines.ID{"s1"}
 	st.Logs = map[machines.ID]*logs.Lines{"s1": l}
+	st.LogEnds = map[machines.ID]int64{"s1": l.End()}
 	return st
 }
 
@@ -128,8 +130,13 @@ func TestShots(t *testing.T) {
 		{"s1", app.MachineRowAddTunnel, "pane-s1-addtunnel"},
 		{"s1", "tunnel:open:u1", "pane-s1-tunnel"},
 		{"s1", app.MachineRowAddSOCKS, "pane-s1-addsocks"},
+		{"s1", app.MachineRowLog, "pane-s1-log-narrow"},
 	} {
-		win, _, publish := windowStageOf(t, geom.Sz(1300, 860))
+		size := geom.Sz(1300, 860)
+		if strings.HasSuffix(c.out, "-narrow") {
+			size = geom.Sz(700, 420)
+		}
+		win, _, publish := windowStageOf(t, size)
 		st := shotsState()
 		st.Panes = append(st.Panes, app.Pane{ID: "mp", Title: "machine", Kind: app.KindMachine, Machine: c.m, Row: c.row, RowAt: 1})
 		st.Stage, st.Focus = &app.Box{Pane: "mp"}, "mp"

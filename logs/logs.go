@@ -53,6 +53,10 @@ type Lines struct {
 	// readers is how many panes are following, so a write with nobody
 	// reading does no waking.
 	readers int
+
+	// notify, when set, is told each line written, after it is kept.
+	// Read and written under mu.
+	notify func()
 }
 
 // New returns a log that keeps the last keep lines and passes every one
@@ -97,9 +101,13 @@ func (l *Lines) Write(p []byte) (int, error) {
 		l.first += int64(over)
 	}
 	wake := l.readers > 0
+	notify := l.notify
 	l.mu.Unlock()
 	if wake {
 		l.wake.Broadcast()
+	}
+	if notify != nil {
+		notify()
 	}
 	return len(p), err
 }
@@ -111,6 +119,14 @@ func (l *Lines) Also(w io.Writer) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.also = w
+}
+
+// Notify has f told each line written, after it is kept, on the
+// goroutine that wrote it: it must not block, nor write to the log.
+func (l *Lines) Notify(f func()) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.notify = f
 }
 
 // Held is how many lines are kept right now.

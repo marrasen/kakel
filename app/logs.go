@@ -33,10 +33,32 @@ func (a *app) account(machine machines.ID) *logs.Lines {
 	l := a.machines.Get(machine).Log
 	if l == nil {
 		l = logs.New(0, nil)
+		l.Notify(a.logWritten)
 		a.machines.At(machine).Log = l
 		a.st.Accounts = append(a.st.Accounts, machine)
 	}
 	return l
+}
+
+// logWritten has the windows shown again once a connection's log has
+// a line more, so a machine's pane shows it as it comes. Lines written
+// close together are shown together. It runs on whatever goroutine
+// wrote the line, the program's own too, so it never waits.
+func (a *app) logWritten() {
+	if a.logOwed.Swap(true) {
+		return
+	}
+	// Given up once the program ends, so it waits on nobody then.
+	var done <-chan struct{}
+	if a.ctx != nil {
+		done = a.ctx.Done()
+	}
+	go func() {
+		select {
+		case a.events <- func() { a.logOwed.Store(false) }:
+		case <-done:
+		}
+	}()
 }
 
 // dialLog is the connection log of machine for a dial starting now: a

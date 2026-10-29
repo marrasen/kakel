@@ -108,8 +108,8 @@ func TestMenuLinesThatCannotActAreGreyed(t *testing.T) {
 			greyed("conn.disconnect"), greyed("pane.close"), greyed("pane.scrollback"))
 	}
 	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "there", Kind: app.KindFileManager, Machine: "srv"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
-	if greyed("conn.disconnect") || greyed("conn.log") {
-		t.Fatal("on a pane on a server, Disconnect or its log is greyed")
+	if greyed("conn.disconnect") {
+		t.Fatal("on a pane on a server, Disconnect is greyed")
 	}
 }
 

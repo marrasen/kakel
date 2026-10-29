@@ -751,7 +751,7 @@ func (r *sideRow) layoutCard(c gunim.Constraints, f gunim.Frame, kids gunim.Chil
 	if r.conn != nil {
 		conn = kids.At(2 + len(r.chips))
 		r.conn.short, r.conn.sw.Bare = false, compact
-		r.conn.sync(f.Now)
+		r.conn.sync(f.Now, nil)
 	}
 	// This computer has no connection to make: no switch.
 	local := r.conn == nil
@@ -839,7 +839,7 @@ func (r *sideRow) layoutCard(c gunim.Constraints, f gunim.Frame, kids gunim.Chil
 		fits := fit()
 		if !fits && !local {
 			r.conn.short = true
-			r.conn.sync(f.Now)
+			r.conn.sync(f.Now, nil)
 			fits = fit()
 		}
 		if !fits && !local {

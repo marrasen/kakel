@@ -174,6 +174,10 @@ type machinePane struct {
 	// node is in one place only and the page going stays as it fades.
 	tunnelsBefore map[string]bool
 	tunnelNow     *widget.Label
+	// logView is the log page's view of the log, while it shows, and
+	// logShown the log's end as it was last given.
+	logView  *widget.LogView
+	logShown int64
 	// card is what the machine's card says of it, for the switch at the
 	// bottom of the sidebar, and overviewLine the line at the top of
 	// the machine's own page, kept up to date in place.
@@ -204,7 +208,8 @@ func newMachinePane(w *Window, id string) *machinePane {
 	side := widget.Column(list, mp.foot).Grow(list, 1)
 	side.Cross = widget.CrossStretch
 	mp.overviewLine, mp.tunnelNow = faintLabel(""), widget.NewLabel("")
-	rightPad := widget.NewPad(widget.NewScroll(mp.right))
+	// Each page scrolls by itself, but the log, which is all the room.
+	rightPad := widget.NewPad(mp.right)
 	rightPad.Padding = mpPad
 	row := widget.Row(widget.NewSized(side, 280, 0), &divider{width: 1}, rightPad).Grow(rightPad, 1)
 	row.Cross = widget.CrossStretch
@@ -266,7 +271,7 @@ func (mp *machinePane) show(st app.State, u *gunim.UI) {
 	remote := mp.machine != machines.Local && !mp.draft
 	if remote {
 		mp.card = mp.w.cardFor(mp.machine, mp.w.nameOf(mp.machine))
-		mp.conn.sync(time.Now())
+		mp.conn.sync(time.Now(), u)
 	}
 	mp.foot.SetOpen(remote, u)
 	mp.refresh(u)
@@ -291,8 +296,11 @@ func (mp *machinePane) refresh(u *gunim.UI) {
 	if _, ok := mp.item(mp.sel); !ok && !adding {
 		mp.sel = mpMachine
 	}
-	if mp.sel == mpLog && mp.st.Logs[mp.machine] != nil {
-		mp.w.sawLog(mp.machine, mp.st.Logs[mp.machine].End())
+	if mp.sel == mpLog {
+		// New lines grow in at the bottom of the page shown.
+		mp.showLog(u)
+	} else {
+		mp.logView = nil
 	}
 	if mp.machine != machines.Local {
 		mp.overviewLine.Text = mp.overview(time.Now())
@@ -303,10 +311,11 @@ func (mp *machinePane) refresh(u *gunim.UI) {
 		mp.tunnelNow.Text = it.tunnel.now()
 	}
 	// The list draws the picked row's fill, gliding to the next picked.
-	mp.list.Selected = widget.Key(mp.sel)
+	picked := widget.Key(mp.sel)
 	if adding {
-		mp.list.Selected = ""
+		picked = ""
 	}
+	mp.list.SetSelected(picked, u)
 	widget.Sync(mp.list, u, mp.items, func(it mpItem) widget.Key { return widget.Key(it.key) },
 		func(it mpItem) *mpRow { r := newMPRow(mp); r.set(it, mp.sel == it.key, nil); return r },
 		func(r *mpRow, it mpItem, u *gunim.UI) { r.set(it, mp.sel == it.key, u) })
@@ -345,6 +354,9 @@ func (mp *machinePane) refresh(u *gunim.UI) {
 		page = mp.savedSide(*it.saved)
 	default:
 		page = mp.profileSide(it.profile, false, u)
+	}
+	if mp.sel != mpLog {
+		page = widget.NewScroll(page)
 	}
 	mp.right.Show(page, from, u)
 }
@@ -1211,7 +1223,7 @@ func (r *mpRow) set(it mpItem, picked bool, u *gunim.UI) {
 	}
 	if it.key == mpLog {
 		n := unseenBad(r.mp.st.Logs[r.mp.machine], r.mp.w.logSeen[r.mp.machine])
-		r.badge.Hidden = n == 0
+		r.badge.SetHidden(n == 0, u)
 		if n > 0 {
 			r.badge.Text = words.ManyOf(n, "problem", "problems")
 		}

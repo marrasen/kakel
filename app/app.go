@@ -132,8 +132,10 @@ type State struct {
 	// their first connection began.
 	Accounts []machines.ID
 	// Logs are those machines' connection logs, for a machine's pane to
-	// read.
-	Logs map[machines.ID]*logs.Lines
+	// read, and LogEnds how far each had got as the state was taken, so
+	// a pane can tell one that has a line more.
+	Logs    map[machines.ID]*logs.Lines
+	LogEnds map[machines.ID]int64
 	// Secrets is what the vault holds, by name.
 	Secrets Secrets
 	// Share is the panes shared with an agent.
@@ -866,9 +868,12 @@ type app struct {
 	// the shells' goroutines to this one. wrote holds the panes whose
 	// shells wrote since the windows were last told, under wroteMu.
 	// sound is told which sounds play.
-	sound   SoundSetter
-	wake    chan struct{}
-	events  chan func()
+	sound  SoundSetter
+	wake   chan struct{}
+	events chan func()
+	// logOwed says a connection's log has a line the windows are yet to
+	// be shown.
+	logOwed atomic.Bool
 	wroteMu sync.Mutex
 	wrote   map[string]bool
 }
@@ -1402,9 +1407,10 @@ func (a *app) publish() {
 	st.Jobs = slices.Clone(a.st.Jobs)
 	st.Accounts = slices.Clone(a.st.Accounts)
 	st.Logs = make(map[machines.ID]*logs.Lines, len(st.Accounts))
+	st.LogEnds = make(map[machines.ID]int64, len(st.Accounts))
 	for _, m := range st.Accounts {
 		if l := a.machines.Get(m).Log; l != nil {
-			st.Logs[m] = l
+			st.Logs[m], st.LogEnds[m] = l, l.End()
 		}
 	}
 	st.Share.Panes = slices.Clone(a.st.Share.Panes)
