@@ -7,6 +7,14 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
+## Unreleased
+
+### Fixed
+
+**kakel no longer crashes with a machine's pane out of sight.** Once a
+machine's pane had been swapped for another pane, the next change kakel
+showed, such as an open tunnel's traffic each second, crashed it.
+
 ## v0.12.2-beta.7
 
 ### Added

@@ -22,6 +22,8 @@ import (
 	"github.com/marrasen/gunim/widget"
 
 	"github.com/marrasen/kakel/logs"
+	"github.com/marrasen/kakel/remote"
+	"github.com/marrasen/kakel/settings"
 	"github.com/marrasen/kakel/ui/files"
 	"github.com/marrasen/kakel/vt"
 )
@@ -80,6 +82,34 @@ func TestAJobArrivingOffStageShowsWhenTheJobsPaneComesBack(t *testing.T) {
 	publish(twoPanes("p1", []app.Job{job}))
 	if _, ok := widget.RowOf[*jobCard](win.jobs.list, "j1"); !ok {
 		t.Fatal("back on stage, the jobs pane lacks the job that arrived while it was away")
+	}
+}
+
+// A machine's pane off stage is left alone, as a tunnel's ticking
+// would otherwise add rows to a list out of the tree, and catches up as
+// it comes back.
+func TestAMachinePaneOffStageCatchesUpWhenItComesBack(t *testing.T) {
+	win, _, publish := windowStage(t)
+	tun := settings.SavedTunnel{Host: "prod", HostID: "s1", Kind: "local", Listen: "localhost:5432", Target: "db:5432"}
+	st := func(focus string, kept []settings.SavedTunnel) app.State {
+		return app.State{
+			Saved:        []remote.Host{{ID: "s1", Name: "prod", Address: "prod.example"}},
+			Panes:        []app.Pane{{ID: "mp", Title: "prod", Machine: "s1", Kind: app.KindMachine}, {ID: "p2", Title: "gthome", Kind: app.KindFileManager}},
+			Stage:        &app.Box{Pane: focus},
+			Focus:        focus,
+			SavedTunnels: kept,
+		}
+	}
+	publish(st("mp", nil))
+	publish(st("p2", nil))
+	// Long enough for the pane to have gone out of the tree.
+	for range 300 {
+		lastWindow.Frame(time.Second / 60)
+	}
+	publish(st("p2", []settings.SavedTunnel{tun}))
+	publish(st("mp", []settings.SavedTunnel{tun}))
+	if got := titlesOf(win.machinePanes["mp"]); !slices.Contains(got, "localhost:5432 → db:5432") {
+		t.Fatalf("back on stage, the rows are %q, without the tunnel kept while it was away", got)
 	}
 }
 

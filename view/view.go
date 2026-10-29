@@ -2144,6 +2144,11 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 			delete(w.machinePanes, id)
 			continue
 		}
+		// Off stage it is out of the tree, where its rows cannot be
+		// added to; it catches up as it comes back.
+		if u.Presence(mp) == gunim.Exiting {
+			continue
+		}
 		mp.show(st, u)
 	}
 	for id := range w.splits {
