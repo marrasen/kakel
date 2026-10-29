@@ -7,15 +7,52 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
-## Unreleased
+## v0.12.2-beta.7
 
 ### Added
+
+**Connect without opening anything.** The status on a machine's card is
+now a switch: on connects, opening no terminal and no log pane; off
+disconnects; while it connects, off cancels; once the connection is
+lost, on connects again. Its words say the state: the round trip and
+how long it has been connected, `connecting`, `connection lost` or
+`not connected`.
+
+**Disconnect asks first while something is open.** It says what closes:
+terminals, file managers, tunnels, running copies, and the servers that
+use the machine as a jump host. "Don't ask again" is saved for that
+machine; "Ask before disconnecting" on its page turns asking back on.
+The palette's Disconnect asks the same way.
+
+**A machine's connection is in its pane.** Its connection log is a row,
+shown in place, counting the problems not read yet. Tunnels and SOCKS
+proxies have a heading each, always there, with a + that adds one;
+open and saved ones are listed together, open ones with a live dot and
+their traffic, each with a page to close, open, save or remove it. The
+connection switch is pinned at the bottom of the sidebar, with the last
+seconds of the connection's traffic beside it. Connections made by
+typing an address, and machines beyond another kakel window, have a
+pane too.
 
 **A crash is kept on disk.** kakel started from the Start menu, the
 tray or with the computer has no console, so a crash left nothing
 behind. What it says as it dies now goes to `crash.log` as well, in
 `%LOCALAPPDATA%\kakel` on Windows, each under a line saying which
 version it was and when it started.
+
+### Changed
+
+**The machine card is tidier.** A gear beside ⋯ opens the machine's
+settings. Long names and addresses fade where they are cut, with a
+tooltip, instead of running under the status. Cards are at least
+330 px wide, so Terminal and Files keep their words. The ⋯ menu no
+longer has Connection Log, Disconnect, Settings or Remove: they are on
+the card or in the machine's pane, where Remove has a section of its
+own.
+
+**Tunnels are added in one place.** Tunnel… and SOCKS Proxy…, from the
+⋯ menu and the palette, open the + in the machine's pane. The tunnel
+dialog is gone. A failed connection's Show Log opens the log there too.
 
 ## v0.12.2-beta.6
 
