@@ -3090,8 +3090,9 @@ type sideRow struct {
 	card      *cardInfo
 	chips     []*widget.Button
 	chipRects []geom.Rect
-	// conn is a card's status chip, which connects and disconnects.
-	conn *connChip
+	// conn is a card's status switch, which connects and disconnects;
+	// nil on this computer's card.
+	conn *connSwitch
 	// textX is where a card's name and who and where start, and
 	// nameRoom and subRoom how wide each can be; nameAt and subAt are
 	// where they were drawn, and nameCut and subCut say they were cut,
@@ -3187,7 +3188,7 @@ func (r *sideRow) Children() []gunim.Node {
 		out = append(out, b)
 	}
 	if r.conn != nil {
-		out = append(out, r.conn)
+		out = append(out, r.conn.sw)
 	}
 	return out
 }

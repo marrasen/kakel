@@ -27,7 +27,7 @@ func chipStage(t *testing.T, st app.State) (*Window, func(m machines.ID)) {
 		if !ok {
 			t.Fatalf("no card for %s", m)
 		}
-		box, ok := lastUI.Bounds(c.head.conn)
+		box, ok := lastUI.Bounds(c.head.conn.sw)
 		if !ok {
 			t.Fatalf("%s's chip is not laid out", m)
 		}
