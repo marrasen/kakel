@@ -114,6 +114,15 @@ type stored struct {
 	// id, as found:home, or "fav:" and a favourite's path.
 	FilesDefault map[string]string `json:"filesDefault,omitempty"`
 
+	// Locations are folders saved for one machine alone, which the file
+	// manager lists under that machine's name while it shows its files,
+	// beside the folders found there. LocationOrder is the order of each
+	// machine's, by the machine's id, as keys: "found:" and a found
+	// folder's id, or "loc:" and a location's path. One left out comes
+	// after those in it.
+	Locations     []Favourite         `json:"locations,omitempty"`
+	LocationOrder map[string][]string `json:"locationOrder,omitempty"`
+
 	// Found are the user's changes to the profiles kakel finds itself,
 	// its shells, drives and each server's login shell and home, and
 	// which of them are hidden. Those are found again each run, so
@@ -481,6 +490,11 @@ type FoundProfile struct {
 	// manager's sidebar.
 	Hidden bool `json:"hidden,omitempty"`
 
+	// Color and Icon are, for a folder, its colour and icon, as a
+	// Favourite has them.
+	Color string `json:"color,omitempty"`
+	Icon  string `json:"icon,omitempty"`
+
 	// Folder, Env and Setup are, for a terminal, as a Profile has them.
 	Folder string   `json:"folder,omitempty"`
 	Env    []string `json:"env,omitempty"`
@@ -489,7 +503,7 @@ type FoundProfile struct {
 
 // empty reports whether f changes nothing, and so need not be kept.
 func (f FoundProfile) empty() bool {
-	return f.Name == "" && !f.Hidden && f.Folder == "" && len(f.Env) == 0 && f.Setup == nil
+	return f.Name == "" && !f.Hidden && f.Folder == "" && len(f.Env) == 0 && f.Setup == nil && f.Color == "" && f.Icon == ""
 }
 
 // AgentMay is what a hand-over allows an agent beyond reading a pane and
@@ -888,6 +902,58 @@ func (s *Settings) PutFilesDefault(hostID, key string) error {
 			f.FilesDefault = map[string]string{}
 		}
 		f.FilesDefault[hostID] = key
+	})
+}
+
+// Locations are the folders saved for one machine alone.
+func (s *Settings) Locations() []Favourite {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.have.Locations)
+}
+
+// EditLocations hands edit the locations as the file holds them now, as
+// EditFavourites does, and keeps what it returns, unless it fails.
+func (s *Settings) EditLocations(edit func([]Favourite) ([]Favourite, error)) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.rereadLocked(); err != nil {
+		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
+	}
+	locs, err := edit(slices.Clone(s.have.Locations))
+	if err != nil {
+		return err
+	}
+	before := s.have
+	s.have.Locations = slices.Clone(locs)
+	if err := s.saveLocked(); err != nil {
+		s.have = before
+		return err
+	}
+	return nil
+}
+
+// LocationOrder is the order of each machine's locations and found
+// folders, by the machine's id.
+func (s *Settings) LocationOrder() map[string][]string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make(map[string][]string, len(s.have.LocationOrder))
+	for k, v := range s.have.LocationOrder {
+		out[k] = slices.Clone(v)
+	}
+	return out
+}
+
+// PutLocationOrder keeps keys as the order of the locations and found
+// folders of the machine hostID, and saves.
+func (s *Settings) PutLocationOrder(hostID string, keys []string) error {
+	return s.put(func(f *stored) {
+		f.LocationOrder = maps.Clone(f.LocationOrder)
+		if f.LocationOrder == nil {
+			f.LocationOrder = map[string][]string{}
+		}
+		f.LocationOrder[hostID] = slices.Clone(keys)
 	})
 }
 

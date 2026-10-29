@@ -89,7 +89,10 @@ func shotsState() app.State {
 		Shells: []app.ShellEntry{{Action: "terminal", Name: "PowerShell", Default: true}}}
 	st.Defaults["s1"] = app.MachineDefaults{Shell: "tmux", Files: "www", FilesKey: app.FilesFavourite + "/srv/www",
 		Shells: []app.ShellEntry{{Action: "login", Name: "Login Shell"}, {Action: "shell:profile:tmux", Name: "tmux", Default: true}}}
-	st.Favourites = []app.Favourite{{Machine: "s1", Path: "/srv/www"}}
+	st.Favourites = []app.Favourite{{Machine: "s1", Path: "/srv/www"}, {Path: "/home/me/Documents", Color: "blue", Icon: "file-text"},
+		{Machine: "s1", Path: "/var/log", Name: "Logs", Color: "orange", Icon: "archive"}}
+	st.Locations = []app.Favourite{{Path: "/home/me/src", Name: "Source", Color: "green", Icon: "code"},
+		{Machine: "s1", Path: "/etc/nginx", Name: "nginx", Color: "teal", Icon: "server"}}
 	return st
 }
 
@@ -140,6 +143,9 @@ func TestShots(t *testing.T) {
 		{"s1", tunnelKey("local", ":8080", "localhost:80"), "pane-s1-tunnel"},
 		{"s1", app.MachineRowAddSOCKS, "pane-s1-addsocks"},
 		{"s1", app.MachineRowLog, "pane-s1-log-narrow"},
+		{"", mpFolder + app.FilesLocation + "/home/me/src", "pane-local-location"},
+		{"s1", mpFolder + app.FilesFavourite + "/var/log", "pane-s1-favourite"},
+		{"s1", mpAddLoc, "pane-s1-addlocation"},
 	} {
 		size := geom.Sz(1300, 860)
 		if strings.HasSuffix(c.out, "-narrow") {

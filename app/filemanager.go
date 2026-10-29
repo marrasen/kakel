@@ -13,7 +13,6 @@ import (
 	"github.com/marrasen/kakel/conf"
 	"github.com/marrasen/kakel/jobs"
 	"github.com/marrasen/kakel/machines"
-	"github.com/marrasen/kakel/settings"
 	"github.com/marrasen/kakel/vfs"
 	"github.com/marrasen/kakel/words"
 
@@ -219,45 +218,6 @@ func fileManagerPrefs() string {
 		return ""
 	}
 	return filepath.Join(dir, "files.json")
-}
-
-// fileManagerPlaces are the file manager's places: this computer's
-// folders, then the servers, as last noted. It runs off the program's
-// goroutine.
-//
-// This computer's home and drives are found profiles: one the user
-// renamed goes by its new name, and one they hid is left out. The
-// drives found are noted, for Settings to offer.
-func (a *app) fileManagerPlaces() ([]filemanager.Place, error) {
-	found, err := filemanager.LocalPlaces()
-	var edits []settings.FoundProfile
-	if a.settings != nil {
-		edits = a.settings.Found()
-	}
-	var out []filemanager.Place
-	var drives []FoundDrive
-	for _, p := range found {
-		id := placeID(p)
-		if p.Kind != "home" {
-			drives = append(drives, FoundDrive{ID: id, Name: p.Name, Path: p.Path})
-		}
-		i := slices.IndexFunc(edits, func(f settings.FoundProfile) bool { return f.HostID == "" && f.ID == id })
-		if i >= 0 && edits[i].Hidden {
-			continue
-		}
-		if i >= 0 && edits[i].Name != "" {
-			p.Name = edits[i].Name
-		}
-		p.Group = "This computer"
-		out = append(out, p)
-	}
-	if err == nil {
-		a.noteDrives(drives)
-	}
-	if servers := a.serverPlaces.Load(); servers != nil {
-		out = append(out, *servers...)
-	}
-	return out, err
 }
 
 // placeID is the ID of the found profile of a place here: home, or a

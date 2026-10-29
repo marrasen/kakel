@@ -28,8 +28,8 @@ type MachineDefaults struct {
 }
 
 // SetDefaultFiles makes the folder Key where files on Machine open:
-// FilesFound and a found folder's ID, as Home, or FilesFavourite and a
-// favourite's path.
+// FilesFound and a found folder's ID, as Home, FilesLocation and a
+// location's path, or FilesFavourite and a favourite's path.
 type SetDefaultFiles struct {
 	Machine machines.ID
 	Key     string
@@ -49,28 +49,16 @@ type filesChoice struct {
 }
 
 // filesChoices are the folders files on m can open at, those hidden
-// left out: its home, here its drives, then its favourites.
+// left out: its places, in order, then its favourites.
 func (a *app) filesChoices(m machines.ID) []filesChoice {
 	var out []filesChoice
-	if !a.hidden(m, FoundHome) {
-		name := a.foundEdit(string(m), FoundHome).Name
-		if name == "" {
-			name = "Home"
-		}
-		out = append(out, filesChoice{key: FilesFound + FoundHome, name: name})
-	}
-	if m == machines.Local {
-		for _, d := range a.st.Drives {
-			if a.hidden(m, d.ID) {
-				continue
-			}
-			name := a.foundEdit("", d.ID).Name
-			if name == "" {
-				name = d.Name
-			}
-			out = append(out, filesChoice{key: FilesFound + d.ID, name: name, path: d.Path})
+	for _, p := range a.st.MachinePlaces(m) {
+		if !p.Hidden {
+			out = append(out, filesChoice{key: p.Key, name: p.Name, path: p.Path})
 		}
 	}
+	// Favourites, as they could be the default before there were
+	// locations.
 	for _, f := range a.st.Favourites {
 		if f.Machine == m {
 			out = append(out, filesChoice{key: FilesFavourite + f.Path, name: f.Label(), path: f.Path})

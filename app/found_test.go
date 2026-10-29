@@ -158,8 +158,8 @@ func TestAServerWithEverythingHiddenIsLeftOut(t *testing.T) {
 	}
 }
 
-// A favourite added in Settings is kept, renamed keeps its colour, and
-// one already there is refused.
+// A favourite added in a machine's pane is kept, changed takes the look
+// it is given, and one already there is refused.
 func TestAFavouriteIsKeptFromSettings(t *testing.T) {
 	a := fontApp(t)
 	dir, other := t.TempDir(), t.TempDir()
@@ -172,9 +172,9 @@ func TestAFavouriteIsKeptFromSettings(t *testing.T) {
 	if err := a.settings.PutFavourites(kept); err != nil {
 		t.Fatal(err)
 	}
-	a.handle(SaveFavourite{Was: dir, Path: other, Name: "Projects"})
+	a.handle(SaveFavourite{Was: dir, Path: other, Name: "Projects", Color: "blue", Icon: "code"})
 	kept, _ = a.settings.Favourites()
-	if f := kept[len(kept)-1]; f.Path != other || f.Name != "Projects" || f.Color != "green" {
+	if f := kept[len(kept)-1]; f.Path != other || f.Name != "Projects" || f.Color != "blue" || f.Icon != "code" {
 		t.Fatalf("changed, the favourite is %+v", f)
 	}
 	a.handle(RemoveFavourite{Path: other})

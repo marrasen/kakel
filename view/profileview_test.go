@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/marrasen/gunim"
+	"github.com/marrasen/gunim/access"
+	"github.com/marrasen/gunim/filemanager"
 	"github.com/marrasen/gunim/icon"
 	gi "github.com/marrasen/gunim/input"
 	"github.com/marrasen/gunim/widget"
@@ -80,7 +82,7 @@ func TestThisComputersPaneListsItsProfiles(t *testing.T) {
 		Saved: []remote.Host{{ID: "s1", Name: "prod", Address: "prod.example"}},
 	}
 	_, mp, _ := machinePaneOf(t, st, "", false)
-	want := []string{"This computer", "Profiles", "Command Prompt", "PowerShell", "Nushell", "Add Profile", "Files", "Home", "Add Folder"}
+	want := []string{"This computer", "Profiles", "Command Prompt", "PowerShell", "Nushell", "Add Profile", "This machine", "Home", "Add Location", "File favourites", "Add Favourite"}
 	if got := titlesOf(mp); !slices.Equal(got, want) {
 		t.Fatalf("the rows are %q, want %q", got, want)
 	}
@@ -125,7 +127,7 @@ func TestAProfileIsAddedOnItsServer(t *testing.T) {
 		Profiles:     []settings.Profile{{ID: "profile:htop", HostID: "s1", Name: "htop", Command: []string{"htop"}}},
 		ServerShells: map[string]string{"s1": "profile:htop"}}
 	_, mp, _ := machinePaneOf(t, st, "s1", false)
-	if got, want := titlesOf(mp), []string{"prod", "Connection log", "Profiles", "Login Shell", "htop", "Add Profile", "Files", "Home", "Add Folder", "Tunnels", "SOCKS proxies"}; !slices.Equal(got, want) {
+	if got, want := titlesOf(mp), []string{"prod", "Connection log", "Profiles", "Login Shell", "htop", "Add Profile", "This machine", "Home", "Add Location", "File favourites", "Add Favourite", "Tunnels", "SOCKS proxies"}; !slices.Equal(got, want) {
 		t.Fatalf("the rows are %q, want %q", got, want)
 	}
 	mp.pick(mpAdd, lastUI)
@@ -175,7 +177,7 @@ func TestThisComputersFilesAreListedUnderItsProfiles(t *testing.T) {
 	}
 	_, mp, _ := machinePaneOf(t, st, "", false)
 	got := titlesOf(mp)
-	want := []string{"Files", "Home", "Computer", filepath.Base(dir), "Add Folder"}
+	want := []string{"This machine", "Home", "Computer", "Add Location", "File favourites", filepath.Base(dir), "Add Favourite"}
 	if len(got) < len(want) || !slices.Equal(got[len(got)-len(want):], want) {
 		t.Fatalf("the rows are %q, want them to end %q", got, want)
 	}
@@ -262,7 +264,7 @@ func TestAServersKeptThingsAreListedInItsPane(t *testing.T) {
 // from the pane it was typed in.
 func TestANewServersPaneSavesIntoItself(t *testing.T) {
 	_, mp, _ := machinePaneOf(t, app.State{Saved: []remote.Host{{ID: "w1", Name: "desk", Address: "desk.example", Window: true}}}, "w1", false)
-	if got := titlesOf(mp); !slices.Equal(got, []string{"desk", "Connection log", "Files", "Home", "Add Folder", "Tunnels", "SOCKS proxies"}) {
+	if got := titlesOf(mp); !slices.Equal(got, []string{"desk", "Connection log", "This machine", "Home", "Add Location", "File favourites", "Add Favourite", "Tunnels", "SOCKS proxies"}) {
 		t.Fatalf("a window's rows are %q", got)
 	}
 	_, mp, _ = machinePaneOf(t, app.State{}, "", true)
@@ -628,5 +630,64 @@ func TestAFolderIsMadeWhereFilesOpens(t *testing.T) {
 	www := rowOf(t, mp, mpFolder+"fav:/srv/www")
 	if in := www.star.OnClick(lastUI); in != (app.SetDefaultFiles{Machine: "s1", Key: app.FilesFavourite + "/srv/www"}) {
 		t.Fatalf("www's star sent %#v", in)
+	}
+}
+
+// A machine's places are its own list: found ones and locations, each
+// with its look, dragged among themselves; its favourites are a list of
+// their own. A folder's page picks its colour and icon.
+func TestAMachinesPlacesAndFavouritesAreTwoLists(t *testing.T) {
+	st := app.State{
+		Locations:  []app.Favourite{{Path: "/srv/www", Name: "www", Color: "teal", Icon: "code"}},
+		Favourites: []app.Favourite{{Path: "/data"}},
+	}
+	_, mp, _ := machinePaneOf(t, st, "", false)
+	got := titlesOf(mp)
+	want := []string{"This machine", "Home", "www", "Add Location", "File favourites", "data", "Add Favourite"}
+	if len(got) < len(want) || !slices.Equal(got[len(got)-len(want):], want) {
+		t.Fatalf("the rows are %q, want them to end %q", got, want)
+	}
+	www := rowOf(t, mp, mpFolder+app.FilesLocation+"/srv/www")
+	if www.icon.Icon != filemanager.FavouriteIcon("code") || www.icon.Color.Key() != filemanager.FavouriteColor("teal").Key() {
+		t.Fatal("the location's row has not its icon in its colour")
+	}
+	if g := mp.list.ReorderGroup(widget.Key(mpFolder + app.FilesLocation + "/srv/www")); g != mpPlaces {
+		t.Fatalf("a location drags in %q", g)
+	}
+	if g := mp.list.ReorderGroup(widget.Key(mpFolder + app.FilesFavourite + "/data")); g != "" {
+		t.Fatalf("a favourite drags in %q, want not at all here", g)
+	}
+	keys := mp.list.Keys()
+	home := slices.Index(keys, widget.Key(mpFolder+app.FilesFound+app.FoundHome))
+	keys[home], keys[home+1] = keys[home+1], keys[home]
+	if in, ok := mp.list.OnReorder(keys, lastUI).(app.ReorderPlaces); !ok ||
+		!slices.Equal(in.Keys, []string{app.FilesLocation + "/srv/www", app.FilesFound + app.FoundHome}) {
+		t.Fatalf("the drag sent %#v", in)
+	}
+
+	// The location's page: its look kept as it is until picked.
+	mp.pick(mpFolder+app.FilesLocation+"/srv/www", lastUI)
+	save := findButton(t, mp.right, "Save")
+	fields := fieldsIn(mp.right)
+	fields[0].SetText("Web", nil)
+	fields[0].OnChange("Web", lastUI)
+	if in, ok := save.OnClick(lastUI).(app.SaveFavourite); !ok || !in.Location || in.Color != "teal" || in.Icon != "code" || in.Name != "Web" {
+		t.Fatalf("renamed, the location saved is %#v", in)
+	}
+	var colours gunim.AccessActor
+	walkNodes(mp.right, func(n gunim.Node) {
+		if a, ok := n.(interface {
+			gunim.AccessActor
+			Access() access.Info
+		}); ok && len(a.Access().Parts) > 0 && a.Access().Parts[0].Name == "Red" {
+			colours = a
+		}
+	})
+	if colours == nil {
+		t.Fatal("the page has no colours to pick")
+	}
+	colours.AccessAct(access.Request{Action: access.ActionPress, Part: slices.Index(filemanager.FavouriteColors, "green")}, lastUI)
+	if in, ok := save.OnClick(lastUI).(app.SaveFavourite); !ok || in.Color != "green" || in.Icon != "code" {
+		t.Fatalf("green picked, the location saved is %#v", in)
 	}
 }
