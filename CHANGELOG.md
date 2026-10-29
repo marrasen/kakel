@@ -9,6 +9,14 @@ change how something behaves.
 
 ## Unreleased
 
+### Added
+
+**A crash is kept on disk.** kakel started from the Start menu, the
+tray or with the computer has no console, so a crash left nothing
+behind. What it says as it dies now goes to `crash.log` as well, in
+`%LOCALAPPDATA%\kakel` on Windows, each under a line saying which
+version it was and when it started.
+
 ## v0.12.2-beta.6
 
 ### Changed

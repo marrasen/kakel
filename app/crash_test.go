@@ -1,0 +1,100 @@
+package app
+
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime/debug"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestTheCrashLogKeepsOnlyRunsThatCrashed(t *testing.T) {
+	heading := func(n string) string { return crashHeading + n + ", started then, process 1\n" }
+	crash := "panic: runtime error: index out of range [-1]\n\ngoroutine 1 [running]:\nmain.main()\n"
+	for _, c := range []struct {
+		name, log, want string
+	}{
+		{"empty", "", ""},
+		{"a quiet run", heading("a"), ""},
+		{"a crash", heading("a") + crash, heading("a") + crash},
+		{"a quiet run after a crash", heading("a") + crash + heading("b"), heading("a") + crash},
+		{"a heading cut short", heading("a") + crash + strings.TrimSuffix(heading("b"), "\n"), heading("a") + crash + strings.TrimSuffix(heading("b"), "\n")},
+		{"something else", "not kakel's\n", "not kakel's\n"},
+		{"too big", strings.Repeat("x", mostCrashLog+1), ""},
+	} {
+		if got := c.log[:keptOfCrashLog([]byte(c.log))]; got != c.want {
+			t.Errorf("%s: kept %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+func TestEachStartWritesItsHeadingUnderTheLastCrash(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "kakel", crashFile)
+	then, wasVersion := time.Unix(0, 0), thisVersion
+	thisVersion = func() string { return "v1.2.3" }
+	// The runtime holds the log open until told of no other, and
+	// Windows will not delete a file held open.
+	t.Cleanup(func() {
+		thisVersion = wasVersion
+		_ = debug.SetCrashOutput(nil, debug.CrashOptions{})
+	})
+	for range 2 {
+		if err := keepCrashesIn(path, then); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(b); strings.Count(got, crashHeading) != 1 || !strings.HasPrefix(got, crashHeading+"v1.2.3, started ") {
+		t.Fatalf("after two quiet starts the log is %q, want one heading", got)
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = f.WriteString("panic: oh no\n")
+	_ = f.Close()
+	if err := keepCrashesIn(path, then); err != nil {
+		t.Fatal(err)
+	}
+	b, _ = os.ReadFile(path)
+	if got := string(b); strings.Count(got, crashHeading) != 2 || !strings.Contains(got, "panic: oh no\n"+crashHeading) {
+		t.Fatalf("after a crash and a start the log is %q, want the crash under its heading and a new one", got)
+	}
+}
+
+// A panic on a goroutine of its own reaches the log: the test binary
+// run again, to keep its crashes there and panic.
+func TestAPanicIsKeptInTheCrashLog(t *testing.T) {
+	if path := os.Getenv("KAKEL_CRASH_TO"); path != "" {
+		if err := keepCrashesIn(path, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			var rows []int
+			at := -1
+			_ = rows[at]
+		}()
+		<-done
+		return
+	}
+	path := filepath.Join(t.TempDir(), crashFile)
+	cmd := exec.Command(os.Args[0], "-test.run=^TestAPanicIsKeptInTheCrashLog$")
+	cmd.Env = append(os.Environ(), "KAKEL_CRASH_TO="+path)
+	if out, err := cmd.CombinedOutput(); err == nil {
+		t.Fatalf("the run meant to panic did not fail:\n%s", out)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(b); !strings.HasPrefix(got, crashHeading) || !strings.Contains(got, "panic: runtime error: index out of range [-1]") {
+		t.Fatalf("the crash log is %q, want the heading and the panic", got)
+	}
+}
