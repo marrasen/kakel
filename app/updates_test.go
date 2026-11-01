@@ -293,4 +293,15 @@ func TestAboutOpensGunimsWindow(t *testing.T) {
 	if wins.abouts[0].Quit == nil {
 		t.Fatal("About can't restart kakel into a newer release")
 	}
+	if wins.abouts[0].Ready != "" {
+		t.Fatalf("About is told %q waits, with none in place", wins.abouts[0].Ready)
+	}
+	// A release the updates put in place by themselves is in place for
+	// About too, which offers the restart into it alone.
+	a.updated(install.Release{Version: "v9.9.9"})
+	a.handle(ShowAbout{})
+	waitFor(t, a, "About again", func() bool { return wins.seen(func() bool { return len(wins.abouts) == 2 }) })
+	if wins.abouts[1].Ready != "v9.9.9" {
+		t.Fatalf("About is told %q waits, want v9.9.9", wins.abouts[1].Ready)
+	}
 }
