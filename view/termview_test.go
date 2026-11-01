@@ -67,11 +67,13 @@ func TestOnlyThePaneWithTheKeyboardDrawsACursor(t *testing.T) {
 		t.Fatal("the pane with the keyboard shows no cursor")
 	}
 	tm.blinkOff = true
-	run := tm.blinkRun
 	lastWindow.Input(gi.TextInput{Text: "x"})
-	frames(1)
-	if tm.blinkOff || tm.blinkRun == run {
-		t.Fatal("a key left the blink where it was")
+	// Lit by the key, for a whole half of the blink.
+	for i := range 29 {
+		frames(1)
+		if tm.blinkOff {
+			t.Fatalf("the cursor went off %d frames after a key", i+1)
+		}
 	}
 	lastUI.Focus(nil)
 	frames(1)
@@ -263,5 +265,53 @@ func TestAPaneWhoseShellHasGoneIsBlank(t *testing.T) {
 	frames(2)
 	if _, ok := win.terms["p9"]; ok {
 		t.Fatal("a terminal was made for a pane with no shell")
+	}
+}
+
+// The shell's output moving the cursor lights it, and the blink goes on
+// after: it once stopped there, lit, until the window lost the keyboard
+// and got it back.
+func TestTheBlinkGoesOnAfterOutputMovesTheCursor(t *testing.T) {
+	win, tm := termStage(t, geom.Sz(900, 600))
+	toggles := func() int {
+		n, was := 0, tm.blinkOff
+		for range 120 {
+			frames(1)
+			if tm.blinkOff != was {
+				n, was = n+1, tm.blinkOff
+			}
+		}
+		return n
+	}
+	if n := toggles(); n < 2 {
+		t.Fatalf("the cursor blinked %d times in two seconds, before any output", n)
+	}
+	// The pane loses the keyboard and gets it back between two steps of
+	// the blink: the cursor is lit for a whole half from there, not put
+	// out by the step still to come.
+	for lit := false; !lit; {
+		was := tm.blinkOff
+		frames(1)
+		lit = was && !tm.blinkOff
+	}
+	frames(20)
+	lastUI.Focus(nil)
+	lastUI.Focus(tm)
+	for i := range 29 {
+		frames(1)
+		if tm.blinkOff {
+			t.Fatalf("the cursor went off %d frames after the pane got the keyboard back", i+1)
+		}
+	}
+	for i := range 3 {
+		tm.sh.T.Say("output")
+		win.OutputArrived(lastUI)
+		frames(1)
+		if tm.blinkOff {
+			t.Fatalf("output %d left the cursor in the off half", i)
+		}
+		if n := toggles(); n < 2 {
+			t.Fatalf("after output %d the cursor blinked %d times in two seconds", i, n)
+		}
 	}
 }

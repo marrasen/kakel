@@ -71,10 +71,9 @@ type term struct {
 	at   grid.Point
 	// wantBlink says the program asked for a blinking cursor, blinking
 	// that a blink is running, and blinkOff that the cursor is in the
-	// off half of one. blinkRun numbers the blink running, so one
-	// started again leaves the old one's steps to fall away.
-	wantBlink, blinking, blinkOff bool
-	blinkRun                      int
+	// off half of one. relit says a key or a move of the cursor lit it
+	// since the blink last stepped, so the next step leaves it lit.
+	wantBlink, blinking, blinkOff, relit bool
 	// cursorAt is where the cursor was drawn, and cursorShown whether
 	// it was; checking says a look at a cursor hidden is on its way.
 	cursorAt              grid.Point
@@ -151,31 +150,36 @@ func (t *term) blink(u *gunim.UI) {
 	if t.blinking || !t.typedIn() || t.away || !t.wantBlink {
 		return
 	}
-	t.blinking = true
-	run := t.blinkRun
-	u.After(blinkHalf, func(u *gunim.UI) { t.blinkStep(run, u) })
+	// A light from while no blink ran is long over: this one starts
+	// lit for a half, as each does.
+	t.blinking, t.relit = true, false
+	u.After(blinkHalf, t.blinkStep)
 }
 
-func (t *term) blinkStep(run int, u *gunim.UI) {
-	if run != t.blinkRun {
-		return
-	}
-	if !t.typedIn() || t.away || !t.wantBlink {
-		t.blinking, t.blinkOff = false, false
-	} else {
+func (t *term) blinkStep(u *gunim.UI) {
+	switch {
+	case !t.typedIn() || t.away || !t.wantBlink:
+		t.blinking, t.blinkOff, t.relit = false, false, false
+	case t.relit:
+		// Lit a moment ago: it stays lit a whole half at least.
+		t.relit = false
+	default:
 		t.blinkOff = !t.blinkOff
-		u.After(blinkHalf, func(u *gunim.UI) { t.blinkStep(run, u) })
+	}
+	if t.blinking {
+		u.After(blinkHalf, t.blinkStep)
 	}
 	t.sync()
 	u.Invalidate()
 }
 
-// blinkAgain starts the blink over, lit, as a key or a move of the
-// cursor does: the cursor is on screen where the user is looking. The
-// next blink starts it again.
+// blinkAgain lights the cursor, as a key or a move of the cursor does:
+// the cursor is on screen where the user is looking. The blink keeps
+// running, and goes on from there. It never stops it: a move of the
+// cursor the shell's output made is seen while the window lays out,
+// with nothing there to start a blink again.
 func (t *term) blinkAgain() {
-	t.blinkRun++
-	t.blinking, t.blinkOff = false, false
+	t.blinkOff, t.relit = false, true
 }
 
 // lookAgain looks at the cursor again once a hide would have landed:
@@ -426,7 +430,9 @@ func (t *term) Handle(e gi.Event, u *gunim.UI) bool {
 		if t.focused {
 			u.Send(t, app.FocusPane{Pane: t.id})
 		}
-		t.blinkOff = false
+		// Lit, for a whole half, though a blink still runs from the
+		// last time the pane had the keyboard.
+		t.blinkAgain()
 		t.sync()
 		t.blink(u)
 		t.sync()

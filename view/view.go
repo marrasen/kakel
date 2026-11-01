@@ -787,6 +787,9 @@ func (w *Window) Layout(c gunim.Constraints, f gunim.Frame, kids gunim.Children)
 		for _, t := range w.terms {
 			t.sync()
 			t.lookAgain(u)
+			// The program may have asked for a blinking cursor just now,
+			// as an editor does leaving a mode with a steady one.
+			t.blink(u)
 			late = late || t.sh.T.Dirty()
 		}
 		if late && !w.retrying {
