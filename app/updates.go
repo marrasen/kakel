@@ -232,7 +232,8 @@ func (a *app) showAbout() error {
 		a.notify("kakel "+thisVersion(), "", "")
 		return nil
 	}
-	o := install.About{Quit: a.quitForUpdate}
+	// A release put in place already is offered for the restart alone.
+	o := install.About{Quit: a.quitForUpdate, Ready: a.staged}
 	if exe, err := executable(); err == nil {
 		if _, to, err := install.Where(installer()); err != nil || !samePath(exe, to) {
 			o.Exe = exe
