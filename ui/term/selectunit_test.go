@@ -1,6 +1,7 @@
 package term
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/marrasen/kakel/grid"
@@ -171,7 +172,7 @@ func TestPickedWordGrowsOutFromTheClick(t *testing.T) {
 	click(t, term, 9, 0, 1)
 	mouseTo(t, term, input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 9, Clicks: 2})
 
-	if !term.SelectionGrowing() {
+	if !growing(term) {
 		t.Fatal("the word is not growing")
 	}
 	if got := term.g.Selection(); got != (grid.Selection{Anchor: grid.Point{X: 9}, Cursor: grid.Point{X: 9}, Active: true}) {
@@ -189,7 +190,7 @@ func TestPickedWordGrowsOutFromTheClick(t *testing.T) {
 	}
 
 	term.GrowSelection(1, false)
-	if term.SelectionGrowing() {
+	if growing(term) {
 		t.Error("still growing once grown")
 	}
 	if got := term.g.Selection(); got.Anchor.X != 4 || got.Cursor.X != 13 {
@@ -227,5 +228,133 @@ func TestBetweenStepsAcrossRows(t *testing.T) {
 	}
 	if got := between(a, b, 1.2, 10); got.Anchor != b.Anchor || got.Cursor != b.Cursor {
 		t.Errorf("past the end: %+v, want %+v", got, b)
+	}
+}
+
+// growing reports whether the selection is still growing.
+func growing(term *Terminal) bool {
+	g, _ := term.SelectionGrowing()
+	return g
+}
+
+// TestAQuickTripleClickGrowsOnFromWhereTheWordGotTo checks a third
+// click coming while the word is still growing grows the line from the
+// part of the word showing, not the whole word.
+func TestAQuickTripleClickGrowsOnFromWhereTheWordGotTo(t *testing.T) {
+	term, f := newTestTerm(t, 30, 4, Config{})
+	f.feed(t, term, "say abcdefghij now")
+	draw(term, 30, 4)
+
+	click(t, term, 9, 0, 1)
+	click(t, term, 9, 0, 2)
+	term.GrowSelection(0.5, false)
+	half := term.g.Selection()
+	mouseTo(t, term, input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 9, Clicks: 3})
+
+	if got := term.g.Selection(); got != half {
+		t.Errorf("the third click showed %+v, want what showed, %+v", got, half)
+	}
+}
+
+// TestAWobbleInsideTheWordLetsItGrow checks the pointer moving a cell
+// within the word just picked leaves it growing.
+func TestAWobbleInsideTheWordLetsItGrow(t *testing.T) {
+	term, f := newTestTerm(t, 30, 4, Config{})
+	f.feed(t, term, "say abcdefghij now")
+	draw(term, 30, 4)
+
+	click(t, term, 9, 0, 1)
+	mouseTo(t, term, input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 9, Clicks: 2})
+	_, start := term.SelectionGrowing()
+	mouseTo(t, term, input.MouseEvent{Kind: input.MouseMove, Button: input.MouseLeft, Col: 10})
+
+	if g, again := term.SelectionGrowing(); !g || again != start {
+		t.Errorf("a move inside the word cut its growth short or began another (growing %v, start %d then %d)", g, start, again)
+	}
+}
+
+// TestADragByWordsGrowsToTheNext checks a drag after a double click
+// grows to a word it takes in, rather than jumping there.
+func TestADragByWordsGrowsToTheNext(t *testing.T) {
+	term, f := newTestTerm(t, 30, 4, Config{})
+	f.feed(t, term, "one two three four")
+	draw(term, 30, 4)
+
+	click(t, term, 5, 0, 1)
+	mouseTo(t, term, input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 5, Clicks: 2})
+	term.GrowSelection(1, true)
+	mouseTo(t, term, input.MouseEvent{Kind: input.MouseMove, Button: input.MouseLeft, Col: 9})
+
+	if !growing(term) {
+		t.Fatal("taking in another word jumped to it")
+	}
+	if got := term.g.Selection(); got.Cursor.X != 6 {
+		t.Errorf("at first the end shows at %d, want where the word ended, 6", got.Cursor.X)
+	}
+}
+
+// TestADoubleClickDoesNotGrowFromASelectionLeftBefore checks a word is
+// grown from the click even inside a selection the click into the pane
+// left alone.
+func TestADoubleClickDoesNotGrowFromASelectionLeftBefore(t *testing.T) {
+	term, f := newTestTerm(t, 30, 4, Config{})
+	f.feed(t, term, "one two three\r\nfour five")
+	draw(term, 30, 4)
+	mouseTo(t, term, input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft})
+	mouseTo(t, term, input.MouseEvent{Kind: input.MouseMove, Button: input.MouseLeft, Col: 8, Row: 1})
+	mouseTo(t, term, input.MouseEvent{Kind: input.MouseRelease, Button: input.MouseLeft, Col: 8, Row: 1})
+
+	// The first click of the two only gave the pane the keyboard, and
+	// never reached the terminal.
+	mouseTo(t, term, input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 5, Clicks: 2})
+
+	if got := term.g.Selection(); got != (grid.Selection{Anchor: grid.Point{X: 5}, Cursor: grid.Point{X: 5}, Active: true}) {
+		t.Errorf("at first %+v shows, want the cell clicked", got)
+	}
+}
+
+// TestAWideCharacterWrappedPastTheEdgeLeavesNoGap checks the column a
+// wide character could not fit in is left out of a copy and a word.
+func TestAWideCharacterWrappedPastTheEdgeLeavesNoGap(t *testing.T) {
+	term, f := newTestTerm(t, 5, 4, Config{})
+	f.feed(t, term, "abcd漢字")
+	draw(term, 5, 4)
+
+	clicks(t, term, 1, 0, 2)
+	if got, want := term.SelectionText(), "abcd漢字"; got != want {
+		t.Errorf("double click selected %q, want %q", got, want)
+	}
+	clicks(t, term, 1, 0, 3)
+	if got, want := term.SelectionText(), "abcd漢字"; got != want {
+		t.Errorf("triple click selected %q, want %q", got, want)
+	}
+}
+
+// TestPaddingPastTheEdgeIsTrimmed checks blanks a program printed past
+// the edge, wrapping, are trimmed off the end of the line as copied.
+func TestPaddingPastTheEdgeIsTrimmed(t *testing.T) {
+	term, f := newTestTerm(t, 10, 6, Config{})
+	f.feed(t, term, "foo"+strings.Repeat(" ", 27)+"\r\nbar")
+	draw(term, 10, 6)
+
+	mouseTo(t, term, input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft})
+	mouseTo(t, term, input.MouseEvent{Kind: input.MouseMove, Button: input.MouseLeft, Col: 2, Row: 3})
+
+	if got, want := term.SelectionText(), "foo\nbar"; got != want {
+		t.Errorf("copied %q, want %q", got, want)
+	}
+}
+
+// TestABlankAtTheWrapIsKept checks a blank the program wrote in the
+// last column of a wrapped row stays in the line, between its words.
+func TestABlankAtTheWrapIsKept(t *testing.T) {
+	term, f := newTestTerm(t, 5, 4, Config{})
+	f.feed(t, term, "echo hi")
+	draw(term, 5, 4)
+
+	clicks(t, term, 1, 0, 3)
+
+	if got, want := term.SelectionText(), "echo hi"; got != want {
+		t.Errorf("copied %q, want %q", got, want)
 	}
 }

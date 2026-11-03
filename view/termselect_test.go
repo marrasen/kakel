@@ -115,7 +115,7 @@ func TestADoubleClickedWordGrowsOutInThePane(t *testing.T) {
 			shot("line-" + strconv.Itoa(i))
 		}
 	}
-	if sh.Get("p1").T.SelectionGrowing() {
+	if growingIn(sh.Get("p1")) {
 		t.Fatal("the line is still growing after half a second")
 	}
 }
@@ -132,4 +132,10 @@ func topRowOf(sh *screen.Shell) string {
 		}
 	})
 	return b.String()
+}
+
+// growingIn reports whether a shell's selection is still growing.
+func growingIn(sh *screen.Shell) bool {
+	growing, _ := sh.T.SelectionGrowing()
+	return growing
 }

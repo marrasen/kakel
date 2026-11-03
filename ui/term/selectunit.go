@@ -64,6 +64,17 @@ func wraps(cells []grid.Cell) bool {
 	return len(cells) > 0 && cells[len(cells)-1].Wrapped
 }
 
+// lastOf is the last cell of a line that is the line's: the one before
+// the edge where a wide character wrapped past the last column, which
+// the screen leaves without a rune.
+func lastOf(cells []grid.Cell) int {
+	n := len(cells) - 1
+	if n > 0 && wraps(cells) && cells[n].Rune == 0 {
+		n--
+	}
+	return n
+}
+
 // unitSpan is the first and last cell of the word or the line at is
 // in, at's row a line number as [vt.Screen.LineNumber] numbers them.
 // A line the screen wrapped is one line with the next, for both.
@@ -115,8 +126,8 @@ func wordSpan(s *vt.Screen, at grid.Point) (from, to grid.Point) {
 			from.X--
 			continue
 		case from.X == 0 && from.Y > s.OldestLine():
-			if prev := s.LineAt(from.Y - 1); wraps(prev) && classOf(prev, len(prev)-1) == class {
-				from = grid.Point{X: len(prev) - 1, Y: from.Y - 1}
+			if prev := s.LineAt(from.Y - 1); wraps(prev) && classOf(prev, lastOf(prev)) == class {
+				from = grid.Point{X: lastOf(prev), Y: from.Y - 1}
 				continue
 			}
 		}
@@ -128,10 +139,10 @@ func wordSpan(s *vt.Screen, at grid.Point) (from, to grid.Point) {
 	for {
 		cells := s.LineAt(to.Y)
 		switch {
-		case to.X+1 < len(cells) && (cells[to.X+1].Width == 0 || classOf(cells, to.X+1) == class):
+		case to.X+1 <= lastOf(cells) && (cells[to.X+1].Width == 0 || classOf(cells, to.X+1) == class):
 			to.X++
 			continue
-		case to.X+1 >= len(cells) && wraps(cells):
+		case to.X+1 > lastOf(cells) && wraps(cells):
 			if next := s.LineAt(to.Y + 1); len(next) > 0 && classOf(next, 0) == class {
 				to = grid.Point{Y: to.Y + 1}
 				continue
@@ -142,27 +153,14 @@ func wordSpan(s *vt.Screen, at grid.Point) (from, to grid.Point) {
 	return from, to
 }
 
-// before reports whether a comes before b in reading order.
-func before(a, b grid.Point) bool {
-	return a.Y < b.Y || a.Y == b.Y && a.X < b.X
-}
-
-// ordered is s's ends in reading order.
-func ordered(s grid.Selection) (from, to grid.Point) {
-	if before(s.Cursor, s.Anchor) {
-		return s.Cursor, s.Anchor
-	}
-	return s.Anchor, s.Cursor
-}
-
 // between is the selection f of the way from a to b, each end moving
 // along the text, cols cells a row, a cell at a time: what a word or a
 // line picked by a click shows as it grows out to its ends.
 func between(a, b grid.Selection, f float32, cols int) grid.Selection {
 	f = max(min(f, 1), 0)
 	cols = max(cols, 1)
-	af, at := ordered(a)
-	bf, bt := ordered(b)
+	af, at := a.Ordered()
+	bf, bt := b.Ordered()
 	step := func(p, q grid.Point) grid.Point {
 		i, j := p.Y*cols+p.X, q.Y*cols+q.X
 		n := i + int(math.Round(float64(f)*float64(j-i)))
@@ -175,14 +173,33 @@ func between(a, b grid.Selection, f float32, cols int) grid.Selection {
 	return grid.Selection{Anchor: step(af, bf), Cursor: step(at, bt), Active: true}
 }
 
-// SelectionGrowing reports whether a word or a line picked by a double
-// or triple click is still growing out to its ends, which
-// [Terminal.GrowSelection] moves on.
-func (t *Terminal) SelectionGrowing() bool { return t.growing }
+// shown is the selection as it shows now, in line numbers: part way
+// to the one picked while that is still growing.
+func (t *Terminal) shown() grid.Selection {
+	if t.growing && t.sel.Active && t.growFrom.Active {
+		cols, _ := t.g.Size()
+		return between(t.growFrom, t.sel, t.grown, cols)
+	}
+	return t.sel
+}
 
-// GrowSelection shows a word or a line a click picked f of the way
-// grown from where it started to its ends, all of it once f reaches 1
-// or done says the motion ended.
+// growTo makes s the selection, growing to it from what shows now.
+func (t *Terminal) growTo(s grid.Selection) {
+	from := t.shown()
+	t.sel = s
+	t.growFrom, t.grown, t.growing = from, 0, from.Active
+	t.growStart++
+}
+
+// SelectionGrowing reports whether a word or a line picked by a double
+// or triple click, or a drag by them, is still growing out to its
+// ends, which [Terminal.GrowSelection] moves on. start counts the
+// growths begun, so a host sees one begin over the last.
+func (t *Terminal) SelectionGrowing() (growing bool, start uint64) { return t.growing, t.growStart }
+
+// GrowSelection shows the selection f of the way grown from what showed
+// before to its ends, all of it once f reaches 1 or done says the
+// motion ended.
 func (t *Terminal) GrowSelection(f float32, done bool) {
 	if !t.growing {
 		return
@@ -191,6 +208,7 @@ func (t *Terminal) GrowSelection(f float32, done bool) {
 	if done || f >= 1 {
 		t.growing = false
 	}
+	// The rows it covers are marked to draw again: nothing new is
+	// waiting from the program.
 	t.showSelection(t.drawnTop)
-	t.pending.Store(true)
 }

@@ -795,6 +795,15 @@ type Selection struct {
 	Block          bool
 }
 
+// Before reports whether p comes before q in reading order.
+func (p Point) Before(q Point) bool {
+	return p.Y < q.Y || p.Y == q.Y && p.X < q.X
+}
+
+// Ordered returns the selection's ends in reading order, as a block
+// selection's corners when it is one.
+func (s Selection) Ordered() (from, to Point) { return s.normalised() }
+
 // normalised returns the selection with its ends in reading order.
 func (s Selection) normalised() (from, to Point) {
 	from, to = s.Anchor, s.Cursor
@@ -882,28 +891,35 @@ func (g *Grid) SelectedText() string {
 //
 // A row the terminal wrapped on to the next runs on into it with no
 // newline, outside a block selection: it was one line as it was
-// written, a long command or address, and is copied as one.
+// written, a long command or address, and is copied as one. Blanks are
+// trimmed off the end of that whole line, not off each row of it: a
+// blank at the edge of a wrapped row is the line's own, typed there.
 func (s Selection) Text(cols int, line func(y int) []Cell) string {
 	if !s.Active {
 		return ""
 	}
 	from, to := s.normalised()
-	var sb strings.Builder
+	var sb, row strings.Builder
 	first, joined := true, false
 	for y := from.Y; y <= to.Y; y++ {
 		cells := line(y)
 		if cells == nil {
 			continue
 		}
-		var row strings.Builder
+		if !joined {
+			row.Reset()
+		}
 		for x := 0; x < min(cols, len(cells)); x++ {
 			if !s.Contains(x, y) {
 				continue
 			}
 			c := cells[x]
 			if c.Rune == 0 && c.Width != 0 {
-				// A cell never written to.
-				row.WriteByte(' ')
+				// A cell never written to, or the one a wide character
+				// wrapped past, which is not part of the line.
+				if !c.Wrapped {
+					row.WriteByte(' ')
+				}
 				continue
 			}
 			// The continuation half of a wide character carries no rune
@@ -916,15 +932,20 @@ func (s Selection) Text(cols int, line func(y int) []Cell) string {
 				row.WriteRune(m)
 			}
 		}
-		if !first && !joined {
+		joined = y < to.Y && !s.Block && len(cells) > 0 && cells[len(cells)-1].Wrapped && s.Contains(len(cells)-1, y)
+		if joined {
+			continue
+		}
+		if !first {
 			sb.WriteByte('\n')
 		}
 		first = false
-		joined = !s.Block && len(cells) > 0 && cells[len(cells)-1].Wrapped && s.Contains(len(cells)-1, y)
-		if joined {
-			// Its blanks at the edge are the line's own, typed there.
-			sb.WriteString(row.String())
-			continue
+		sb.WriteString(strings.TrimRight(row.String(), " "))
+	}
+	if joined {
+		// The selection ended on a wrapped row whose next row was gone.
+		if !first {
+			sb.WriteByte('\n')
 		}
 		sb.WriteString(strings.TrimRight(row.String(), " "))
 	}
