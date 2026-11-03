@@ -30,6 +30,10 @@ type MouseEvent struct {
 	Col    int
 	Row    int
 	Mods   Mods
+	// Clicks counts a press within a quick run of them on the same
+	// spot: 1 for a single click, 2 for the second of a double click,
+	// 3 for a triple. Zero is taken as 1.
+	Clicks int
 }
 
 // MouseMode is what the program asked for with DECSET 1000/1002/1003

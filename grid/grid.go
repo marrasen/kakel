@@ -879,13 +879,17 @@ func (g *Grid) SelectedText() string {
 // nil for a row there is none of, which is left out. It is what reads a
 // selection of more rows than a screen holds, from a terminal's
 // history.
+//
+// A row the terminal wrapped on to the next runs on into it with no
+// newline, outside a block selection: it was one line as it was
+// written, a long command or address, and is copied as one.
 func (s Selection) Text(cols int, line func(y int) []Cell) string {
 	if !s.Active {
 		return ""
 	}
 	from, to := s.normalised()
 	var sb strings.Builder
-	first := true
+	first, joined := true, false
 	for y := from.Y; y <= to.Y; y++ {
 		cells := line(y)
 		if cells == nil {
@@ -912,10 +916,16 @@ func (s Selection) Text(cols int, line func(y int) []Cell) string {
 				row.WriteRune(m)
 			}
 		}
-		if !first {
+		if !first && !joined {
 			sb.WriteByte('\n')
 		}
 		first = false
+		joined = !s.Block && len(cells) > 0 && cells[len(cells)-1].Wrapped && s.Contains(len(cells)-1, y)
+		if joined {
+			// Its blanks at the edge are the line's own, typed there.
+			sb.WriteString(row.String())
+			continue
+		}
 		sb.WriteString(strings.TrimRight(row.String(), " "))
 	}
 	return sb.String()

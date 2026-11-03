@@ -87,6 +87,9 @@ type term struct {
 	// dropLit is how lit the pane is for files from another program
 	// dragged over it, which a drop types or copies there.
 	dropLit *anim.Float
+	// selGrow is how far a word or line a double or triple click
+	// picked has grown out from the click, 0 to 1.
+	selGrow *anim.Float
 	// pics are the inline images on screen as the painter holds
 	// them, by the image each was made from.
 	pics map[image.Image]*paint.Image
@@ -206,9 +209,10 @@ func newTerm(id string, sh *screen.Shell, keys *ui.Keymap) *term {
 	g.Background = look.TermBackground
 	t := &term{id: id, keys: keys, sh: sh, cells: g, settle: anim.NewFloat(0)}
 	t.dropLit = anim.NewFloat(0)
+	t.selGrow = anim.NewFloat(1)
 	// settle counts real time, whatever pace the theme sets.
 	t.settle.RealTime()
-	t.Add(t.settle, t.dropLit)
+	t.Add(t.settle, t.dropLit, t.selGrow)
 	// The whole screen, not just the rows changed since the last pane
 	// drew it: this one may be in a window the pane has just moved to.
 	sh.Drawn(func(g *grid.Grid) { g.MarkAllDirty() })
@@ -588,11 +592,16 @@ func (t *term) rowsPast(p geom.Point) int {
 	return 0
 }
 
-// Step implements [gunim.Animator]: the view scrolling toward a
-// selection dragged past the cells' top or bottom, faster the further
-// past, for as long as it is held there.
+// Step implements [gunim.Animator]: a word or line picked by a double
+// or triple click growing out to its ends, and the view scrolling
+// toward a selection dragged past the cells' top or bottom, faster the
+// further past, for as long as it is held there.
 func (t *term) Step(dt time.Duration) bool {
 	moving := t.Group.Step(dt)
+	if t.sh.T.SelectionGrowing() {
+		t.sh.T.GrowSelection(t.selGrow.Value(), !t.selGrow.Active())
+		t.sync()
+	}
 	if t.edge == 0 || t.held != input.MouseLeft || !t.sh.T.Selecting() {
 		t.edge, t.edgeLines = 0, 0
 		return moving
@@ -647,7 +656,20 @@ func (t *term) press(e gi.PointerDown, u *gunim.UI) bool {
 		return false
 	}
 	t.held, t.at = mouseButton(e.Button), at
-	return t.mouse(input.MouseEvent{Kind: input.MousePress, Button: t.held, Col: at.X, Row: at.Y, Mods: mods}, u)
+	took := t.mouse(input.MouseEvent{Kind: input.MousePress, Button: t.held, Col: at.X, Row: at.Y, Mods: mods, Clicks: e.Clicks}, u)
+	if t.sh.T.SelectionGrowing() {
+		// A double or triple click picked a word or a line: it grows
+		// out from where the click was to its ends.
+		t.selGrow.Jump(0)
+		t.selGrow.Animate(1, widget.Quick.Get(u.Theme()))
+		if !t.selGrow.Active() {
+			// Motion turned off: the word or line is there at once.
+			t.sh.T.GrowSelection(1, true)
+			t.sync()
+		}
+		u.Invalidate()
+	}
+	return took
 }
 
 // drag extends the selection, or tells a program the pointer moved.
