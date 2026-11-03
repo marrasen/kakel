@@ -260,6 +260,22 @@ type Terminal struct {
 	// for the wheel to carry the selection along as it scrolls.
 	sel   grid.Selection
 	selAt grid.Point
+	// unit is what the press selects by, cells, words or lines, and
+	// unitFrom and unitTo the word or line it was on, which a drag by
+	// words or lines keeps whole whichever way it goes.
+	unit             selUnit
+	unitFrom, unitTo grid.Point
+	// growing says a word or line a click picked is still growing out
+	// to its ends, grown of the way from growFrom, which is what was
+	// shown before: the cell clicked, or the word a triple click's
+	// second picked.
+	growing   bool
+	grown     float32
+	growFrom  grid.Selection
+	growStart uint64
+	// lastUnit is what the press before this one selected by, so a
+	// triple click grows its line from the word the double picked.
+	lastUnit selUnit
 	// drawnTop is the line at the top row of the view as last drawn,
 	// which is what the pointer points at: output arriving moves the
 	// view's top on before the next draw shows it.
@@ -1238,7 +1254,25 @@ func (t *Terminal) HandleMouse(ev input.MouseEvent) (bool, error) {
 		t.selecting = true
 		at := grid.Point{X: ev.Col, Y: t.drawnTop + ev.Row}
 		t.selAt = grid.Point{X: ev.Col, Y: ev.Row}
-		t.sel = grid.Selection{Anchor: at, Cursor: at, Active: true, Block: ev.Mods.Has(input.ModAlt)}
+		block := ev.Mods.Has(input.ModAlt)
+		t.lastUnit, t.unit = t.unit, unitOf(ev.Clicks)
+		if block {
+			t.unit = byCell
+		}
+		if t.unit == byCell {
+			t.sel, t.growing = grid.Selection{Anchor: at, Cursor: at, Active: true, Block: block}, false
+		} else {
+			// A double click picks the word, a triple the line. Either
+			// grows out to its ends: from the cell clicked, or a
+			// triple from the word the double picked, as far as it
+			// has grown. A selection left from before, as one the
+			// click into the pane kept, is not grown from.
+			if t.unit != byLine || t.lastUnit != byWord {
+				t.sel, t.growing = grid.Selection{Anchor: at, Cursor: at, Active: true}, false
+			}
+			t.unitFrom, t.unitTo = t.unitSpan(at, t.unit)
+			t.growTo(grid.Selection{Anchor: t.unitFrom, Cursor: t.unitTo, Active: true})
+		}
 		t.showSelection(t.drawnTop)
 	case input.MouseMove:
 		if !t.selecting {
@@ -1248,8 +1282,9 @@ func (t *Terminal) HandleMouse(ev input.MouseEvent) (bool, error) {
 	case input.MouseRelease:
 		t.selecting = false
 		// A click that never moved is a click, not an empty selection
-		// left highlighting one cell.
-		if t.sel.Anchor == t.sel.Cursor {
+		// left highlighting one cell. A word one letter long, picked
+		// by a double click, is a selection.
+		if t.unit == byCell && t.sel.Anchor == t.sel.Cursor {
 			t.ClearSelection()
 		}
 	}
@@ -1546,7 +1581,7 @@ func (t *Terminal) SelectAll() {
 	cols, rows := s.Size()
 	from, top, last := s.OldestLine(), s.ViewTop(), int(s.LineNumber(rows-1))
 	t.mu.Unlock()
-	t.selecting = false
+	t.selecting, t.growing = false, false
 	t.sel = grid.Selection{Anchor: grid.Point{Y: from}, Cursor: grid.Point{X: max(cols-1, 0), Y: last}, Active: true}
 	t.showSelection(top)
 	t.pending.Store(true)
@@ -1571,7 +1606,7 @@ func (t *Terminal) DragScroll(n int) bool {
 
 // ClearSelection takes the selection away.
 func (t *Terminal) ClearSelection() {
-	t.sel = grid.Selection{}
+	t.sel, t.growing = grid.Selection{}, false
 	t.g.ClearSelection()
 }
 
@@ -1584,16 +1619,35 @@ func (t *Terminal) viewTop() int {
 
 // selectTo moves the selection's moving end to cell at of a view whose
 // top row is line top.
+//
+// A drag begun by a double or triple click goes by whole words or
+// lines: the one pressed on stays whole, and the one the pointer is on
+// is taken whole too.
 func (t *Terminal) selectTo(at grid.Point, top int) {
 	t.selAt = at
-	t.sel.Cursor = grid.Point{X: at.X, Y: top + at.Y}
+	to := grid.Point{X: at.X, Y: top + at.Y}
+	if t.unit == byCell {
+		t.sel.Cursor = to
+		t.showSelection(top)
+		return
+	}
+	from, end := t.unitSpan(to, t.unit)
+	next := grid.Selection{Anchor: t.unitFrom, Cursor: end, Active: true}
+	if from.Before(t.unitFrom) {
+		next.Anchor, next.Cursor = t.unitTo, from
+	}
+	if next != t.sel {
+		// A whole word or line more, or less: it grows or shrinks
+		// there rather than jumping.
+		t.growTo(next)
+	}
 	t.showSelection(top)
 }
 
 // showSelection puts the selection on the grid, in the rows of a view
 // whose top row is line top.
 func (t *Terminal) showSelection(top int) {
-	s := t.sel
+	s := t.shown()
 	if s.Active {
 		s.Anchor.Y -= top
 		s.Cursor.Y -= top

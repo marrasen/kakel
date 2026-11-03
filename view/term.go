@@ -87,6 +87,15 @@ type term struct {
 	// dropLit is how lit the pane is for files from another program
 	// dragged over it, which a drop types or copies there.
 	dropLit *anim.Float
+	// selGrow is how far a word or line a double or triple click
+	// picked has grown out from the click, 0 to 1.
+	selGrow *anim.Float
+	// growStart is the terminal's count of growths begun, as selGrow
+	// last started for one.
+	growStart uint64
+	// quick is the theme's motion for it, as the pointer last found
+	// it, for a growth begun as the view scrolls under a drag.
+	quick anim.Motion
 	// pics are the inline images on screen as the painter holds
 	// them, by the image each was made from.
 	pics map[image.Image]*paint.Image
@@ -206,9 +215,10 @@ func newTerm(id string, sh *screen.Shell, keys *ui.Keymap) *term {
 	g.Background = look.TermBackground
 	t := &term{id: id, keys: keys, sh: sh, cells: g, settle: anim.NewFloat(0)}
 	t.dropLit = anim.NewFloat(0)
+	t.selGrow = anim.NewFloat(1)
 	// settle counts real time, whatever pace the theme sets.
 	t.settle.RealTime()
-	t.Add(t.settle, t.dropLit)
+	t.Add(t.settle, t.dropLit, t.selGrow)
 	// The whole screen, not just the rows changed since the last pane
 	// drew it: this one may be in a window the pane has just moved to.
 	sh.Drawn(func(g *grid.Grid) { g.MarkAllDirty() })
@@ -525,9 +535,31 @@ func (t *term) ctrlHeld(k gi.Key, mods gi.Mods, down bool, u *gunim.UI) {
 // program that asked for the mouse, and otherwise selects.
 func (t *term) mouse(e input.MouseEvent, u *gunim.UI) bool {
 	took, _ := t.sh.T.HandleMouse(e)
+	t.quick = widget.Quick.Get(u.Theme())
+	t.growSelection()
 	t.sync()
 	u.Invalidate()
 	return took
+}
+
+// growSelection starts the selection growing when the terminal began a
+// growth since the last look: a word or line a double or triple click
+// picked grows out from the click, and a drag by them grows or shrinks
+// a whole one at a time.
+func (t *term) growSelection() {
+	growing, start := t.sh.T.SelectionGrowing()
+	if !growing || start == t.growStart {
+		return
+	}
+	t.growStart = start
+	t.selGrow.Jump(0)
+	if t.quick != nil {
+		t.selGrow.Animate(1, t.quick)
+	}
+	if !t.selGrow.Active() {
+		// Motion turned off: it is there at once.
+		t.sh.T.GrowSelection(1, true)
+	}
 }
 
 func mouseMods(m gi.Mods) input.Mods {
@@ -588,11 +620,16 @@ func (t *term) rowsPast(p geom.Point) int {
 	return 0
 }
 
-// Step implements [gunim.Animator]: the view scrolling toward a
-// selection dragged past the cells' top or bottom, faster the further
-// past, for as long as it is held there.
+// Step implements [gunim.Animator]: a word or line picked by a double
+// or triple click growing out to its ends, and the view scrolling
+// toward a selection dragged past the cells' top or bottom, faster the
+// further past, for as long as it is held there.
 func (t *term) Step(dt time.Duration) bool {
 	moving := t.Group.Step(dt)
+	if growing, start := t.sh.T.SelectionGrowing(); growing && start == t.growStart {
+		t.sh.T.GrowSelection(t.selGrow.Value(), !t.selGrow.Active())
+		t.sync()
+	}
 	if t.edge == 0 || t.held != input.MouseLeft || !t.sh.T.Selecting() {
 		t.edge, t.edgeLines = 0, 0
 		return moving
@@ -615,6 +652,8 @@ func (t *term) Step(dt time.Duration) bool {
 			t.edgeLines = 0
 			return moving
 		}
+		// A drag by words or lines took in another as it scrolled.
+		t.growSelection()
 		t.sync()
 	}
 	return true
@@ -647,7 +686,7 @@ func (t *term) press(e gi.PointerDown, u *gunim.UI) bool {
 		return false
 	}
 	t.held, t.at = mouseButton(e.Button), at
-	return t.mouse(input.MouseEvent{Kind: input.MousePress, Button: t.held, Col: at.X, Row: at.Y, Mods: mods}, u)
+	return t.mouse(input.MouseEvent{Kind: input.MousePress, Button: t.held, Col: at.X, Row: at.Y, Mods: mods, Clicks: e.Clicks}, u)
 }
 
 // drag extends the selection, or tells a program the pointer moved.
@@ -825,6 +864,8 @@ func (t *term) scroll(e gi.Scroll, u *gunim.UI) {
 	for range n {
 		_, _ = t.sh.T.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: b, Col: at.X, Row: at.Y, Mods: mouseMods(e.Mods)})
 	}
+	t.quick = widget.Quick.Get(u.Theme())
+	t.growSelection()
 	t.sync()
 	u.Invalidate()
 }

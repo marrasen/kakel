@@ -77,6 +77,12 @@ func (h *harness) lines() []string {
 			if c.Width == 0 {
 				continue // the continuation half of a wide character
 			}
+			if c.Rune == 0 {
+				// Never written, or left over where a wide character
+				// wrapped: blank either way.
+				sb.WriteByte(' ')
+				continue
+			}
 			sb.WriteRune(c.Rune)
 			for _, m := range c.Comb {
 				sb.WriteRune(m)
@@ -1093,5 +1099,20 @@ func TestAWrappedClipboardSetIsMeasuredByWhatItHolds(t *testing.T) {
 	h.write("\x1b]52;c;" + wrapped.String() + "\x07")
 	if len(h.clips) != 1 || len(h.clips[0]) != len(text) {
 		t.Fatalf("got %d copies", len(h.clips))
+	}
+}
+
+// The column a wide character wrapped past is left without a rune, and
+// a blank the program wrote there keeps its own.
+func TestTheColumnAWideCharacterWrappedPastHasNoRune(t *testing.T) {
+	h := newHarness(t, 3, 2)
+	h.write("ab世").lines()
+	if c := h.g.At(2, 0); c.Rune != 0 || !c.Wrapped {
+		t.Errorf("the column left over is %+v, want no rune and wrapped", c)
+	}
+	h = newHarness(t, 3, 2)
+	h.write("ab c").lines()
+	if c := h.g.At(2, 0); c.Rune != ' ' || !c.Wrapped {
+		t.Errorf("a blank written in the last column is %+v, want a blank, wrapped", c)
 	}
 }

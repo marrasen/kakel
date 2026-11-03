@@ -265,6 +265,12 @@ func (s *Screen) print(r rune, w int) {
 		if !s.mode.Wrap {
 			return
 		}
+		// The column left over is not a blank the program wrote: its
+		// rune is taken off, so copying the line and picking a word in
+		// it run over it to the character on the next row.
+		if l := s.line(s.cursor.Y); len(l) > 0 && s.cursor.X == len(l)-1 && l[s.cursor.X].Rune == ' ' {
+			l[s.cursor.X].Rune = 0
+		}
 		s.markWrapped()
 		s.cursor.X = 0
 		s.lineFeed()
