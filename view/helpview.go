@@ -2,18 +2,13 @@ package view
 
 import (
 	"cmp"
-	"fmt"
 	"log"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/marrasen/kakel/app"
 
 	"github.com/marrasen/gunim"
-	"github.com/marrasen/gunim/geom"
-	gi "github.com/marrasen/gunim/input"
-	"github.com/marrasen/gunim/paint"
 	"github.com/marrasen/gunim/widget"
 
 	"github.com/marrasen/kakel/conf"
@@ -55,46 +50,6 @@ func everyCommand() [][2]string {
 	return out
 }
 
-// helpPane lists every command in a table: its title, its shortcut and
-// its name in the shortcuts file, under the menu it is on. The keys no
-// menu shows follow, then the reader's, from
-// kakel's own lists. Typing finds one by its title.
-type helpPane struct {
-	w     *Window
-	table *widget.Table
-	rows  map[widget.Key][3]string
-	// heads are the rows that head a group.
-	heads map[widget.Key]bool
-}
-
-// Handle implements [gunim.Handler]: the keyboard coming into the pane
-// makes it the one in front.
-func (p *helpPane) Handle(e gi.Event, u *gunim.UI) bool {
-	if _, ok := e.(gi.FocusEntered); ok {
-		p.w.entered(p.w.paneOfKind(app.KindHelp), u)
-	}
-	return false
-}
-
-func newHelpPane(w *Window) *helpPane {
-	p := &helpPane{w: w, rows: map[widget.Key][3]string{}, heads: map[widget.Key]bool{}}
-	p.table = widget.NewTable(
-		widget.TableColumn{Title: "Command"},
-		widget.TableColumn{Title: "Shortcut", Width: 190},
-		widget.TableColumn{Title: "In the shortcuts file", Width: 220},
-	)
-	p.table.Row = func(k widget.Key) widget.TableRow {
-		r := p.rows[k]
-		if p.heads[k] {
-			return widget.TableRow{Cells: r[:], Strong: true}
-		}
-		return widget.TableRow{Cells: r[:], Faint: r[2] == ""}
-	}
-	p.table.OnSort = func(int, bool, *gunim.UI) gunim.Intent { return nil }
-	p.fill(w)
-	return p
-}
-
 // helpSection is one group of the help: a heading, and a line per
 // thing done, with its shortcut and its id when it has one.
 type helpSection struct {
@@ -126,14 +81,11 @@ func helpSections(chord func(id string) string) []helpSection {
 			out = append(out, s)
 		}
 	}
-	rest := helpSection{title: "Not on the menus"}
+	rest := helpSection{title: "Other"}
 	for _, c := range everyCommand() {
 		if !listed[c[0]] {
 			rest.lines = append(rest.lines, [3]string{c[1], chord(c[0]), c[0]})
 		}
-	}
-	if len(rest.lines) > 0 {
-		out = append(out, rest)
 	}
 	reader := helpSection{title: "The reader's keys, which the shortcuts file leaves as they are"}
 	for _, k := range files.ReaderKeys() {
@@ -145,61 +97,11 @@ func helpSections(chord func(id string) string) []helpSection {
 		[3]string{"Copy what is picked out", files.CopyKey().Shown, ""},
 		[3]string{"Drop what is picked out", "Esc", ""},
 	)
-	return append(out, reader)
-}
-
-// fill takes the rows from the window's commands and keys, as they are
-// now.
-func (p *helpPane) fill(w *Window) {
-	clear(p.rows)
-	clear(p.heads)
-	chord := func(id string) string {
-		if ch, ok := w.keys.ChordFor(id); ok {
-			return chordLabel(ch)
-		}
-		return ""
+	out = append(out, reader)
+	if len(rest.lines) > 0 {
+		out = append(out, rest)
 	}
-	n := 0
-	add := func(r [3]string) widget.Key {
-		k := widget.Key(fmt.Sprintf("%04d", n))
-		n++
-		p.rows[k] = r
-		return k
-	}
-	for _, s := range helpSections(chord) {
-		p.heads[add([3]string{s.title, "", ""})] = true
-		for _, l := range s.lines {
-			add(l)
-		}
-	}
-}
-
-// show brings the rows up to date.
-func (p *helpPane) show(w *Window, u *gunim.UI) {
-	p.fill(w)
-	keys := make([]widget.Key, 0, len(p.rows))
-	for k := range p.rows {
-		keys = append(keys, k)
-	}
-	slices.Sort(keys)
-	p.table.SetKeys(keys, u)
-}
-
-// Children implements [gunim.Composite].
-func (p *helpPane) Children() []gunim.Node { return []gunim.Node{p.table} }
-
-// Layout implements [gunim.Node].
-func (p *helpPane) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children) geom.Size {
-	k := kids.At(0)
-	k.Layout(gunim.Tight(c.Max))
-	k.Place(geom.Point{})
-	return c.Max
-}
-
-// Paint implements [gunim.Node].
-func (p *helpPane) Paint(pt *paint.Painter, f gunim.Frame, box geom.Size, kids gunim.Children) {
-	pt.RRect(geom.Rect{Max: box.Point()}, 0, paint.Solid(widget.Background.Get(f.Theme)))
-	kids.At(0).Paint(pt)
+	return out
 }
 
 // applyShortcuts takes on the changes the shortcuts file makes to the
@@ -208,10 +110,15 @@ func (p *helpPane) Paint(pt *paint.Painter, f gunim.Frame, box geom.Size, kids g
 func (w *Window) applyShortcuts(changes []keys.Change, u *gunim.UI) bool {
 	next, unknown := keymapOf(changes)
 	if len(unknown) > 0 {
+		if w.help != nil {
+			defer w.help.show(w, u)
+		}
+		w.shortcutsRefused = "The shortcuts file names commands this window lacks: " + strings.Join(unknown, "; ") + ". None of it was used."
 		log.Printf("The shortcuts file names commands this window lacks: %s", strings.Join(unknown, "; "))
 		w.toast(widget.Toast{Title: "The shortcuts file names commands this window lacks", Body: strings.Join(unknown, "; ") + ". None of it was used; Shortcuts and Commands lists every command's name."}, u)
 		return false
 	}
+	w.shortcutsRefused = ""
 	w.keys.Become(next)
 	// The menus and the palette say the new chords.
 	w.buildBar(true)

@@ -529,8 +529,8 @@ func (p *settingsPane) files() gunim.Node {
 		settingsSection("Themes and shortcuts",
 			settingRow("Themes", "A file of themes to change, started from the one in use; read again after a change.",
 				buttons(p.settingButton("Start the File", "view.themesStart"), p.settingButton("Read Again", "view.themesReload"))),
-			settingRow("Shortcuts", "A file of the window's keys to change; read again after a change.",
-				buttons(p.settingButton("Start the File", "shortcuts.write"), p.settingButton("Read Again", "shortcuts.reload"))),
+			settingRow("Shortcuts", "Change them in the editor, or in the file and read it again.",
+				buttons(p.settingButton("Edit Shortcuts", "help.shortcuts"), p.settingButton("Start the File", "shortcuts.write"), p.settingButton("Read Again", "shortcuts.reload"))),
 			settingRow("Saved servers", "Read again after changing the file.", p.settingButton("Read Again", "server.reload"))),
 	)
 	return settingsPage(sections...)

@@ -15,11 +15,14 @@ import (
 	gi "github.com/marrasen/gunim/input"
 
 	"github.com/marrasen/kakel/app"
+	"github.com/marrasen/kakel/input"
+	"github.com/marrasen/kakel/keys"
 	"github.com/marrasen/kakel/logs"
 	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/meter"
 	"github.com/marrasen/kakel/remote"
 	"github.com/marrasen/kakel/settings"
+	"github.com/marrasen/kakel/ui"
 )
 
 // Screenshots of the Machines cards and a machine's pane, for looking
@@ -225,4 +228,96 @@ func TestShotsTunnelTraffic(t *testing.T) {
 		gunimtest.WritePNG(t, filepath.Join(dir, name+".png"), gunimtest.Pixels(t, lastWindow))
 	}
 	shot("pane-s1-tunnel-traffic")
+}
+
+// TestShotsShortcuts writes the shortcut editor at rest, listening,
+// asking before it takes a key, and part way through a key flying from
+// one row to another.
+func TestShotsShortcuts(t *testing.T) {
+	dir := os.Getenv("KAKEL_SHOTS")
+	if dir == "" {
+		t.Skip("KAKEL_SHOTS names no folder to write the screenshots to")
+	}
+	shot := func(name string) {
+		gunimtest.WritePNG(t, filepath.Join(dir, "shortcuts-"+name+".png"), gunimtest.Pixels(t, lastWindow))
+	}
+	win, _, publish := windowStageOf(t, geom.Sz(1100, 760))
+	st := app.State{Panes: []app.Pane{{ID: "p1", Kind: app.KindHelp, Title: "Shortcuts and Commands"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"}
+	publish(st)
+	settle()
+	shot("rest")
+	p := win.help
+	p.side.OnActivate(p.groupItems()[2].key, lastUI)
+	settle()
+	shot("group")
+	p.side.OnActivate(groupAll, lastUI)
+	settle()
+	row := func(id string) *shortcutRow {
+		for _, l := range p.lines {
+			if l.id == id {
+				n, ok := p.list.Row(l.key)
+				if !ok {
+					t.Fatalf("%s isn't built", id)
+				}
+				return n.(*shortcutRow)
+			}
+		}
+		t.Fatalf("no line for %s", id)
+		return nil
+	}
+	first := row("conn.terminal")
+	lastUI.FocusFirst(first.add)
+	settle()
+	lastWindow.Input(gi.KeyPress{Key: gi.KeyDown})
+	frames(3)
+	shot("selection-gliding")
+	settle()
+	shot("selected")
+	second, ok := p.list.Row(p.under.selected)
+	if !ok {
+		t.Fatal("nothing is lit")
+	}
+	r := second.(*shortcutRow)
+	lastWindow.Input(gi.KeyPress{Key: gi.KeyEnter})
+	frames(3)
+	shot("listen-opening")
+	settle()
+	shot("listening")
+	lastWindow.Input(gi.KeyPress{Key: gi.KeyLeftControl, Mods: gi.ModControl})
+	lastWindow.Input(gi.KeyPress{Key: gi.KeyLeftShift, Mods: gi.ModControl | gi.ModShift})
+	settle()
+	shot("holding")
+	lastWindow.Input(gi.KeyRelease{Key: gi.KeyLeftShift})
+	lastWindow.Input(gi.KeyRelease{Key: gi.KeyLeftControl})
+	lastWindow.Input(gi.KeyPress{Key: gi.KeyQ, Typed: true})
+	settle()
+	shot("refused")
+	lastWindow.Input(gi.KeyRelease{Key: gi.KeyQ})
+	lastWindow.Input(gi.KeyPress{Key: gi.KeyT, Mods: gi.ModControl | gi.ModShift})
+	settle()
+	shot("asking")
+	lastWindow.Input(gi.PointerMove{Pos: geom.Pt(300, 420)})
+	settle()
+	shot("hover")
+	// Replace: as the program would, the file changes and comes back.
+	v := first.chips[ui.Chord{Key: input.KeyT, Mods: input.ModCtrl | input.ModShift}]
+	if v == nil {
+		t.Fatal("no chip to take")
+	}
+	chord := ui.Chord{Key: input.KeyT, Mods: input.ModCtrl | input.ModShift}
+	r.act.OnClick(lastUI)
+	st.Shortcuts = []keys.Change{{Chord: chord, Command: r.line.id, Written: chord.String()}}
+	st.ShortcutsRead++
+	publish(st)
+	shot("flying-1")
+	frames(4)
+	shot("flying-2")
+	frames(4)
+	shot("flying-3")
+	settle()
+	shot("replaced")
+	_, _, publish = windowStageOf(t, geom.Sz(640, 500))
+	publish(st)
+	settle()
+	shot("narrow")
 }

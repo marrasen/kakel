@@ -192,9 +192,15 @@ type Window struct {
 	connected []machines.ID
 	// help is the list of commands, once opened, and shortcutsRead
 	// the shortcuts file's reads as last taken on.
-	help          *helpPane
-	copies        *copiesPane
-	shortcutsRead uint64
+	help *helpPane
+	// shortcutsRefused says why the window would not take the shortcuts
+	// file. launcherProblem and launcherTries are as the state has them.
+	shortcutsRefused string
+	shortcutsProblem string
+	launcherProblem  string
+	launcherTries    uint64
+	copies           *copiesPane
+	shortcutsRead    uint64
 	// secretsExist says there are secrets, to keep a new key's passphrase in.
 	secretsExist bool
 	bells        uint64
@@ -2041,6 +2047,8 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 	w.update = st.Update
 	w.sounds, w.rings, w.systemTitleBar = st.Sounds, st.Rings, st.SystemTitleBar
 	w.secretsExist = st.Secrets.Exists
+	w.shortcutsProblem = st.ShortcutsProblem
+	w.launcherProblem, w.launcherTries = st.LauncherProblem, st.LauncherTries
 	if st.ShortcutsRead != w.shortcutsRead {
 		w.shortcutsRead = st.ShortcutsRead
 		if w.applyShortcuts(st.Shortcuts, u) && st.ShortcutsAgain {
@@ -2721,7 +2729,7 @@ func (w *Window) focusNode(id string, u *gunim.UI) gunim.Node {
 		return w.secrets.table
 	}
 	if w.kindOf(id) == app.KindHelp && w.help != nil {
-		return w.help.table
+		return w.help.focusTarget()
 	}
 	if w.kindOf(id) == app.KindCopies && w.copies != nil {
 		return w.copies.table

@@ -1,7 +1,6 @@
 package view
 
 import (
-	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -27,29 +26,28 @@ import (
 func TestTheHelpListsEveryCommandWithItsShortcut(t *testing.T) {
 	win, _, publish := windowStage(t)
 	publish(app.State{Panes: []app.Pane{{ID: "p1", Kind: app.KindHelp, Title: "Shortcuts and Commands"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
-	found := false
-	for _, r := range win.help.rows {
-		if r[2] == "pane.close" && r[1] == "Ctrl+Shift+W" {
-			found = true
+	var close *helpLine
+	var heads []string
+	under := map[string]string{}
+	for _, k := range win.help.order {
+		l := win.help.lines[k]
+		if l.kind == lineHead {
+			heads = append(heads, l.title)
+			continue
+		}
+		if len(heads) > 0 {
+			under[l.title] = heads[len(heads)-1]
+		}
+		if l.id == "pane.close" {
+			close = l
 		}
 	}
-	if !found {
+	if close == nil || !slices.Contains(win.help.chordsOf(close), "Ctrl+Shift+W") {
 		t.Fatal("the help lacks Close Pane on Ctrl+Shift+W")
 	}
 	// Under the menu it is on, and the reader's keys from kakel's own
 	// list.
-	var heads []string
-	under := map[string]string{}
-	keys := slices.Sorted(maps.Keys(win.help.rows))
-	for _, k := range keys {
-		r := win.help.rows[k]
-		if win.help.heads[k] {
-			heads = append(heads, r[0])
-			continue
-		}
-		under[r[0]] = heads[len(heads)-1]
-	}
-	if heads[0] != "File" || under["Close Pane"] != "File" || !strings.HasPrefix(under["Hex"], "The reader's keys") {
+	if under["Close Pane"] != "File" || !strings.HasPrefix(under["Hex"], "The reader's keys") {
 		t.Fatalf("the help's groups are %v, with Close Pane under %q, Hex under %q", heads, under["Close Pane"], under["Hex"])
 	}
 }
