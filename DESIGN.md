@@ -369,6 +369,11 @@ What follows from it:
   (2026-09-17). Moving a shortcut takes two lines, and USAGE.md and
   the file's own `_help` lines say so.
 
+- **The shortcut editor writes the shortcuts file, and only differences**
+  (2026-11-06). The help pane is the editor, so one list says what
+  every command does. Each change re-reads the file first, so lines
+  written by hand stay, and a file it cannot read is left alone.
+
 - **A listing that fails while a path is being completed is not shown**
   (2026-09-17). A dialog per keystroke would be worse than the fault,
   so the completion offers nothing and the typing goes on.

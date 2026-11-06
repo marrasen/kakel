@@ -72,6 +72,9 @@ var keyMap = func() map[gi.Key]input.Key {
 	for i := range 26 {
 		m[gi.KeyA+gi.Key(i)] = input.KeyA + input.Key(i)
 	}
+	for i := range 9 {
+		m[gi.Key1+gi.Key(i)] = input.Key1 + input.Key(i)
+	}
 	for i := range 12 {
 		m[gi.KeyF1+gi.Key(i)] = input.KeyF1 + input.Key(i)
 	}

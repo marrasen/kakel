@@ -16,11 +16,13 @@ import (
 
 	"github.com/marrasen/gunim/install"
 	"github.com/marrasen/kakel/conf"
+	"github.com/marrasen/kakel/input"
 	"github.com/marrasen/kakel/internal/testhome"
 	"github.com/marrasen/kakel/keys"
 	"github.com/marrasen/kakel/remote"
 	"github.com/marrasen/kakel/settings"
 	"github.com/marrasen/kakel/themes"
+	"github.com/marrasen/kakel/ui"
 )
 
 func TestTheThemeFileIsWrittenAndReadAgain(t *testing.T) {
@@ -254,5 +256,88 @@ func TestAThemePreviewedComesBack(t *testing.T) {
 	}
 	if got, _ := a.settings.Theme(); got == "Phosphor" || got == "Marshmallow" {
 		t.Fatalf("a preview was kept: %q", got)
+	}
+}
+
+// An edit is made to the file as it is now, so a line written by hand
+// since it was read stays, and Undo puts the file back.
+func TestAnEditKeepsWhatWasWrittenByHand(t *testing.T) {
+	a, _ := agentApp(t)
+	dir, err := settings.Dir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keys.Path(dir), []byte(`{"version":1,"keys":{"ctrl+shift+J":"pane.close"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	before := a.st.ShortcutsRead
+	chord := ui.Chord{Key: input.Key1, Mods: input.ModCtrl}
+	a.handle(EditShortcut{Op: keys.Op{Chord: chord, Command: "tab.next"}})
+	if len(a.st.Shortcuts) != 2 || a.st.ShortcutsRead == before {
+		t.Fatalf("after the edit the changes are %+v; notices %+v", a.st.Shortcuts, a.st.Notices)
+	}
+	a.handle(RestoreShortcuts{})
+	if len(a.st.Shortcuts) != 1 || a.st.Shortcuts[0].Command != "pane.close" {
+		t.Fatalf("after the undo the changes are %+v", a.st.Shortcuts)
+	}
+}
+
+// A file that can't be read is not written over: the editor says why.
+func TestAnEditLeavesABadFileAlone(t *testing.T) {
+	a, _ := agentApp(t)
+	dir, err := settings.Dir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	bad := []byte(`{"version":1,"keys":{"ctrl+shift+J":`)
+	if err := os.WriteFile(keys.Path(dir), bad, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a.handle(EditShortcut{Op: keys.Op{Chord: ui.Chord{Key: input.Key1, Mods: input.ModCtrl}, Command: "tab.next"}})
+	got, err := os.ReadFile(keys.Path(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(bad) || a.st.ShortcutsProblem == "" {
+		t.Fatalf("the file holds %q; the problem says %q", got, a.st.ShortcutsProblem)
+	}
+}
+
+// Undo leaves a file edited by hand since, and a file gone bad, as they are.
+func TestUndoLeavesAFileChangedSince(t *testing.T) {
+	a, _ := agentApp(t)
+	dir, err := settings.Dir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	edit := EditShortcut{Op: keys.Op{Chord: ui.Chord{Key: input.Key1, Mods: input.ModCtrl}, Command: "tab.next"}}
+	for name, later := range map[string]string{
+		"by hand": `{"version":1,"keys":{"ctrl+shift+J":"pane.close"}}`,
+		"bad":     `{"version":1,"keys":{`,
+	} {
+		a.handle(edit)
+		if err := os.WriteFile(keys.Path(dir), []byte(later), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		a.handle(RestoreShortcuts{})
+		got, err := os.ReadFile(keys.Path(dir))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != later {
+			t.Fatalf("%s: Undo left the file holding %q", name, got)
+		}
+		if err := os.Remove(keys.Path(dir)); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

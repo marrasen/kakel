@@ -33,6 +33,15 @@ type (
 	// WriteShortcuts writes a shortcuts file holding Bindings, every
 	// shortcut the window has now, for the user to start from.
 	WriteShortcuts struct{ Bindings []ui.Binding }
+	// EditShortcut makes one change from the shortcut editor to the
+	// shortcuts file. BuiltIn are the shortcuts kakel comes with, which
+	// the file says what to change of.
+	EditShortcut struct {
+		Op      keys.Op
+		BuiltIn []ui.Binding
+	}
+	// RestoreShortcuts takes back the last EditShortcut, for Undo.
+	RestoreShortcuts struct{}
 	// ReloadThemes reads the themes file again.
 	ReloadThemes struct{}
 	// WriteThemeFile writes a themes file holding a copy of the theme
@@ -78,12 +87,70 @@ func (a *app) loadShortcuts(said bool) error {
 	}
 	changes, err := keys.Load(keys.Path(dir))
 	if err != nil {
+		a.st.ShortcutsProblem = err.Error()
 		return err
 	}
+	a.st.ShortcutsProblem = ""
 	a.st.Shortcuts = changes
 	a.st.ShortcutsRead++
 	a.st.ShortcutsAgain = said
 	return nil
+}
+
+// editShortcut makes op to the shortcuts file as it is on the disk now,
+// so what was written there by hand since it was read stays. A file it
+// cannot read is left as it is. What was there is kept for Undo.
+func (a *app) editShortcut(op keys.Op, builtIn []ui.Binding) error {
+	a.shortcutUndo = nil
+	dir, err := settings.Dir()
+	if err != nil {
+		return err
+	}
+	at := keys.Path(dir)
+	have, err := keys.Load(at)
+	if err != nil {
+		a.st.ShortcutsProblem = err.Error()
+		return err
+	}
+	next := keys.Apply(have, builtIn, op)
+	if err := keys.Save(at, next); err != nil {
+		return err
+	}
+	a.shortcutUndo = &shortcutUndo{before: have, after: next}
+	return a.loadShortcuts(false)
+}
+
+// shortcutUndo is the way back from the last edit: the file before it,
+// and after it.
+type shortcutUndo struct{ before, after []keys.Change }
+
+// restoreShortcuts takes back the last edit, unless the file has changed
+// since, as it has if someone edited it by hand: that is theirs, and Undo
+// has no business writing over it.
+func (a *app) restoreShortcuts() error {
+	undo := a.shortcutUndo
+	if undo == nil {
+		return errors.New("there is no change to take back")
+	}
+	dir, err := settings.Dir()
+	if err != nil {
+		return err
+	}
+	at := keys.Path(dir)
+	now, err := keys.Load(at)
+	if err != nil {
+		a.st.ShortcutsProblem = err.Error()
+		return err
+	}
+	same := func(x, y keys.Change) bool { return x.Chord == y.Chord && x.Command == y.Command }
+	if !slices.EqualFunc(now, undo.after, same) {
+		return fmt.Errorf("%s has changed since, so it was left as it is", at)
+	}
+	if err := keys.Save(at, undo.before); err != nil {
+		return err
+	}
+	a.shortcutUndo = nil
+	return a.loadShortcuts(false)
 }
 
 // writeShortcuts writes the starting shortcuts file.

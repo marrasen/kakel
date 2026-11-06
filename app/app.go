@@ -227,6 +227,14 @@ type State struct {
 	SavedCopies   []settings.SavedCopy
 	Shortcuts     []keys.Change
 	ShortcutsRead uint64
+	// ShortcutsProblem says why the shortcuts file could not be read,
+	// which leaves the shortcut editor unable to change it.
+	ShortcutsProblem string
+	// LauncherProblem says why the launcher's key asked for in the
+	// shortcut editor was not taken, and LauncherTries counts those
+	// asks, so the same failure twice shows twice.
+	LauncherProblem string
+	LauncherTries   uint64
 	// See Shortcuts.
 	ShortcutsAgain bool
 	Contents       map[string]theme.Theme
@@ -854,7 +862,9 @@ type app struct {
 	fmFolders map[string][2]string
 	fmRoute   atomic.Pointer[[]*filemanager.Window]
 	hotKeys   HotKeys
-	launch    launchState
+	// shortcutUndo is the way back from the last edit of the shortcuts.
+	shortcutUndo *shortcutUndo
+	launch       launchState
 	// openPrompt opens a window of its own for a question that wants
 	// something typed, and prompt is that window as it is.
 	openPrompt PromptOpener
@@ -1294,6 +1304,10 @@ func failedTitle(in gunim.Intent) string {
 		return "Couldn't remove the favourite"
 	case SetLauncherKey:
 		return "Couldn't change the launcher's key"
+	case EditShortcut:
+		return "Couldn't change the shortcut"
+	case RestoreShortcuts:
+		return "Couldn't undo the change to the shortcuts"
 	case SetLauncherFiles:
 		return "Couldn't save where files open"
 	case InstallKakel:
@@ -1807,6 +1821,10 @@ func (a *app) handle(in gunim.Intent) {
 		err = a.loadShortcuts(true)
 	case WriteShortcuts:
 		err = a.writeShortcuts(in.Bindings)
+	case EditShortcut:
+		err = a.editShortcut(in.Op, in.BuiltIn)
+	case RestoreShortcuts:
+		err = a.restoreShortcuts()
 	case ReloadThemes:
 		a.reloadThemes()
 	case WriteThemeFile:
@@ -1905,6 +1923,16 @@ func (a *app) handle(in gunim.Intent) {
 
 	case SetLauncherKey:
 		err = a.setLauncherKey(in.Key)
+		if in.InRow {
+			// Said on the row it was asked on, and written down as every
+			// failure is.
+			a.st.LauncherTries++
+			a.st.LauncherProblem = ""
+			if err != nil {
+				log.Printf("%s: %v", failedTitle(in), err)
+				a.st.LauncherProblem, err = words.UpperFirst(err.Error())+".", nil
+			}
+		}
 	case SetLauncherFiles:
 		if a.settings != nil {
 			err = a.settings.PutLauncherFiles(in.Where)

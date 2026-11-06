@@ -133,7 +133,7 @@ func Load(path string) ([]Change, error) {
 			return nil, fmt.Errorf("%s: %q and %q are the same chord",
 				path, had, spelling)
 		}
-		if err := bindable(chord); err != nil {
+		if err := Bindable(chord); err != nil {
 			return nil, fmt.Errorf("%s: %q %w", path, spelling, err)
 		}
 		seen[chord] = spelling
@@ -151,12 +151,12 @@ func Load(path string) ([]Change, error) {
 	return out, nil
 }
 
-// bindable says whether a chord can be a window shortcut.
+// Bindable says whether a chord can be a window shortcut.
 //
 // A shortcut runs before the pane sees the key, so one on a chord the
 // user types would take that character away everywhere in the window,
 // with nothing in kakel to give it back.
-func bindable(c ui.Chord) error {
+func Bindable(c ui.Chord) error {
 	if c.Mods&^input.ModShift != 0 {
 		return nil
 	}
@@ -170,7 +170,7 @@ func bindable(c ui.Chord) error {
 // typedInAPane reports whether a key with no modifier reaches a program
 // in a pane as what the user typed.
 func typedInAPane(k input.Key) bool {
-	if k >= input.KeyA && k <= input.KeyZ {
+	if k >= input.KeyA && k <= input.KeyZ || k >= input.Key1 && k <= input.Key9 {
 		return true
 	}
 	switch k {
@@ -212,6 +212,109 @@ func WriteStart(path string, have []ui.Binding) error {
 	if err != nil {
 		// newfile says which file already.
 		return err
+	}
+	return nil
+}
+
+// Op is one change the shortcut editor makes.
+type Op struct {
+	// Chord and Command put the command on the chord, whatever the chord
+	// ran before.
+	Chord   ui.Chord
+	Command string
+	// Unbind takes Chord away from whatever runs it.
+	Unbind bool
+	// Reset puts Command back on the chords kakel comes with, and takes
+	// it off any others.
+	Reset bool
+	// ResetAll drops every change.
+	ResetAll bool
+}
+
+// Apply is have with op made to it, on top of the shortcuts kakel comes
+// with. The result holds differences only: a line saying what kakel
+// comes with anyway is dropped, so a shortcut a later kakel moves still
+// arrives. A line naming a command this kakel does not know stays.
+func Apply(have []Change, builtIn []ui.Binding, op Op) []Change {
+	if op.ResetAll {
+		return nil
+	}
+	want := make(map[ui.Chord]string, len(have))
+	for _, c := range have {
+		want[c.Chord] = c.Command
+	}
+	comes := make(map[ui.Chord]string, len(builtIn))
+	for _, b := range builtIn {
+		comes[b.Chord] = b.ID
+	}
+	set := func(c ui.Chord, command string) {
+		if comes[c] == command {
+			delete(want, c)
+			return
+		}
+		want[c] = command
+	}
+	switch {
+	case op.Reset:
+		for c, command := range want {
+			if command == op.Command || comes[c] == op.Command {
+				delete(want, c)
+			}
+		}
+	case op.Unbind:
+		set(op.Chord, "")
+	default:
+		set(op.Chord, op.Command)
+	}
+	out := make([]Change, 0, len(want))
+	for c, command := range want {
+		out = append(out, Change{Chord: c, Command: command, Written: c.String()})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Written < out[j].Written })
+	return out
+}
+
+// Save writes changes over the file, whole or not at all, with the
+// file's own notes on how it works.
+func Save(path string, changes []Change) error {
+	file := stored{Version: FileVersion, Help: startHelp, Keys: make(map[string]string, len(changes))}
+	for _, c := range changes {
+		command := c.Command
+		if command == "" {
+			command = Nothing
+		}
+		file.Keys[c.Chord.String()] = command
+	}
+	raw, err := json.MarshalIndent(file, "", "  ")
+	if err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".*")
+	if err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	defer func() { _ = os.Remove(tmp.Name()) }()
+	_, err = tmp.Write(append(raw, '\n'))
+	if err == nil {
+		// Flushed before the rename, or a crash can leave the name on an
+		// empty file.
+		err = tmp.Sync()
+	}
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = os.Chmod(tmp.Name(), 0o600)
+	}
+	if err == nil {
+		err = os.Rename(tmp.Name(), path)
+	}
+	if err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
 	}
 	return nil
 }

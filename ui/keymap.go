@@ -104,6 +104,19 @@ func (k *Keymap) ChordFor(id string) (Chord, bool) {
 	return best, found
 }
 
+// ChordsFor returns every chord that runs the given command, in the
+// order ChordFor picks from, so the first is the one a menu shows.
+func (k *Keymap) ChordsFor(id string) []Chord {
+	var out []Chord
+	for c, have := range k.bound {
+		if have == id {
+			out = append(out, c)
+		}
+	}
+	slices.SortFunc(out, compareChords)
+	return out
+}
+
 // Binding is one chord and the command it runs.
 type Binding struct {
 	Chord Chord

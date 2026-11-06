@@ -41,14 +41,35 @@ run, as a filter, only the branch is shown. Folders on servers show
 nothing.
 
 These are the ones you need most. "Shortcuts and Commands" on the Help
-menu, or `Ctrl+Shift+H`, lists every command, the key that runs it, and
-the name the shortcuts file calls it by, then the keys of the reader.
+menu, or `Ctrl+Shift+H`, lists every command and the keys that run it,
+and changes them. The keys of the reader follow.
 
 ## Changing a shortcut
 
-To change a shortcut, choose Settings › Files › Shortcuts › Start the
-File. It writes `keys.json` holding every shortcut you have now. Edit
-it, then choose Read Again beside it.
+Open Help › Shortcuts and Commands, `Ctrl+Shift+H`, or Settings › Files
+› Edit Shortcuts. The groups are down the left, with Changed among them.
+Every command is listed with the keys that run it.
+
+- Hover a row, or walk to it with the arrow keys, then press `+` or Enter
+  and press the keys. Esc cancels.
+- Press `×` on a shortcut to remove it, or Delete with the keyboard on it.
+- `↺` puts the command back to what kakel comes with. Reset All does it
+  for every command.
+- Type anywhere in the pane to search by name, by keys, or by the name the
+  shortcuts file uses. The tooltip on `+` shows that name.
+
+A change applies at once, and a toast offers Undo. A key another command
+has asks first, with Move Here. So does a key a program may need, such as
+`Ctrl+R`, or a `Ctrl+Alt` key, which AltGr can need. A chord you would
+type, such as a plain letter, is refused. Keys the system keeps, such as
+`Alt+Tab`, never reach kakel. The launcher's key is on the first row, and
+works from any program.
+
+The editor keeps your changes in `keys.json`, which you can also edit by
+hand. To start from every shortcut you have now, choose Settings › Files
+› Shortcuts › Start the File. Edit it, then choose Read Again beside it.
+If the file can't be read, the editor says why and changes nothing until
+it can.
 
 The file says what to change, not what the whole window does:
 
@@ -60,9 +81,7 @@ The file says what to change, not what the whole window does:
   names the old one.
 
 Every chord in the file runs before the pane sees it, so a chord a
-program in the pane needs stops reaching it. A chord you would type,
-such as a plain letter, is refused for that reason: hold `Ctrl`, `Alt`
-or `Super`, or use a function key.
+program in the pane needs stops reaching it.
 
 The file browser's own keys are not in the file.
 
