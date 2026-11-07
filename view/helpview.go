@@ -110,20 +110,20 @@ func helpSections(chord func(id string) string) []helpSection {
 func (w *Window) applyShortcuts(changes []keys.Change, u *gunim.UI) bool {
 	next, unknown := keymapOf(changes)
 	if len(unknown) > 0 {
-		if w.help != nil {
-			defer w.help.show(w, u)
+		if w.shortcuts != nil {
+			defer w.shortcuts.show(w, u)
 		}
 		w.shortcutsRefused = "The shortcuts file names commands this window lacks: " + strings.Join(unknown, "; ") + ". None of it was used."
 		log.Printf("The shortcuts file names commands this window lacks: %s", strings.Join(unknown, "; "))
-		w.toast(widget.Toast{Title: "The shortcuts file names commands this window lacks", Body: strings.Join(unknown, "; ") + ". None of it was used; Shortcuts and Commands lists every command's name."}, u)
+		w.toast(widget.Toast{Title: "The shortcuts file names commands this window lacks", Body: strings.Join(unknown, "; ") + ". None of it was used; Settings › Shortcuts lists every command's name."}, u)
 		return false
 	}
 	w.shortcutsRefused = ""
 	w.keys.Become(next)
 	// The menus and the palette say the new chords.
 	w.buildBar(true)
-	if w.help != nil {
-		w.help.show(w, u)
+	if w.shortcuts != nil {
+		w.shortcuts.show(w, u)
 	}
 	return true
 }

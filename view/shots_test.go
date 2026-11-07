@@ -242,11 +242,19 @@ func TestShotsShortcuts(t *testing.T) {
 		gunimtest.WritePNG(t, filepath.Join(dir, "shortcuts-"+name+".png"), gunimtest.Pixels(t, lastWindow))
 	}
 	win, _, publish := windowStageOf(t, geom.Sz(1100, 760))
-	st := app.State{Panes: []app.Pane{{ID: "p1", Kind: app.KindHelp, Title: "Shortcuts and Commands"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"}
+	st := app.State{Panes: []app.Pane{{ID: "p1", Kind: app.KindSettings, Title: "Settings"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1", SettingsTab: app.SettingsTabShortcuts, SettingsAsked: 1}
 	publish(st)
 	settle()
 	shot("rest")
-	p := win.help
+	// The tab sliding in, from the one before it.
+	win.settings.tabs.SetSelected(0, lastUI)
+	settle()
+	win.settings.tabs.SetSelected(3, lastUI)
+	lastWindow.Frame(time.Second / 60)
+	lastWindow.Frame(time.Second / 30)
+	shot("tab-sliding")
+	settle()
+	p := win.shortcuts
 	p.side.OnActivate(p.groupItems()[2].key, lastUI)
 	settle()
 	shot("group")

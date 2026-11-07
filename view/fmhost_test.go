@@ -60,7 +60,7 @@ func TestAFileManagerPaneShowsInItsPlace(t *testing.T) {
 	win, _, publish := windowStage(t)
 	filemanager.RegisterViews(lastWindow)
 	fw := filePane(t, "p1")
-	both := []app.Pane{{ID: "p1", Title: "dir", Kind: app.KindFileManager}, {ID: "p2", Title: "Help", Kind: app.KindHelp}}
+	both := []app.Pane{{ID: "p1", Title: "dir", Kind: app.KindFileManager}, {ID: "p2", Title: "Copies", Kind: app.KindCopies}}
 	publish(app.State{Panes: both, Stage: &app.Box{Pane: "p1"}, Focus: "p2"})
 	fw.Attach(lastWindow.Client(), app.FilePaneHost("p1"))
 	var listing gunim.Node

@@ -128,7 +128,7 @@ var commands = []struct{ id, title string }{
 	{"server.forget", "Remove This Server"},
 	{"server.reload", "Reload Server List"},
 	{"shell.termProgram", "Terminal Identity"},
-	{"help.shortcuts", "Shortcuts and Commands"},
+	{"help.shortcuts", "Edit Shortcuts"},
 	{"shortcuts.write", "New Shortcuts File"},
 	{"shortcuts.reload", "Reload Shortcuts"},
 	{"view.themesStart", "New Theme File"},
@@ -380,7 +380,7 @@ var menus = []struct {
 	}},
 	{"Help", []menuItem{
 		{id: "palette.open", title: "All Commands…"},
-		{id: "help.shortcuts", title: "Shortcuts and Commands"},
+		{id: "help.shortcuts", title: "Edit Shortcuts"},
 		{id: "view.log", title: "Window Log", group: true},
 		{id: "app.about", title: "About kakel", group: true},
 	}},

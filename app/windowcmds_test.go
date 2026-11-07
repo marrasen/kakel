@@ -341,3 +341,17 @@ func TestUndoLeavesAFileChangedSince(t *testing.T) {
 		}
 	}
 }
+
+// Settings asked for by tab says so to the windows, and asked for plainly
+// lets a window keep the tab it has.
+func TestSettingsCanBeAskedForByTab(t *testing.T) {
+	a, _ := agentApp(t)
+	a.handle(ShowSettings{Tab: SettingsTabShortcuts})
+	if a.paneOf(KindSettings) == "" || a.st.SettingsTab != SettingsTabShortcuts || a.st.SettingsAsked != 1 {
+		t.Fatalf("pane %q, tab %q, asked %d", a.paneOf(KindSettings), a.st.SettingsTab, a.st.SettingsAsked)
+	}
+	a.handle(ShowSettings{})
+	if a.st.SettingsTab != "" || a.st.SettingsAsked != 2 {
+		t.Fatalf("plainly: tab %q, asked %d", a.st.SettingsTab, a.st.SettingsAsked)
+	}
+}

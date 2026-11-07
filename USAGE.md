@@ -40,14 +40,15 @@ bottom. Where the repository's own settings name a program for git to
 run, as a filter, only the branch is shown. Folders on servers show
 nothing.
 
-These are the ones you need most. "Shortcuts and Commands" on the Help
+These are the ones you need most. "Edit Shortcuts" on the Help
 menu, or `Ctrl+Shift+H`, lists every command and the keys that run it,
 and changes them. The keys of the reader follow.
 
 ## Changing a shortcut
 
-Open Help › Shortcuts and Commands, `Ctrl+Shift+H`, or Settings › Files
-› Edit Shortcuts. The groups are down the left, with Changed among them.
+Open the Shortcuts tab in Settings, or press `Ctrl+Shift+H` or choose
+Help › Edit Shortcuts to go straight to it. The groups are down the left,
+with Changed among them.
 Every command is listed with the keys that run it.
 
 - Hover a row, or walk to it with the arrow keys, then press `+` or Enter

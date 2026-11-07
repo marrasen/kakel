@@ -66,7 +66,7 @@ func TestTheSwitcherShowsAPaneThatIsNoTerminal(t *testing.T) {
 	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
 	sh.Set("p2", screen.Open(sessiontest.New(), vt.DefaultPalette(), quiet))
 	t.Cleanup(func() { _ = sh.Get("p2").T.Close() })
-	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "Help", Kind: app.KindHelp}, {ID: "p2", Title: "Terminal 2"}},
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "Copies", Kind: app.KindCopies}, {ID: "p2", Title: "Terminal 2"}},
 		Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
 	for range 10 {
 		lastWindow.Frame(time.Second / 60)
