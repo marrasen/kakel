@@ -27,7 +27,7 @@ func termStage(t *testing.T, size geom.Size) (*Window, *term) {
 	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
 	sh.Set("p1", screen.Open(sessiontest.New(), vt.DefaultPalette(), quiet))
 	t.Cleanup(func() { _ = sh.Get("p1").T.Close() })
-	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1"}}, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1"})
 	return win, win.terms["p1"]
 }
 
@@ -98,7 +98,7 @@ func TestCtrlOverAStillPointerIsHeard(t *testing.T) {
 	}
 	// With the keyboard elsewhere, the pane under the pointer still
 	// hears it.
-	st := withServers(app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
+	st := withServers(app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1"}}, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1"})
 	if err := lastWindow.Client().Publish(app.WindowTopic, st); err != nil {
 		t.Fatal(err)
 	}
@@ -209,7 +209,7 @@ func TestTheHandShowsOverALinkWithCtrl(t *testing.T) {
 	linked := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}, Link: func(string) {}}
 	sh.Set("p1", screen.Open(sessiontest.NewPrinted([]byte("https://example.com/a")), vt.DefaultPalette(), linked))
 	t.Cleanup(func() { _ = sh.Get("p1").T.Close() })
-	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1"}}, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1"})
 	tm := win.terms["p1"]
 	// The link is printed on a goroutine of its own: waited for, not
 	// given a number of frames, which a slow machine may not print in.
@@ -261,7 +261,7 @@ func TestLosingTheKeyboardEndsAPressAndTheLinksLight(t *testing.T) {
 // blank rather than crashing the window.
 func TestAPaneWhoseShellHasGoneIsBlank(t *testing.T) {
 	win, _, publish := windowStageOf(t, geom.Sz(900, 600))
-	publish(app.State{Panes: []app.Pane{{ID: "p9", Title: "gone"}}, Stage: &app.Box{Pane: "p9"}, Focus: "p9"})
+	publish(app.State{Panes: []app.Pane{{ID: "p9", Title: "gone"}}, Layout: boxLayout(&app.Box{Pane: "p9"}), Focus: "p9"})
 	frames(2)
 	if _, ok := win.terms["p9"]; ok {
 		t.Fatal("a terminal was made for a pane with no shell")

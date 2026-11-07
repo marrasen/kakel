@@ -25,7 +25,7 @@ func TestTheOverviewShowsEveryWindow(t *testing.T) {
 	if len(ov[0].Tabs) != 2 || len(ov[1].Tabs) != 1 || ov[1].Tabs[0].Box.Pane != "p3" || ov[1].Tabs[0].Pane != "p3" {
 		t.Fatalf("the windows' tabs are %+v and %+v", ov[0].Tabs, ov[1].Tabs)
 	}
-	if ov[0].Stage != geom.Sz(640, 400) || ov[0].StageAt != geom.Rc(0, 40, 640, 400) || ov[0].Size != geom.Sz(640, 460) || ov[0].Front != a.groupOf["p2"] {
+	if ov[0].Stage != geom.Sz(640, 400) || ov[0].StageAt != geom.Rc(0, 40, 640, 400) || ov[0].Size != geom.Sz(640, 460) || ov[0].Front != ov[0].Tabs[0].Group {
 		t.Fatalf("the first window's stage is %v, with group %d in front", ov[0].Stage, ov[0].Front)
 	}
 }
@@ -42,13 +42,12 @@ func TestAWindowBehindSayingItsSizeStaysBehind(t *testing.T) {
 	}
 }
 
-// A pane dragged onto another window's card moves there, onto a tab of
-// its own.
+// A pane dragged onto another window's card moves there, as a tab.
 func TestAPaneDraggedOntoAWindowsCardMovesThere(t *testing.T) {
 	a, one, two := twoWindowApp(t)
 	a.handle(PaneToTab{Pane: "p1", Window: two.id})
-	if a.winOf["p1"] != two.id || a.groupOf["p1"] == a.groupOf["p3"] {
-		t.Fatalf("p1 is in window %d, group %d", a.winOf["p1"], a.groupOf["p1"])
+	if a.ownerOf("p1") != two || !sameTabs(a, "p1", "p3") {
+		t.Fatalf("p1 stands with %v", tabsWith(a, "p1"))
 	}
 	if one.focus != "p2" && a.focusIn(one) != "p2" {
 		t.Fatalf("the window it left has %q in front", a.focusIn(one))
@@ -56,44 +55,20 @@ func TestAPaneDraggedOntoAWindowsCardMovesThere(t *testing.T) {
 }
 
 // A pane in a split, dragged onto its own window's card, leaves the
-// split for a tab of its own.
+// split for the tabs beside it.
 func TestAPaneDraggedOntoItsOwnCardLeavesItsSplit(t *testing.T) {
 	a, one, _ := twoWindowApp(t)
 	a.front(one)
 	a.handle(MovePane{Pane: "p2", Beside: "p1"})
-	if a.groupOf["p1"] != a.groupOf["p2"] {
+	if !inSplit(a, "p1", "p2") {
 		t.Fatal("the split was not made")
 	}
 	a.handle(PaneToTab{Pane: "p2", Window: one.id})
-	if a.groupOf["p1"] == a.groupOf["p2"] || a.winOf["p2"] != one.id {
+	if !sameTabs(a, "p1", "p2") || a.ownerOf("p2") != one {
 		t.Fatal("p2 is still in p1's split")
-	}
-	if a.groups[a.groupOf["p1"]].Pane != "p1" || a.groups[a.groupOf["p2"]].Pane != "p2" {
-		t.Fatal("the tabs are not one pane each")
-	}
-}
-
-// A pane in a split dropped on its window's tab bar takes a tab of its
-// own where it was dropped, in front.
-func TestAPaneDroppedOnTheBarLandsWhereItWasDropped(t *testing.T) {
-	a, one, _ := twoWindowApp(t)
-	a.front(one)
-	a.handle(MovePane{Pane: "p2", Beside: "p1"})
-	if a.groupOf["p1"] != a.groupOf["p2"] {
-		t.Fatal("the split was not made")
-	}
-	before := a.groupOf["p1"]
-	a.handle(PaneToTab{Pane: "p2", Window: one.id, Bar: true, Before: before})
-	g := a.groupOf["p2"]
-	if g == before || a.groups[g].Pane != "p2" {
-		t.Fatal("p2 is still in p1's split")
-	}
-	order := slices.DeleteFunc(slices.Clone(a.tabOrder), func(o int) bool { return a.groupWin(o) != one })
-	if i := slices.Index(order, g); i < 0 || i+1 >= len(order) || order[i+1] != before {
-		t.Fatalf("the window's tabs are %v; want p2's, %d, before p1's, %d", order, g, before)
 	}
 	if a.st.Focus != "p2" {
-		t.Fatalf("%q has the keyboard, want p2 in front", a.st.Focus)
+		t.Fatalf("%q has the keyboard, want p2", a.st.Focus)
 	}
 }
 
@@ -103,10 +78,11 @@ func TestAPaneDockedBesideAnotherWindowsPaneJoinsItsSplit(t *testing.T) {
 	a, one, two := twoWindowApp(t)
 	a.front(one)
 	a.handle(DockPane{Pane: "p1", Beside: "p3", Vertical: true, First: true})
-	if a.winOf["p1"] != two.id || a.groupOf["p1"] != a.groupOf["p3"] {
-		t.Fatalf("p1 is in window %d, group %d; p3 in group %d", a.winOf["p1"], a.groupOf["p1"], a.groupOf["p3"])
+	if a.ownerOf("p1") != two || !inSplit(a, "p1", "p3") {
+		t.Fatalf("p1 stands with %v", tabsWith(a, "p1"))
 	}
-	b := a.groups[a.groupOf["p3"]]
+	a.keepFocusShown()
+	b := boxOf(a.layout.Window(two.id).Root)
 	if !b.Vertical || b.A == nil || b.A.Pane != "p1" || b.B == nil || b.B.Pane != "p3" {
 		t.Fatalf("the split is %+v", b)
 	}
@@ -121,8 +97,9 @@ func TestAPaneDockedInItsOwnSplitChangesSides(t *testing.T) {
 	a.front(one)
 	a.handle(MovePane{Pane: "p2", Beside: "p1"})
 	a.handle(DockPane{Pane: "p2", Beside: "p1", Vertical: true})
-	b := a.groups[a.groupOf["p1"]]
-	if a.groupOf["p2"] != a.groupOf["p1"] || !b.Vertical || b.A.Pane != "p1" || b.B.Pane != "p2" {
+	a.keepFocusShown()
+	b := boxOf(a.layout.Window(one.id).Root)
+	if !b.Vertical || b.A.Pane != "p1" || b.B.Pane != "p2" {
 		t.Fatalf("the split is %+v", b)
 	}
 }
@@ -130,9 +107,9 @@ func TestAPaneDockedInItsOwnSplitChangesSides(t *testing.T) {
 // A pane docked beside itself stays where it is.
 func TestAPaneDockedBesideItselfStays(t *testing.T) {
 	a, _, _ := twoWindowApp(t)
-	g := a.groupOf["p3"]
+	g := a.layout.GroupOf("p3").ID
 	a.handle(DockPane{Pane: "p3", Beside: "p3"})
-	if a.groupOf["p3"] != g || a.groups[g].Pane != "p3" {
+	if a.layout.GroupOf("p3").ID != g || len(tabsWith(a, "p3")) != 1 {
 		t.Fatal("p3 moved")
 	}
 }

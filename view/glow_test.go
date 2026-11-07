@@ -23,7 +23,7 @@ func TestASharedPaneGlows(t *testing.T) {
 	sh.Set("p1", screen.Open(sessiontest.New(), vt.DefaultPalette(), quiet))
 	t.Cleanup(func() { _ = sh.Get("p1").T.Close() })
 	marks := look.MarksOf(vt.DefaultPalette())
-	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1", Marks: marks}
+	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1"}}, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1", Marks: marks}
 	ring := func() bool {
 		for _, op := range lastWindow.Offscreen().Ops() {
 			if r, ok := op.(*paint.RRectOp); ok && r.Stroke.Width == markWidth && r.Stroke.Color.R == marks.Agent.R && r.Stroke.Color.G == marks.Agent.G {
@@ -62,7 +62,7 @@ func TestAHeldScreenBiggerThanThePaneIsDrawnToFit(t *testing.T) {
 	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
 	sh.Set("p1", screen.Open(sessiontest.New(), vt.DefaultPalette(), quiet))
 	t.Cleanup(func() { _ = sh.Get("p1").T.Close() })
-	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"}
+	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1"}}, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1"}
 	publish(st)
 	tm := win.terms["p1"]
 	sh.Get("p1").T.Hold(200, 60)

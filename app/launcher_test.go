@@ -309,8 +309,8 @@ func TestFilesFromTheLauncherOpenWhereTheSettingsSay(t *testing.T) {
 		return w.Client(), w, nil
 	}
 	a.handleLaunch(Launch{Action: "files"})
-	if p := a.st.Focus; a.ownerOf(p) != two || a.kindOfPane(p) != KindFileManager || p == "p3" || a.groupOf[p] == a.groupOf["p3"] {
-		t.Fatalf("files from the launcher opened as %q in group %d, beside p3 in %d", p, a.groupOf[p], a.groupOf["p3"])
+	if p := a.st.Focus; a.ownerOf(p) != two || a.kindOfPane(p) != KindFileManager || p == "p3" || inSplit(a, p, "p3") {
+		t.Fatalf("files from the launcher opened as %q, with %v", p, tabsWith(a, p))
 	}
 
 	a.focus("p3")
@@ -319,8 +319,8 @@ func TestFilesFromTheLauncherOpenWhereTheSettingsSay(t *testing.T) {
 		t.Fatalf("the settings keep files opening %q", got)
 	}
 	a.handleLaunch(Launch{Action: "files"})
-	if p := a.st.Focus; a.ownerOf(p) != two || p == "p3" || a.groupOf[p] != a.groupOf["p3"] {
-		t.Fatalf("set to open beside, files opened as %q in group %d, not p3's %d", p, a.groupOf[p], a.groupOf["p3"])
+	if p := a.st.Focus; a.ownerOf(p) != two || p == "p3" || !inSplit(a, p, "p3") {
+		t.Fatalf("set to open beside, files opened as %q, with %v", p, tabsWith(a, p))
 	}
 
 	a.handle(SetLauncherFiles{Where: settings.LauncherFilesWindow})

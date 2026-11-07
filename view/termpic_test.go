@@ -30,7 +30,7 @@ func TestAnImageInTheOutputIsDrawnOverItsCells(t *testing.T) {
 	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
 	sh.Set("p1", screen.Open(s, vt.DefaultPalette(), quiet))
 	t.Cleanup(func() { _ = sh.Get("p1").T.Close() })
-	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1"}}, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1"})
 
 	deadline := time.Now().Add(5 * time.Second)
 	for len(sh.Get("p1").T.Images()) == 0 {
@@ -76,14 +76,14 @@ func TestTheWindowIsNamedAfterThePaneInFront(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	panes := []app.Pane{{ID: "p1", Title: "Windows PowerShell"}, {ID: "p2", Title: "files", Kind: app.KindFileManager}}
-	publish(app.State{Panes: panes, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
+	publish(app.State{Panes: panes, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1"})
 	if got := lastWindow.Offscreen().Title(); got != "kakel — Windows PowerShell" {
 		t.Fatalf("the window is called %q", got)
 	}
 	if win.bar.Title != "kakel" || win.bar.Subtitle != "Windows PowerShell" {
 		t.Fatalf("the title bar says %q and %q", win.bar.Title, win.bar.Subtitle)
 	}
-	publish(app.State{Panes: panes, Stage: &app.Box{Pane: "p2"}, Focus: "p2"})
+	publish(app.State{Panes: panes, Layout: boxLayout(&app.Box{Pane: "p2"}), Focus: "p2"})
 	if got := lastWindow.Offscreen().Title(); got != "kakel — files" {
 		t.Fatalf("on a file manager pane, the window is called %q", got)
 	}

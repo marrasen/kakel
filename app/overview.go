@@ -3,7 +3,6 @@ package app
 import (
 	"log"
 	"os"
-	"strconv"
 	"time"
 
 	"github.com/marrasen/kakel/keys"
@@ -12,18 +11,20 @@ import (
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/driver"
 	"github.com/marrasen/gunim/geom"
+	"github.com/marrasen/gunim/widget/dock"
 )
 
 // All Panes shows every window's panes at once: a card for each of
-// kakel's windows, holding its tabs, each split as it stands. A pane is
+// kakel's windows, holding what it shows, each split as it stands, and
+// each pane behind another. A pane is
 // picked there, or dragged onto another window's card, beside another
 // pane, or out to a window of its own.
 
 // OverWindow is one of kakel's windows as All Panes shows it.
 type OverWindow struct {
 	ID int
-	// Tabs are its tabs, in order, and Front the group of the one in
-	// front.
+	// Tabs are what it shows and each pane behind, as OverTabs says, and
+	// Front the group of what shows.
 	Tabs  []OverTab
 	Front int
 	// Stage is the size of its stage, and StageAt where the stage is in
@@ -70,17 +71,12 @@ type (
 	// the window it came from. While it is open the window hears of
 	// output from every window's panes, not only its own.
 	OverviewShown struct{ On bool }
-	// PaneToTab moves a pane onto a tab of its own in the window
-	// numbered Window. Asked of the window it is in, it takes the pane
-	// out of its split onto a tab of its own there. Dropped on the
-	// window's tab bar, or above its stage, Bar is set: the tab goes in
-	// front of the tab of group Before, or last for 0, and comes to the
-	// front.
+	// PaneToTab moves a pane into the window numbered Window, as a tab
+	// of its group with the keyboard. Asked of the window it is in, it
+	// takes the pane out of its split into that group.
 	PaneToTab struct {
 		Pane   string
 		Window int
-		Bar    bool
-		Before int
 	}
 	// DockPane takes a pane into a split beside the pane Beside, in
 	// whichever window that is: to its right, or below it with
@@ -155,98 +151,47 @@ func (a *app) overview() []OverWindow {
 	var out []OverWindow
 	for _, w := range a.liveWins() {
 		ow := OverWindow{ID: w.id, Stage: w.stage.Size(), StageAt: w.stage, Size: w.size}
-		if g, ok := a.groupOf[a.focusIn(w)]; ok {
-			ow.Front = g
-		}
-		for _, t := range a.tabsOf(w) {
-			ow.Tabs = append(ow.Tabs, OverTab{Group: t.Group, Box: a.groups[t.Group].clone(), Pane: t.Pane})
+		ow.Tabs = OverTabs(&a.layout, w.id)
+		if len(ow.Tabs) > 0 {
+			ow.Front = ow.Tabs[0].Group
 		}
 		out = append(out, ow)
 	}
 	return out
 }
 
-// paneToTab carries out in: into another window as a tab of its own,
-// or out of its split onto one in its own window.
+// paneToTab carries out in: into another window, or out of its split in
+// its own, as a tab of the group with the keyboard there.
 func (a *app) paneToTab(in PaneToTab) {
 	w := a.winByID(in.Window)
 	from := a.ownerOf(in.Pane)
-	if w == nil || w.gone || from == nil || a.closing[in.Pane] {
+	if w == nil || w.gone || from == nil {
 		return
 	}
 	if from != w {
 		a.moveToWindow(in.Pane, w)
-	} else {
-		a.ownTab(in.Pane)
+		return
 	}
-	if g, ok := a.groupOf[in.Pane]; ok && in.Bar && w == a.cur {
-		a.moveTab(g, in.Before)
-	}
+	a.focus(in.Pane)
+	a.popOut()
 }
 
-// ownTab takes pane id out of its split onto a tab of its own, in its
-// window, and reports the group it is in now. A pane alone stays where
-// it is.
-func (a *app) ownTab(id string) int {
-	g, ok := a.groupOf[id]
-	if !ok || a.groups[g] == nil || a.groups[g].Pane == id {
-		return g
-	}
-	w := a.ownerOf(id)
-	next := a.take(id)
-	a.nextGroup++
-	a.groups[a.nextGroup] = &Box{Pane: id}
-	a.groupOf[id] = a.nextGroup
-	if w != nil && a.focusIn(w) == id && next != "" {
-		// The tab it left keeps the pane beside it in front.
-		a.groupFocus[g] = next
-	}
-	a.sortTabs()
-	return a.nextGroup
-}
-
-// dockPane carries out in: the pane leaves its split, and joins the
-// pane beside it in one.
+// dockPane carries out in: the pane leaves where it stands, and joins
+// the pane beside it in a split.
 func (a *app) dockPane(in DockPane) {
-	to := a.ownerOf(in.Beside)
-	if in.Pane == in.Beside || to == nil || to.gone || a.ownerOf(in.Pane) == nil || a.closing[in.Pane] || a.closing[in.Beside] {
+	if in.Pane == in.Beside || a.ownerOf(in.Beside) == nil || a.ownerOf(in.Beside).gone || a.ownerOf(in.Pane) == nil {
 		return
 	}
-	g := a.ownTab(in.Pane)
-	a.dockGroup(g, in.Beside, in.Vertical, in.First, to)
-}
-
-// dockGroup takes group g's panes into a split beside the pane beside,
-// in window to, on the side vertical and first say, and gives the pane
-// that was in front in g the keyboard.
-func (a *app) dockGroup(g int, beside string, vertical, first bool, to *ownWin) {
-	into, ok := a.groupOf[beside]
-	if !ok || a.groups[g] == nil || into == g || !a.movable(g) || a.closing[beside] || a.ownerOf(beside) != to {
-		return
+	side := dock.Right
+	switch {
+	case in.Vertical && in.First:
+		side = dock.Top
+	case in.Vertical:
+		side = dock.Bottom
+	case in.First:
+		side = dock.Left
 	}
-	a.groupToWindow(g, to)
-	moved := a.groups[g]
-	a.splits++
-	box := &Box{
-		ID: "s" + strconv.Itoa(a.splits), Vertical: vertical, Share: 0.5, Opening: true,
-		A: &Box{Pane: beside}, B: moved,
-	}
-	if first {
-		box.A, box.B = moved, box.A
-	}
-	a.groups[into] = a.groups[into].replace(beside, box)
-	pane := a.tabPane(g)
-	for _, id := range moved.leaves(nil) {
-		a.groupOf[id] = into
-	}
-	delete(a.groups, g)
-	delete(a.groupFocus, g)
-	a.sortTabs()
-	if to == a.cur {
-		a.focus(pane)
-		return
-	}
-	a.setFocusIn(to, pane)
+	a.moveTab(in.Pane, dock.Target{At: in.Beside, Side: side})
 }
 
 // OverviewTopic is the key All Panes' own window's state is published
@@ -263,13 +208,11 @@ type OverState struct {
 	// keyboard, which has the ring as All Panes opens.
 	Front int
 	Focus string
-	// FontSize and Font are what the terminals are drawn in, PaneTitles
-	// says panes show a line naming them, and Machines name the machines
-	// on those lines.
-	FontSize   float32
-	Font       Font
-	PaneTitles bool
-	Machines   []machines.Info
+	// FontSize and Font are what the terminals are drawn in, and
+	// Machines name the machines on the panes' lines.
+	FontSize float32
+	Font     Font
+	Machines []machines.Info
 	// Shortcuts are the changes the shortcuts file makes to the keys,
 	// one of which closes it.
 	Shortcuts []keys.Change
@@ -524,7 +467,7 @@ func (a *app) publishOverview() {
 	}
 	_ = a.over.c.Publish(OverviewTopic, OverState{
 		Windows: wins, Panes: a.allPanes(), Front: a.frontID(), Focus: a.st.Focus,
-		FontSize: a.st.FontSize, Font: a.st.Font, PaneTitles: a.st.PaneTitles, Machines: a.st.Machines,
+		FontSize: a.st.FontSize, Font: a.st.Font, Machines: a.st.Machines,
 		Shortcuts: a.st.Shortcuts, Close: a.over.closing,
 	})
 }

@@ -27,7 +27,7 @@ func TestCtrlTabWalksThePanesByLastUse(t *testing.T) {
 	}
 	// Used in the order p1, p2, p3.
 	for _, id := range []string{"p1", "p2", "p3"} {
-		publish(app.State{Panes: panes, Stage: &app.Box{Pane: id}, Focus: id})
+		publish(app.State{Panes: panes, Layout: boxLayout(&app.Box{Pane: id}), Focus: id})
 	}
 	for len(lastWindow.Client().Intents()) > 0 {
 		<-lastWindow.Client().Intents()
@@ -93,7 +93,7 @@ func TestAWalkEndsWhenTheWindowLosesTheKeyboard(t *testing.T) {
 		panes = append(panes, app.Pane{ID: id, Title: "Terminal " + id})
 	}
 	for _, id := range []string{"p1", "p2"} {
-		publish(app.State{Panes: panes, Stage: &app.Box{Pane: id}, Focus: id})
+		publish(app.State{Panes: panes, Layout: boxLayout(&app.Box{Pane: id}), Focus: id})
 	}
 	lastWindow.Input(gi.KeyPress{Key: gi.KeyTab, Mods: gi.ModControl | gi.ModShift})
 	lastWindow.Frame(time.Second / 60)
@@ -118,7 +118,7 @@ func TestCtrlTabRingsAPaneInASplit(t *testing.T) {
 	}
 	panes := []app.Pane{{ID: "p1", Title: "a"}, {ID: "p2", Title: "b"}}
 	split := &app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "p2"}, Share: 0.5}
-	st := app.State{Panes: panes, Stage: split, Focus: "p1"}
+	st := app.State{Panes: panes, Layout: boxLayout(split), Focus: "p1"}
 	publish(st)
 	st.Focus = "p2"
 	publish(st)
@@ -153,7 +153,7 @@ func TestCtrlTabRingsAPaneInASplit(t *testing.T) {
 // click, the title bar's too.
 func TestCtrlTabInAWindowOfOnePaneLeavesNothing(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(app.State{Panes: []app.Pane{{ID: "s", Title: "Settings", Kind: app.KindSettings}}, Stage: &app.Box{Pane: "s"}, Focus: "s"})
+	publish(app.State{Panes: []app.Pane{{ID: "s", Title: "Settings", Kind: app.KindSettings}}, Layout: boxLayout(&app.Box{Pane: "s"}), Focus: "s"})
 	for range 3 {
 		lastWindow.Input(gi.KeyPress{Key: gi.KeyTab, Mods: gi.ModControl})
 		lastWindow.Frame(time.Second / 60)
@@ -180,7 +180,7 @@ func TestAWalkIntoSettingsEndsOnCtrlUp(t *testing.T) {
 	t.Cleanup(func() { _ = sh.Get("p1").T.Close() })
 	panes := []app.Pane{{ID: "p1", Title: "Terminal 1"}, {ID: "s", Title: "Settings", Kind: app.KindSettings}}
 	for _, id := range []string{"s", "p1"} {
-		publish(app.State{Panes: panes, Stage: &app.Box{Pane: id}, Focus: id})
+		publish(app.State{Panes: panes, Layout: boxLayout(&app.Box{Pane: id}), Focus: id})
 	}
 	lastWindow.Input(gi.KeyPress{Key: gi.KeyTab, Mods: gi.ModControl})
 	lastWindow.Frame(time.Second / 60)
@@ -188,7 +188,7 @@ func TestAWalkIntoSettingsEndsOnCtrlUp(t *testing.T) {
 		t.Fatal("Ctrl+Tab started no walk")
 	}
 	// The program puts Settings in front.
-	publish(app.State{Panes: panes, Stage: &app.Box{Pane: "s"}, Focus: "s"})
+	publish(app.State{Panes: panes, Layout: boxLayout(&app.Box{Pane: "s"}), Focus: "s"})
 	for range 10 {
 		lastWindow.Frame(time.Second / 60)
 	}

@@ -102,12 +102,12 @@ func TestMenuLinesThatCannotActAreGreyed(t *testing.T) {
 		t.Fatalf("no menu line runs %s", id)
 		return false
 	}
-	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "here", Kind: app.KindFileManager}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "here", Kind: app.KindFileManager}}, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1"})
 	if !greyed("conn.disconnect") || greyed("pane.close") || !greyed("pane.scrollback") {
 		t.Fatalf("on a file manager pane here: Disconnect greyed %v, Close Pane %v, Find in Scrollback %v",
 			greyed("conn.disconnect"), greyed("pane.close"), greyed("pane.scrollback"))
 	}
-	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "there", Kind: app.KindFileManager, Machine: "srv"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "there", Kind: app.KindFileManager, Machine: "srv"}}, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1"})
 	if greyed("conn.disconnect") {
 		t.Fatal("on a pane on a server, Disconnect is greyed")
 	}
@@ -133,7 +133,7 @@ func TestTheKeyboardComingIntoAFileManagerPaneFrontsIt(t *testing.T) {
 	filemanager.RegisterViews(lastWindow)
 	fw := filePane(t, "p2")
 	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "Copies", Kind: app.KindCopies}, {ID: "p2", Title: "b", Kind: app.KindFileManager}},
-		Stage: &app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "p2"}, Share: 0.5}, Focus: "p1"})
+		Layout: boxLayout(&app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "p2"}, Share: 0.5}), Focus: "p1"})
 	fw.Attach(lastWindow.Client(), app.FilePaneHost("p2"))
 	var listing gunim.Node
 	framesUntil(t, "the file manager shows in its place", func() bool {
@@ -164,7 +164,7 @@ func TestTheKeyboardComingIntoAFileManagerPaneFrontsIt(t *testing.T) {
 func TestADialogClosingLeavesThePaneInFront(t *testing.T) {
 	win, _, publish := windowStage(t)
 	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "Copies", Kind: app.KindCopies}, {ID: "p2", Title: "Jobs", Kind: app.KindJobs}},
-		Stage: &app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "p2"}, Share: 0.5}, Focus: "p1"}
+		Layout: boxLayout(&app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "p2"}, Share: 0.5}), Focus: "p1"}
 	publish(st)
 	lastUI.Focus(win.focusNode("p1", lastUI))
 	win.run("pane.rename", lastUI)

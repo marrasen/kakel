@@ -136,8 +136,6 @@ type stored struct {
 	// Commands are the commands the user asked to keep, newest first.
 	Commands []SavedCommand `json:"commands,omitempty"`
 
-	// PaneTitles turns on the line above each pane naming it.
-	PaneTitles *bool `json:"paneTitles,omitempty"`
 	// NoTray keeps kakel out of the system tray: closing its last
 	// window ends it, as it did before it had a tray icon.
 	NoTray *bool `json:"noTray,omitempty"`
@@ -1802,30 +1800,6 @@ func (s *Settings) PutTray(on bool) error {
 	before := s.have
 	off := !on
 	s.have.NoTray = &off
-	if err := s.saveLocked(); err != nil {
-		s.have = before
-		return err
-	}
-	return nil
-}
-
-// PaneTitles reports whether each pane shows a line naming it.
-func (s *Settings) PaneTitles() bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.have.PaneTitles != nil && *s.have.PaneTitles
-}
-
-// PutPaneTitles turns the line above each pane on or off, and saves.
-func (s *Settings) PutPaneTitles(on bool) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	// The file first, for the same reason PutServe reads it first.
-	if err := s.rereadLocked(); err != nil {
-		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
-	}
-	before := s.have
-	s.have.PaneTitles = &on
 	if err := s.saveLocked(); err != nil {
 		s.have = before
 		return err

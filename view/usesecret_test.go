@@ -20,7 +20,7 @@ import (
 func TestUseSecretPicksAndTypes(t *testing.T) {
 	win, _, publish := windowStageOf(t, geom.Sz(900, 600))
 	st := app.State{
-		Panes: []app.Pane{{ID: "p1", Title: "web", Machine: "s1"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1",
+		Panes: []app.Pane{{ID: "p1", Title: "web", Machine: "s1"}}, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1",
 		Saved:    []remote.Host{{ID: "s1", Name: "web", Address: "web.example", User: "deploy"}},
 		Machines: []machines.Info{{ID: "s1", Name: "web"}},
 		Secrets:  app.Secrets{Exists: true},

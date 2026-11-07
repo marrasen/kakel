@@ -21,7 +21,7 @@ import (
 // The switcher's shortcut closes it again.
 func TestTheSwitcherShortcutClosesItAgain(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFileManager}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFileManager}}, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1"})
 	press := func(k gi.Key) {
 		lastWindow.Input(gi.KeyPress{Key: k, Mods: gi.ModControl | gi.ModShift, Time: time.Now()})
 		for range 3 {
@@ -48,7 +48,7 @@ func TestTheSwitcherShortcutClosesItAgain(t *testing.T) {
 // screen too.
 func TestTheSidebarShortcutTogglesServers(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFileManager}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFileManager}}, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1"})
 	win.present(true, lastUI)
 	for len(lastWindow.Client().Intents()) > 0 {
 		<-lastWindow.Client().Intents()
@@ -63,7 +63,7 @@ func TestTheSidebarShortcutTogglesServers(t *testing.T) {
 // so rather than doing nothing.
 func TestCloseSelectedRowSaysWhyItDidNothing(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(withServers(app.State{Panes: []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFileManager}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"}))
+	publish(withServers(app.State{Panes: []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFileManager}}, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1"}))
 	was := win.toasts.Len()
 	win.run("sidebar.closeRow", lastUI)
 	if win.toasts.Len() != was+1 {
@@ -107,7 +107,7 @@ func TestTabThenEnterLeavesTheFile(t *testing.T) {
 // The palette's shortcut closes it again, from inside it.
 func TestThePaletteShortcutClosesItAgain(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFileManager}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFileManager}}, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1"})
 	press := func() {
 		lastWindow.Input(gi.KeyPress{Key: gi.KeyK, Mods: gi.ModControl | gi.ModShift, Time: time.Now()})
 		for range 3 {
@@ -153,7 +153,7 @@ func TestAnUnreadableClipboardIsSaid(t *testing.T) {
 	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
 	sh.Set("p1", screen.Open(sessiontest.New(), vt.DefaultPalette(), quiet))
 	t.Cleanup(func() { _ = sh.Get("p1").T.Close() })
-	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1"}}, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1"})
 	lastWindow.Offscreen().SetClipboardError(errors.New("no display"))
 	for len(lastWindow.Client().Intents()) > 0 {
 		<-lastWindow.Client().Intents()
@@ -185,18 +185,17 @@ func TestAPreformattedQuestionKeepsItsLinesWhole(t *testing.T) {
 func TestTheDividerBetweenFileManagerPanesDrags(t *testing.T) {
 	win, _, publish := windowStage(t)
 	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFileManager}, {ID: "p2", Title: "b", Kind: app.KindFileManager}},
-		Stage: &app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "p2"}, Share: 0.5}, Focus: "p1"})
+		Layout: boxLayout(&app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "p2"}, Share: 0.5}), Focus: "p1"})
 	for range 10 {
 		lastWindow.Frame(time.Second / 60)
 	}
-	sp := win.splits["s1"]
 	size := lastWindow.Offscreen().Size()
 	y := size.H / 2
 	for x := float32(0); x < size.W; x += 2 {
 		lastWindow.Input(gi.PointerMove{Pos: geom.Pt(x, y)})
 		lastWindow.Input(gi.PointerDown{Pos: geom.Pt(x, y), Button: gi.ButtonPrimary, Clicks: 1, Time: time.Now()})
 		lastWindow.Frame(time.Second / 60)
-		if !sp.Held() {
+		if !win.dock.Held() {
 			lastWindow.Input(gi.PointerUp{Pos: geom.Pt(x, y), Button: gi.ButtonPrimary})
 			lastWindow.Frame(time.Second / 60)
 			continue
@@ -207,7 +206,7 @@ func TestTheDividerBetweenFileManagerPanesDrags(t *testing.T) {
 		lastWindow.Input(gi.PointerMove{Pos: geom.Pt(x+60, y)})
 		lastWindow.Input(gi.PointerUp{Pos: geom.Pt(x+60, y), Button: gi.ButtonPrimary})
 		lastWindow.Frame(time.Second / 60)
-		if in, ok := nextIntent(t).(app.SplitMoved); !ok || in.Split != "s1" || in.Share <= 0.5 {
+		if in, ok := nextIntent(t).(app.SplitMoved); !ok || in.Split != "#s1" || in.Share <= 0.5 {
 			t.Fatalf("dragged right, the divider sent %#v", in)
 		}
 		return
@@ -219,7 +218,7 @@ func TestTheDividerBetweenFileManagerPanesDrags(t *testing.T) {
 // its tiles, not behind them as well.
 func TestTheSwitcherHidesThePanesBehindIt(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFileManager}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFileManager}}, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1"})
 	win.openSwitcher(lastUI)
 	for range 90 {
 		lastWindow.Frame(time.Second / 60)
@@ -244,9 +243,8 @@ func TestTheSwitcherHidesThePanesBehindIt(t *testing.T) {
 func TestAPanePickedInASplitGrowsIntoItsPlace(t *testing.T) {
 	win, _, publish := windowStage(t)
 	split := &app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "p2"}, Share: 0.5}
-	alone := &app.Box{Pane: "p3"}
 	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFileManager}, {ID: "p2", Title: "b", Kind: app.KindFileManager}, {ID: "p3", Title: "c", Kind: app.KindFileManager}},
-		Stage: alone, Focus: "p3", Groups: map[string]*app.Box{"p1": split, "p2": split, "p3": alone}})
+		Layout: boxLayout(split), Focus: "p2"})
 	for range 5 {
 		lastWindow.Frame(time.Second / 60)
 	}
@@ -279,7 +277,7 @@ func TestTheCursorHidesWhileTheWindowIsInactive(t *testing.T) {
 	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
 	sh.Set("p1", screen.Open(sessiontest.New(), vt.DefaultPalette(), quiet))
 	t.Cleanup(func() { _ = sh.Get("p1").T.Close() })
-	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1"}}, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1"})
 	for range 5 {
 		lastWindow.Frame(time.Second / 60)
 	}

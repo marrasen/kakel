@@ -24,6 +24,7 @@ func Shortcuts() *ui.Keymap {
 		{Key: input.KeyD, Mods: input.ModCtrl | input.ModShift}:        "pane.splitRight",
 		{Key: input.KeyE, Mods: input.ModCtrl | input.ModShift}:        "pane.splitDown",
 		{Key: input.KeyU, Mods: input.ModCtrl | input.ModShift}:        "pane.popOut",
+		{Key: input.KeyM, Mods: input.ModCtrl | input.ModShift}:        "pane.maximize",
 		{Key: input.KeyS, Mods: input.ModCtrl | input.ModShift}:        "secrets.use",
 		{Key: input.KeyW, Mods: input.ModCtrl | input.ModShift}:        "pane.close",
 		{Key: input.KeyTab, Mods: input.ModCtrl}:                       "pane.next",
@@ -65,7 +66,7 @@ var commands = []struct{ id, title string }{
 	{"conn.files", "New File Manager"},
 	{"pane.splitRight", "Split Right"},
 	{"pane.splitDown", "Split Down"},
-	{"pane.popOut", "Pop Out Pane"},
+	{"pane.popOut", "Pane into Tabs Beside"},
 	{"pane.close", "Close Pane"},
 	{"pane.next", "Next Recent Pane"},
 	{"pane.previous", "Previous Recent Pane"},
@@ -115,7 +116,7 @@ var commands = []struct{ id, title string }{
 	{"serve.attach", "Connect to Window"},
 	{"serve.ssh", "Tunnels with ssh"},
 	{"conn.disconnect", "Disconnect"},
-	{"pane.titles", "Pane Titles"},
+	{"pane.maximize", "Maximize Pane"},
 	{"view.fullScreen", "Full Screen"},
 	{"view.pin", "Always on Top"},
 	{"pane.typeAll", "Type in All Panes"},
@@ -200,7 +201,7 @@ var commandIcons = map[string]*icon.Icon{
 	"pane.close":             icon.X,
 	"pane.next":              icon.Redo2,
 	"pane.previous":          icon.Undo2,
-	"pane.titles":            icon.PanelTop,
+	"pane.maximize":          icon.Maximize2,
 	"pane.nextInSidebar":     icon.ArrowDown,
 	"tab.next":               icon.ArrowRight,
 	"tab.previous":           icon.ArrowLeft,
@@ -320,7 +321,7 @@ var menus = []struct {
 	{"View", []menuItem{
 		{id: "sidebar.toggle", title: "Machines"},
 		{id: "servers.window", title: "Open Machines Window"},
-		{id: "pane.titles", title: "Pane Titles"},
+		{id: "pane.maximize", title: "Maximize Pane"},
 		{id: "view.fullScreen", title: "Full Screen"},
 		{id: "view.pin", title: "Always on Top"},
 		{id: "view.jobs", title: "Jobs"},
@@ -331,7 +332,7 @@ var menus = []struct {
 	}},
 	{"Pane", []menuItem{
 		{title: "Split", caption: true},
-		{id: "pane.splitRight", title: "Right"}, {id: "pane.splitDown", title: "Down"}, {id: "pane.popOut", title: "Pop Out"},
+		{id: "pane.splitRight", title: "Right"}, {id: "pane.splitDown", title: "Down"}, {id: "pane.popOut", title: "Into Tabs Beside"},
 		{title: "Go To", caption: true},
 		{id: "pane.nextInSidebar", title: "Next"}, {id: "pane.previousInSidebar", title: "Previous"},
 		{id: "view.switcher", title: "All Panes…"}, {id: "sidebar.focus", title: "Machines"},
@@ -345,7 +346,6 @@ var menus = []struct {
 		{id: "tab.next", title: "Next"}, {id: "tab.previous", title: "Previous"},
 		{title: "Move", caption: true},
 		{id: "tab.moveLeft", title: "Left"}, {id: "tab.moveRight", title: "Right"},
-		{id: "pane.popOut", title: "Pane to New Tab"},
 		{id: "tab.newWindow", title: "Tab to New Window"},
 		{id: "tab.close", title: "Close Tab", group: true},
 	}},
@@ -418,7 +418,7 @@ var commandAlso = map[string][]string{
 	"tab.previous":          {"switch", "left"},
 	"tab.moveRight":         {"reorder", "shift"},
 	"tab.moveLeft":          {"reorder", "shift"},
-	"tab.close":             {"every pane in it"},
+	"tab.close":             {"pane"},
 	"tab.newWindow":         {"detach", "tear off", "pop out", "own window"},
 	"servers.window":        {"tool window", "machines", "sidebar", "own window"},
 	"secrets.window":        {"tool window", "password", "vault", "own window"},
@@ -452,7 +452,7 @@ var commandAlso = map[string][]string{
 	"view.editTheme":        {"theme editor", "cursor", "glide", "animation", "motion", "colour", "color", "corners"},
 	"view.themesReload":     {"colour", "color", "colors", "reread"},
 	"view.themesStart":      {"colour", "color", "colors", "write", "create", "edit"},
-	"pane.titles":           {"show", "hide", "toggle", "names", "line"},
+	"pane.maximize":         {"fill", "zoom", "restore", "full"},
 	"shell.termProgram":     {"term_program", "compatibility", "pictures", "images", "calls itself"},
 	"sshkey.make":           {"make", "create", "generate", "keygen", "ed25519"},
 	"sshkey.forget":         {"forget", "kept", "delete", "list", "identity", "clear"},
@@ -527,7 +527,7 @@ func commandIntent(id string) (gunim.Intent, bool) {
 	case "tab.moveLeft":
 		return app.ShiftTab{Back: true}, true
 	case "tab.close":
-		return app.CloseTab{}, true
+		return app.ClosePane{}, true
 	case "app.tray":
 		return app.ToggleTray{}, true
 	case "app.launcher":

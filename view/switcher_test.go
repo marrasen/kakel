@@ -28,7 +28,7 @@ func switcherStage(t *testing.T) *Window {
 		t.Cleanup(func() { _ = sh.Get(id).T.Close() })
 		panes = append(panes, app.Pane{ID: id, Title: "Terminal " + id})
 	}
-	publish(app.State{Panes: panes, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
+	publish(app.State{Panes: panes, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1"})
 	win.run("view.switcher", lastUI)
 	for range 60 {
 		lastWindow.Frame(time.Second / 60)
@@ -67,7 +67,7 @@ func TestTheSwitcherShowsAPaneThatIsNoTerminal(t *testing.T) {
 	sh.Set("p2", screen.Open(sessiontest.New(), vt.DefaultPalette(), quiet))
 	t.Cleanup(func() { _ = sh.Get("p2").T.Close() })
 	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "Copies", Kind: app.KindCopies}, {ID: "p2", Title: "Terminal 2"}},
-		Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
+		Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1"})
 	for range 10 {
 		lastWindow.Frame(time.Second / 60)
 	}
@@ -126,7 +126,7 @@ func TestThePanePickedIsLiveAtOnce(t *testing.T) {
 // it, fading.
 func TestTheSwitcherCoversTheStageAtOnce(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFileManager}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFileManager}}, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1"})
 	for range 5 {
 		lastWindow.Frame(time.Second / 60)
 	}
@@ -141,59 +141,14 @@ func TestTheSwitcherCoversTheStageAtOnce(t *testing.T) {
 	t.Fatalf("on its first frame, the switcher leaves the stage at %v showing", sw.stageAt)
 }
 
-// While panes show their titles, a tile is the pane with its caption
-// line: it starts where both stand, and lands where both will stand, so
-// nothing jumps as the switcher hands the stage back.
-func TestASwitcherTileCarriesThePanesCaption(t *testing.T) {
-	win, sh, publish := windowStage(t)
-	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
-	var panes []app.Pane
-	for _, id := range []string{"p1", "p2"} {
-		sh.Set(id, screen.Open(sessiontest.New(), vt.DefaultPalette(), quiet))
-		t.Cleanup(func() { _ = sh.Get(id).T.Close() })
-		panes = append(panes, app.Pane{ID: id, Title: "Terminal " + id})
-	}
-	st := app.State{Panes: panes, Stage: &app.Box{Pane: "p1"}, Focus: "p1", PaneTitles: true}
-	publish(st)
-	for range 5 {
-		lastWindow.Frame(time.Second / 60)
-	}
-	slot, ok := lastUI.Bounds(win.captions["p1"])
-	if !ok {
-		t.Fatal("p1 has no caption line")
-	}
-	win.openSwitcher(lastUI)
-	sw := win.sw
-	if got := sw.tiles[0].box.Value(); got != slot || !sw.tiles[0].titled {
-		t.Fatalf("p1's tile starts at %v, want its pane and caption at %v", got, slot)
-	}
-	for range 60 {
-		lastWindow.Frame(time.Second / 60)
-	}
-	sw.pick(1, lastUI)
-	st.Stage, st.Focus = &app.Box{Pane: "p2"}, "p2"
-	publish(st)
-	for range 60 {
-		lastWindow.Frame(time.Second / 60)
-	}
-	// p2 was never on stage before: its tile has the caption too, and
-	// the terminal under it stands where the tile's pane landed.
-	got := sw.tiles[1].box.Value()
-	got.Min.Y += captionHeight
-	want, _ := lastUI.Bounds(win.terms["p2"])
-	if !sw.tiles[1].titled || got != want {
-		t.Fatalf("p2's tile landed with its pane at %v (titled %v), but p2 stands at %v", got, sw.tiles[1].titled, want)
-	}
-}
-
 // A file manager pane's caption names where it runs alone: the file
 // manager names the folder, and the two would say the folder twice.
 func TestAFileManagerPanesCaptionNamesOnlyItsMachine(t *testing.T) {
 	win, _, _ := windowStage(t)
-	if got := win.captionOf(app.Pane{ID: "p1", Title: "tmp", Kind: app.KindFileManager}); got != "This computer" {
+	if got := captionIn(win.machineList, app.Pane{ID: "p1", Title: "tmp", Kind: app.KindFileManager}); got != "This computer" {
 		t.Fatalf("a file manager pane here is captioned %q", got)
 	}
-	if got := win.captionOf(app.Pane{ID: "p2", Title: "Terminal 1"}); got != "This computer: Terminal 1" {
+	if got := captionIn(win.machineList, app.Pane{ID: "p2", Title: "Terminal 1"}); got != "This computer: Terminal 1" {
 		t.Fatalf("a terminal here is captioned %q", got)
 	}
 }

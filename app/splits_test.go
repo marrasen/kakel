@@ -15,19 +15,16 @@ func TestAPaneMovesIntoASplit(t *testing.T) {
 	a := newApp(w.Client(), screen.NewShells())
 	a.addPane(Pane{ID: "p1", Title: "one", Kind: KindFileManager}, nil, Placement{})
 	a.addPane(Pane{ID: "p2", Title: "two", Kind: KindFileManager}, nil, Placement{})
-	if a.groupOf["p1"] == a.groupOf["p2"] {
-		t.Fatal("the panes began together")
+	if !sameTabs(a, "p1", "p2") {
+		t.Fatal("the panes began apart")
 	}
 	a.handle(MovePane{Pane: "p2", Beside: "p1"})
-	g := a.groupOf["p1"]
-	if a.groupOf["p2"] != g {
-		t.Fatalf("moved, the panes are in groups %d and %d", g, a.groupOf["p2"])
+	b := boxOf(a.layout.Window(a.frontID()).Root)
+	if b.A == nil || b.A.Pane != "p1" || b.B == nil || b.B.Pane != "p2" || b.Vertical {
+		t.Fatalf("moved, the window shows %+v", b)
 	}
-	if b := a.groups[g]; b.A == nil || b.A.Pane != "p1" || b.B == nil || b.B.Pane != "p2" || b.Vertical {
-		t.Fatalf("moved, the group is %+v", b)
-	}
-	if len(a.groups) != 1 || a.st.Focus != "p2" {
-		t.Fatalf("moved, there are %d groups and the focus is on %s", len(a.groups), a.st.Focus)
+	if a.st.Focus != "p2" {
+		t.Fatalf("moved, the focus is on %s", a.st.Focus)
 	}
 }
 
@@ -41,16 +38,18 @@ func TestAPanePickedInASplitsChooserTakesItsPlace(t *testing.T) {
 	a.focus("f1")
 	a.handle(ChooseSplit{Vertical: true})
 	chooser := a.st.Focus
-	g := a.groupOf["f1"]
-	if b := a.groups[g]; a.kindOfPane(chooser) != KindChooser || b.B == nil || b.B.Pane != chooser || !b.Vertical {
-		t.Fatalf("split, the group is %+v and the focus on %s", b, chooser)
+	a.keepFocusShown()
+	root := func() *Box { return boxOf(a.layout.Window(a.frontID()).Root) }
+	if b := root(); a.kindOfPane(chooser) != KindChooser || b.B == nil || b.B.Pane != chooser || !b.Vertical {
+		t.Fatalf("split, the window shows %+v and the focus on %s", b, chooser)
 	}
 	a.handle(MovePane{Pane: "f2", Instead: chooser})
-	if b := a.groups[g]; b.A.Pane != "f1" || b.B.Pane != "f2" || !b.Vertical {
-		t.Fatalf("picked, the group is %+v", b)
+	a.keepFocusShown()
+	if b := root(); b.A.Pane != "f1" || b.B.Pane != "f2" || !b.Vertical {
+		t.Fatalf("picked, the window shows %+v", b)
 	}
-	if a.has(chooser) || len(a.st.Panes) != 2 || a.st.Focus != "f2" || len(a.groups) != 1 {
-		t.Fatalf("picked, the panes are %+v, the focus on %s, %d groups", a.st.Panes, a.st.Focus, len(a.groups))
+	if a.has(chooser) || len(a.st.Panes) != 2 || a.st.Focus != "f2" {
+		t.Fatalf("picked, the panes are %+v, the focus on %s", a.st.Panes, a.st.Focus)
 	}
 }
 
@@ -63,9 +62,8 @@ func TestANewShellPickedInASplitsChooserTakesItsPlace(t *testing.T) {
 	chooser := a.st.Focus
 	a.handle(SplitPane{Instead: chooser})
 	waitFor(t, a, "the new shell", func() bool { return !a.has(chooser) })
-	g := a.groupOf[first]
-	if b := a.groups[g]; b.A == nil || b.A.Pane != first || b.B == nil || a.kindOfPane(b.B.Pane) != KindTerminal {
-		t.Fatalf("picked, the group is %+v", b)
+	if b := boxOf(a.layout.Window(a.frontID()).Root); b.A == nil || b.A.Pane != first || b.B == nil || a.kindOfPane(b.B.Pane) != KindTerminal {
+		t.Fatalf("picked, the window shows %+v", b)
 	}
 	a.handle(ChooseSplit{})
 	chooser = a.st.Focus
@@ -88,24 +86,18 @@ func TestASecondPickInAChooserLandsBesideItsPane(t *testing.T) {
 	chooser := a.st.Focus
 	a.handle(MovePane{Pane: "f2", Instead: chooser})
 	a.addPane(Pane{ID: "f4", Title: "four", Kind: KindFileManager}, nil, Placement{Instead: chooser})
-	if a.groupOf["f4"] != a.groupOf["f1"] {
-		t.Fatalf("the second pick went to group %d, the split is %d", a.groupOf["f4"], a.groupOf["f1"])
+	if !inSplit(a, "f4", "f1") {
+		t.Fatalf("the second pick stands with %v, not beside f1", tabsWith(a, "f4"))
 	}
 }
 
-// Each pane's arrangement is told to the window, the ones off stage
-// too, so the switcher can grow a pane into its place.
-func TestEveryPanesGroupIsPublished(t *testing.T) {
-	w := gunimtest.New(t, geom.Sz(400, 300), nil)
-	a := newApp(w.Client(), screen.NewShells())
-	a.addPane(Pane{ID: "f1", Title: "one", Kind: KindFileManager}, nil, Placement{})
-	a.addPane(Pane{ID: "f2", Title: "two", Kind: KindFileManager}, nil, Placement{Beside: "f1"})
-	a.addPane(Pane{ID: "f3", Title: "three", Kind: KindFileManager}, nil, Placement{})
-	st := a.stateFor(a.cur, a.st)
-	if g := st.Groups["f1"]; g == nil || g != st.Groups["f2"] || g.A == nil || g.B == nil {
-		t.Fatalf("f1 and f2 are in %+v and %+v", st.Groups["f1"], st.Groups["f2"])
-	}
-	if g := st.Groups["f3"]; g == nil || g.Pane != "f3" {
-		t.Fatalf("f3 is in %+v", g)
+// Every window's layout is told to each, so a tab dragged in from
+// another is known.
+func TestEveryWindowsLayoutIsPublished(t *testing.T) {
+	a, one, two := twoWindowApp(t)
+	st := a.stateFor(one, a.st)
+	st.Layout = a.layout.Clone()
+	if _, ok := st.Layout.Where("p3"); !ok || a.ownerOf("p3") != two {
+		t.Fatalf("the state's layout does not hold p3: %+v", st.Layout)
 	}
 }

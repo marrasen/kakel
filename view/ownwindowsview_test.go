@@ -11,56 +11,50 @@ import (
 
 	"github.com/marrasen/gunim/geom"
 	gi "github.com/marrasen/gunim/input"
+	"github.com/marrasen/gunim/widget/dock"
 )
 
-// A pane dragged over the window from another docks beside the pane it
-// is let go over, as a tab does; let go above the stage, it moves in on
-// a tab of its own.
+// A pane dragged over the window from another goes where it is let go,
+// as a tab does; its own pane, dropped back on it, is no move.
 func TestAPaneDroppedFromAnotherWindowMovesIn(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(app.State{Window: 2, Panes: []app.Pane{{ID: "p1", Title: "Jobs", Kind: app.KindJobs}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
-	for len(lastWindow.Client().Intents()) > 0 {
-		<-lastWindow.Client().Intents()
-	}
-	at := geom.Pt(450, 300)
-	lastWindow.Input(gi.Drop{Pos: at, Data: app.PaneDrag{Pane: "p9", Window: 1}})
+	l := boxLayout(&app.Box{Pane: "p1"})
+	id := l.AddWindow(true)
+	l.Add("p9", dock.Target{Win: id})
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "Jobs", Kind: app.KindJobs}}, Layout: l, Focus: "p1"})
+	drain()
+	r := paneRect(t, win, "p1")
+	lastWindow.Input(gi.Drop{Pos: geom.Pt(r.Max.X-8, r.Center().Y), Data: app.PaneDrag{Pane: "p9", Window: id}})
 	lastWindow.Frame(time.Second / 60)
-	if in, ok := nextIntent(t).(app.DockPane); !ok || in.Pane != "p9" || in.Beside != "p1" {
-		t.Fatalf("let go over p1, the drop sent %#v", in)
+	if in, ok := nextIntent(t).(app.MoveTab); !ok || in.Pane != "p9" || in.To.Side != dock.Right || in.To.At != "p1" && in.To.At != "#gp1" {
+		t.Fatalf("let go at p1's right edge, the drop sent %#v", in)
 	}
-	stage, _ := lastUI.Bounds(win.stage)
-	lastWindow.Input(gi.Drop{Pos: geom.Pt(stage.Center().X, stage.Min.Y-3), Data: app.PaneDrag{Pane: "p9", Window: 1}})
-	lastWindow.Frame(time.Second / 60)
-	if in, ok := nextIntent(t).(app.PaneToWindow); !ok || in.Pane != "p9" {
-		t.Fatalf("let go above the stage, the drop sent %#v", in)
-	}
-	// Its own pane, dropped back on it, is no move.
-	lastWindow.Input(gi.Drop{Pos: at, Data: app.PaneDrag{Pane: "p1", Window: 2}})
+	lastWindow.Input(gi.Drop{Pos: r.Center(), Data: app.PaneDrag{Pane: "p1", Window: 0}})
 	lastWindow.Frame(time.Second / 60)
 	select {
 	case env := <-lastWindow.Client().Intents():
-		if _, ok := env.Intent.(app.PaneToWindow); ok {
+		if _, ok := env.Intent.(app.MoveTab); ok {
 			t.Fatalf("its own pane dropped back sent %#v", env.Intent)
 		}
 	case <-time.After(50 * time.Millisecond):
 	}
 }
 
-// A window with another pane dragged over it lights up.
-func TestAWindowLightsUnderAPaneFromAnother(t *testing.T) {
+// A pane from another window dragged over this one is the dock's, as a
+// tab is; its own pane over itself is not.
+func TestAWindowTakesAPaneFromAnother(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(app.State{Window: 2, Panes: []app.Pane{{ID: "p1", Title: "Jobs", Kind: app.KindJobs}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
-	if !win.paneDrop(gi.DragOver{Data: app.PaneDrag{Pane: "p9", Window: 1}}, lastUI) {
+	l := boxLayout(&app.Box{Pane: "p1"})
+	id := l.AddWindow(true)
+	l.Add("p9", dock.Target{Win: id})
+	publish(app.State{Window: 0, Panes: []app.Pane{{ID: "p1", Title: "Jobs", Kind: app.KindJobs}}, Layout: l, Focus: "p1"})
+	settle()
+	at := paneRect(t, win, "p1").Center()
+	if !win.dragOverDock(gi.DragOver{Pos: at, Data: app.PaneDrag{Pane: "p9", Window: id}}, lastUI) {
 		t.Fatal("the window did not take a pane from another")
 	}
-	if win.paneDrop(gi.DragOver{Data: app.PaneDrag{Pane: "p1", Window: 2}}, lastUI) {
-		t.Fatal("the window took its own pane")
-	}
-	for range 30 {
-		lastWindow.Frame(time.Second / 60)
-	}
-	if win.dropLit.Value() < 0.9 {
-		t.Fatalf("the window is lit %.2f", win.dropLit.Value())
+	if win.dragOverDock(gi.DragOver{Pos: at, Data: app.PaneDrag{Pane: "p1", Window: 0}}, lastUI) {
+		t.Fatal("the window took its own pane, over itself")
 	}
 }
 
@@ -134,7 +128,7 @@ func TestATileTakenByAnotherWindowMoves(t *testing.T) {
 		t.Cleanup(func() { _ = sh.Get(id).T.Close() })
 	}
 	all := []app.Pane{{ID: "p1", Title: "a"}, {ID: "p2", Title: "b"}, {ID: "p3", Title: "c", Window: 2}}
-	st := app.State{Window: 1, Panes: all[:2], AllPanes: all, Stage: &app.Box{Pane: "p1"}, Focus: "p1",
+	st := app.State{Window: 1, Panes: all[:2], AllPanes: all, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1",
 		Overview: []app.OverWindow{
 			{ID: 1, Tabs: []app.OverTab{{Group: 1, Box: &app.Box{Pane: "p1"}, Pane: "p1"}, {Group: 2, Box: &app.Box{Pane: "p2"}, Pane: "p2"}}, Front: 1},
 			{ID: 2, Tabs: []app.OverTab{{Group: 3, Box: &app.Box{Pane: "p3"}, Pane: "p3"}}, Front: 3},

@@ -7,6 +7,7 @@ import (
 	"image/color"
 	"log"
 	"maps"
+	"math"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -33,6 +34,7 @@ import (
 	"github.com/marrasen/gunim/paint"
 	"github.com/marrasen/gunim/theme"
 	"github.com/marrasen/gunim/widget"
+	"github.com/marrasen/gunim/widget/dock"
 
 	"github.com/marrasen/kakel/meter"
 	"github.com/marrasen/kakel/relay"
@@ -63,7 +65,7 @@ type Window struct {
 	wrote    *gunim.UI
 	retrying bool
 	anim.Group
-	top *widget.Flex
+	top gunim.Node
 	bar *widget.Menubar
 	// serversView is the Machines pane, which holds list, the machines
 	// and what is open on them; rows are the list's rows as last
@@ -76,18 +78,16 @@ type Window struct {
 	// the keyboard came into, asked to be the one in front.
 	listShown bool
 	entering  string
-	// tabs is the tab bar, and titleRow the title bar it sits in, after
-	// barBox, which holds the menu button.
-	tabs     *tabBar
-	titleRow *widget.Flex
-	barBox   *widget.Sized
+	// tabs is how the title row stands, and leadRow what stands at its
+	// left: the app's mark and the menu button, or the window's title.
+	tabs    *titleRow
+	leadRow *widget.Flex
+	barBox  *widget.Sized
 	// barFade holds barBox, fading the window's title in and out as the
 	// tabs come and go; paneTitle is the title of the pane in front, for
 	// the bar's subtitle while no tabs show.
 	barFade   *titleFader
 	paneTitle string
-	// dock is where a tab dragged over the stage would join a split.
-	dock tabDock
 	// cards are the Machines pane's machines, a card each.
 	cards *serverCards
 	stage *stage
@@ -108,14 +108,10 @@ type Window struct {
 	// readers are the readers, by pane.
 	readers  map[string]*reader
 	choosers map[string]*chooser
-	// groups are how each pane is arranged, by pane, for the switcher.
-	groups map[string]*app.Box
-	// typeAll says what is typed goes to every terminal in the split on
-	// stage, stageBox, as Type in All Panes asks; lastChips is the
-	// state the chips were last shown from, to show them again as it
-	// turns on or off.
+	// typeAll says what is typed goes to every terminal showing, as Type
+	// in All Panes asks; lastChips is the state the chips were last shown
+	// from, to show them again as it turns on or off.
 	typeAll   bool
-	stageBox  *app.Box
 	lastChips app.State
 	// tunnelPanes are the tunnels' panes, and savedTunnels the tunnels
 	// kept, as the palette lists them.
@@ -138,15 +134,13 @@ type Window struct {
 	share app.Share
 	// serving is the serving as last published.
 	serving app.Serving
-	// bells is the bells as last published, titles whether panes show
-	// their titles, and captions the line over each pane that does.
+	// bells is the bells as last published.
 	// stopQuiet cancels the wake for the next row's note to go quiet.
 	stopQuiet func()
 	// presenting says the window fills the screen with the stage alone:
-	// the menu bar and the status line slide away. barShade holds the
-	// menu bar, to slide it up.
+	// title row and the status line slide away, as far as barOpen says.
 	presenting bool
-	barShade   *shade
+	barOpen    *anim.Float
 	// savedCommands are the commands kept, and remoteWindows the
 	// windows connected to, as last published.
 	savedCommands []settings.SavedCommand
@@ -206,23 +200,29 @@ type Window struct {
 	bells        uint64
 	// echo sends rings out past the window's edges, pings the counts
 	// last sent for, and away says another program has the keyboard.
-	echo   widget.Echo
-	pings  app.Pings
-	away   bool
-	titles bool
-	// docked says the stage is a split, whose panes each have a line
-	// naming them, to drag them by.
-	docked bool
+	echo  widget.Echo
+	pings app.Pings
+	away  bool
+	// dropLit is how far the window lights, under a pane from another
+	// window that the dock takes nowhere.
+	dropLit *anim.Float
+	// dock is the window's tabs and splits; docked is the layout it was
+	// last given, dockFocus the pane it was last told has the keyboard,
+	// fronts the pane in front of each group, and plusMenu the menu a right
+	// click on a + opens, while it is.
+	dock      *dock.Dock
+	docked    dock.Layout
+	dockFocus string
+	fronts    map[string]string
+	plusMenu  *gunim.Popup
 	// pasteCheck says a paste of several lines, or a large one, opens
 	// in an editor first.
 	pasteCheck   bool
-	captions     map[string]*captioned
 	sharing      bool
 	savedTunnels []settings.SavedTunnel
 	// accounts are the machines with a connection log, as the palette
 	// lists them.
 	accounts []machines.ID
-	splits   map[string]*widget.Split
 	focused  string
 	palette  *widget.Palette
 	// drawings keep what each pane's node drew last, by pane, and drawn
@@ -318,9 +318,8 @@ type Window struct {
 	// winID numbers the window among kakel's own, and behind says
 	// another is in front. dropLit is how lit the window is for a pane
 	// dragged over it from another window.
-	winID   int
-	behind  bool
-	dropLit *anim.Float
+	winID  int
+	behind bool
 	// toasts shows the program's notices, and shown is the last one
 	// shown.
 	toasts *widget.Toasts
@@ -362,7 +361,6 @@ type Window struct {
 func NewWindow(sh *screen.Shells, keys *ui.Keymap, all []look.Themed) *Window {
 	w := &Window{
 		contents:     map[string]theme.Theme{},
-		stage:        newStage(),
 		shells:       sh,
 		keys:         keys,
 		terms:        map[string]*term{},
@@ -371,16 +369,11 @@ func NewWindow(sh *screen.Shells, keys *ui.Keymap, all []look.Themed) *Window {
 		choosers:     map[string]*chooser{},
 		tunnelPanes:  map[string]*tunnelPane{},
 		machinePanes: map[string]*machinePane{},
-		splits:       map[string]*widget.Split{},
-		captions:     map[string]*captioned{},
 		fmHosts:      map[string]*fmHost{},
-		dropLit:      anim.NewFloat(0),
 	}
-	w.Add(w.dropLit)
+	w.stage = newStage(func() *dock.Dock { return w.dock })
 	w.status = newStatusLine()
 	w.onStage = widget.NewThemed(w.stage, widget.Dark())
-	main := widget.Column(w.onStage, w.status).Grow(w.onStage, 1)
-	main.Cross, main.Gap = widget.CrossStretch, noGap
 	w.cards = newServerCards(w)
 	w.serversView = newServersPane(w)
 	w.bar = widget.NewMenubar()
@@ -436,15 +429,18 @@ func NewWindow(sh *screen.Shells, keys *ui.Keymap, all []look.Themed) *Window {
 	// The pin before minimize keeps the window above the others.
 	controls := widget.NewWindowControls()
 	controls.Pin = true
-	w.tabs = newTabBar(w)
+	w.dock = w.newDock()
+	w.tabs = newTitleRow()
 	w.barBox = widget.NewSized(w.bar, 0, 0)
-	w.barFade = &titleFader{child: w.barBox, tabs: w.tabs}
-	bar := widget.Row(newAppMark(), w.barFade, w.tabs, w.chips, controls).Grow(w.barFade, 1)
-	bar.Cross, bar.Gap = widget.CrossStretch, noGap
-	w.titleRow = bar
-	w.barShade = newShade(bar)
-	w.top = widget.Column(w.barShade, main).Grow(main, 1)
-	w.top.Cross, w.top.Gap = widget.CrossStretch, noGap
+	w.barFade = &titleFader{child: w.barBox, row: w.tabs}
+	w.leadRow = widget.Row(newAppMark(), w.barFade).Grow(w.barFade, 1)
+	w.leadRow.Cross, w.leadRow.Gap = widget.CrossStretch, noGap
+	tail := widget.Row(w.chips, controls)
+	tail.Cross, tail.Gap = widget.CrossStretch, noGap
+	w.barOpen = anim.NewFloat(1)
+	w.dropLit = anim.NewFloat(0)
+	w.Add(w.barOpen, w.tabs.titleFade, w.dropLit)
+	w.top = &frame{w: w, lead: w.leadRow, tail: tail, chips: w.chips, open: w.barOpen}
 	w.palette = &widget.Palette{Placeholder: "Type a command", OnPick: func(i int, u *gunim.UI) gunim.Intent {
 		if i < len(w.paletteIDs) {
 			w.run(w.paletteIDs[i], u)
@@ -590,7 +586,7 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 		case "secrets.window":
 			u.Send(w, app.ToolWindow{Kind: app.KindSecrets, At: at, Size: size})
 		default:
-			u.Send(w, app.TabToNewWindow{At: at, Size: size})
+			u.Send(w, app.PaneToNewWindow{Pane: w.focused, At: at, Size: size})
 		}
 		return true
 	case "sidebar.closeRow":
@@ -661,8 +657,8 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 	case "shell.termProgram":
 		w.termProgramDialog(u)
 		return true
-	case "pane.titles":
-		u.Send(w, app.TogglePaneTitles{})
+	case "pane.maximize":
+		w.dock.ToggleMax(w.focused, u)
 		return true
 	case "serve.attach":
 		w.connectWindowDialog(u)
@@ -828,10 +824,9 @@ func (w *Window) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids guni
 	for k := range kids.All {
 		k.Paint(p)
 	}
+	w.paintDropLit(p, f, box)
 	w.shareDrawings(f)
 	w.sayStage(f, box)
-	w.paintDropLit(p, f, box)
-	w.paintDock(p, f)
 }
 
 // openDialog shows d over the window, with the keyboard, until it
@@ -915,7 +910,7 @@ func (w *Window) showTitle(st app.State, u *gunim.UI) {
 	}
 	// The tab bar names the panes while it shows.
 	w.paneTitle = pane
-	if w.tabs.shown() {
+	if w.tabs.laid {
 		pane = ""
 	}
 	if w.bar.Subtitle != pane {
@@ -1866,7 +1861,7 @@ func (w *Window) Handle(e input.Event, u *gunim.UI) bool {
 		w.zoom(s, u)
 		return true
 	}
-	if w.paneDrop(e, u) || w.tabDrop(e, u) {
+	if w.dragOverDock(e, u) {
 		return true
 	}
 	if d, ok := e.(input.Drop); ok && len(d.Paths) > 0 {
@@ -1955,7 +1950,6 @@ func sameMap[K comparable, V any](a, b map[K]V) bool {
 // Update shows st.
 func (w *Window) Update(st app.State, u *gunim.UI) {
 	w.panes = st.Panes
-	w.groups = st.Groups
 	w.overWins, w.allPanes = overviewOf(st)
 	if st.Overviewing && !w.overviewing {
 		// Shared at once, not a while after.
@@ -2130,11 +2124,6 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 		}
 	}
 	w.pasteCheck = st.PasteCheck
-	if docked := w.isDocked(st); st.PaneTitles != w.titles || docked != w.docked {
-		w.titles, w.docked = st.PaneTitles, docked
-		// Every pane is built again, with its line or without.
-		clear(w.splits)
-	}
 	w.serving = st.Serving
 	w.showServed(st.Serving, u)
 	if w.sharing && st.Share.Code != "" {
@@ -2153,13 +2142,8 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 		w.servers(st.Saved)
 	}
 
-	keep := map[string]bool{}
 	w.placeFilePanes(st, u)
-	w.stage.show(w.build(st.Stage, keep, u), u)
-	for id, c := range w.captions {
-		c.bar.setFront(w.docked && id == st.Focus)
-	}
-	w.parkFilePanes(leavesOf(st.Stage, map[string]bool{}), u)
+	w.showLayout(st, u)
 	// After the panes are built, so one made now shows the state too.
 	if w.settings != nil && u.Presence(w.settings) != gunim.Exiting {
 		w.settings.show(st, u)
@@ -2175,11 +2159,6 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 			continue
 		}
 		mp.show(st, u)
-	}
-	for id := range w.splits {
-		if !keep[id] {
-			delete(w.splits, id)
-		}
 	}
 	open := map[string]bool{}
 	for _, p := range st.Panes {
@@ -2214,7 +2193,7 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 	if w.secrets != nil && u.Presence(w.secrets) != gunim.Exiting {
 		w.secrets.show(st.Secrets, u)
 	}
-	w.listShown = slices.ContainsFunc(boxLeaves(st.Stage, nil), func(id string) bool { return w.kindOf(id) == app.KindServers }) &&
+	w.listShown = slices.ContainsFunc(w.dock.Shown(), func(id string) bool { return w.kindOf(id) == app.KindServers }) &&
 		u.Presence(w.cards.grid) != gunim.Exiting
 	w.showServers(st, u)
 	w.vault = st.Secrets
@@ -2224,7 +2203,7 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 	if w.walk != nil {
 		// Once the stage has laid the pane reached out, the ring goes to
 		// it.
-		focus, split := st.Focus, st.Stage != nil && st.Stage.Pane == ""
+		focus, split := st.Focus, w.inSplit()
 		u.After(0, func(u *gunim.UI) { w.markWalk(focus, split, u) })
 	}
 	shared := map[string]bool{}
@@ -2244,7 +2223,6 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 			return slices.ContainsFunc(st.AllPanes, func(p app.Pane) bool { return p.ID == id })
 		})
 	}
-	w.showTabs(st, u)
 	w.showTitle(st, u)
 	if id := w.afterUnlock; id != "" && st.Secrets.Open {
 		w.run(id, u)
@@ -2297,7 +2275,10 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 		}
 		w.entering = ""
 	}
-	if w.entering == "" && w.sw == nil && w.dialog == nil && (st.Focus != w.focused || u.Focused() == nil) {
+	// A state still on its way, from before a tab was picked here, may
+	// name a pane the dock no longer shows: the next one names the right
+	// one.
+	if w.entering == "" && w.sw == nil && w.dialog == nil && (st.Focus != w.focused || u.Focused() == nil) && (st.Focus == "" || slices.Contains(w.dock.Shown(), st.Focus)) {
 		w.focused = st.Focus
 		if n := w.focusNode(st.Focus, u); n != nil {
 			u.Focus(n)
@@ -2305,7 +2286,6 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 	}
 
 	w.status.set(st.Status, u)
-	w.stageBox = st.Stage
 	w.lastChips = st
 	w.showTypeAll(u)
 	w.showChips(st)
@@ -2396,7 +2376,12 @@ func (w *Window) applies(id string) bool {
 		return len(w.keyFiles) > 0
 	case "tab.next", "tab.previous", "tab.moveLeft", "tab.moveRight", "tab.newWindow":
 		// A window's only tab has nowhere to go; it is its window.
-		return len(w.tabs.tabs) > 1
+		if id == "tab.newWindow" {
+			return len(w.panes) > 1
+		}
+		return w.groupTabs() > 1
+	case "pane.maximize":
+		return w.inSplit() || w.dock.Maxed() != ""
 	case "tab.close":
 		return w.focused != ""
 	case "app.install":
@@ -2435,8 +2420,8 @@ func (w *Window) switchOn(id string, st app.State, u *gunim.UI) (on, isSwitch bo
 		return w.typeAll, true
 	case "sidebar.toggle":
 		return slices.ContainsFunc(st.AllPanes, func(p app.Pane) bool { return p.Kind == app.KindServers }), true
-	case "pane.titles":
-		return st.PaneTitles, true
+	case "pane.maximize":
+		return w.dock.Maxed() != "", true
 	case "view.fullScreen":
 		return u.FullScreen(), true
 	case "view.pin":
@@ -2451,43 +2436,6 @@ func (w *Window) switchOn(id string, st app.State, u *gunim.UI) (on, isSwitch bo
 	return false, false
 }
 
-// build returns the nodes for b, making the ones it lacks. Terminals
-// are kept by pane, so a pane moving about keeps its screen. A split
-// is kept while its panes stay the same, and made afresh once they
-// change, so a change anywhere makes a new tree above it, which the
-// stage swaps in whole.
-func (w *Window) build(b *app.Box, keep map[string]bool, u *gunim.UI) gunim.Node {
-	switch {
-	case b == nil:
-		return nil
-	case b.Pane != "":
-		return w.paneNode(b.Pane)
-	}
-	a, c := w.build(b.A, keep, u), w.build(b.B, keep, u)
-	keep[b.ID] = true
-	if sp, ok := w.splits[b.ID]; ok {
-		if first, second := sp.Panes(); first == a && second == c {
-			if !sp.Held() && sp.Share() != b.Share {
-				sp.SetShare(b.Share, u)
-			}
-			return sp
-		}
-	}
-	sp := widget.NewSplit(a, c)
-	if b.Vertical {
-		sp.Axis = widget.Vertical
-	}
-	id := b.ID
-	sp.OnCommit = func(v float32, u *gunim.UI) gunim.Intent { return app.SplitMoved{Split: id, Share: v} }
-	sp.SetShare(b.Share, nil)
-	if b.Opening {
-		// The new pane, second, slides in from the edge.
-		sp.SlideFrom(1)
-	}
-	w.splits[b.ID] = sp
-	return sp
-}
-
 // kindOf returns the kind of pane id.
 func (w *Window) kindOf(id string) string {
 	for _, p := range w.panes {
@@ -2497,52 +2445,6 @@ func (w *Window) kindOf(id string) string {
 	}
 	return app.KindTerminal
 }
-
-// paneNode returns the node that shows pane id, made on first use,
-// under a line naming it while panes show their titles, or while the
-// stage is a split, where the line is what a pane is dragged by.
-func (w *Window) paneNode(id string) gunim.Node {
-	n := w.bareNode(id)
-	if !w.titles && (!w.docked || w.kindOf(id) == app.KindServers) {
-		// The Machines pane, the sidebar, has a title of its own.
-		return n
-	}
-	c, ok := w.captions[id]
-	if !ok || c.pane != n {
-		c = newCaptioned(w, id, n)
-		w.captions[id] = c
-	}
-	for _, p := range w.panes {
-		if p.ID != id {
-			continue
-		}
-		c.bar.label.Text = p.Title
-		if w.titles {
-			c.bar.label.Text = w.captionOf(p)
-		}
-	}
-	return c
-}
-
-// isDocked reports whether st's stage is a split of two or more panes,
-// the Machines pane, the sidebar, apart: each then has a line naming
-// it, to drag it by.
-func (w *Window) isDocked(st app.State) bool {
-	n := 0
-	for _, id := range boxLeaves(st.Stage, nil) {
-		for _, p := range st.Panes {
-			if p.ID == id && p.Kind != app.KindServers {
-				n++
-			}
-		}
-	}
-	return n > 1
-}
-
-// captionOf is the line over pane p while panes show their titles:
-// where it runs, and its title. A file manager pane's is where it runs
-// alone: the file manager names the folder already.
-func (w *Window) captionOf(p app.Pane) string { return captionIn(w.machineList, p) }
 
 // titleOf is what the window's title and a tab call pane p, as titleIn
 // says.
@@ -2575,7 +2477,9 @@ func titleIn(list []machines.Info, p app.Pane) string {
 	return p.Title + " on " + on
 }
 
-// captionIn is captionOf, naming machines from list.
+// captionIn is where pane p runs and its title, naming machines from
+// list. A file manager pane's is where it runs alone: the file manager
+// names the folder already.
 func captionIn(list []machines.Info, p app.Pane) string {
 	where := nameIn(list, p.Machine)
 	switch {
@@ -2785,83 +2689,147 @@ func (w *Window) term(id string) *term {
 	return t
 }
 
-// stage holds the arrangement on screen, and fills the space it has.
+// stage holds the panes the dock shows, each where the dock says, under
+// the dock's bars and dividers. A pane keeps the size it comes to rest at
+// while a split slides, cut to the room it has on the way, so a terminal
+// is resized once, as the slide ends.
 type stage struct {
 	anim.Group
-	shown gunim.Node
-	// cover is how much of the window's background still lies over what
-	// came on stage as the tab in front changed, from 1 down to 0, and
-	// from is the side the tab picked lies on: -1 left, 1 right, 0
-	// neither. What came clears from that side first.
-	cover *anim.Float
-	from  float32
+	dock func() *dock.Dock
+	// origin is where the stage stands in the dock's space.
+	origin geom.Point
+	shown  []string
+	nodes  map[string]gunim.Node
+	ids    map[gunim.Node]string
+	// covers are the panes coming in as a tab picked came to the front.
+	covers map[string]*paneCover
 }
 
-func newStage() *stage {
-	s := &stage{cover: anim.NewFloat(0)}
-	s.Add(s.cover)
-	return s
+// paneCover is how much of the window's background still lies over a
+// pane that came to the front, from 1 down to 0, and from the side its
+// tab lies on: -1 left, 1 right, 0 neither. What came clears from that
+// side first.
+type paneCover struct {
+	left *anim.Float
+	from float32
+}
+
+func newStage(d func() *dock.Dock) *stage {
+	return &stage{dock: d, nodes: map[string]gunim.Node{}, ids: map[gunim.Node]string{}, covers: map[string]*paneCover{}}
 }
 
 // stageIn is how what comes on stage with another tab clears: quickly,
 // so a switch never waits on it.
 var stageIn = anim.Tween{Duration: 150 * time.Millisecond, Ease: anim.EaseOut}
 
-// comeIn shows what is on stage now coming in, from the side from says.
-// Only the drawing moves: the panes are in place, and the keyboard is
-// where it goes, from the start.
-func (s *stage) comeIn(from float32) {
-	s.from = from
-	s.cover.Jump(1)
-	s.cover.Animate(0, stageIn)
+// comeIn shows pane id coming in, from the side from says. Only the
+// drawing moves: the pane is in place, and the keyboard is where it goes,
+// from the start.
+func (s *stage) comeIn(id string, from float32) {
+	c := &paneCover{left: anim.NewFloat(1), from: from}
+	c.left.Animate(0, stageIn)
+	s.covers[id] = c
 }
 
-// show puts n on stage in place of what was there. The old nodes leave
-// before the new arrive, so a pane in both moves across and stays.
-func (s *stage) show(n gunim.Node, u *gunim.UI) {
-	if n == s.shown {
-		return
+// Step implements [gunim.Animator].
+func (s *stage) Step(dt time.Duration) bool {
+	moving := s.Group.Step(dt)
+	for id, c := range s.covers {
+		if c.left.Step(dt) {
+			moving = true
+		} else {
+			delete(s.covers, id)
+		}
 	}
-	if s.shown != nil {
-		u.Remove(s.shown)
-	}
-	s.shown = n
-	if n != nil {
-		u.Insert(s, n)
-	}
+	return moving
 }
 
-// Layout implements [gunim.Node]: what is on stage takes it all. What
-// left with the tab before takes no room: its parts that animate their
-// own leaving, as a machine's cards fade, hold it in the tree until they
-// are done, and it must not show while they are.
+// show has the stage hold panes ids, each shown by the node node gives.
+// Those leaving go before the new arrive, so a pane moving keeps its
+// node.
+func (s *stage) show(ids []string, node func(string) gunim.Node, u *gunim.UI) {
+	wanted := map[string]gunim.Node{}
+	for _, id := range ids {
+		wanted[id] = node(id)
+	}
+	for id, n := range s.nodes {
+		if wanted[id] != n {
+			u.Remove(n)
+			delete(s.nodes, id)
+			delete(s.ids, n)
+			delete(s.covers, id)
+		}
+	}
+	for _, id := range ids {
+		if n := wanted[id]; s.nodes[id] != n {
+			s.nodes[id], s.ids[n] = n, id
+			u.Insert(s, n)
+		}
+	}
+	s.shown = slices.Clone(ids)
+}
+
+// Layout implements [gunim.Node]: each pane on stage where the dock has
+// it, at the size it comes to rest at. What left with the tab before
+// takes no room: its parts that animate their own leaving, as a machine's
+// cards fade, hold it in the tree until they are done, and it must not
+// show while they are.
 func (s *stage) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children) geom.Size {
+	d := s.dock()
 	for k := range kids.All {
-		if k.Node() != s.shown {
+		id, on := s.ids[k.Node()]
+		if !on || k.Presence() == gunim.Exiting {
 			k.Layout(gunim.Constraints{})
 			continue
 		}
-		k.Layout(gunim.Tight(c.Max))
-		k.Place(geom.Point{})
+		r, ok := d.Rect(id)
+		final, _ := d.FinalRect(id)
+		if !ok {
+			k.Layout(gunim.Constraints{})
+			continue
+		}
+		k.Layout(gunim.Tight(final.Size()))
+		k.Place(r.Min.Sub(s.origin))
 	}
 	return c.Max
 }
 
-// Paint implements [gunim.Node]. What came on stage with another tab
-// draws as it is, unmoved, so a terminal draws its cells as it did the
-// frame before; the background lies over it, thinning, as a single
-// shape. That is far cheaper on a large window than a layer the size
-// of the stage, faded or moved, would be.
+// Paint implements [gunim.Node]. A pane draws as it is, unmoved, so a
+// terminal draws its cells as it did the frame before; a pane coming in
+// has the background over it, thinning, as a single shape. That is far
+// cheaper on a large window than a layer the size of a pane, faded or
+// moved, would be.
 func (s *stage) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gunim.Children) {
-	// Only what is on stage: what left with the tab before is gone at
-	// once, and the cover clears off what came.
+	dk := s.dock()
 	for k := range kids.All {
-		if k.Node() == s.shown {
+		id, on := s.ids[k.Node()]
+		if !on || k.Presence() == gunim.Exiting {
+			continue
+		}
+		at, ok := dk.Rect(id)
+		if !ok {
+			continue
+		}
+		final, _ := dk.FinalRect(id)
+		r := geom.Rect{Min: at.Min.Sub(s.origin), Max: at.Max.Sub(s.origin)}
+		if d := at.Size(); math.Abs(float64(d.W-final.Size().W)) > 0.5 || math.Abs(float64(d.H-final.Size().H)) > 0.5 {
+			func() {
+				defer p.Layer(paint.LayerOpts{Bounds: r, Opacity: 1, Clip: true})()
+				k.Paint(p)
+			}()
+		} else {
 			k.Paint(p)
 		}
+		if c := s.covers[id]; c != nil {
+			paintCover(p, f, r, c)
+		}
 	}
-	c := min(max(s.cover.Value(), 0), 1)
-	if c <= 0 || box.W <= 0 || box.H <= 0 {
+}
+
+// paintCover lies the window's background over r, as far as c has left.
+func paintCover(p *paint.Painter, f gunim.Frame, r geom.Rect, pc *paneCover) {
+	c := min(max(pc.left.Value(), 0), 1)
+	if c <= 0 || r.Size().W <= 0 || r.Size().H <= 0 {
 		return
 	}
 	bg := widget.Background.Get(f.Theme)
@@ -2870,14 +2838,13 @@ func (s *stage) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gunim
 		v.A = uint8(float32(bg.A)*min(max(c, 0), 1) + 0.5)
 		return v
 	}
-	r := geom.Rect{Max: box.Point()}
-	if s.from == 0 {
+	if pc.from == 0 {
 		p.RRect(r, 0, paint.Solid(at(c)))
 		return
 	}
 	// The side the tab lies on clears ahead of the other.
-	near, far := geom.Pt(0, 0), geom.Pt(box.W, 0)
-	if s.from > 0 {
+	near, far := r.Min, geom.Pt(r.Max.X, r.Min.Y)
+	if pc.from > 0 {
 		near, far = far, near
 	}
 	p.RRect(r, 0, paint.Fill{Gradient: &paint.Gradient{From: near, To: far, Start: at(1.5*c - 0.5), End: at(1.5 * c)}})
@@ -3954,59 +3921,16 @@ func (w *Window) present(on bool, u *gunim.UI) {
 	w.presenting = on
 	u.SetFullScreen(on)
 	spring := widget.Settle.Get(u.Theme())
-	w.barShade.show(!on, spring)
+	to := float32(1)
+	if on {
+		to = 0
+	}
+	w.barOpen.Animate(to, spring)
 	w.status.hide(on, u)
 	if on {
 		w.toast(widget.Toast{Title: "Full screen", Body: "F11 brings the menus back."}, u)
 	}
 	u.Invalidate()
-}
-
-// shade holds a strip across the window, such as the menu bar, that
-// slides up out of sight and back down. Its child keeps its own height
-// all the while, and is clipped to what shows.
-type shade struct {
-	anim.Group
-	child gunim.Node
-	// open is how much shows, from 0 to 1.
-	open *anim.Float
-}
-
-func newShade(child gunim.Node) *shade {
-	s := &shade{child: child, open: anim.NewFloat(1)}
-	s.Add(s.open)
-	return s
-}
-
-// show slides the strip down into sight, or with on unset up out of it.
-func (s *shade) show(on bool, spring anim.Spring) {
-	to := float32(0)
-	if on {
-		to = 1
-	}
-	s.open.Animate(to, spring)
-}
-
-// Children implements [gunim.Composite].
-func (s *shade) Children() []gunim.Node { return []gunim.Node{s.child} }
-
-// Layout implements [gunim.Node].
-func (s *shade) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children) geom.Size {
-	k := kids.At(0)
-	size := k.Layout(gunim.Constraints{Min: geom.Sz(c.Max.W, 0), Max: c.Max})
-	open := min(max(s.open.Value(), 0), 1)
-	h := size.H * open
-	k.Place(geom.Pt(0, h-size.H))
-	return geom.Sz(size.W, h)
-}
-
-// Paint implements [gunim.Node].
-func (s *shade) Paint(p *paint.Painter, _ gunim.Frame, box geom.Size, kids gunim.Children) {
-	if box.H < 0.5 {
-		return
-	}
-	defer p.Layer(paint.LayerOpts{Bounds: geom.Rect{Max: box.Point()}, Opacity: 1, Clip: true})()
-	kids.At(0).Paint(p)
 }
 
 // setTypeAll turns Type in All Panes on or off: what is typed goes to
@@ -4024,7 +3948,7 @@ func (w *Window) setTypeAll(on bool, u *gunim.UI) {
 func (w *Window) showTypeAll(u *gunim.UI) {
 	on := map[string]bool{}
 	if w.typeAll {
-		for _, id := range boxLeaves(w.stageBox, nil) {
+		for _, id := range w.dock.Shown() {
 			on[id] = true
 		}
 	}
@@ -4039,7 +3963,7 @@ func (w *Window) typingAlong(t *term) []*term {
 	if !w.typeAll {
 		return nil
 	}
-	leaves := boxLeaves(w.stageBox, nil)
+	leaves := w.dock.Shown()
 	if !slices.Contains(leaves, t.id) {
 		return nil
 	}

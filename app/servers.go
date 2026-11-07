@@ -72,7 +72,7 @@ func (a *app) handleServers(in any) bool {
 // serversPane returns the Machines pane, or "" while it is closed.
 func (a *app) serversPane() string {
 	for _, p := range a.st.Panes {
-		if p.Kind == KindServers && !a.closing[p.ID] {
+		if p.Kind == KindServers {
 			return p.ID
 		}
 	}
@@ -103,7 +103,7 @@ func (a *app) focusRaised(id string) {
 func (a *app) allPanes() []Pane {
 	out := make([]Pane, 0, len(a.st.Panes))
 	for _, p := range a.st.Panes {
-		p.Window = a.winOf[p.ID]
+		p.Window, _ = a.paneWin(p.ID)
 		out = append(out, p)
 	}
 	return out
@@ -236,7 +236,7 @@ const (
 // paneOf returns the pane of kind open, or "".
 func (a *app) paneOf(kind string) string {
 	for _, p := range a.st.Panes {
-		if p.Kind == kind && !a.closing[p.ID] {
+		if p.Kind == kind {
 			return p.ID
 		}
 	}

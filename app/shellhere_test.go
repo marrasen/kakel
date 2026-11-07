@@ -35,11 +35,11 @@ func TestANewTerminalRunsTheShellOfThePaneInFront(t *testing.T) {
 	})
 	a.found = []shellfind.Shell{{ID: "sh", Title: "Plain Shell", Path: sh}}
 	a.nextShell = []string{sh}
-	if err := a.openTerminal(); err != nil {
+	if err := a.openTerminal(Placement{}); err != nil {
 		t.Fatal(err)
 	}
 	first := a.st.Focus
-	if err := a.openTerminal(); err != nil {
+	if err := a.openTerminal(Placement{}); err != nil {
 		t.Fatal(err)
 	}
 	if got := a.argvs[a.st.Focus]; !slices.Equal(got, []string{sh}) {

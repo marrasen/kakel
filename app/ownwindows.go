@@ -6,6 +6,7 @@ import (
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/driver"
 	"github.com/marrasen/gunim/geom"
+	"github.com/marrasen/gunim/widget/dock"
 	"github.com/marrasen/kakel/words"
 )
 
@@ -99,6 +100,7 @@ func (a *app) addWindow(c gunim.Client, gw *gunim.Window) *ownWin {
 	a.nextWin++
 	w := &ownWin{id: a.nextWin, c: c, gw: gw}
 	a.wins = append(a.wins, w)
+	a.keepWindow(w.id)
 	if a.cur == nil {
 		a.cur = w
 	}
@@ -132,7 +134,7 @@ func (a *app) winByID(id int) *ownWin {
 
 // ownerOf returns the window pane id is in, or nil.
 func (a *app) ownerOf(id string) *ownWin {
-	if n, ok := a.winOf[id]; ok {
+	if n, ok := a.paneWin(id); ok {
 		return a.winByID(n)
 	}
 	return nil
@@ -178,7 +180,7 @@ func (a *app) setFocusIn(w *ownWin, id string) {
 func (a *app) panesIn(w *ownWin) []Pane {
 	var out []Pane
 	for _, p := range a.st.Panes {
-		if a.winOf[p.ID] == w.id {
+		if n, ok := a.paneWin(p.ID); ok && n == w.id {
 			out = append(out, p)
 		}
 	}
@@ -192,14 +194,14 @@ func (a *app) refocus(w *ownWin, gone, next string, i int) {
 	if w == nil || a.focusIn(w) != gone {
 		return
 	}
-	if next != "" && a.winOf[next] == w.id {
+	if n, ok := a.paneWin(next); ok && next != "" && n == w.id {
 		a.setFocusIn(w, next)
 		return
 	}
 	// The nearest pane before it in the sidebar, or else the first.
 	before, first := "", ""
 	for k, p := range a.st.Panes {
-		if a.winOf[p.ID] != w.id || p.ID == gone {
+		if n, ok := a.paneWin(p.ID); !ok || n != w.id || p.ID == gone {
 			continue
 		}
 		if first == "" {
@@ -215,22 +217,17 @@ func (a *app) refocus(w *ownWin, gone, next string, i int) {
 	a.setFocusIn(w, before)
 }
 
-// moveToWindow moves pane id into w, on a stage of its own, with the
-// keyboard there.
+// moveToWindow moves pane id into w, as a tab of its group with the
+// keyboard, with the keyboard there.
 func (a *app) moveToWindow(id string, w *ownWin) {
 	from := a.ownerOf(id)
-	if from == nil || from == w || a.closing[id] {
+	if from == nil || from == w {
 		return
 	}
 	i := slices.IndexFunc(a.st.Panes, func(p Pane) bool { return p.ID == id })
-	after := a.tabAfter(id)
 	next := a.take(id)
-	if next == "" {
-		next = after
-	}
-	a.winOf[id] = w.id
 	a.refocus(from, id, next, i)
-	a.place(id, Placement{})
+	a.putIn(id, w.id)
 	a.setFocusIn(w, id)
 }
 
@@ -241,7 +238,7 @@ func (a *app) paneToNewWindow(in PaneToNewWindow) { a.paneToNewWindowFrom(in, ni
 // or the window in front's for nil.
 func (a *app) paneToNewWindowFrom(in PaneToNewWindow, space *gunim.Window) {
 	from := a.ownerOf(in.Pane)
-	if from == nil || a.closing[in.Pane] {
+	if from == nil {
 		return
 	}
 	if len(a.panesIn(from)) == 1 {
@@ -251,7 +248,7 @@ func (a *app) paneToNewWindowFrom(in PaneToNewWindow, space *gunim.Window) {
 	}
 	a.openWindowFrom(space, in.At, in.Size, nil, func(w *ownWin) bool {
 		from := a.ownerOf(in.Pane)
-		if from == nil || a.closing[in.Pane] || len(a.panesIn(from)) == 1 {
+		if from == nil || len(a.panesIn(from)) == 1 {
 			return false
 		}
 		a.moveToWindow(in.Pane, w)
@@ -259,16 +256,10 @@ func (a *app) paneToNewWindowFrom(in PaneToNewWindow, space *gunim.Window) {
 	})
 }
 
-// openWindowThen opens a window at at, size large, in the space of the
-// window in front, and once it is open hands it to then, and puts it in
-// front. When then says there is nothing for it after all, the window
-// closes again.
-func (a *app) openWindowThen(at geom.Point, size geom.Size, then func(w *ownWin) bool) {
-	a.openWindowFrom(nil, at, size, nil, then)
-}
-
-// openWindowFrom is openWindowThen, with at in gw's space, or the window
-// in front's for nil, or with place set, there on the screen.
+// openWindowFrom opens a window at at, size large, in gw's space, or the
+// window in front's for nil, or with place set, there on the screen; and
+// once it is open hands it to then, and puts it in front. When then says
+// there is nothing for it after all, the window closes again.
 func (a *app) openWindowFrom(gw *gunim.Window, at geom.Point, size geom.Size, place *driver.Placement, then func(w *ownWin) bool) {
 	if a.openWindow == nil {
 		a.failed("Couldn't open another window", "This kakel can't open windows.")
@@ -401,6 +392,7 @@ func (a *app) windowClosed(w *ownWin) {
 		a.remove(p.ID)
 	}
 	a.wins = slices.DeleteFunc(a.wins, func(o *ownWin) bool { return o == w })
+	a.layout.Windows = slices.DeleteFunc(a.layout.Windows, func(o dock.Window) bool { return o.ID == w.id })
 	if a.closedWindow != nil && w.gw != nil {
 		a.closedWindow(w.gw)
 	}
@@ -424,23 +416,6 @@ func (a *app) stateFor(w *ownWin, st State) State {
 	st.Pings, st.Bells = w.pings, w.bells
 	st.Panes = a.panesIn(w)
 	st.Focus = a.focusIn(w)
-	st.Stage = nil
-	if st.Focus != "" {
-		st.Stage = a.groups[a.groupOf[st.Focus]].clone()
-	}
-	st.Tabs = a.tabsOf(w)
-	st.Groups = map[string]*Box{}
-	byGroup := map[int]*Box{}
-	for _, p := range st.Panes {
-		g, ok := a.groupOf[p.ID]
-		if !ok {
-			continue
-		}
-		if byGroup[g] == nil {
-			byGroup[g] = a.groups[g].clone()
-		}
-		st.Groups[p.ID] = byGroup[g]
-	}
 	st.Asks = slices.DeleteFunc(slices.Clone(st.Asks), func(q Ask) bool { return q.win != w.id || q.alone })
 	st.Notices = slices.DeleteFunc(slices.Clone(st.Notices), func(n Notice) bool { return n.win != w.id })
 	st.Views = slices.DeleteFunc(slices.Clone(st.Views), func(v Viewed) bool { return v.win != w.id })

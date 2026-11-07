@@ -39,6 +39,8 @@ type (
 		Machine machines.ID
 		Path    string
 		NewTab  bool
+		// Group is the group of the bar it was asked from, "" for none.
+		Group string
 	}
 	// OpenFileManager opens a window of its own holding a file manager
 	// pane on Machine, at Path or at home.

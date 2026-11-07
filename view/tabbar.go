@@ -1,8 +1,8 @@
 package view
 
 import (
+	"reflect"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -19,204 +19,110 @@ import (
 	"github.com/marrasen/gunim/widget/dock"
 )
 
-// The tab bar, in the title bar after the menu button, while the window
-// has a tab. It is gunim's dock.Bar, on its own: a click shows a tab; a
-// middle click or its × closes it; the + opens a terminal in a tab of
-// its own, and its right click offers a file manager too. A tab dragged
-// along the bar moves along it, onto another window's bar moves there,
-// onto a pane joins it in a split, and let go outside every window
-// opens a window of its own. A pane dragged onto the bar lands on a tab
-// of its own. The bar's empty room moves the window, as the rest of the
-// title bar does. Here the bar fades in and out with the title row, and
-// says when the tab in front changed in a way the stage shows in
-// motion.
+// The window's panes stand in gunim's dock: each part of a split has a
+// bar of tabs, and each tab is a pane. The bars along the window's top
+// are its title bar: what stands there, the menu button at the left and
+// the chips and the window's buttons at the right, leaves them room, and
+// the room after their tabs moves the window. A bar lower down, in a
+// split one above the other, stands over its pane. Here the dock draws
+// the bars and the dividers, and the stage the panes, where the dock says.
+//
+// A click shows a tab; a middle click or its × closes it; the + opens a
+// tab like the one in front, and its right click offers a terminal or a
+// file manager. A tab dragged along its bar moves along it, onto another
+// bar joins it, to a pane's edge splits it, into another window moves
+// there, and let go outside every window opens one of its own. A double
+// click on a tab has the pane fill the window.
 
-// tabBar shows the window's tabs, on a dock.Bar it holds.
-type tabBar struct {
-	anim.Group
-	w   *Window
-	bar *dock.Bar
-	// tabs are the window's tabs, and front the group of the one in
-	// front.
-	tabs  []app.Tab
-	front int
-	// plusMenu is the menu a right click on the + opens, while it is.
-	plusMenu *gunim.Popup
-	// laid says the title row is laid out for the tabs, which it is
-	// from the first tab on, and stays while the last tab fades away.
-	// fade is how far the tabs show, and titleFade how far the window's
-	// title after the menu button does: the one fades out before the
-	// row changes, and the other in after.
-	laid            bool
-	fade, titleFade *anim.Float
-}
-
-// rowFadeOut and rowFadeIn are how the tabs and the window's title fade
-// as the title row changes between them: the one going quickly, the
-// other coming a little slower.
-var (
-	rowFadeOut = anim.Tween{Duration: 110 * time.Millisecond, Ease: anim.EaseInOut}
-	rowFadeIn  = anim.Tween{Duration: 180 * time.Millisecond, Ease: anim.EaseInOut}
-)
-
-func newTabBar(w *Window) *tabBar {
-	// The bar learns its window's number, and its size, from the state.
-	b := &tabBar{w: w, bar: dock.NewBar("", 0), fade: anim.NewFloat(1), titleFade: anim.NewFloat(1)}
-	b.Add(b.fade, b.titleFade)
-	b.bar.Plus, b.bar.Plain, b.bar.Caption = true, true, true
-	b.bar.OnChange = b.change
-	b.bar.OnPlusMenu = func(at geom.Rect, u *gunim.UI) gunim.Intent {
-		b.openPlusMenu(at, u)
+// newDock makes the window's dock.
+func (w *Window) newDock() *dock.Dock {
+	d := dock.NewDock(0)
+	d.Plus, d.Caption, d.TopPlain, d.Maximize = true, true, true, true
+	d.Face = func(n *dock.Node) dock.Face { return w.tabFace(n.ID) }
+	d.OnChange = w.dockChange
+	d.OnPlusMenu = func(b *dock.Bar, at geom.Rect, u *gunim.UI) gunim.Intent {
+		w.openPlusMenu(b, at, u)
 		return nil
 	}
-	b.bar.Takes = func(data any) bool {
+	d.Takes = func(data any) bool {
 		_, ok := data.(app.PaneDrag)
-		return ok && b.shown()
+		return ok
 	}
-	b.bar.OnDrop = func(d dock.Dropped, u *gunim.UI) gunim.Intent {
-		// Out of its split, or out of another window, onto a tab of its
-		// own where it was let go.
-		if pd, ok := d.Data.(app.PaneDrag); ok {
-			u.Send(b.w, app.PaneToTab{Pane: pd.Pane, Window: b.w.winID, Bar: true, Before: b.before(d.Index)})
+	d.OnDrop = func(group string, dr dock.Dropped, u *gunim.UI) gunim.Intent {
+		if pd, ok := dr.Data.(app.PaneDrag); ok {
+			return app.MoveTab{Pane: pd.Pane, To: dock.Target{At: group, Index: dr.Index}}
 		}
 		return nil
 	}
-	return b
-}
-
-// tabID is the ID a tab of group g has on the bar, and groupOf the
-// group of the tab of ID id, 0 for none.
-func tabID(g int) string { return strconv.Itoa(g) }
-
-func groupOf(id string) int {
-	g, _ := strconv.Atoi(id)
-	return g
-}
-
-// before is the group of the tab at place i on the bar, 0 past the
-// last, for a tab to land before.
-func (b *tabBar) before(i int) int {
-	if i >= 0 && i < len(b.tabs) {
-		return b.tabs[i].Group
+	d.OnMax = func(item string, u *gunim.UI) gunim.Intent {
+		w.showOnStage(u)
+		w.tickSwitch("pane.maximize", item != "")
+		if item != "" && item != w.focused {
+			return app.FocusPane{Pane: item}
+		}
+		return nil
 	}
-	return 0
+	return d
 }
 
-// change says what the user asked the bar for, as the program's
-// intents, from the window.
-func (b *tabBar) change(c dock.Change, u *gunim.UI) gunim.Intent {
-	var in gunim.Intent
+// dockChange says what the user asked the dock for, as the program's
+// intents. What the dock shows at once, the stage does too.
+func (w *Window) dockChange(c dock.Change, u *gunim.UI) gunim.Intent {
 	switch c := c.(type) {
 	case dock.Show:
-		in = app.ShowTab{Group: groupOf(c.ID)}
+		// At once, coming in from its side, not as the program answers.
+		w.tabsComeIn()
+		w.showOnStage(u)
+		return app.FocusPane{Pane: c.ID}
 	case dock.Close:
-		in = app.CloseTab{Group: groupOf(c.ID)}
+		return app.ClosePane{Pane: c.ID}
 	case dock.New:
-		// Like the tab in front: a file manager where one is.
-		in = app.NewTab{}
+		// Like the tab in front of the bar pressed, in that group.
+		l := w.dock.Arrangement()
+		if g := l.Node(c.Group); g != nil && g.Front != "" {
+			u.Send(w, app.FocusPane{Pane: g.Front})
+		}
+		return app.NewTab{Group: c.Group}
 	case dock.Move:
-		in = app.MoveTab{Group: groupOf(c.ID), Before: b.before(c.To.Index)}
+		return app.MoveTab{Pane: c.ID, To: c.To}
+	case dock.Resize:
+		return app.SplitMoved{Split: c.ID, Share: c.Share}
 	case dock.Detach:
 		// The tab's top left corner where the image's was, and the
 		// window as large as this one.
-		in = app.TabToNewWindow{Group: groupOf(c.ID), At: c.At, Size: c.Size}
-	}
-	if in != nil {
-		u.Send(b.w, in)
+		return app.PaneToNewWindow{Pane: c.ID, At: c.At, Size: w.size}
 	}
 	return nil
 }
 
-// shown reports whether the bar has the title row's room and shows,
-// which it does while the window has a tab, and as the last one fades.
-func (b *tabBar) shown() bool { return b.laid }
-
-// wanted reports whether the window has tabs to show. Its only tab
-// shows too, so a lone pane can be dragged by it to another window.
-func (b *tabBar) wanted() bool { return len(b.tabs) > 0 }
-
-// show puts the window's tabs on the bar, and reports whether the tab
-// in front changed in a way the window shows in motion, and from which
-// side the tab picked comes, as switchOf says.
-func (b *tabBar) show(tabs []app.Tab, focus string, u *gunim.UI) (from float32, switched bool) {
-	front := 0
-	for _, t := range tabs {
-		// A group's panes share its arrangement.
-		if g := b.w.groups[t.Pane]; g != nil && g == b.w.groups[focus] {
-			front = t.Group
-		}
+// tabFace is how pane id's tab looks.
+func (w *Window) tabFace(id string) dock.Face {
+	ic, ok := kindIcons[w.paneIcon(id, w.kindOf(id))]
+	if !ok {
+		ic = icon.SquareTerminal
 	}
-	from, switched = b.switchOf(tabs, front)
-	b.tabs, b.front = tabs, front
-	b.bar.Win, b.bar.DetachSize = b.w.winID, b.w.size
-	ts := make([]dock.Tab, len(tabs))
-	for i, t := range tabs {
-		more := ""
-		if t.Panes > 1 {
-			more = "+" + strconv.Itoa(t.Panes-1)
-		}
-		ic, ok := kindIcons[b.w.tabKind(t)]
-		if !ok {
-			ic = icon.SquareTerminal
-		}
-		ts[i] = dock.Tab{ID: tabID(t.Group), Face: dock.Face{Title: b.w.tabTitle(t), Short: b.w.tabShort(t), More: more, Icon: ic, Closable: true}}
-	}
-	fid := ""
-	if front != 0 {
-		fid = tabID(front)
-	}
-	b.bar.SetTabs(ts, fid, u)
-	u.Invalidate()
-	return from, switched
+	return dock.Face{Title: w.tabTitle(id), Short: w.tabShort(id), Icon: ic, Closable: true}
 }
 
-// switchOf reports whether the tab in front changing to front, as the
-// bar comes to show tabs, is a switch to show in motion, and from which
-// side the tab picked comes: -1 the left, 1 the right, 0 neither. A
-// window's first tabs are simply there, and so is a tab in front while
-// a tab is dragged, or after one was dragged away.
-func (b *tabBar) switchOf(tabs []app.Tab, front int) (float32, bool) {
-	if front == b.front || front == 0 || b.front == 0 || len(b.tabs) == 0 || b.bar.Carried() != "" ||
-		b.bar.Dropped() != "" && !slices.Equal(tabs, b.tabs) {
-		return 0, false
-	}
-	// Where each was on the bar, or, new on it, where it is now.
-	at := func(g int) int {
-		of := func(t app.Tab) bool { return t.Group == g }
-		if i := slices.IndexFunc(b.tabs, of); i >= 0 {
-			return i
-		}
-		return slices.IndexFunc(tabs, of)
-	}
-	switch from, to := at(b.front), at(front); {
-	case to < from:
-		return -1, true
-	case to > from:
-		return 1, true
-	}
-	return 0, true
-}
-
-// tabTitle is what tab t says: the title of the pane in it that last
-// had the keyboard.
-func (w *Window) tabTitle(t app.Tab) string {
+// tabTitle is what pane id's tab says.
+func (w *Window) tabTitle(id string) string {
 	for _, p := range w.panes {
-		if p.ID == t.Pane {
+		if p.ID == id {
 			return w.titleOf(p)
 		}
 	}
 	return ""
 }
 
-// tabShort is what tab t says where its title does not fit: the pane's
-// own title, where the tab's names the machine before it, as "web:
+// tabShort is what pane id's tab says where its title does not fit: the
+// pane's own title, where the tab's names the machine before it, as "web:
 // logs" does, and "" where nothing is shorter. A title naming the
 // machine after, as "PowerShell on XPS25" does, has none: faded where
 // it is cut, it still shows where the machine's name starts, as the
 // pane's own title alone would not.
-func (w *Window) tabShort(t app.Tab) string {
+func (w *Window) tabShort(id string) string {
 	for _, p := range w.panes {
-		if p.ID == t.Pane {
+		if p.ID == id {
 			if full := w.titleOf(p); p.Title != "" && p.Title != full && strings.HasSuffix(full, p.Title) {
 				return p.Title
 			}
@@ -224,14 +130,6 @@ func (w *Window) tabShort(t app.Tab) string {
 		}
 	}
 	return ""
-}
-
-// tabKind is the kind of the pane tab t shows, for its icon.
-func (w *Window) tabKind(t app.Tab) string {
-	if t.Panes > 1 {
-		return "split"
-	}
-	return w.paneIcon(t.Pane, w.kindOf(t.Pane))
 }
 
 // paneIcon is the icon pane id shows, kind being what it would show
@@ -249,113 +147,219 @@ func (w *Window) paneIcon(id, kind string) string {
 	return kind
 }
 
-// Children implements [gunim.Composite].
-func (b *tabBar) Children() []gunim.Node { return []gunim.Node{b.bar} }
-
-// Layout implements [gunim.Node]: the bar, as tall as the title bar,
-// while the title row is laid out for it; else nothing.
-func (b *tabBar) Layout(c gunim.Constraints, f gunim.Frame, kids gunim.Children) geom.Size {
-	h := widget.MenubarHeight.Get(f.Theme)
-	if c.Max.H > 0 {
-		h = min(h, c.Max.H)
+// showLayout has the dock show st's layout, and the stage what the dock
+// shows, the pane picked in a tab coming in from its side.
+func (w *Window) showLayout(st app.State, u *gunim.UI) {
+	w.dock.SetWin(st.Window, u)
+	if reflect.DeepEqual(st.Layout, w.docked) {
+		w.dock.Refresh(u)
+	} else {
+		w.docked = st.Layout.Clone()
+		w.dock.SetLayout(w.docked, u)
 	}
-	if !b.shown() {
-		return c.Constrain(geom.Sz(0, h))
+	if st.Focus != w.dockFocus {
+		// Only as it changes: a state still on its way, from before a
+		// double click maximized another pane, says nothing new.
+		w.dockFocus = st.Focus
+		w.dock.SetActive(st.Focus, u)
 	}
-	k := kids.At(0)
-	k.Layout(gunim.Tight(geom.Sz(c.Max.W, h)))
-	k.Place(geom.Point{})
-	return c.Constrain(geom.Sz(c.Max.W, h))
-}
-
-// Paint implements [gunim.Node]: the bar, as far as it has faded in,
-// on the title bar's fill. The bar is Plain and draws no fill of its
-// own, so without this the window's background would show behind the
-// tabs.
-func (b *tabBar) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gunim.Children) {
-	if !b.shown() {
-		return
-	}
-	p.RRect(geom.Rect{Max: box.Point()}, 0, paint.Solid(widget.MenubarFill.Get(f.Theme)))
-	if fade := min(max(b.fade.Value(), 0), 1); fade < 1 {
-		defer p.Layer(paint.LayerOpts{Bounds: geom.Rect{Max: box.Point()}, Opacity: fade})()
-	}
-	kids.At(0).Paint(p)
-}
-
-// showTabs shows the window's tabs, and gives the bar the title bar's
-// room while it shows: the menu button keeps its own, and "kakel" makes
-// way. The change fades: what goes first, then the row changes, then
-// what comes; see settleTitleRow.
-//
-// A switch to another tab shows in motion: the front tab's look glides
-// to it, and what it holds comes on stage from its side.
-func (w *Window) showTabs(st app.State, u *gunim.UI) {
-	if from, switched := w.tabs.show(st.Tabs, st.Focus, u); switched {
-		w.stage.comeIn(from)
-	}
+	w.tabsComeIn()
+	w.showOnStage(u)
 	w.settleTitleRow(u.Theme())
 	u.Invalidate()
 }
 
+// tabsComeIn has the pane newly in front of each group, as the dock has
+// it, come in: from the side its tab stands on, or where the tab before
+// has left the group, moved or closed, simply fading in.
+func (w *Window) tabsComeIn() {
+	fronts := map[string]string{}
+	var walk func(n *dock.Node)
+	walk = func(n *dock.Node) {
+		if n.Kind == dock.Group {
+			fronts[n.ID] = n.Front
+			if old, ok := w.fronts[n.ID]; ok && old != n.Front {
+				i := slices.IndexFunc(n.Kids, func(k *dock.Node) bool { return k.ID == old })
+				j := slices.IndexFunc(n.Kids, func(k *dock.Node) bool { return k.ID == n.Front })
+				from := float32(0)
+				switch {
+				case i < 0:
+				case j < i:
+					from = -1
+				default:
+					from = 1
+				}
+				w.stage.comeIn(n.Front, from)
+			}
+		}
+		for _, k := range n.Kids {
+			walk(k)
+		}
+	}
+	l := w.dock.Arrangement()
+	if win := l.Window(w.dock.Win()); win != nil && win.Root != nil {
+		walk(win.Root)
+	}
+	w.fronts = fronts
+}
+
+// showOnStage has the stage hold the panes the dock shows.
+func (w *Window) showOnStage(u *gunim.UI) {
+	shown := w.dock.Shown()
+	w.stage.show(shown, w.bareNode, u)
+	on := map[string]bool{}
+	for _, id := range shown {
+		on[id] = true
+	}
+	w.parkFilePanes(on, u)
+}
+
+// groupTabs is how many tabs stand in the group of the pane with the
+// keyboard.
+func (w *Window) groupTabs() int {
+	l := w.dock.Arrangement()
+	if g := l.GroupOf(w.focused); g != nil {
+		return len(g.Kids)
+	}
+	return 0
+}
+
+// inSplit reports whether more than one pane shows.
+func (w *Window) inSplit() bool { return len(w.dock.Shown()) > 1 }
+
+// frame lays the window out: the status line along the bottom, and over
+// the rest the dock, its top row the title bar, with the stage under
+// that row, and the parts of the title bar over the dock at each end.
+type frame struct {
+	w          *Window
+	lead, tail gunim.Node
+	chips      *chipBar
+	// open is how much of the title row shows, from 0 to 1, and top where
+	// it stands.
+	open *anim.Float
+	top  float32
+	// controls is how wide the window's buttons are, as last laid out.
+	controls float32
+}
+
+// Children implements [gunim.Composite].
+func (r *frame) Children() []gunim.Node {
+	return []gunim.Node{r.w.onStage, r.w.dock, r.lead, r.tail, r.w.status}
+}
+
+// chipsLeast is the room a tab keeps on a bar sharing the title row with
+// the chips, which fade away from a bar narrower than that.
+const chipsLeast = 160
+
+// Layout implements [gunim.Node].
+func (r *frame) Layout(c gunim.Constraints, f gunim.Frame, kids gunim.Children) geom.Size {
+	size := c.Max
+	th := f.Theme
+	barH := dock.BarHeight.Get(th)
+	open := min(max(r.open.Value(), 0), 1)
+	y := barH*open - barH
+	r.top = y
+	rowC := gunim.Constraints{Min: geom.Sz(0, barH), Max: geom.Sz(size.W, barH)}
+	// The status line first, for what it leaves.
+	status := kids.At(4)
+	ss := status.Layout(gunim.Constraints{Min: geom.Sz(size.W, 0), Max: size})
+	status.Place(geom.Pt(0, size.H-ss.H))
+	// The bar under the window's buttons has room for the chips, or they
+	// make way for its tabs.
+	tail := kids.At(3)
+	bar, limited := r.w.dock.BarAt(geom.Pt(size.W-1, 0))
+	r.chips.limited, r.chips.room = limited, bar.Size().W-chipsLeast-r.controls
+	ts := tail.Layout(rowC)
+	r.controls = ts.W - r.chips.wide*min(max(r.chips.on.Value(), 0), 1)
+	tail.Place(geom.Pt(size.W-ts.W, y))
+	lead := kids.At(2)
+	ls := lead.Layout(gunim.Constraints{Min: geom.Sz(0, barH), Max: geom.Sz(max(size.W-ts.W, 0), barH)})
+	lead.Place(geom.Pt(0, y))
+	// The dock's top row stands in the title row, and it goes as far
+	// down as the status line.
+	h := max(size.H-ss.H-y, barH)
+	r.w.dock.Lead, r.w.dock.Corner = ls.W, ts.W
+	d := kids.At(1)
+	d.Layout(gunim.Tight(geom.Sz(size.W, h)))
+	d.Place(geom.Pt(0, y))
+	// Under the title row, the stage, placing the panes as the dock laid
+	// them out just now.
+	r.w.stage.origin = geom.Pt(0, barH)
+	s := kids.At(0)
+	s.Layout(gunim.Tight(geom.Sz(size.W, max(h-barH, 0))))
+	s.Place(geom.Pt(0, y+barH))
+	return size
+}
+
+// Paint implements [gunim.Node]: the title bar's fill, behind its parts
+// and the top row of tabs, and what stands on it.
+func (r *frame) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gunim.Children) {
+	if h := dock.BarHeight.Get(f.Theme) + r.top; h > 0 {
+		p.RRect(geom.Rc(0, 0, box.W, h), 0, paint.Solid(widget.MenubarFill.Get(f.Theme)))
+	}
+	for k := range kids.All {
+		k.Paint(p)
+	}
+}
+
+// rowFadeOut and rowFadeIn are how the window's title fades as the title
+// row changes between it and the tabs: going quickly, coming a little
+// slower.
+var (
+	rowFadeOut = anim.Tween{Duration: 110 * time.Millisecond, Ease: anim.EaseInOut}
+	rowFadeIn  = anim.Tween{Duration: 180 * time.Millisecond, Ease: anim.EaseInOut}
+)
+
+// titleRow is the state of the title row: laid says it is laid out for
+// tabs, which leave the menu button only its own room; otherwise the
+// window's title follows the button, fading as far as titleFade says.
+type titleRow struct {
+	laid      bool
+	titleFade *anim.Float
+}
+
+func newTitleRow() *titleRow { return &titleRow{titleFade: anim.NewFloat(1)} }
+
 // settleTitleRow moves the title row toward showing the tabs, when the
-// window has any, or else the window's title: it fades out
-// what shows, changes the row once that has gone, and fades in what it
-// changed to. Called as the tabs change and as the window lays out,
-// each step happens once the one before has finished.
+// window has panes, or else the window's title. The title fades out
+// before the row changes, and in after. Called as the tabs change and as
+// the window lays out, each step happens once the one before has finished.
 func (w *Window) settleTitleRow(th *theme.Live) {
-	b := w.tabs
-	if b.laid {
+	t := w.tabs
+	if t.laid {
 		// As wide as the menu button, in the theme on now.
 		w.barBox.Width = widget.MenubarHeight.Get(th) + 12
 	}
-	switch want := b.wanted(); {
-	case want == b.laid:
-		// Staying, or coming back before it went: what shows comes in.
-		if b.laid {
-			b.fade.Animate(1, rowFadeIn)
-		} else {
-			b.titleFade.Animate(1, rowFadeIn)
+	switch want := len(w.panes) > 0; {
+	case want == t.laid:
+		if !t.laid {
+			t.titleFade.Animate(1, rowFadeIn)
 		}
-	case b.laid:
-		b.fade.Animate(0, rowFadeOut)
-		if !b.fade.Active() {
-			w.layTitleRow(false, th)
-		}
+	case t.laid:
+		// The tabs have gone with their panes; the title comes.
+		t.laid = false
+		w.barBox.Width = 0
+		w.bar.Title, w.bar.Subtitle = app.ProgramName, w.paneTitle
+		w.leadRow.Grow(w.barFade, 1)
+		t.titleFade.Jump(0)
+		t.titleFade.Animate(1, rowFadeIn)
 	default:
-		b.titleFade.Animate(0, rowFadeOut)
-		if !b.titleFade.Active() {
-			w.layTitleRow(true, th)
+		t.titleFade.Animate(0, rowFadeOut)
+		if !t.titleFade.Active() {
+			t.laid = true
+			w.barBox.Width = widget.MenubarHeight.Get(th) + 12
+			w.bar.Title, w.bar.Subtitle = "", ""
+			w.leadRow.Grow(w.barFade, 0)
 		}
 	}
-}
-
-// layTitleRow lays the title row out for the tabs, or for the window's
-// title, and fades in what it was laid out for.
-func (w *Window) layTitleRow(tabs bool, th *theme.Live) {
-	b := w.tabs
-	b.laid = tabs
-	if tabs {
-		w.barBox.Width = widget.MenubarHeight.Get(th) + 12
-		w.bar.Title, w.bar.Subtitle = "", ""
-		w.titleRow.Grow(w.barFade, 0).Grow(w.tabs, 1)
-		b.fade.Jump(0)
-		b.fade.Animate(1, rowFadeIn)
-		return
-	}
-	w.barBox.Width = 0
-	w.bar.Title, w.bar.Subtitle = app.ProgramName, w.paneTitle
-	w.titleRow.Grow(w.tabs, 0).Grow(w.barFade, 1)
-	b.titleFade.Jump(0)
-	b.titleFade.Animate(1, rowFadeIn)
 }
 
 // titleFader draws the menu bar it holds with its button as it is, and
-// the window's title after the button faded by the tab bar's
-// titleFade, so the title can fade without the button.
+// the window's title after the button faded by titleFade, so the title
+// can fade without the button.
 type titleFader struct {
 	child gunim.Node
-	tabs  *tabBar
+	row   *titleRow
 }
 
 // Children implements [gunim.Composite].
@@ -371,13 +375,12 @@ func (t *titleFader) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Child
 
 // Paint implements [gunim.Node].
 func (t *titleFader) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gunim.Children) {
-	fade := min(max(t.tabs.titleFade.Value(), 0), 1)
+	fade := min(max(t.row.titleFade.Value(), 0), 1)
 	if fade >= 1 {
 		kids.At(0).Paint(p)
 		return
 	}
-	// The bar's fill stays as the title fades, or the room beside the
-	// button, while the tabs show, would be the window's background.
+	// The bar's fill stays as the title fades.
 	p.RRect(geom.Rect{Max: box.Point()}, 0, paint.Solid(widget.MenubarFill.Get(f.Theme)))
 	// The compact menu's button is the bar's height and a little more,
 	// 4 in from the bar's start.
@@ -392,169 +395,105 @@ func (t *titleFader) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids 
 	}
 }
 
-// tabDock is where a tab or a pane dragged over the window would go:
-// beside pane, on the side it is nearest, or, with toTab, onto a tab of
-// its own. What it would take is lit at lit. A zero one is nowhere.
-type tabDock struct {
-	pane            string
-	vertical, first bool
-	toTab           bool
-	lit             geom.Rect
-}
-
-// docksHere is what a pane answers a tab dragged over it: a drop there
-// joins it in a split.
-const docksHere = "docks here"
-
-// tabDrop takes a tab dragged over the window: onto a pane, where it
-// joins it in a split on the side it is nearest, or from another
-// window onto anywhere else, where it becomes a tab of this one.
-func (w *Window) tabDrop(e input.Event, u *gunim.UI) bool {
-	switch e := e.(type) {
+// dragOverDock hands the dock a tab, or a pane out of All Panes, dragged
+// over the panes, in its own space: where it would land lights, and a
+// drop puts it there. From another window, anywhere the dock takes it
+// not, as over the status line, the window lights up, and a drop moves it
+// in as a tab. It reports whether it took the drag.
+func (w *Window) dragOverDock(e input.Event, u *gunim.UI) bool {
+	at, ok := u.Bounds(w.dock)
+	if !ok {
+		return false
+	}
+	conv := func(data any) (dock.Drag, bool) {
+		switch d := data.(type) {
+		case dock.Drag:
+			return d, true
+		case app.PaneDrag:
+			return dock.Drag{ID: d.Pane, Win: d.Window, Grab: d.Grab}, true
+		}
+		return dock.Drag{}, false
+	}
+	switch ev := e.(type) {
 	case input.DragOver:
-		d, ok := e.Data.(dock.Drag)
+		d, ok := conv(ev.Data)
 		if !ok {
 			return false
 		}
-		w.dock = w.dockAt(e.Pos, d, u)
-		// A tab's drag card says what a drop would do.
-		switch {
-		case w.dock.pane != "":
-			u.AnswerDrag(widget.DropHint{Text: dock.SplitHere.Get(u.Theme()), Effect: widget.DropMove})
+		ev.Data, ev.Pos = d, ev.Pos.Sub(at.Min)
+		if w.dock.DragEvent(ev, u) {
 			w.dropLit.Animate(0, widget.Quick.Get(u.Theme()))
-		case d.Win != w.winID:
-			u.AnswerDrag(widget.DropHint{Text: dock.DockHere.Get(u.Theme()), Effect: widget.DropMove})
-			w.dropLit.Animate(1, widget.Quick.Get(u.Theme()))
-		default:
+			u.Invalidate()
+			return true
+		}
+		if d.Win == w.dock.Win() {
+			w.dropLit.Animate(0, widget.Quick.Get(u.Theme()))
 			u.Invalidate()
 			return false
 		}
+		u.AnswerDrag(widget.DropHint{Text: dock.DockHere.Get(u.Theme()), Effect: widget.DropMove})
+		w.dropLit.Animate(1, widget.Quick.Get(u.Theme()))
 		u.Invalidate()
 		return true
 	case input.DragLeave:
-		if w.dock.pane != "" {
-			w.dock = tabDock{}
-			u.Invalidate()
-		}
-		return false
+		w.dropLit.Animate(0, widget.Quick.Get(u.Theme()))
+		u.Invalidate()
+		return w.dock.DragEvent(ev, u)
 	case input.Drop:
-		d, ok := e.Data.(dock.Drag)
+		d, ok := conv(ev.Data)
 		if !ok {
 			return false
 		}
-		dk := w.dockAt(e.Pos, d, u)
-		w.dock = tabDock{}
 		w.dropLit.Animate(0, widget.Settle.Get(u.Theme()))
 		u.Invalidate()
-		switch {
-		case dk.pane != "":
-			u.Send(w, app.DockTab{Group: groupOf(d.ID), Beside: dk.pane, Vertical: dk.vertical, First: dk.first})
-		case d.Win != w.winID:
-			u.Send(w, app.MoveTab{Group: groupOf(d.ID)})
-		default:
+		ev.Data, ev.Pos = d, ev.Pos.Sub(at.Min)
+		if w.dock.DragEvent(ev, u) {
+			return true
+		}
+		if d.Win == w.dock.Win() {
 			return false
 		}
+		u.Send(w, app.PaneToWindow{Pane: d.ID})
 		return true
 	}
 	return false
 }
 
-// dockAt is where tab d, dragged to p, would join a split: beside the
-// pane on stage under p, on the side of it p is nearest. Not beside a
-// pane of the tab itself.
-func (w *Window) dockAt(p geom.Point, d dock.Drag, u *gunim.UI) tabDock {
-	own := ""
-	if d.Win == w.winID {
-		for _, t := range w.tabs.tabs {
-			if t.Group == groupOf(d.ID) {
-				own = t.Pane
-			}
-		}
-		if own == "" {
-			// A tab of this window not on its bar yet.
-			return tabDock{}
-		}
-	}
-	return w.dockOver(p, u, func(id string) bool { return own != "" && w.groups[own] == w.groups[id] })
-}
-
-// dockOver is where something dragged to p would join a split: beside
-// the pane on stage under p, on the side of it p is nearest. Not beside
-// a pane mine says is the dragged thing's own.
-func (w *Window) dockOver(p geom.Point, u *gunim.UI, mine func(id string) bool) tabDock {
-	for _, id := range boxLeaves(w.stageBox, nil) {
-		r, ok := u.Bounds(w.paneNode(id))
-		if !ok || !r.Contains(p) {
-			continue
-		}
-		if mine(id) {
-			return tabDock{}
-		}
-		s := r.Size()
-		if s.W <= 0 || s.H <= 0 {
-			return tabDock{}
-		}
-		fx, fy := (p.X-r.Min.X)/s.W, (p.Y-r.Min.Y)/s.H
-		dk := tabDock{pane: id}
-		switch min(fx, 1-fx, fy, 1-fy) {
-		case fx:
-			dk.first, dk.lit = true, geom.Rc(r.Min.X, r.Min.Y, s.W/2, s.H)
-		case 1 - fx:
-			dk.lit = geom.Rc(r.Min.X+s.W/2, r.Min.Y, s.W/2, s.H)
-		case fy:
-			dk.vertical, dk.first, dk.lit = true, true, geom.Rc(r.Min.X, r.Min.Y, s.W, s.H/2)
-		default:
-			dk.vertical, dk.lit = true, geom.Rc(r.Min.X, r.Min.Y+s.H/2, s.W, s.H/2)
-		}
-		return dk
-	}
-	return tabDock{}
-}
-
-// paintDock lights the half of a pane a tab dragged over it would take.
-func (w *Window) paintDock(p *paint.Painter, f gunim.Frame) {
-	if w.dock.pane == "" && !w.dock.toTab {
-		return
-	}
-	c := switcherRing.Get(f.Theme)
-	tint := c
-	tint.A = 0x33
-	r := w.dock.lit.Inset(geom.Uniform(4))
-	p.RRect(r, 6, paint.Solid(tint))
-	p.RRectStroke(r, 6, paint.Fill{}, paint.Stroke{Width: 2, Color: c})
-}
-
 // openPlusMenu offers what a new tab can hold, on the machine of the
-// pane in front: a terminal, or a file manager; at is where the + is,
-// on the bar.
-func (b *tabBar) openPlusMenu(at geom.Rect, u *gunim.UI) {
-	b.closePlusMenu()
-	m := b.w.machineOf(b.w.focused)
+// pane in front of bar b, in that group: a terminal, or a file manager;
+// at is where the + is, on the bar.
+func (w *Window) openPlusMenu(b *dock.Bar, at geom.Rect, u *gunim.UI) {
+	w.closePlusMenu()
+	front, group := b.Front(), b.GroupID()
+	m := w.machineOf(front)
 	menu := widget.NewMenu([]widget.MenuItem{
 		{Label: "New Terminal", Icon: icon.SquareTerminal},
 		{Label: "New File Manager", Icon: icon.Folder},
 	})
 	menu.OnPick = func(i int, u *gunim.UI) gunim.Intent {
-		b.closePlusMenu()
+		w.closePlusMenu()
+		if front != "" {
+			u.Send(w, app.FocusPane{Pane: front})
+		}
 		switch i {
 		case 0:
-			return app.OpenOn{Machine: m}
+			return app.OpenOn{Machine: m, Group: group}
 		case 1:
-			return app.OpenFilesOn{Machine: m, NewTab: true}
+			return app.OpenFilesOn{Machine: m, NewTab: true, Group: group}
 		}
 		return nil
 	}
-	b.plusMenu = u.OpenPopup(b.bar, menu, gunim.PopupOptions{
+	w.plusMenu = u.OpenPopup(b, menu, gunim.PopupOptions{
 		Anchor:  at,
 		Max:     geom.Sz(280, 200),
-		Dismiss: func(*gunim.UI) { b.closePlusMenu() },
+		Dismiss: func(*gunim.UI) { w.closePlusMenu() },
 	})
 }
 
 // closePlusMenu closes the +'s menu, if it is open.
-func (b *tabBar) closePlusMenu() {
-	if b.plusMenu != nil {
-		b.plusMenu.Close()
-		b.plusMenu = nil
+func (w *Window) closePlusMenu() {
+	if w.plusMenu != nil {
+		w.plusMenu.Close()
+		w.plusMenu = nil
 	}
 }

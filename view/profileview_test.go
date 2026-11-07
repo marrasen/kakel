@@ -31,14 +31,14 @@ func machinePaneOf(t *testing.T, st app.State, m machines.ID, draft bool) (*Wind
 	t.Helper()
 	win, _, publish := windowStage(t)
 	st.Panes = append(st.Panes, app.Pane{ID: "mp", Title: "machine", Kind: app.KindMachine, Machine: m, Draft: draft})
-	st.Stage, st.Focus = &app.Box{Pane: "mp"}, "mp"
+	st.Layout, st.Focus = boxLayout(&app.Box{Pane: "mp"}), "mp"
 	publish(st)
 	mp := win.machinePanes["mp"]
 	if mp == nil {
 		t.Fatal("no machine pane")
 	}
 	again := func(next app.State) {
-		next.Panes, next.Stage, next.Focus = st.Panes, st.Stage, st.Focus
+		next.Panes, next.Layout, next.Focus = st.Panes, st.Layout, st.Focus
 		publish(next)
 	}
 	for len(lastWindow.Client().Intents()) > 0 {

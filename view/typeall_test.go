@@ -30,7 +30,7 @@ func TestTypingGoesToEveryPaneInTheSplit(t *testing.T) {
 	}
 	// p1, p2 and p3 in a split on stage; p4 elsewhere.
 	split := &app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{ID: "s2", A: &app.Box{Pane: "p2"}, B: &app.Box{Pane: "p3"}, Share: 0.5}, Share: 0.33}
-	publish(app.State{Panes: panes, Stage: split, Focus: "p1"})
+	publish(app.State{Panes: panes, Layout: boxLayout(split), Focus: "p1"})
 	for range 5 {
 		lastWindow.Frame(time.Second / 60)
 	}

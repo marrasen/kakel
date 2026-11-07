@@ -125,16 +125,3 @@ func (w *Window) parkFilePanes(on map[string]bool, u *gunim.UI) {
 		}
 	}
 }
-
-// leavesOf adds the panes b shows to on.
-func leavesOf(b *app.Box, on map[string]bool) map[string]bool {
-	if b == nil {
-		return on
-	}
-	if b.Pane != "" {
-		on[b.Pane] = true
-	}
-	leavesOf(b.A, on)
-	leavesOf(b.B, on)
-	return on
-}

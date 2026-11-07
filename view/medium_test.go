@@ -18,7 +18,7 @@ import (
 func TestAChooserOffersServersNotConnectedAndACommand(t *testing.T) {
 	win, _, publish := windowStage(t)
 	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "one", Kind: app.KindFileManager}, {ID: "c1", Title: "Split", Kind: app.KindChooser, SplitFrom: "p1"}},
-		Stage: &app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "c1"}, Share: 0.5}, Focus: "c1",
+		Layout: boxLayout(&app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "c1"}, Share: 0.5}), Focus: "c1",
 		Saved: []remote.Host{{ID: "far", Name: "far", Address: "far.example"}}})
 	var labels []string
 	for _, b := range win.choosers["c1"].buttons {

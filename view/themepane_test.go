@@ -29,7 +29,7 @@ func TestTheThemeEditorKeepsACursorThatJumps(t *testing.T) {
 		}
 		looks = append(looks, l)
 	}
-	open := app.State{Panes: []app.Pane{{ID: "p1", Title: "Theme", Kind: app.KindThemeEditor}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1",
+	open := app.State{Panes: []app.Pane{{ID: "p1", Title: "Theme", Kind: app.KindThemeEditor}}, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1",
 		Theme: "Dark", Looks: looks}
 	publish(open)
 	for range 3 {
@@ -69,7 +69,7 @@ func TestTheThemeEditorKeepsACursorThatJumps(t *testing.T) {
 		t.Fatal("an edit not saved reached the window")
 	}
 	// Closed unsaved, the edit is gone.
-	publish(app.State{Panes: []app.Pane{{ID: "p2", Title: "Terminal"}}, Stage: &app.Box{Pane: "p2"}, Focus: "p2", Theme: "Dark", Looks: looks})
+	publish(app.State{Panes: []app.Pane{{ID: "p2", Title: "Terminal"}}, Layout: boxLayout(&app.Box{Pane: "p2"}), Focus: "p2", Theme: "Dark", Looks: looks})
 	if ed.Unsaved() || ed.Overrides().Has(widget.Caret.Key()) {
 		t.Fatal("closed without saving, the editor kept its edit")
 	}

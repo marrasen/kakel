@@ -20,16 +20,16 @@ func TestTheServersPaneOpensOnce(t *testing.T) {
 	a.front(one)
 	a.handle(ShowServers{})
 	id := a.serversPane()
-	if id == "" || a.winOf[id] != one.id || a.st.Focus != id {
-		t.Fatalf("the Machines pane is %q, in window %d; the focus is on %q", id, a.winOf[id], a.st.Focus)
+	if id == "" || a.ownerOf(id) != one || a.st.Focus != id {
+		t.Fatalf("the Machines pane is %q, in window %d; the focus is on %q", id, a.ownerOf(id).id, a.st.Focus)
 	}
-	if len(a.tabsOf(one)) != 3 {
-		t.Fatalf("the window has %d tabs, want 3", len(a.tabsOf(one)))
+	if got := a.panesIn(one); len(got) != 3 {
+		t.Fatalf("the window has %d panes, want 3", len(got))
 	}
 	a.front(two)
 	a.handle(ShowServers{})
-	if a.serversPane() != id || a.winOf[id] != one.id || a.cur != one || a.st.Focus != id {
-		t.Fatalf("asked again, the pane is %q in window %d, window %d in front", a.serversPane(), a.winOf[id], a.cur.id)
+	if a.serversPane() != id || a.ownerOf(id) != one || a.cur != one || a.st.Focus != id {
+		t.Fatalf("asked again, the pane is %q in window %d, window %d in front", a.serversPane(), a.ownerOf(id).id, a.cur.id)
 	}
 }
 
@@ -43,7 +43,7 @@ func TestToggleServersOpensAndCloses(t *testing.T) {
 		t.Fatal("the Machines pane did not open")
 	}
 	a.handle(ToggleServers{})
-	if a.has(id) && !a.closing[id] {
+	if a.has(id) {
 		t.Fatal("the Machines pane stayed open")
 	}
 }
@@ -105,14 +105,14 @@ func toolWindows(t *testing.T) (a *app, work, tool *ownWin, raised func() int) {
 func TestAToolWindowActsInTheWindowWorkedIn(t *testing.T) {
 	a, work, tool, raised := toolWindows(t)
 	a.handle(ShowJobs{})
-	if a.winOf[a.paneOfKindHere(KindJobs)] != work.id || a.cur != work || raised() != 1 {
-		t.Fatalf("the jobs are in window %d, window %d in front, raised %d times", a.winOf[a.paneOfKindHere(KindJobs)], a.cur.id, raised())
+	if a.ownerOf(a.paneOfKindHere(KindJobs)) != work || a.cur != work || raised() != 1 {
+		t.Fatalf("the jobs are in window %d, window %d in front, raised %d times", a.ownerOf(a.paneOfKindHere(KindJobs)).id, a.cur.id, raised())
 	}
 	if work.gone || !a.isTool(tool) {
 		t.Fatal("the window worked in closed, or the tool window took a pane")
 	}
 	a.front(tool)
-	a.handle(ShowTab{Group: a.groupOf[a.serversPane()]})
+	a.handle(FocusPane{Pane: a.serversPane()})
 	if a.cur != tool {
 		t.Fatal("a tab intent of the tool window acted elsewhere")
 	}
@@ -135,11 +135,11 @@ func TestServersToggleClosesOnlyWhatIsSeen(t *testing.T) {
 	id := a.serversPane()
 	a.front(work)
 	a.handle(ToggleServers{})
-	if a.closing[id] || !a.has(id) || a.st.Focus != id {
-		t.Fatalf("toggled out of sight, the pane closed %v, the focus on %q", a.closing[id], a.st.Focus)
+	if !a.has(id) || a.st.Focus != id {
+		t.Fatalf("toggled out of sight, the pane closed, or the focus is on %q", a.st.Focus)
 	}
 	a.handle(ToggleServers{})
-	if a.has(id) && !a.closing[id] {
+	if a.has(id) {
 		t.Fatal("toggled where it is seen, the pane stayed")
 	}
 }
@@ -169,10 +169,10 @@ func TestServersAndTabsGetWindowsOfTheirOwn(t *testing.T) {
 	}
 	a.front(one)
 	a.focus("p1")
-	a.handle(TabToNewWindow{})
+	a.handle(PaneToNewWindow{Pane: a.st.Focus})
 	waitFor(t, a, "the tab's window", func() bool { return len(a.wins) == 4 })
-	if a.winOf["p1"] == one.id || a.winOf["p2"] != one.id {
-		t.Fatalf("p1 is in window %d, p2 in %d", a.winOf["p1"], a.winOf["p2"])
+	if a.ownerOf("p1") == one || a.ownerOf("p2") != one {
+		t.Fatalf("p1 is in window %d, p2 in %d", a.ownerOf("p1").id, a.ownerOf("p2").id)
 	}
 }
 
@@ -184,13 +184,13 @@ func TestAToolWindowSplitsWhereTheUserWorks(t *testing.T) {
 	if !a.isTool(tool) || a.cur != work || raised() != 1 {
 		t.Fatalf("the tool window holds %d panes, window %d in front, raised %d times", len(a.panesIn(tool)), a.cur.id, raised())
 	}
-	if b := a.groups[a.groupOf["p1"]]; b == nil || b.Pane != "" {
-		t.Fatalf("p1's group is %+v, want a split", b)
+	if b := boxOf(a.layout.Window(work.id).Root); b == nil || b.Pane != "" {
+		t.Fatalf("the window shows %+v, want a split", b)
 	}
 	a.front(tool)
 	a.addPane(Pane{ID: "late", Kind: KindFileManager}, nil, Placement{})
-	if raised() != 1 || a.winOf["late"] != work.id || !a.isTool(tool) {
-		t.Fatalf("a pane arriving by itself raised the window %d times, and is in window %d", raised(), a.winOf["late"])
+	if raised() != 1 || a.ownerOf("late") != work || !a.isTool(tool) {
+		t.Fatalf("a pane arriving by itself raised the window %d times, and is in window %d", raised(), a.ownerOf("late").id)
 	}
 }
 

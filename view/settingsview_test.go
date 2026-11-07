@@ -18,7 +18,7 @@ import (
 // they are, a box ticked saves at once, and Settings opens the pane.
 func TestTheSettingsPaneShowsAndSaves(t *testing.T) {
 	win, _, publish := windowStage(t)
-	st := app.State{Panes: []app.Pane{{ID: "s", Title: "Settings", Kind: app.KindSettings}}, Stage: &app.Box{Pane: "s"}, Focus: "s"}
+	st := app.State{Panes: []app.Pane{{ID: "s", Title: "Settings", Kind: app.KindSettings}}, Layout: boxLayout(&app.Box{Pane: "s"}), Focus: "s"}
 	st.Sounds = app.Alerts{Bell: true}
 	st.Rings = app.Alerts{Connected: true, Lost: true, Finished: true, Bell: true, Other: true}
 	st.InTray, st.SystemTitleBar = true, true

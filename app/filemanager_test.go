@@ -79,7 +79,7 @@ func TestFilesOpenInAFileManagerPane(t *testing.T) {
 	}
 	a.handle(OpenFilesOn{})
 	second := a.st.Panes[len(a.st.Panes)-1]
-	if a.groupOf[second.ID] != a.groupOf[first.ID] {
+	if !inSplit(a, second.ID, first.ID) {
 		t.Fatal("a second file manager pane didn't open beside the one in front")
 	}
 	places, _ := files.opened[0].PlacesOn("")
@@ -204,7 +204,7 @@ func TestNewTabIsLikeTheTabInFront(t *testing.T) {
 	a.handle(NewTab{})
 	waitFor(t, a, "a second file manager opens", func() bool { return len(a.fmPanes) == 2 })
 	second := a.st.Focus
-	if second == first || a.kindOfPane(second) != KindFileManager || a.groupOf[second] == a.groupOf[first] {
+	if second == first || a.kindOfPane(second) != KindFileManager || inSplit(a, second, first) {
 		t.Fatalf("New Tab opened %q, beside %q", second, first)
 	}
 	if got := files.opened[len(files.opened)-1].Dir; got != dir {
