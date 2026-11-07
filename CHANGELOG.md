@@ -7,6 +7,59 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
+## v0.12.2-beta.11
+
+### Changed
+
+**Tabs now live in each pane.** A pane of a split has tabs of its own,
+where a tab used to hold a whole split. The tabs along the window's top
+stay in the title bar, in a split too: the left pane's after the menu
+button, the right pane's before the window's buttons. A pane lower down
+has its bar over it. Next Tab goes round the tabs of the pane with the
+keyboard, and Close Tab closes that one pane.
+
+**A tab dropped on a pane goes where you let it go.** Near an edge it
+splits the pane on that side, and in the middle it joins that pane's
+tabs.
+
+**Pop Out moves a pane into the tabs beside it.** `Ctrl+Shift+U` is now
+Pane into Tabs Beside.
+
+**Closing a pane in a split no longer waits for it to fold.** The other
+side grows over its room at once.
+
+**New windows open 18 pixels shorter**, on a terminal of exactly 80 by
+30.
+
+### Added
+
+**Maximize a pane.** Double-click a tab, or press `Ctrl+Shift+M`, and its
+pane fills the window as the others slide away. Do it again, or click
+the button at the end of its bar, and they slide back.
+
+**Edit the shortcuts in Settings.** A Settings tab lists every shortcut.
+A change saves at once, with Undo.
+
+**Double and triple click in terminals.** A double click selects a word
+and a triple click a line, growing from where you clicked.
+
+### Removed
+
+**Pane Titles and its setting.** Every pane has a bar of tabs now, which
+names it.
+
+### Fixed
+
+**The file list's selection follows the Animations slider.** It slid at
+the same speed at any setting, and did not stop sliding at 0.
+
+**The cursor keeps blinking** after output moves it.
+
+**About knows about a waiting update**, and offers the restart in place
+of downloading it again.
+
+**Tearing off a tab no longer crashes on Linux** with Mesa 25.3 or newer.
+
 ## v0.12.2-beta.10
 
 ### Added
