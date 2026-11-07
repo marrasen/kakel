@@ -6,6 +6,7 @@ import (
 
 	"github.com/marrasen/gunim/theme"
 	"github.com/marrasen/gunim/widget"
+	"github.com/marrasen/gunim/widget/dock"
 
 	"github.com/marrasen/kakel/themes"
 )
@@ -62,6 +63,12 @@ func TestAThemesShapeAndMotionReachGunim(t *testing.T) {
 		t.Fatal(err)
 	}
 	live := theme.NewLive(th.Theme)
+	if got := dock.Slide.Get(live); got == dock.Slide.Default() {
+		t.Errorf("motion still, the dock's splits slide at %+v", got)
+	}
+	if got := dock.Glide.Get(live); got == dock.Glide.Default() {
+		t.Errorf("motion still, the dock's tabs glide at %+v", got)
+	}
 	if got := widget.ButtonRadius.Get(live); got != 2*widget.ButtonRadius.Default() {
 		t.Errorf("corners at 2, a button's are %v", got)
 	}

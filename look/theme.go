@@ -537,6 +537,7 @@ func motionOf(t themes.Theme) ([]theme.Entry, error) {
 		theme.Set(widget.Quick, quick), theme.Set(widget.Settle, settle), theme.Set(widget.Bounce, bounce),
 		theme.Set(widget.Reflow, quick), theme.Set(widget.Crossfade, settle), theme.Set(widget.HeroMotion, settle),
 		theme.Set(widget.TileMotion, settle), theme.Set(widget.DragGhostTrail, quick),
+		theme.Set(dock.Slide, settle), theme.Set(dock.Glide, quick),
 		theme.Set(theme.Switch, settle),
 	}, nil
 }
