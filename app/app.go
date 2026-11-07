@@ -227,6 +227,10 @@ type State struct {
 	SavedCopies   []settings.SavedCopy
 	Shortcuts     []keys.Change
 	ShortcutsRead uint64
+	// SettingsTab is the Settings tab last asked for, by its title, or ""
+	// for none in particular, and SettingsAsked counts the askings.
+	SettingsTab   string
+	SettingsAsked uint64
 	// ShortcutsProblem says why the shortcuts file could not be read,
 	// which leaves the shortcut editor unable to change it.
 	ShortcutsProblem string
@@ -1851,8 +1855,6 @@ func (a *app) handle(in gunim.Intent) {
 		a.failed("Couldn't copy to the clipboard", words.UpperFirst(strings.TrimPrefix(in.Reason, "glfw: "))+".")
 	case MakePortable:
 		a.makePortable()
-	case ShowHelp:
-		a.showHelp()
 	case MakeKey:
 		err = a.makeKey(in)
 	case LockKeys:

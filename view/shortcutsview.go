@@ -44,7 +44,6 @@ var (
 	shortcutSidePad    = theme.Insets("kakel.shortcuts.side", geom.Insets{Left: 12, Right: 12, Top: 19, Bottom: 12})
 	shortcutItemPad    = theme.Insets("kakel.shortcuts.item", geom.Insets{Left: 8, Right: 10, Top: 6, Bottom: 6})
 	shortcutRowGap     = theme.Length("kakel.shortcuts.rowgap", 0)
-	shortcutItemGap    = theme.Length("kakel.shortcuts.itemgap", 2)
 	shortcutRowH       = theme.Length("kakel.shortcuts.rowh", 40)
 	shortcutGutter     = theme.Length("kakel.shortcuts.gutter", 14)
 	shortcutSlot       = theme.Length("kakel.shortcuts.slot", 30)
@@ -103,8 +102,8 @@ type helpLine struct {
 	group widget.Key
 }
 
-// helpPane is the shortcut editor.
-type helpPane struct {
+// shortcutsPane is the shortcut editor.
+type shortcutsPane struct {
 	anim.Group
 	w      *Window
 	search *widget.TextField
@@ -163,8 +162,8 @@ type chordFlight struct {
 	launched bool
 }
 
-func newHelpPane(w *Window) *helpPane {
-	p := &helpPane{w: w, lines: map[widget.Key]*helpLine{}, group: groupAll, sideOpen: anim.NewFloat(1)}
+func newShortcutsPane(w *Window) *shortcutsPane {
+	p := &shortcutsPane{w: w, lines: map[widget.Key]*helpLine{}, group: groupAll, sideOpen: anim.NewFloat(1)}
 	p.Add(p.sideOpen)
 	p.search = widget.NewTextField()
 	p.search.Placeholder = "Search commands or keys"
@@ -182,14 +181,10 @@ func newHelpPane(w *Window) *helpPane {
 		p.edit(keys.Op{ResetAll: true}, "Shortcuts reset", u)
 		return nil
 	}
-	title := widget.NewLabel("Shortcuts")
-	title.Face, title.Size = widget.BoldFont, widget.HeadingSize
-	title.NoWrap = true
 	sub := faintLabel("Hover a row to change its keys. Changes save at once.")
 	sub.MaxLines = 1
 	p.subFold = widget.NewFold(sub, true)
-	titles := widget.Column(title, p.subFold)
-	titles.Gap = shortcutItemGap
+	titles := widget.Column(p.subFold)
 	titles.Cross = widget.CrossStretch
 	p.groups = widget.NewDropdown(nil)
 	p.groups.OnChange = func(i int, u *gunim.UI) gunim.Intent {
@@ -246,7 +241,7 @@ func newHelpPane(w *Window) *helpPane {
 }
 
 // pick shows a group, whichever way it was picked.
-func (p *helpPane) pick(k widget.Key, u *gunim.UI) {
+func (p *shortcutsPane) pick(k widget.Key, u *gunim.UI) {
 	p.group = k
 	p.side.SetSelected(k, u)
 	p.syncSide(u)
@@ -267,7 +262,7 @@ type groupItem struct {
 
 // groupItems are the sidebar's choices: everything, what has changed, and
 // each group.
-func (p *helpPane) groupItems() []groupItem {
+func (p *shortcutsPane) groupItems() []groupItem {
 	changed := 0
 	for _, l := range p.lines {
 		if p.changed(l) {
@@ -287,7 +282,7 @@ func (p *helpPane) groupItems() []groupItem {
 }
 
 // launcherLine is the launcher's line.
-func (p *helpPane) launcherLine() widget.Key {
+func (p *shortcutsPane) launcherLine() widget.Key {
 	for _, k := range p.order {
 		if p.lines[k].kind == lineLauncher {
 			return k
@@ -297,7 +292,7 @@ func (p *helpPane) launcherLine() widget.Key {
 }
 
 // groupTitles are the names of the groups.
-func (p *helpPane) groupTitles() []string {
+func (p *shortcutsPane) groupTitles() []string {
 	var out []string
 	for _, it := range p.groupItems() {
 		out = append(out, it.title)
@@ -314,7 +309,7 @@ func sideTitle(head string) string {
 }
 
 // syncSide brings the sidebar up to date.
-func (p *helpPane) syncSide(u *gunim.UI) {
+func (p *shortcutsPane) syncSide(u *gunim.UI) {
 	// A rule between the two views of everything and the groups.
 	items := p.groupItems()
 	items = slices.Insert(items, 2, groupItem{key: groupRule})
@@ -383,7 +378,7 @@ func (r *groupRow) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gu
 // fill makes the lines: the launcher's key, then the commands as the
 // menus group them, then what is bound to a saved thing, then the keys
 // that cannot change.
-func (p *helpPane) fill() {
+func (p *shortcutsPane) fill() {
 	clear(p.lines)
 	p.order = p.order[:0]
 	var group widget.Key
@@ -438,7 +433,7 @@ func (p *helpPane) fill() {
 }
 
 // chordsOf says the shortcuts a line has now, as a person reads them.
-func (p *helpPane) chordsOf(l *helpLine) []string {
+func (p *shortcutsPane) chordsOf(l *helpLine) []string {
 	var out []string
 	for _, c := range p.chordValues(l) {
 		out = append(out, chordLabel(c))
@@ -447,7 +442,7 @@ func (p *helpPane) chordsOf(l *helpLine) []string {
 }
 
 // chordValues is the shortcuts a line has now.
-func (p *helpPane) chordValues(l *helpLine) []ui.Chord {
+func (p *shortcutsPane) chordValues(l *helpLine) []ui.Chord {
 	switch l.kind {
 	case lineCommand:
 		return p.w.keys.ChordsFor(l.id)
@@ -460,7 +455,7 @@ func (p *helpPane) chordValues(l *helpLine) []ui.Chord {
 }
 
 // changed reports whether a line differs from what kakel comes with.
-func (p *helpPane) changed(l *helpLine) bool {
+func (p *shortcutsPane) changed(l *helpLine) bool {
 	switch l.kind {
 	case lineCommand:
 		return !slices.Equal(p.w.keys.ChordsFor(l.id), Shortcuts().ChordsFor(l.id))
@@ -472,7 +467,7 @@ func (p *helpPane) changed(l *helpLine) bool {
 }
 
 // matches reports whether a line is one the search and the sidebar ask for.
-func (p *helpPane) matches(l *helpLine, want []string) bool {
+func (p *shortcutsPane) matches(l *helpLine, want []string) bool {
 	if l.kind == lineHead {
 		return false
 	}
@@ -501,7 +496,7 @@ func (p *helpPane) matches(l *helpLine, want []string) bool {
 
 // chosen is the lines asked for, with the heading of each group that
 // keeps one.
-func (p *helpPane) chosen() []widget.Key {
+func (p *shortcutsPane) chosen() []widget.Key {
 	want := strings.Fields(strings.ToLower(p.search.Text()))
 	var out []widget.Key
 	var head widget.Key
@@ -525,7 +520,7 @@ func (p *helpPane) chosen() []widget.Key {
 
 // filter shows the lines asked for: those going shrink and those coming
 // grow, as the list does.
-func (p *helpPane) filter(u *gunim.UI) {
+func (p *shortcutsPane) filter(u *gunim.UI) {
 	p.showing = p.chosen()
 	p.list.SetKeys(p.showing, u)
 	if u != nil {
@@ -534,7 +529,7 @@ func (p *helpPane) filter(u *gunim.UI) {
 }
 
 // show brings the rows up to date with the window's keys.
-func (p *helpPane) show(w *Window, u *gunim.UI) {
+func (p *shortcutsPane) show(w *Window, u *gunim.UI) {
 	if p.savedCount() > 0 {
 		p.fill()
 	}
@@ -572,7 +567,7 @@ func (p *helpPane) show(w *Window, u *gunim.UI) {
 
 // focusTarget is what takes the keyboard as the pane comes to the front:
 // the groups, or the search where the pane is too narrow to have them.
-func (p *helpPane) focusTarget() gunim.Node {
+func (p *shortcutsPane) focusTarget() gunim.Node {
 	if p.sideLaid && p.side.SkipFocus {
 		return p.search
 	}
@@ -580,7 +575,7 @@ func (p *helpPane) focusTarget() gunim.Node {
 }
 
 // rowOf is a line's row, while it is built.
-func (p *helpPane) rowOf(k widget.Key) *shortcutRow {
+func (p *shortcutsPane) rowOf(k widget.Key) *shortcutRow {
 	if n, ok := p.list.Row(k); ok {
 		if r, ok := n.(*shortcutRow); ok {
 			return r
@@ -590,7 +585,7 @@ func (p *helpPane) rowOf(k widget.Key) *shortcutRow {
 }
 
 // savedCount is how many commands the keys name that the lines lack.
-func (p *helpPane) savedCount() int {
+func (p *shortcutsPane) savedCount() int {
 	known := map[string]bool{}
 	for _, l := range p.lines {
 		known[l.id] = true
@@ -606,13 +601,13 @@ func (p *helpPane) savedCount() int {
 
 // edit sends a change to the file. What it says is said once the file
 // has it, so a change that fails is not called made.
-func (p *helpPane) edit(op keys.Op, said string, u *gunim.UI) {
+func (p *shortcutsPane) edit(op keys.Op, said string, u *gunim.UI) {
 	p.said, p.saidAt = said, p.w.shortcutsRead
 	u.Send(p.w, app.EditShortcut{Op: op, BuiltIn: Shortcuts().Bindings()})
 }
 
 // sayDone says the change the file has now, with the way back.
-func (p *helpPane) sayDone(u *gunim.UI) {
+func (p *shortcutsPane) sayDone(u *gunim.UI) {
 	if p.said == "" {
 		return
 	}
@@ -628,7 +623,7 @@ func (p *helpPane) sayDone(u *gunim.UI) {
 }
 
 // buildLine makes a line's node as it comes into view.
-func (p *helpPane) buildLine(k widget.Key) gunim.Node {
+func (p *shortcutsPane) buildLine(k widget.Key) gunim.Node {
 	l := p.lines[k]
 	if l == nil {
 		return &emptyNode{}
@@ -644,7 +639,7 @@ func (p *helpPane) buildLine(k widget.Key) gunim.Node {
 }
 
 // move takes the keyboard to the next command along, by arrow.
-func (p *helpPane) move(from widget.Key, by int, u *gunim.UI) bool {
+func (p *shortcutsPane) move(from widget.Key, by int, u *gunim.UI) bool {
 	i := slices.Index(p.showing, from)
 	if i < 0 {
 		return false
@@ -666,7 +661,7 @@ func (p *helpPane) move(from widget.Key, by int, u *gunim.UI) bool {
 
 // goTo gives a row the keyboard, which brings it into view, or scrolls to
 // a row not built yet and gives it the keyboard as it comes.
-func (p *helpPane) goTo(k widget.Key, u *gunim.UI) {
+func (p *shortcutsPane) goTo(k widget.Key, u *gunim.UI) {
 	if r := p.rowOf(k); r != nil {
 		u.FocusFirst(r.add)
 		return
@@ -676,7 +671,7 @@ func (p *helpPane) goTo(k widget.Key, u *gunim.UI) {
 }
 
 // selectRow lights a row, and puts out the one lit.
-func (p *helpPane) selectRow(k widget.Key, u *gunim.UI) {
+func (p *shortcutsPane) selectRow(k widget.Key, u *gunim.UI) {
 	was := p.under.selected
 	if was == k {
 		return
@@ -693,17 +688,16 @@ func (p *helpPane) selectRow(k widget.Key, u *gunim.UI) {
 
 // Handle implements [gunim.Handler]: the keyboard coming into the pane
 // makes it the one in front.
-func (p *helpPane) Handle(e gi.Event, u *gunim.UI) bool {
+func (p *shortcutsPane) Handle(e gi.Event, u *gunim.UI) bool {
 	if _, ok := e.(gi.FocusEntered); ok {
 		p.u = u
-		p.w.entered(p.w.paneOfKind(app.KindHelp), u)
 	}
 	return false
 }
 
 // KeyFirst implements [gunim.KeyFirst]: Down leaves the search for the
 // rows. The field keeps every other key it is given.
-func (p *helpPane) KeyFirst(e gi.KeyPress, u *gunim.UI) bool {
+func (p *shortcutsPane) KeyFirst(e gi.KeyPress, u *gunim.UI) bool {
 	// Typing anywhere in the pane is a search: the pane opens without
 	// the search lit, and the text follows the keyboard there.
 	if e.Typed && e.Key != gi.KeySpace && !e.Mods.Has(gi.ModControl) && !e.Mods.Has(gi.ModAlt) && u.Focused() != gunim.Node(p.search) {
@@ -723,13 +717,13 @@ func (p *helpPane) KeyFirst(e gi.KeyPress, u *gunim.UI) bool {
 }
 
 // Children implements [gunim.Composite].
-func (p *helpPane) Children() []gunim.Node {
+func (p *shortcutsPane) Children() []gunim.Node {
 	return []gunim.Node{p.top, p.sideBy, p.main, p.fly}
 }
 
 // Layout implements [gunim.Node]: the heading across the top, the groups
 // down the left until the pane is narrow, and the rows in what is left.
-func (p *helpPane) Layout(c gunim.Constraints, f gunim.Frame, kids gunim.Children) geom.Size {
+func (p *shortcutsPane) Layout(c gunim.Constraints, f gunim.Frame, kids gunim.Children) geom.Size {
 	th := f.Theme
 	wide := float32(0)
 	if c.Max.W >= shortcutWideFrom.Get(th) {
@@ -782,7 +776,7 @@ func (p *helpPane) Layout(c gunim.Constraints, f gunim.Frame, kids gunim.Childre
 }
 
 // Paint implements [gunim.Node].
-func (p *helpPane) Paint(pt *paint.Painter, f gunim.Frame, box geom.Size, kids gunim.Children) {
+func (p *shortcutsPane) Paint(pt *paint.Painter, f gunim.Frame, box geom.Size, kids gunim.Children) {
 	pt.RRect(geom.Rect{Max: box.Point()}, 0, paint.Solid(widget.Background.Get(f.Theme)))
 	kids.At(0).Paint(pt)
 	// The groups glide out from behind the pane's edge, and draw nothing past it.
@@ -808,7 +802,7 @@ func (p *helpPane) Paint(pt *paint.Painter, f gunim.Frame, box geom.Size, kids g
 // view, so it scrolls with the rows.
 type shortcutList struct {
 	anim.Group
-	p        *helpPane
+	p        *shortcutsPane
 	selected widget.Key
 	lit      widget.Key
 	y, h, a  *anim.Float
@@ -817,7 +811,7 @@ type shortcutList struct {
 	tone *anim.Float
 }
 
-func newShortcutList(p *helpPane) *shortcutList {
+func newShortcutList(p *shortcutsPane) *shortcutList {
 	l := &shortcutList{p: p, y: anim.NewFloat(0), h: anim.NewFloat(0), a: anim.NewFloat(0), tone: anim.NewFloat(0)}
 	l.Add(l.y, l.h, l.a, l.tone)
 	return l
@@ -970,7 +964,7 @@ func (*changedDot) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, _ gunim
 // each for adding a key and going back. Below it opens a message.
 type shortcutRow struct {
 	anim.Group
-	p    *helpPane
+	p    *shortcutsPane
 	line *helpLine
 
 	dot      *rowFade
@@ -1017,7 +1011,7 @@ type rowChip struct {
 	fold *widget.Fold
 }
 
-func newShortcutRow(p *helpPane, l *helpLine) *shortcutRow {
+func newShortcutRow(p *shortcutsPane, l *helpLine) *shortcutRow {
 	r := &shortcutRow{p: p, line: l, chips: map[ui.Chord]*rowChip{}, tries: p.w.launcherTries, hover: anim.NewFloat(0), addAt: anim.NewFloat(0)}
 	r.Add(r.hover, r.addAt)
 	r.name = widget.NewLabel(l.title)
@@ -1475,7 +1469,7 @@ type verdict struct {
 }
 
 // judge says what pressing k on a line comes to.
-func (p *helpPane) judge(l *helpLine, k gi.KeyPress) verdict {
+func (p *shortcutsPane) judge(l *helpLine, k gi.KeyPress) verdict {
 	ev, ok := winkeys.Event(k)
 	if !ok {
 		return verdict{refused: "kakel can't use this key. Try another."}
@@ -1536,7 +1530,7 @@ func shortcutWarning(c ui.Chord) string {
 }
 
 // titleOf is a command's title.
-func (p *helpPane) titleOf(id string) string {
+func (p *shortcutsPane) titleOf(id string) string {
 	for _, l := range p.lines {
 		if l.id == id {
 			return l.title
@@ -1546,7 +1540,7 @@ func (p *helpPane) titleOf(id string) string {
 }
 
 // dimLosing dims the chip a question would take away.
-func (p *helpPane) dimLosing(c ui.Chord, id string, u *gunim.UI) {
+func (p *shortcutsPane) dimLosing(c ui.Chord, id string, u *gunim.UI) {
 	if id == "" {
 		return
 	}
@@ -1565,7 +1559,7 @@ func (p *helpPane) dimLosing(c ui.Chord, id string, u *gunim.UI) {
 }
 
 // undimLosing brings a dimmed chip back.
-func (p *helpPane) undimLosing(u *gunim.UI) {
+func (p *shortcutsPane) undimLosing(u *gunim.UI) {
 	if p.losing != nil {
 		p.losing.vis.setTo(1, u.Theme())
 		p.losing = nil
@@ -1575,7 +1569,7 @@ func (p *helpPane) undimLosing(u *gunim.UI) {
 
 // takeOff notes that chord is about to fly from the row of command id to
 // the row at to.
-func (p *helpPane) takeOff(c ui.Chord, id string, to widget.Key, u *gunim.UI) {
+func (p *shortcutsPane) takeOff(c ui.Chord, id string, to widget.Key, u *gunim.UI) {
 	for _, l := range p.lines {
 		if l.id != id {
 			continue
@@ -1603,11 +1597,11 @@ type flyingChord struct {
 	land   func()
 	live   bool
 	at     geom.Point
-	pane   *helpPane
+	pane   *shortcutsPane
 	u      *gunim.UI
 }
 
-func newFlyingChord(p *helpPane) *flyingChord {
+func newFlyingChord(p *shortcutsPane) *flyingChord {
 	f := &flyingChord{pane: p, chip: widget.NewChip("", ""), t: anim.NewFloat(0)}
 	f.chip.SetCross(false, nil)
 	f.Add(f.t)
@@ -1628,7 +1622,7 @@ func (f *flyingChord) launch(c ui.Chord, from geom.Rect, to *widget.Fold, land f
 
 // place is where it is drawn, in the pane's space, as worked out from
 // the frame drawn last.
-func (f *flyingChord) place(*helpPane) geom.Point { return f.at }
+func (f *flyingChord) place(*shortcutsPane) geom.Point { return f.at }
 
 // aim works out where it is drawn. The box of a node is known once the
 // frame has drawn it, so this runs from the pane's Paint, and the place

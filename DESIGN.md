@@ -370,8 +370,9 @@ What follows from it:
   the file's own `_help` lines say so.
 
 - **The shortcut editor writes the shortcuts file, and only differences**
-  (2026-11-06). The help pane is the editor, so one list says what
-  every command does. Each change re-reads the file first, so lines
+  (2026-11-06). It is a tab of Settings (2026-11-07), with the rest of
+  what can be changed, and its one list also says what every command
+  does. Each change re-reads the file first, so lines
   written by hand stay, and a file it cannot read is left alone.
 
 - **A listing that fails while a path is being completed is not shown**

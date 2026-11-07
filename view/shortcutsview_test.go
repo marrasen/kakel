@@ -15,17 +15,17 @@ import (
 	"github.com/marrasen/kakel/ui"
 )
 
-// helpStage opens the editor.
-func helpStage(t *testing.T) (*Window, func(app.State), app.State) {
+// shortcutsStage opens the editor.
+func shortcutsStage(t *testing.T) (*Window, func(app.State), app.State) {
 	t.Helper()
 	win, _, publish := windowStageOf(t, geom.Sz(1100, 800))
-	st := app.State{Panes: []app.Pane{{ID: "p1", Kind: app.KindHelp, Title: "Shortcuts and Commands"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"}
+	st := app.State{Panes: []app.Pane{{ID: "p1", Kind: app.KindSettings, Title: "Settings"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1", SettingsTab: app.SettingsTabShortcuts, SettingsAsked: 1}
 	publish(st)
 	lastWindow.Frame(time.Second / 60)
 	return win, publish, st
 }
 
-func lineOf(t *testing.T, p *helpPane, id string) *helpLine {
+func lineOf(t *testing.T, p *shortcutsPane, id string) *helpLine {
 	t.Helper()
 	for _, l := range p.lines {
 		if l.id == id {
@@ -39,8 +39,8 @@ func lineOf(t *testing.T, p *helpPane, id string) *helpLine {
 // A key taken from another command asks first; one that costs something
 // warns; a plain key and a key already on the row do neither.
 func TestTheEditorJudgesWhatIsPressed(t *testing.T) {
-	win, _, _ := helpStage(t)
-	p := win.help
+	win, _, _ := shortcutsStage(t)
+	p := win.shortcuts
 	closePane := lineOf(t, p, "pane.close")
 	ctrl := gi.ModControl
 	for _, c := range []struct {
@@ -85,8 +85,8 @@ func TestADigitRunsACommand(t *testing.T) {
 // A shortcut coming from the file grows in on its row, over frames, and
 // one going shrinks out; the row says it has changed.
 func TestChipsComeAndGoOverFrames(t *testing.T) {
-	win, publish, st := helpStage(t)
-	p := win.help
+	win, publish, st := shortcutsStage(t)
+	p := win.shortcuts
 	l := lineOf(t, p, "conn.terminal")
 	p.list.ScrollToKey(l.key, lastUI)
 	for range 60 {
@@ -133,8 +133,8 @@ func TestChipsComeAndGoOverFrames(t *testing.T) {
 
 // Enter on +, a key pressed, and the file holds the change.
 func TestAddingByKeyboardWritesTheFile(t *testing.T) {
-	win, _, _ := helpStage(t)
-	p := win.help
+	win, _, _ := shortcutsStage(t)
+	p := win.shortcuts
 	l := lineOf(t, p, "conn.terminal")
 	u := lastUI
 	p.list.ScrollToKey(l.key, u)
@@ -177,23 +177,23 @@ func TestAddingByKeyboardWritesTheFile(t *testing.T) {
 
 // A file that can't be used turns editing off, and says why.
 func TestAFileNotUsedTurnsEditingOff(t *testing.T) {
-	win, publish, st := helpStage(t)
+	win, publish, st := shortcutsStage(t)
 	st.ShortcutsProblem = "keys.json is not valid JSON."
 	publish(st)
-	if !win.help.banner.Open() || win.help.why.Text != st.ShortcutsProblem || !win.help.blocked {
-		t.Fatalf("banner open %v saying %q, reset off %v", win.help.banner.Open(), win.help.why.Text, win.help.reset.Disabled)
+	if !win.shortcuts.banner.Open() || win.shortcuts.why.Text != st.ShortcutsProblem || !win.shortcuts.blocked {
+		t.Fatalf("banner open %v saying %q, reset off %v", win.shortcuts.banner.Open(), win.shortcuts.why.Text, win.shortcuts.reset.Disabled)
 	}
 	st.ShortcutsProblem = ""
 	publish(st)
-	if win.help.banner.Open() {
+	if win.shortcuts.banner.Open() {
 		t.Fatal("the banner stayed")
 	}
 }
 
 // The search narrows the rows by title, name, or key.
 func TestTheSearchFindsByKey(t *testing.T) {
-	win, _, _ := helpStage(t)
-	p := win.help
+	win, _, _ := shortcutsStage(t)
+	p := win.shortcuts
 	u := lastUI
 	p.search.SetText("ctrl+shift+w", u)
 	p.filter(u)
@@ -211,8 +211,8 @@ func TestTheSearchFindsByKey(t *testing.T) {
 // Down goes from the search to the first row, the arrows walk the rows
 // without the list jumping, and Up from the first goes back.
 func TestTheArrowsWalkTheRows(t *testing.T) {
-	win, _, _ := helpStage(t)
-	p := win.help
+	win, _, _ := shortcutsStage(t)
+	p := win.shortcuts
 	lastUI.Focus(p.search)
 	lastWindow.Frame(time.Second / 60)
 	press := func(k gi.Key) {
@@ -252,8 +252,8 @@ func TestTheArrowsWalkTheRows(t *testing.T) {
 // A shortcut replaced onto another row flies there, over frames, from
 // the row it left.
 func TestAReplacedShortcutFlies(t *testing.T) {
-	win, publish, st := helpStage(t)
-	p := win.help
+	win, publish, st := shortcutsStage(t)
+	p := win.shortcuts
 	chord := ui.Chord{Key: input.KeyT, Mods: input.ModCtrl | input.ModShift}
 	rowOf := func(id string) *shortcutRow {
 		n, ok := p.list.Row(lineOf(t, p, id).key)
@@ -302,8 +302,8 @@ func TestAReplacedShortcutFlies(t *testing.T) {
 
 // The pane opens without the search lit, and typing anywhere is a search.
 func TestTypingAnywhereSearches(t *testing.T) {
-	win, _, _ := helpStage(t)
-	p := win.help
+	win, _, _ := shortcutsStage(t)
+	p := win.shortcuts
 	r := p.rowOf(lineOf(t, p, "conn.terminal").key)
 	if r == nil {
 		t.Fatal("no row")
@@ -321,8 +321,8 @@ func TestTypingAnywhereSearches(t *testing.T) {
 // A key moved to a row above where it was leaves that row at once, so one
 // chip shows at a time, whichever way it moves.
 func TestAKeyMovedUpShowsOnce(t *testing.T) {
-	win, publish, st := helpStage(t)
-	p := win.help
+	win, publish, st := shortcutsStage(t)
+	p := win.shortcuts
 	chord := ui.Chord{Key: input.KeyW, Mods: input.ModCtrl | input.ModShift}
 	rowOf := func(id string) *shortcutRow {
 		r := p.rowOf(lineOf(t, p, id).key)
@@ -350,8 +350,8 @@ func TestAKeyMovedUpShowsOnce(t *testing.T) {
 
 // A change that fails leaves nothing waiting: the next is said as usual.
 func TestAFailedMoveLeavesNothingBehind(t *testing.T) {
-	win, publish, st := helpStage(t)
-	p := win.help
+	win, publish, st := shortcutsStage(t)
+	p := win.shortcuts
 	r := p.rowOf(lineOf(t, p, "conn.files").key)
 	if r == nil {
 		t.Fatal("no row")
@@ -373,9 +373,9 @@ func TestAFailedMoveLeavesNothingBehind(t *testing.T) {
 // Narrow, the groups are out of the keyboard's way, and draw nothing.
 func TestANarrowPaneHasNoGroups(t *testing.T) {
 	win, _, publish := windowStageOf(t, geom.Sz(600, 500))
-	publish(app.State{Panes: []app.Pane{{ID: "p1", Kind: app.KindHelp, Title: "Shortcuts and Commands"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Kind: app.KindSettings, Title: "Settings"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1", SettingsTab: app.SettingsTabShortcuts, SettingsAsked: 1})
 	settle()
-	p := win.help
+	p := win.shortcuts
 	if !p.side.SkipFocus || p.focusTarget() != gunim.Node(p.search) || p.sideX > 0.5 {
 		t.Fatalf("narrow: skip %v, sidebar at %v", p.side.SkipFocus, p.sideX)
 	}
@@ -388,8 +388,8 @@ func TestANarrowPaneHasNoGroups(t *testing.T) {
 
 // The keyboard reaches a row scrolled far out of the list's reach.
 func TestDownFromTheSearchReachesARowScrolledAway(t *testing.T) {
-	win, _, _ := helpStage(t)
-	p := win.help
+	win, _, _ := shortcutsStage(t)
+	p := win.shortcuts
 	last := p.showing[len(p.showing)-1]
 	p.list.ScrollToKey(last, lastUI)
 	settle()
@@ -399,5 +399,59 @@ func TestDownFromTheSearchReachesARowScrolledAway(t *testing.T) {
 	settle()
 	if p.under.selected == "" || p.lines[p.under.selected].kind != lineLauncher {
 		t.Fatalf("Down lit %q", p.under.selected)
+	}
+}
+
+// Asking for the shortcuts opens Settings on their tab with the keyboard
+// on the groups, once for each time it is asked: the tab chosen after
+// that stays chosen.
+func TestShortcutsOpenAsATabOfSettings(t *testing.T) {
+	win, _, publish := windowStageOf(t, geom.Sz(1100, 800))
+	st := app.State{Panes: []app.Pane{{ID: "p1", Kind: app.KindSettings, Title: "Settings"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"}
+	publish(st)
+	settle()
+	if win.settings.onShortcuts() {
+		t.Fatal("Settings opened on the shortcuts without being asked")
+	}
+	if !win.run("help.shortcuts", lastUI) {
+		t.Fatal("the command was not taken")
+	}
+	got := nextIntent(t)
+	for {
+		if _, sized := got.(app.StageSized); !sized {
+			break
+		}
+		got = nextIntent(t)
+	}
+	if got != (app.ShowSettings{Tab: app.SettingsTabShortcuts}) {
+		t.Fatalf("the command sent %#v", got)
+	}
+	st.SettingsTab, st.SettingsAsked = app.SettingsTabShortcuts, 1
+	publish(st)
+	settle()
+	if !win.settings.onShortcuts() {
+		t.Fatal("asked for, the shortcuts' tab isn't chosen")
+	}
+	if lastUI.Focused() != gunim.Node(win.shortcuts.side) {
+		t.Fatalf("the keyboard is on %T, not the groups", lastUI.Focused())
+	}
+	win.settings.tabs.SetSelected(0, lastUI)
+	settle()
+	publish(st)
+	settle()
+	if win.settings.onShortcuts() {
+		t.Fatal("the next state went back to the tab asked for before")
+	}
+}
+
+// With the keyboard on the tab titles, typing still searches.
+func TestTypingOnTheTabTitlesSearches(t *testing.T) {
+	win, _, _ := shortcutsStage(t)
+	settle()
+	lastUI.Focus(win.settings.tabs.Children()[0])
+	lastWindow.Input(gi.KeyPress{Key: gi.KeyC, Typed: true})
+	settle()
+	if lastUI.Focused() != gunim.Node(win.shortcuts.search) {
+		t.Fatalf("typing left the keyboard on %T", lastUI.Focused())
 	}
 }

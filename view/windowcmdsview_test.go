@@ -25,12 +25,12 @@ import (
 
 func TestTheHelpListsEveryCommandWithItsShortcut(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(app.State{Panes: []app.Pane{{ID: "p1", Kind: app.KindHelp, Title: "Shortcuts and Commands"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Kind: app.KindSettings, Title: "Settings"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1", SettingsTab: app.SettingsTabShortcuts, SettingsAsked: 1})
 	var close *helpLine
 	var heads []string
 	under := map[string]string{}
-	for _, k := range win.help.order {
-		l := win.help.lines[k]
+	for _, k := range win.shortcuts.order {
+		l := win.shortcuts.lines[k]
 		if l.kind == lineHead {
 			heads = append(heads, l.title)
 			continue
@@ -42,7 +42,7 @@ func TestTheHelpListsEveryCommandWithItsShortcut(t *testing.T) {
 			close = l
 		}
 	}
-	if close == nil || !slices.Contains(win.help.chordsOf(close), "Ctrl+Shift+W") {
+	if close == nil || !slices.Contains(win.shortcuts.chordsOf(close), "Ctrl+Shift+W") {
 		t.Fatal("the help lacks Close Pane on Ctrl+Shift+W")
 	}
 	// Under the menu it is on, and the reader's keys from kakel's own

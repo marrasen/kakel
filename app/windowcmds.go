@@ -59,12 +59,7 @@ type (
 	// MakePortable makes the folder beside the program and copies the
 	// files it reads now into it, for a copy that carries its own.
 	MakePortable struct{}
-	// ShowHelp opens the list of every command and its shortcut.
-	ShowHelp struct{}
 )
-
-// KindHelp is the pane listing every command.
-const KindHelp = "help"
 
 // latestRelease asks for the newest release. A variable, so a test
 // reaches no network.
@@ -287,18 +282,6 @@ func (a *app) offerRelease(title, have string, newest install.Release) {
 			}
 		}
 	}()
-}
-
-// showHelp opens the list of every command, or goes to it.
-func (a *app) showHelp() {
-	for _, p := range a.st.Panes {
-		if p.Kind == KindHelp {
-			a.bringHere(p.ID)
-			return
-		}
-	}
-	a.next++
-	a.addPane(Pane{ID: "p" + itoa(a.next), Title: "Shortcuts and Commands", Kind: KindHelp}, nil, Placement{})
 }
 
 // ownFiles are the files a copy carrying its own takes with it, beside

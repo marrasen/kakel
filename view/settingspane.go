@@ -52,6 +52,7 @@ var settingsTabs = []struct {
 	{"General", icon.Settings},
 	{"Appearance", icon.Palette},
 	{"Terminal", icon.SquareTerminal},
+	{app.SettingsTabShortcuts, icon.Keyboard},
 	{"Notifications", icon.Bell},
 	{"Sharing", icon.Share2},
 	{"Files", icon.Folder},
@@ -114,13 +115,20 @@ type settingsPane struct {
 	serving *widget.Button
 	removeK *widget.Button
 
+	// shortcuts is the Shortcuts tab.
+	shortcuts *shortcutsPane
+	// asked is the last request for a tab that was taken up.
+	asked uint64
+
 	// st is the state last shown, which the controls send from.
 	st app.State
 }
 
 func newSettingsPane(w *Window) *settingsPane {
 	p := &settingsPane{w: w}
-	pages := []gunim.Node{p.general(), p.appearance(), p.terminal(), p.notifications(), p.sharing(), p.files()}
+	p.shortcuts = newShortcutsPane(w)
+	w.shortcuts = p.shortcuts
+	pages := []gunim.Node{p.general(), p.appearance(), p.terminal(), p.shortcuts, p.notifications(), p.sharing(), p.files()}
 	titles := make([]string, len(settingsTabs))
 	icons := make([]*icon.Icon, len(settingsTabs))
 	for i, t := range settingsTabs {
@@ -529,8 +537,8 @@ func (p *settingsPane) files() gunim.Node {
 		settingsSection("Themes and shortcuts",
 			settingRow("Themes", "A file of themes to change, started from the one in use; read again after a change.",
 				buttons(p.settingButton("Start the File", "view.themesStart"), p.settingButton("Read Again", "view.themesReload"))),
-			settingRow("Shortcuts", "Change them in the editor, or in the file and read it again.",
-				buttons(p.settingButton("Edit Shortcuts", "help.shortcuts"), p.settingButton("Start the File", "shortcuts.write"), p.settingButton("Read Again", "shortcuts.reload"))),
+			settingRow("Shortcuts", "Change them on the Shortcuts tab, or in the file and read it again.",
+				buttons(p.settingButton("Start the File", "shortcuts.write"), p.settingButton("Read Again", "shortcuts.reload"))),
 			settingRow("Saved servers", "Read again after changing the file.", p.settingButton("Read Again", "server.reload"))),
 	)
 	return settingsPage(sections...)
@@ -540,6 +548,7 @@ func (p *settingsPane) files() gunim.Node {
 // typed alone.
 func (p *settingsPane) show(st app.State, u *gunim.UI) {
 	p.st = st
+	p.showAsked(st, u)
 	setOn := func(s *widget.Switch, on bool) {
 		if s.Checked() != on {
 			s.SetChecked(on, u)
@@ -639,6 +648,36 @@ func (p *settingsPane) show(st app.State, u *gunim.UI) {
 		p.serving.Label = "Serve This Window…"
 	}
 	u.Invalidate()
+}
+
+// showAsked goes to the tab the program was last asked to open, once for
+// each time it was asked.
+func (p *settingsPane) showAsked(st app.State, u *gunim.UI) {
+	if st.SettingsAsked == p.asked {
+		return
+	}
+	p.asked = st.SettingsAsked
+	for i, t := range settingsTabs {
+		if t.title != st.SettingsTab {
+			continue
+		}
+		p.tabs.SetSelected(i, u)
+		// A pane made just now has its keyboard placed as it comes to the front.
+		if p.onShortcuts() && u.Presence(p.shortcuts) != gunim.Exiting {
+			u.FocusFirstLaidOut(p.shortcuts.focusTarget())
+		}
+	}
+}
+
+// onShortcuts reports whether the Shortcuts tab is the one chosen.
+func (p *settingsPane) onShortcuts() bool {
+	return settingsTabs[p.tabs.Selected()].title == app.SettingsTabShortcuts
+}
+
+// KeyFirst implements [gunim.KeyFirst]: on the Shortcuts tab, typing
+// with the keyboard on the tab titles is a search too.
+func (p *settingsPane) KeyFirst(e gi.KeyPress, u *gunim.UI) bool {
+	return p.onShortcuts() && p.shortcuts.KeyFirst(e, u)
 }
 
 // Children implements [gunim.Composite].

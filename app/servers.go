@@ -33,8 +33,9 @@ type (
 		Size geom.Size
 	}
 	// ShowSettings opens the Settings pane in a tab of its own, or goes
-	// to it where it is, bringing its window to the front.
-	ShowSettings struct{}
+	// to it where it is, bringing its window to the front. Tab is the
+	// settings tab to show, by its title; empty leaves it as it was.
+	ShowSettings struct{ Tab string }
 	// ShowThemeEditor opens the theme editor in a tab of its own, or
 	// goes to it where it is.
 	ShowThemeEditor struct{}
@@ -49,6 +50,8 @@ func (a *app) handleServers(in any) bool {
 	case ToolWindow:
 		a.toolWindow(in)
 	case ShowSettings:
+		a.st.SettingsTab = in.Tab
+		a.st.SettingsAsked++
 		a.showSettings()
 	case ShowThemeEditor:
 		a.showThemeEditor()
@@ -190,7 +193,7 @@ func (a *app) handleFrom(in any) {
 func opensPane(in any) bool {
 	switch in.(type) {
 	case NewTerminal, SplitPane, ChooseSplit, ConnectTo, OpenFiles, OpenTunnel, OpenSavedTunnel, ShowLog,
-		RunCommand, RunSavedCommand, OpenShellNamed, OpenDefaultShell, OpenOn, FilesOn, ShowHelp, ShowCopies,
+		RunCommand, RunSavedCommand, OpenShellNamed, OpenDefaultShell, OpenOn, FilesOn, ShowCopies,
 		AttachWindow, ConnectWindow:
 		return true
 	}
@@ -219,6 +222,9 @@ func (a *app) toolWindow(in ToolWindow) {
 		}
 	}
 }
+
+// SettingsTabShortcuts is the Settings tab that changes the shortcuts.
+const SettingsTabShortcuts = "Shortcuts"
 
 // KindSettings is the Settings pane, and KindThemeEditor the theme
 // editor's.

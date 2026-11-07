@@ -190,9 +190,9 @@ type Window struct {
 	useOnOpen time.Time
 	// connected are the servers connected to, as last published.
 	connected []machines.ID
-	// help is the list of commands, once opened, and shortcutsRead
-	// the shortcuts file's reads as last taken on.
-	help *helpPane
+	// shortcuts is the Settings tab of commands, once Settings is opened,
+	// and shortcutsRead the shortcuts file's reads as last taken on.
+	shortcuts *shortcutsPane
 	// shortcutsRefused says why the window would not take the shortcuts
 	// file. launcherProblem and launcherTries are as the state has them.
 	shortcutsRefused string
@@ -635,7 +635,7 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 		u.Send(w, app.OpenFileManager{Machine: w.machineOf(w.focused)})
 		return true
 	case "help.shortcuts":
-		u.Send(w, app.ShowHelp{})
+		u.Send(w, app.ShowSettings{Tab: app.SettingsTabShortcuts})
 		return true
 	case "shortcuts.write":
 		u.Send(w, app.WriteShortcuts{Bindings: w.keys.Bindings()})
@@ -2208,8 +2208,8 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 	if w.copies != nil && u.Presence(w.copies) != gunim.Exiting {
 		w.copies.show(st.SavedCopies, u)
 	}
-	if w.help != nil && u.Presence(w.help) != gunim.Exiting {
-		w.help.show(w, u)
+	if w.shortcuts != nil && u.Presence(w.shortcuts) != gunim.Exiting {
+		w.shortcuts.show(w, u)
 	}
 	if w.secrets != nil && u.Presence(w.secrets) != gunim.Exiting {
 		w.secrets.show(st.Secrets, u)
@@ -2608,11 +2608,6 @@ func (w *Window) bareNode(id string) gunim.Node {
 			w.copies = newCopiesPane(w)
 		}
 		return w.copies
-	case app.KindHelp:
-		if w.help == nil {
-			w.help = newHelpPane(w)
-		}
-		return w.help
 	case app.KindSecrets:
 		if w.secrets == nil {
 			w.secrets = newSecretsPane(w)
@@ -2728,8 +2723,8 @@ func (w *Window) focusNode(id string, u *gunim.UI) gunim.Node {
 	if w.kindOf(id) == app.KindSecrets && w.secrets != nil {
 		return w.secrets.table
 	}
-	if w.kindOf(id) == app.KindHelp && w.help != nil {
-		return w.help.focusTarget()
+	if w.kindOf(id) == app.KindSettings && w.settings != nil && w.settings.onShortcuts() {
+		return w.shortcuts.focusTarget()
 	}
 	if w.kindOf(id) == app.KindCopies && w.copies != nil {
 		return w.copies.table
@@ -3839,10 +3834,6 @@ func (w *Window) madeNode(id string) gunim.Node {
 	case app.KindCopies:
 		if w.copies != nil {
 			n = w.copies
-		}
-	case app.KindHelp:
-		if w.help != nil {
-			n = w.help
 		}
 	case app.KindSecrets:
 		if w.secrets != nil {

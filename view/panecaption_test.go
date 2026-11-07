@@ -20,7 +20,7 @@ func splitTabs() app.State {
 		Panes: []app.Pane{
 			{ID: "p1", Title: "Jobs", Kind: app.KindJobs},
 			{ID: "p2", Title: "Log", Kind: app.KindLog},
-			{ID: "p3", Title: "Help", Kind: app.KindHelp},
+			{ID: "p3", Title: "Copies", Kind: app.KindCopies},
 		},
 		Stage: split, Focus: "p1",
 		Groups: map[string]*app.Box{"p1": split, "p2": split, "p3": help},

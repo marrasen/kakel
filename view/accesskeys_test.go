@@ -132,7 +132,7 @@ func TestTheKeyboardComingIntoAFileManagerPaneFrontsIt(t *testing.T) {
 	win, _, publish := windowStage(t)
 	filemanager.RegisterViews(lastWindow)
 	fw := filePane(t, "p2")
-	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "Help", Kind: app.KindHelp}, {ID: "p2", Title: "b", Kind: app.KindFileManager}},
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "Copies", Kind: app.KindCopies}, {ID: "p2", Title: "b", Kind: app.KindFileManager}},
 		Stage: &app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "p2"}, Share: 0.5}, Focus: "p1"})
 	fw.Attach(lastWindow.Client(), app.FilePaneHost("p2"))
 	var listing gunim.Node
@@ -163,7 +163,7 @@ func TestTheKeyboardComingIntoAFileManagerPaneFrontsIt(t *testing.T) {
 // in front again, when the program put another pane there meanwhile.
 func TestADialogClosingLeavesThePaneInFront(t *testing.T) {
 	win, _, publish := windowStage(t)
-	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "Help", Kind: app.KindHelp}, {ID: "p2", Title: "Jobs", Kind: app.KindJobs}},
+	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "Copies", Kind: app.KindCopies}, {ID: "p2", Title: "Jobs", Kind: app.KindJobs}},
 		Stage: &app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "p2"}, Share: 0.5}, Focus: "p1"}
 	publish(st)
 	lastUI.Focus(win.focusNode("p1", lastUI))
