@@ -15,6 +15,7 @@ import (
 	"github.com/marrasen/gunim/gunimtest"
 	gi "github.com/marrasen/gunim/input"
 	"github.com/marrasen/gunim/theme"
+	"github.com/marrasen/gunim/widget/dock"
 )
 
 // overviewStage is All Panes' own window over a screen 1600 by 1000,
@@ -95,7 +96,7 @@ func TestAllPanesCardsStartWhereTheirWindowsStand(t *testing.T) {
 	// p4 is in front in the second window, on its stage, its cells in
 	// from the edges as a terminal's are.
 	pad := geom.Uniform(termPadding.Get(lastTheme(w)))
-	if got, want := sw.tileOf("p4").box.Value(), geom.Rc(700, 340, 800, 500).Inset(pad); got != want {
+	if got, want := sw.tileOf("p4").box.Value(), geom.Rc(700, 340+dock.BarSpace.Default(), 800, 500-dock.BarSpace.Default()).Inset(pad); got != want {
 		t.Fatalf("p4 starts at %v, want %v", got, want)
 	}
 	for range 90 {
@@ -122,7 +123,7 @@ func TestAllPanesEscapeGoesBackAndIsDone(t *testing.T) {
 	for range 90 {
 		w.Frame(time.Second / 60)
 	}
-	if got, want := sw.tileOf("p1").box.Value(), geom.Rc(40, 80, 600, 400).Inset(geom.Uniform(termPadding.Get(lastTheme(w)))); got != want {
+	if got, want := sw.tileOf("p1").box.Value(), geom.Rc(40, 80+dock.BarSpace.Default(), 600, 400-dock.BarSpace.Default()).Inset(geom.Uniform(termPadding.Get(lastTheme(w)))); got != want {
 		t.Fatalf("p1 went back to %v, want %v", got, want)
 	}
 	if in, ok := overviewIntent(t, w).(app.OverviewDone); !ok {

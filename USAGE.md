@@ -21,8 +21,9 @@ Kakel comes with:
 | `Ctrl+Shift+N` | connect to a server |
 | `Shift+Win+K` on Windows, `Ctrl+Alt+K` on Linux | the launcher, from any program |
 | `Ctrl+Shift+A` | show every pane at once |
-| `Ctrl+PageDown` / `Ctrl+PageUp` | the next / previous tab |
+| `Ctrl+PageDown` / `Ctrl+PageUp` | the next / previous tab of the pane |
 | `Ctrl+Shift+PageDown` / `Ctrl+Shift+PageUp` | move the tab right / left |
+| `Ctrl+Shift+M` | fill the window with the pane, or put the others back |
 | `F11` | fill the screen with the panes |
 
 A paste of more than one line, or over 5 KB, opens in an editor first.
@@ -109,26 +110,28 @@ In All Panes, drag a pane to move it:
 
 - onto a pane, and it joins it in a split, on the side of it you let
   go nearest; the half it would take lights up.
-- onto another window's card, and it moves there on a tab of its own.
-  Onto its own window's card, it leaves its split for a tab of its own.
+- onto another window's card, and it moves there as a tab. Onto its own
+  window's card, it leaves its split for the tabs beside it.
 - onto room no card covers, and it opens a window of its own where you
   let it go. A window's only pane stays where it is.
 - over another kakel window, and it moves there; that window lights up
   while the pane is over it.
 
-In a split, each pane has a line along its top naming it; the pane with
-the keyboard has a coloured edge under its name. A click on the line
-gives the pane the keyboard. Drag the line to move the pane, without
-All Panes:
+Each pane has a bar of tabs: those along the window's top stand in the
+title bar, and one lower down over its pane. The tab with the keyboard
+is underlined where the window shows more than one pane. A click on a
+tab gives its pane the keyboard. Drag a tab to move it, without All
+Panes:
 
-- onto another pane, in this window or another, and it joins it in a
-  split, on the side of it you let go nearest; the half it would take
-  lights up.
-- onto the tab bar, and it leaves its split for a tab of its own, where
-  you let it go.
+- along its bar, to put it elsewhere among the tabs.
+- onto another bar, in this window or another, to join those tabs.
+- onto a pane: near an edge it splits the pane on that side, with that
+  half lit, and in the middle it joins its tabs.
 - outside every kakel window, and it opens a window of its own there.
 
-The Machines pane, the sidebar, has its own title and no line.
+Double-click a tab, or press `Ctrl+Shift+M`, to have its pane fill the
+window; do it again, or click the button at the end of its bar, to put
+the others back.
 
 Each window has its own panes and its own pane in front. The Machines
 pane lists the panes of every window, and clicking one in another

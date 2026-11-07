@@ -31,6 +31,10 @@ func moved(p, from geom.Point) bool {
 	return math.Hypot(float64(d.X), float64(d.Y)) > dragSlop
 }
 
+// docksHere is what the switcher answers a pane dragged over another: a
+// drop there joins it in a split.
+const docksHere = "docks here"
+
 // movesHere is what a window answers a pane dragged over it: a drop
 // there moves the pane in.
 const movesHere = "moves here"
@@ -346,7 +350,7 @@ func (g *paneGhost) Handle(e input.Event, u *gunim.UI) bool {
 		to, thin := float32(0), float32(0)
 		switch a.Answer.(type) {
 		case widget.DropHint:
-			// The tab bar's answer: the pane goes onto a tab of its own.
+			// The dock's answer: the pane goes there.
 			to = 1
 		}
 		switch a.Answer {
@@ -363,80 +367,8 @@ func (g *paneGhost) Handle(e input.Event, u *gunim.UI) bool {
 	return false
 }
 
-// paneDrop takes a pane dragged over the window, by its line or out of
-// another window's switcher. Over a pane on stage, the half it would
-// take lights, and a drop docks it there. Over the room above the stage,
-// a pane of this window's split would go onto a tab of its own. From
-// another window, anywhere else, the window lights up, and a drop moves
-// the pane in.
-func (w *Window) paneDrop(e input.Event, u *gunim.UI) bool {
-	switch e := e.(type) {
-	case input.DragOver:
-		d, ok := e.Data.(app.PaneDrag)
-		if !ok {
-			return false
-		}
-		w.dock = w.paneDockAt(e.Pos, d, u)
-		switch {
-		case w.dock.pane != "":
-			u.AnswerDrag(docksHere)
-			w.dropLit.Animate(0, widget.Quick.Get(u.Theme()))
-		case w.dock.toTab:
-			u.AnswerDrag(movesHere)
-		case d.Window != w.winID:
-			u.AnswerDrag(movesHere)
-			w.dropLit.Animate(1, widget.Quick.Get(u.Theme()))
-		default:
-			u.Invalidate()
-			return false
-		}
-		u.Invalidate()
-		return true
-	case input.DragLeave:
-		w.dock = tabDock{}
-		w.dropLit.Animate(0, widget.Quick.Get(u.Theme()))
-		u.Invalidate()
-		return false
-	case input.Drop:
-		d, ok := e.Data.(app.PaneDrag)
-		if !ok {
-			return false
-		}
-		dock := w.paneDockAt(e.Pos, d, u)
-		w.dock = tabDock{}
-		w.dropLit.Animate(0, widget.Settle.Get(u.Theme()))
-		u.Invalidate()
-		switch {
-		case dock.pane != "":
-			u.Send(w, app.DockPane{Pane: d.Pane, Beside: dock.pane, Vertical: dock.vertical, First: dock.first})
-		case dock.toTab:
-			u.Send(w, app.PaneToTab{Pane: d.Pane, Window: w.winID, Bar: true})
-		case d.Window != w.winID:
-			u.Send(w, app.PaneToWindow{Pane: d.Pane})
-		default:
-			return false
-		}
-		return true
-	}
-	return false
-}
-
-// paneDockAt is where pane d, dragged to p, would go: beside the pane on
-// stage under p, or, above the stage, out of its split onto a tab of
-// its own.
-func (w *Window) paneDockAt(p geom.Point, d app.PaneDrag, u *gunim.UI) tabDock {
-	if dk := w.dockOver(p, u, func(id string) bool { return id == d.Pane }); dk.pane != "" {
-		return dk
-	}
-	r, ok := u.Bounds(w.stage)
-	if !ok || p.Y >= r.Min.Y || d.Window != w.winID || len(boxLeaves(w.groups[d.Pane], nil)) < 2 {
-		return tabDock{}
-	}
-	return tabDock{toTab: true, lit: geom.Rc(0, 0, w.size.W, r.Min.Y).Inset(geom.Insets{Left: -4, Right: -4, Top: -4})}
-}
-
 // paintDropLit rings the window, and tints it, while a pane from
-// another window is over it.
+// another window is over it where the dock takes it nowhere.
 func (w *Window) paintDropLit(p *paint.Painter, f gunim.Frame, box geom.Size) {
 	on := min(max(w.dropLit.Value(), 0), 1)
 	if on < 0.01 {

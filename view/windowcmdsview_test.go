@@ -25,7 +25,7 @@ import (
 
 func TestTheHelpListsEveryCommandWithItsShortcut(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(app.State{Panes: []app.Pane{{ID: "p1", Kind: app.KindSettings, Title: "Settings"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1", SettingsTab: app.SettingsTabShortcuts, SettingsAsked: 1})
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Kind: app.KindSettings, Title: "Settings"}}, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1", SettingsTab: app.SettingsTabShortcuts, SettingsAsked: 1})
 	var close *helpLine
 	var heads []string
 	under := map[string]string{}

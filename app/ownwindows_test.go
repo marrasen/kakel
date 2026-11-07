@@ -1,6 +1,7 @@
 package app
 
 import (
+	"slices"
 	"testing"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/marrasen/gunim/driver"
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/gunimtest"
+	gdock "github.com/marrasen/gunim/widget/dock"
 )
 
 // twoWindowApp is a program serving two windows, p1 and p2 in the
@@ -43,8 +45,8 @@ func TestEachWindowShowsItsOwnPanes(t *testing.T) {
 	if got := ids(st.Panes); len(got) != 2 || got[0] != "p1" || got[1] != "p2" {
 		t.Fatalf("the first window shows %v, want p1 and p2", got)
 	}
-	if st.Focus != "p2" || st.Stage == nil || st.Stage.Pane != "p2" || !st.Behind {
-		t.Fatalf("the first window has %q in front, on stage %+v, behind %v", st.Focus, st.Stage, st.Behind)
+	if got := shown(a, one); st.Focus != "p2" || !slices.Equal(got, []string{"p2"}) || !st.Behind {
+		t.Fatalf("the first window has %q in front, showing %v, behind %v", st.Focus, got, st.Behind)
 	}
 	st = a.stateFor(two, a.st)
 	if got := ids(st.Panes); len(got) != 1 || got[0] != "p3" || st.Focus != "p3" || st.Behind {
@@ -57,11 +59,11 @@ func TestEachWindowShowsItsOwnPanes(t *testing.T) {
 func TestAPaneDroppedOnAnotherWindowMovesThere(t *testing.T) {
 	a, one, two := twoWindowApp(t)
 	a.handle(PaneToWindow{Pane: "p2"})
-	if a.winOf["p2"] != two.id {
+	if a.ownerOf("p2") != two {
 		t.Fatal("the pane stayed in its window")
 	}
-	if a.st.Focus != "p2" || a.groupOf["p2"] == a.groupOf["p3"] {
-		t.Fatalf("moved, the focus is on %q, and the pane is in group %d beside p3's %d", a.st.Focus, a.groupOf["p2"], a.groupOf["p3"])
+	if a.st.Focus != "p2" || !sameTabs(a, "p2", "p3") {
+		t.Fatalf("moved, the focus is on %q, and the pane stands with %v", a.st.Focus, tabsWith(a, "p2"))
 	}
 	if one.focus != "p1" {
 		t.Fatalf("the window it left has %q in front, want p1", one.focus)
@@ -79,7 +81,7 @@ func TestAPaneMovedOutOfASplitLeavesItsNeighbour(t *testing.T) {
 	a.handle(MovePane{Pane: "p2", Beside: "p1"})
 	a.front(two)
 	a.handle(PaneToWindow{Pane: "p2"})
-	if b := a.groups[a.groupOf["p1"]]; b == nil || b.Pane != "p1" {
+	if b := boxOf(a.layout.Window(one.id).Root); b == nil || b.Pane != "p1" {
 		t.Fatalf("the split it left is %+v, want p1 alone", b)
 	}
 	if one.focus != "p1" {
@@ -108,8 +110,8 @@ func TestAPaneLetGoOutsideOpensAWindow(t *testing.T) {
 	if at != geom.Pt(50, 60) || size != geom.Sz(700, 500) {
 		t.Fatalf("the window opened at %v, %v large", at, size)
 	}
-	if len(a.wins) != 3 || a.cur != a.wins[2] || a.winOf["p2"] != a.cur.id || a.st.Focus != "p2" {
-		t.Fatalf("%d windows, the pane in window %d, the focus on %q", len(a.wins), a.winOf["p2"], a.st.Focus)
+	if len(a.wins) != 3 || a.cur != a.wins[2] || a.ownerOf("p2") != a.cur || a.st.Focus != "p2" {
+		t.Fatalf("%d windows, the pane in window %d, the focus on %q", len(a.wins), a.ownerOf("p2").id, a.st.Focus)
 	}
 	if one.focus != "p1" {
 		t.Fatalf("the window it left has %q in front, want p1", one.focus)
@@ -147,12 +149,11 @@ func TestAWindowsOnlyTabMovesAndItsWindowGoes(t *testing.T) {
 	for _, dock := range []bool{false, true} {
 		a, one, two := twoWindowApp(t)
 		a.front(one)
-		g := a.groupOf["p3"]
+		to := gdock.Target{Win: one.id}
 		if dock {
-			a.handle(DockTab{Group: g, Beside: "p1"})
-		} else {
-			a.handle(MoveTab{Group: g})
+			to = gdock.Target{At: "p1", Side: gdock.Right}
 		}
+		a.handle(MoveTab{Pane: "p3", To: to})
 		a.leaveEmpty()
 		if a.ownerOf("p3") != one || !two.gone || one.gone {
 			t.Fatalf("docking %v, p3 is in window %d, the window it left gone %v", dock, a.ownerOf("p3").id, two.gone)
@@ -224,8 +225,8 @@ func TestANoticeShowsInTheWindowInFront(t *testing.T) {
 func TestAPaneAskedForAgainComesToTheWindowInFront(t *testing.T) {
 	a, one, two := twoWindowApp(t)
 	a.bringHere("p1")
-	if a.winOf["p1"] != two.id || a.st.Focus != "p1" || one.focus != "p2" {
-		t.Fatalf("p1 is in window %d, the focus on %q, and the other window's on %q", a.winOf["p1"], a.st.Focus, one.focus)
+	if a.ownerOf("p1") != two || a.st.Focus != "p1" || one.focus != "p2" {
+		t.Fatalf("p1 is in window %d, the focus on %q, and the other window's on %q", a.ownerOf("p1").id, a.st.Focus, one.focus)
 	}
 }
 

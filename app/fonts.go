@@ -210,8 +210,8 @@ const openCols, openRows = 80, 30
 
 // frameW and frameH are the window around the terminal: the room
 // round its cells, twice the default of the view's kakel.term.padding,
-// and the title bar and the pane's title above.
-const frameW, frameH = 12, 64
+// and the title bar above, with the room a theme may leave under it.
+const frameW, frameH = 12, 46
 
 // firstSize is how big a new window opens: room for a terminal of
 // openCols by openRows at font size, in Go Mono.

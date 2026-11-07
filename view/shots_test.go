@@ -157,7 +157,7 @@ func TestShots(t *testing.T) {
 		win, _, publish := windowStageOf(t, size)
 		st := shotsState()
 		st.Panes = append(st.Panes, app.Pane{ID: "mp", Title: "machine", Kind: app.KindMachine, Machine: c.m, Row: c.row, RowAt: 1})
-		st.Stage, st.Focus = &app.Box{Pane: "mp"}, "mp"
+		st.Layout, st.Focus = boxLayout(&app.Box{Pane: "mp"}), "mp"
 		publish(st)
 		settle()
 		shot(c.out)
@@ -188,7 +188,7 @@ func TestShotsTabSwitch(t *testing.T) {
 	settle()
 	next := st
 	next.Panes = append(slices.Clone(st.Panes), app.Pane{ID: "mp", Title: "web", Kind: app.KindMachine, Machine: "s1"})
-	next.Stage, next.Focus = &app.Box{Pane: "mp"}, "mp"
+	next.Layout, next.Focus = boxLayout(&app.Box{Pane: "mp"}), "mp"
 	publish(next)
 	for i := 1; i <= 4; i++ {
 		frames(2)
@@ -216,7 +216,7 @@ func TestShotsTunnelTraffic(t *testing.T) {
 	st.Tunnels[0].Account, st.Tunnels[0].Watching = account, true
 	st.Panes = append(st.Panes, app.Pane{ID: "mp", Title: "machine", Kind: app.KindMachine, Machine: "s1",
 		Row: tunnelKey("local", ":8080", "localhost:80"), RowAt: 1})
-	st.Stage, st.Focus = &app.Box{Pane: "mp"}, "mp"
+	st.Layout, st.Focus = boxLayout(&app.Box{Pane: "mp"}), "mp"
 	publish(st)
 	// Five seconds of traffic, rising and falling, as frames go by.
 	for i := range 300 {
@@ -242,7 +242,7 @@ func TestShotsShortcuts(t *testing.T) {
 		gunimtest.WritePNG(t, filepath.Join(dir, "shortcuts-"+name+".png"), gunimtest.Pixels(t, lastWindow))
 	}
 	win, _, publish := windowStageOf(t, geom.Sz(1100, 760))
-	st := app.State{Panes: []app.Pane{{ID: "p1", Kind: app.KindSettings, Title: "Settings"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1", SettingsTab: app.SettingsTabShortcuts, SettingsAsked: 1}
+	st := app.State{Panes: []app.Pane{{ID: "p1", Kind: app.KindSettings, Title: "Settings"}}, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1", SettingsTab: app.SettingsTabShortcuts, SettingsAsked: 1}
 	publish(st)
 	settle()
 	shot("rest")

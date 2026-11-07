@@ -139,7 +139,7 @@ func TestARowAskedForIsShownOnce(t *testing.T) {
 	st := app.State{Saved: []remote.Host{{ID: "s1", Name: "prod", Address: "prod.example"}}}
 	win, _, publish := windowStage(t)
 	st.Panes = []app.Pane{{ID: "mp", Kind: app.KindMachine, Machine: "s1", Row: app.MachineRowLog, RowAt: 1}}
-	st.Stage, st.Focus = &app.Box{Pane: "mp"}, "mp"
+	st.Layout, st.Focus = boxLayout(&app.Box{Pane: "mp"}), "mp"
 	publish(st)
 	frames(2)
 	if mp := win.machinePanes["mp"]; mp == nil || mp.sel != app.MachineRowLog {
@@ -177,7 +177,7 @@ func TestTheMachinesPaneGoesAtOnceWithItsTab(t *testing.T) {
 	settle()
 	next := st
 	next.Panes = append(slices.Clone(st.Panes), app.Pane{ID: "mp", Title: "web", Kind: app.KindMachine, Machine: "s1"})
-	next.Stage, next.Focus = &app.Box{Pane: "mp"}, "mp"
+	next.Layout, next.Focus = boxLayout(&app.Box{Pane: "mp"}), "mp"
 	publish(next)
 	for i := range 20 {
 		frames(1)

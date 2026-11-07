@@ -21,6 +21,7 @@ import (
 	gi "github.com/marrasen/gunim/input"
 	"github.com/marrasen/gunim/paint"
 	"github.com/marrasen/gunim/widget"
+	"github.com/marrasen/gunim/widget/dock"
 
 	"github.com/marrasen/kakel/logs"
 	"github.com/marrasen/kakel/remote"
@@ -63,6 +64,7 @@ func windowStageOf(t *testing.T, size geom.Size) (win *Window, sh *screen.Shells
 	}
 	publish = func(st app.State) {
 		t.Helper()
+		st.Layout = withAllPanes(inWin(st.Layout, st.Window), st)
 		if err := c.Publish(app.WindowTopic, st); err != nil {
 			t.Fatal(err)
 		}
@@ -96,7 +98,7 @@ func TestAMachinePaneOffStageCatchesUpWhenItComesBack(t *testing.T) {
 		return app.State{
 			Saved:        []remote.Host{{ID: "s1", Name: "prod", Address: "prod.example"}},
 			Panes:        []app.Pane{{ID: "mp", Title: "prod", Machine: "s1", Kind: app.KindMachine}, {ID: "p2", Title: "gthome", Kind: app.KindFileManager}},
-			Stage:        &app.Box{Pane: focus},
+			Layout:       boxLayout(&app.Box{Pane: focus}),
 			Focus:        focus,
 			SavedTunnels: kept,
 		}
@@ -124,7 +126,7 @@ func TestATunnelChangingOffStageShowsWhenItsPaneComesBack(t *testing.T) {
 	st := func(focus string, live bool) app.State {
 		return app.State{
 			Panes:   []app.Pane{{ID: "p1", Title: "Tunnel", Machine: "srv", Kind: app.KindTunnel, Tunnel: "t1"}, {ID: "p2", Title: "gthome", Kind: app.KindFileManager}},
-			Stage:   &app.Box{Pane: focus},
+			Layout:  boxLayout(&app.Box{Pane: focus}),
 			Focus:   focus,
 			Tunnels: []app.Tunnel{{ID: "t1", Machine: "srv", Label: ":80 → x:80", Note: "idle", Live: live, Pane: "p1"}},
 		}
@@ -136,27 +138,6 @@ func TestATunnelChangingOffStageShowsWhenItsPaneComesBack(t *testing.T) {
 	bar := win.tunnelPanes["p1"].bar
 	if len(bar.bar.shown) != 1 || bar.bar.shown[0] != bar.close || bar.close.Label != "Clear" {
 		t.Fatalf("back on stage, the stopped tunnel's bar offers %d buttons, the last saying %q", len(bar.bar.shown), bar.close.Label)
-	}
-}
-
-func TestPaneTitlesComeAndGo(t *testing.T) {
-	win, _, publish := windowStage(t)
-	st := twoPanes("p2", nil)
-	st.PaneTitles = true
-	publish(st)
-	c, ok := win.stage.shown.(*captioned)
-	if !ok {
-		t.Fatalf("with titles, the stage shows %T", win.stage.shown)
-	}
-	// A file manager pane's caption names its machine; the file manager
-	// names the folder.
-	if got := c.bar.label.Text; got != "This computer" {
-		t.Fatalf("the title reads %q", got)
-	}
-	st.PaneTitles = false
-	publish(st)
-	if _, ok := win.stage.shown.(*fmHost); !ok {
-		t.Fatalf("without titles, the stage shows %T", win.stage.shown)
 	}
 }
 
@@ -192,9 +173,9 @@ func TestAPaneSlidingInKeepsItsShellAUsableSize(t *testing.T) {
 		t.Cleanup(func() { _ = sh.Get(id).T.Close() })
 	}
 	panes := []app.Pane{{ID: "p1", Title: "Terminal 1"}, {ID: "p2", Title: "Terminal 2"}}
-	publish(app.State{Panes: panes, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
+	publish(app.State{Panes: panes, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1"})
 	// The second slides in beside the first, frame by frame.
-	publish(app.State{Panes: panes, Focus: "p2", Stage: &app.Box{ID: "s1", Share: 0.5, Opening: true, A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "p2"}}})
+	publish(app.State{Panes: panes, Focus: "p2", Layout: boxLayout(&app.Box{ID: "s1", Share: 0.5, A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "p2"}})})
 	for range 60 {
 		lastWindow.Frame(time.Second / 60)
 	}
@@ -371,7 +352,7 @@ func TestTheReaderShowsWhatArrivesAndWhatFollows(t *testing.T) {
 		`{"level":"info","msg":"served","time":"2026-09-26T10:00:03Z"}`,
 		`{"level":"info","msg":"served","time":"2026-09-26T10:00:04Z"}`,
 	}
-	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "app.log", Kind: app.KindReader}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"}
+	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "app.log", Kind: app.KindReader}}, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1"}
 	st.Readers = map[string]app.Reader{"p1": {Path: "/var/log/app.log", Name: "app.log", Lines: lines, Seq: 1}}
 	publish(st)
 	rd := win.readers["p1"]
@@ -395,7 +376,7 @@ func TestTheReaderShowsWhatArrivesAndWhatFollows(t *testing.T) {
 func TestTheReaderShowsAnImage(t *testing.T) {
 	win, _, publish := windowStage(t)
 	img := image.NewRGBA(image.Rect(0, 0, 40, 20))
-	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "dot.png", Kind: app.KindReader}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"}
+	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "dot.png", Kind: app.KindReader}}, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1"}
 	st.Readers = map[string]app.Reader{"p1": {Path: "/x/dot.png", Name: "dot.png", Pic: &files.Pic{Img: img, Kind: "PNG", Was: image.Pt(40, 20)}, Seq: 1}}
 	publish(st)
 	rd := win.readers["p1"]
@@ -418,7 +399,7 @@ func TestTheReaderShowsAnImage(t *testing.T) {
 
 func TestTheReaderCopiesAndSaves(t *testing.T) {
 	win, _, publish := windowStage(t)
-	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "notes.txt", Kind: app.KindReader}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"}
+	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "notes.txt", Kind: app.KindReader}}, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1"}
 	st.Readers = map[string]app.Reader{"p1": {Path: "/x/notes.txt", Name: "notes.txt", Lines: []string{"first", "second", "third"}, Seq: 1}}
 	publish(st)
 	for len(lastWindow.Client().Intents()) > 0 {
@@ -497,10 +478,10 @@ func TestFullScreenShowsTheStageAlone(t *testing.T) {
 // focus on one of them.
 func twoPanes(focus string, jobs []app.Job) app.State {
 	return app.State{
-		Panes: []app.Pane{{ID: "p1", Title: "Jobs", Kind: app.KindJobs}, {ID: "p2", Title: "gthome", Kind: app.KindFileManager}},
-		Stage: &app.Box{Pane: focus},
-		Focus: focus,
-		Jobs:  jobs,
+		Panes:  []app.Pane{{ID: "p1", Title: "Jobs", Kind: app.KindJobs}, {ID: "p2", Title: "gthome", Kind: app.KindFileManager}},
+		Layout: boxLayout(&app.Box{Pane: focus}),
+		Focus:  focus,
+		Jobs:   jobs,
 	}
 }
 
@@ -508,11 +489,14 @@ func twoPanes(focus string, jobs []app.Job) app.State {
 // of what is there, where the sidebar was.
 func withServers(st app.State) app.State {
 	st.Panes = append(slices.Clone(st.Panes), app.Pane{ID: "ps", Title: "Machines", Kind: app.KindServers})
-	if st.Stage == nil {
-		st.Stage = &app.Box{Pane: "ps"}
+	ps := &dock.Node{ID: "#gps", Kind: dock.Group, Front: "ps", Kids: []*dock.Node{{ID: "ps", Kind: dock.Item}}}
+	if len(st.Layout.Windows) == 0 || st.Layout.Windows[0].Root == nil {
+		st.Layout = boxLayout(&app.Box{Pane: "ps"})
 		return st
 	}
-	st.Stage = &app.Box{ID: "sidebar", Share: 0.3, A: &app.Box{Pane: "ps"}, B: st.Stage}
+	st.Layout = st.Layout.Clone()
+	w := &st.Layout.Windows[0]
+	w.Root = &dock.Node{ID: "#sidebar", Kind: dock.Row, Share: 0.3, Kids: []*dock.Node{ps, w.Root}}
 	return st
 }
 

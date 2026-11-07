@@ -58,7 +58,7 @@ func (o *Overview) Update(st app.OverState, u *gunim.UI) {
 		// Its key closes it, as the user has it.
 		o.keys.Become(next)
 	}
-	env := overEnv{shells: o.shells, keys: o.keys, fontSize: st.FontSize, faces: st.Font.Faces, titles: st.PaneTitles, machines: st.Machines}
+	env := overEnv{shells: o.shells, keys: o.keys, fontSize: st.FontSize, faces: st.Font.Faces, machines: st.Machines}
 	switch {
 	case !o.shown && st.Close:
 		// Asked to close before it showed.

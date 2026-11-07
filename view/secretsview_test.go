@@ -19,7 +19,7 @@ import (
 func TestTheSecretsPaneFindsAndShowsWholly(t *testing.T) {
 	win, _, publish := windowStage(t)
 	st := app.State{
-		Panes: []app.Pane{{ID: "p1", Title: "Secrets", Kind: app.KindSecrets}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1",
+		Panes: []app.Pane{{ID: "p1", Title: "Secrets", Kind: app.KindSecrets}}, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1",
 		Secrets: app.Secrets{Exists: true, Open: true,
 			Items: []app.SecretItem{{ID: "1", Name: "db", User: "admin", Kind: secrets.Password},
 				{ID: "2", Name: "work key", File: "/home/me/work/id_ed25519", Kind: secrets.Password},

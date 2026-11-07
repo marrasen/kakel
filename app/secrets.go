@@ -399,7 +399,7 @@ func (a *app) showSecretsPane(then func(id string)) {
 		// A tool pane, shown where it is: in a window of its own, that
 		// window comes to the front.
 		for _, p := range a.st.Panes {
-			if p.Kind == KindSecrets && !a.closing[p.ID] {
+			if p.Kind == KindSecrets {
 				a.focusRaised(p.ID)
 				then(p.ID)
 				return nil

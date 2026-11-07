@@ -39,8 +39,8 @@ func TestTheSidebarMarksWhatEachRowIs(t *testing.T) {
 			// On a machine the window reached with nothing open there:
 			// under the window.
 			{ID: "j3", Title: "Copying 1 item", Machine: machines.FarID("desk", "web"), Kind: "copy", Share: 0.1}},
-		Stage: &app.Box{Pane: "p2"},
-		Focus: "p2",
+		Layout: boxLayout(&app.Box{Pane: "p2"}),
+		Focus:  "p2",
 	}
 	publish(withServers(st))
 	row := func(key string) *sideRow {
@@ -94,7 +94,7 @@ func TestSharingShowsChipsAndOpensThePermissions(t *testing.T) {
 	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
 	sh.Set("p1", screen.Open(sessiontest.New(), vt.DefaultPalette(), quiet))
 	t.Cleanup(func() { _ = sh.Get("p1").T.Close() })
-	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"}
+	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1"}}, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1"}
 	publish(withServers(st))
 	for len(lastWindow.Client().Intents()) > 0 {
 		<-lastWindow.Client().Intents()
@@ -204,7 +204,7 @@ func TestAMachineOverThereHasAHeadingWithNothingOpenOnIt(t *testing.T) {
 // brings it out again; a note that says something new is up again.
 func TestANoteGoesQuietOnceItHasSettled(t *testing.T) {
 	win, _, publish := windowStage(t)
-	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "build", Kind: app.KindFileManager, Note: "42%"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"}
+	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "build", Kind: app.KindFileManager, Note: "42%"}}, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1"}
 	publish(withServers(st))
 	row, ok := win.cards.row(widget.Key("p1"))
 	if !ok || row.note.Text != "42%" {

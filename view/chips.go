@@ -7,6 +7,7 @@ import (
 	"github.com/marrasen/kakel/app"
 
 	"github.com/marrasen/gunim"
+	"github.com/marrasen/gunim/anim"
 	"github.com/marrasen/gunim/geom"
 	gi "github.com/marrasen/gunim/input"
 	"github.com/marrasen/gunim/paint"
@@ -31,17 +32,29 @@ type chip struct {
 
 // chipBar shows the chips.
 type chipBar struct {
+	anim.Group
 	chips  []chip
 	labels []*widget.Label
 	boxes  []geom.Rect
+	// limited says the bar has only room wide to stand in, as on a narrow
+	// tab bar at the end of the title row, and fades away where it needs
+	// more; on is how far it shows, and wide how wide it would be.
+	limited bool
+	room    float32
+	on      *anim.Float
+	wide    float32
 }
+
+// tabTop is how far below the top of the title bar a tab starts.
+const tabTop = 4
 
 // mostChips is how many chips the bar holds. Its labels are made with
 // it, since the window takes a node's children as it is mounted.
 const mostChips = 4
 
 func newChipBar() *chipBar {
-	b := &chipBar{}
+	b := &chipBar{on: anim.NewFloat(1)}
+	b.Add(b.on)
 	for range mostChips {
 		l := widget.NewLabel("")
 		l.Size, l.MaxLines = smallText, 1
@@ -109,7 +122,16 @@ func (b *chipBar) Layout(c gunim.Constraints, f gunim.Frame, kids gunim.Children
 	if x > 0 {
 		x += chipGap
 	}
-	return c.Constrain(geom.Sz(x, h))
+	b.wide = x
+	want := float32(1)
+	if b.limited && x > b.room {
+		want = 0
+	}
+	if b.on.Target() != want {
+		b.on.Animate(want, widget.Quick.Get(f.Theme))
+		f.RedrawAt(f.Now)
+	}
+	return c.Constrain(geom.Sz(x*min(max(b.on.Value(), 0), 1), h))
 }
 
 // Paint implements [gunim.Node]: on the title bar's own colour, as the
@@ -117,6 +139,9 @@ func (b *chipBar) Layout(c gunim.Constraints, f gunim.Frame, kids gunim.Children
 func (b *chipBar) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gunim.Children) {
 	if len(b.boxes) > 0 {
 		p.RRect(geom.Rect{Max: box.Point()}, 0, paint.Solid(widget.MenubarFill.Get(f.Theme)))
+	}
+	if on := min(max(b.on.Value(), 0), 1); on < 1 {
+		defer p.Layer(paint.LayerOpts{Bounds: geom.Rect{Max: box.Point()}, Opacity: on, Clip: true})()
 	}
 	i := 0
 	for k := range kids.All {

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/marrasen/gunim/filemanager"
+	"github.com/marrasen/gunim/widget/dock"
 
 	"github.com/marrasen/kakel/look"
 	"github.com/marrasen/kakel/tunnel"
@@ -62,16 +63,11 @@ type State struct {
 	Behind bool
 	// Panes are the open panes, in the sidebar's order.
 	Panes []Pane
-	// Stage is the arrangement on screen: the group of panes the
-	// focused pane belongs to. Nil when no pane is open.
-	Stage *Box
-	// Groups are how each of the window's panes is arranged, by pane:
-	// the split it sits in, or itself alone, for the switcher to grow a
-	// pane into its place and its neighbours into theirs.
-	Groups map[string]*Box
+	// Layout is where every window's panes stand, in tabs and splits,
+	// which the window's dock shows its part of. Every window's, so a tab
+	// dragged in from another is known.
+	Layout dock.Layout
 	Focus  string
-	// Tabs are the window's tabs, in order.
-	Tabs []Tab
 	// AllPanes are every window's panes, each saying which window it is
 	// in, for the Machines pane to list, and Working the pane last worked
 	// in, in whichever window, whose row it lights.
@@ -148,10 +144,6 @@ type State struct {
 	// with the names to show: the saved servers and windows, and the
 	// quick connections.
 	Machines []machines.Info
-	// PaneTitles says each pane shows a line naming it, and Bells
-	// counts the bells rung in panes, for the window to ask for the
-	// user's attention.
-	PaneTitles bool
 	// SavedCommands are the commands kept, newest first.
 	SavedCommands []settings.SavedCommand
 	// Shells are the shells found on this machine, and ChosenShell the
@@ -401,83 +393,17 @@ type Pane struct {
 	RowAt int
 }
 
-// Box is one part of an arrangement: a pane, or a split of two boxes.
+// Box is one part of what a window shows, for All Panes to draw: a
+// pane, or a split of two boxes. boxOf makes it from the layout.
 type Box struct {
 	// Pane names the pane a leaf shows; a split has none.
 	Pane string
-	// ID names a split, so the window keeps its divider where it is
-	// from one state to the next.
+	// ID names a split.
 	ID       string
 	Vertical bool
 	// Share is the first box's share of the split's space.
 	Share float32
-	// Opening marks a split just made, whose new pane slides in.
-	Opening bool
-	A, B    *Box
-}
-
-func (b *Box) clone() *Box {
-	if b == nil {
-		return nil
-	}
-	c := *b
-	c.A, c.B = b.A.clone(), b.B.clone()
-	return &c
-}
-
-// leaves appends the panes under b, first to last.
-func (b *Box) leaves(out []string) []string {
-	switch {
-	case b == nil:
-		return out
-	case b.Pane != "":
-		return append(out, b.Pane)
-	}
-	return b.B.leaves(b.A.leaves(out))
-}
-
-// beside returns the pane nearest pane across the split that holds
-// it: the first one on that side when pane is first, and the last one
-// when it is second.
-func (b *Box) beside(pane string) string {
-	if b == nil || b.Pane != "" {
-		return ""
-	}
-	switch {
-	case b.A.Pane == pane:
-		return b.B.leaves(nil)[0]
-	case b.B.Pane == pane:
-		l := b.A.leaves(nil)
-		return l[len(l)-1]
-	}
-	if n := b.A.beside(pane); n != "" {
-		return n
-	}
-	return b.B.beside(pane)
-}
-
-// replace returns b with the leaf for pane swapped for with, which may
-// be nil to take the leaf out: its split then gives way to the other
-// side.
-func (b *Box) replace(pane string, with *Box) *Box {
-	switch {
-	case b == nil:
-		return nil
-	case b.Pane == pane:
-		return with
-	case b.Pane != "":
-		return b
-	}
-	a, c := b.A.replace(pane, with), b.B.replace(pane, with)
-	switch {
-	case a == nil:
-		return c
-	case c == nil:
-		return a
-	}
-	n := *b
-	n.A, n.B = a, c
-	return &n
+	A, B  *Box
 }
 
 // Intents: what the window asks the program for.
@@ -485,8 +411,10 @@ type (
 	// NewTerminal opens a shell in a pane of its own.
 	NewTerminal struct{}
 	// NewTab opens a tab like the one in front: a file manager at the
-	// folder a file manager there shows, and otherwise a terminal.
-	NewTab struct{}
+	// folder a file manager there shows, and otherwise a terminal. Group
+	// is the group of the bar whose + asked, "" for the one with the
+	// keyboard.
+	NewTab struct{ Group string }
 	// SplitPane splits the focused pane, and opens a shell in the new
 	// half: to the right, or below with Vertical. The shell is on the
 	// focused pane's machine, or on Machine with Elsewhere; Shell names
@@ -536,8 +464,6 @@ type (
 	// DialogClosed says a dialog closed without a change, so the window
 	// gives the keyboard back.
 	DialogClosed struct{}
-	// TogglePaneTitles shows or hides the line naming each pane.
-	TogglePaneTitles struct{}
 	// SetPasteCheck turns on or off opening a paste of several lines,
 	// or a large one, in an editor before it reaches the pane.
 	SetPasteCheck struct{ On bool }
@@ -549,6 +475,8 @@ type (
 	OpenOn struct {
 		Machine machines.ID
 		Login   bool
+		// Group is the group of the bar it was asked from, "" for none.
+		Group string
 	}
 	// FilesOn opens a file manager pane on Machine, at Path, or at home
 	// when Path is empty.
@@ -638,7 +566,6 @@ type app struct {
 	wins       []*ownWin
 	cur        *ownWin
 	nextWin    int
-	winOf      map[string]int
 	intents    chan windowIn
 	openWindow WindowOpener
 	// placed, when set, says where a window is on the screen, in place
@@ -686,14 +613,8 @@ type app struct {
 	stayEmpty bool
 	shells    *screen.Shells
 	st        State
-	// groups holds each group's arrangement, and groupOf each pane's
-	// group.
-	groups  map[int]*Box
-	groupOf map[string]int
-	// tabOrder is the order of the tabs, every window's together, and
-	// groupFocus the pane in each group that last had the keyboard.
-	tabOrder   []int
-	groupFocus map[int]string
+	// layout is where every window's panes stand.
+	layout dock.Layout
 	// staged is the release put in place of this program, which starts
 	// the next time kakel does.
 	staged string
@@ -701,11 +622,9 @@ type app struct {
 	// fromTool says an intent from a tool window is being handled.
 	work     *ownWin
 	fromTool bool
-	// next numbers the panes, and nextGroup the groups.
-	next      int
-	nextGroup int
+	// next numbers the panes.
+	next int
 	// splits numbers the splits made, for their ids.
-	splits int
 	// notices counts the notices made.
 	notices uint64
 	// viewed counts the files shown in the viewer, for each one's ID,
@@ -722,8 +641,6 @@ type app struct {
 	// replies waits for the answers to asks, by ID, and askIDs counts
 	// them.
 	replies map[uint64]chan AskAnswered
-	// closing holds the panes folding away.
-	closing map[string]bool
 	// draftTyped are the draft machine panes with something typed in
 	// them, which ask before they close.
 	draftTyped map[string]bool
@@ -947,12 +864,9 @@ func newApp(c gunim.Client, sh *screen.Shells) *app {
 		c:            c,
 		shells:       sh,
 		st:           State{FontSize: defaultFontSize, Fonts: []string{bundledFamily, dosFamily}},
-		groups:       map[int]*Box{},
-		groupFocus:   map[int]string{},
-		groupOf:      map[string]int{},
+		layout:       dock.Layout{Grouped: true},
 		ring:         remote.NewRing(),
 		replies:      map[uint64]chan AskAnswered{},
-		closing:      map[string]bool{},
 		draftTyped:   map[string]bool{},
 		draftAsked:   map[string]bool{},
 		tunnels:      map[string]*tunnel.Held{},
@@ -980,7 +894,6 @@ func newApp(c gunim.Client, sh *screen.Shells) *app {
 		far:          pathsFar{known: map[string]farPath{}, asking: map[string]bool{}},
 		wake:         make(chan struct{}, 1),
 		events:       make(chan func(), 64),
-		winOf:        map[string]int{},
 		intents:      make(chan windowIn, 64),
 	}
 	a.machines = machines.New(func() *remote.Book { return a.book })
@@ -1186,7 +1099,6 @@ func (a *app) loadSettings() {
 		if s, err := settings.Load(path); err == nil {
 			a.settings = s
 			a.st.SavedTunnels = s.Tunnels()
-			a.st.PaneTitles = s.PaneTitles()
 			a.st.SavedCommands = s.Commands()
 			a.st.ChosenShell, _ = s.Shell()
 			a.st.Profiles = s.Profiles()
@@ -1421,7 +1333,7 @@ func (a *app) publish() {
 		a.notePlaces()
 	}
 	a.forgetUnused()
-	a.noteTabFocus()
+	a.keepFocusShown()
 	a.noteMachineUsed()
 	a.st.Machines = a.machines.Infos()
 	a.notePanes()
@@ -1485,7 +1397,7 @@ func (a *app) publish() {
 	a.tellServed()
 	a.tellWindowsTunnels()
 	st.SavedTunnels = slices.Clone(a.st.SavedTunnels)
-	st.Stage = a.groups[a.groupOf[a.st.Focus]].clone()
+	st.Layout = a.layout.Clone()
 	st.Secrets.Waiting = a.waitingForSecret()
 	st.Secrets.TypeInto, st.Secrets.TypeIntoTitle = a.typeTarget()
 	st.Secrets.Editing = slices.Clone(a.secretEditing)
@@ -1496,19 +1408,6 @@ func (a *app) publish() {
 	}
 	// After the state that gives each its place.
 	a.showFilePanes()
-	// A split opens once; after that it is only a split.
-	for _, g := range a.groups {
-		clearOpening(g)
-	}
-}
-
-func clearOpening(b *Box) {
-	if b == nil {
-		return
-	}
-	b.Opening = false
-	clearOpening(b.A)
-	clearOpening(b.B)
 }
 
 func (a *app) handle(in gunim.Intent) {
@@ -1518,10 +1417,10 @@ func (a *app) handle(in gunim.Intent) {
 	var err error
 	switch in := in.(type) {
 	case NewTerminal:
-		err = a.openTerminal()
+		err = a.openTerminal(Placement{})
 	case NewTab:
 		if !a.newFilePaneLike(a.st.Focus) {
-			err = a.openTerminal()
+			err = a.openTerminal(Placement{Group: in.Group})
 		}
 	case SplitPane:
 		err = a.split(in)
@@ -1552,7 +1451,7 @@ func (a *app) handle(in gunim.Intent) {
 	case PopOut:
 		a.popOut()
 	case SplitMoved:
-		setShare(a.groups[a.groupOf[a.st.Focus]], in.Split, in.Share)
+		a.layout.SetShare(in.Split, in.Share)
 	case Exit:
 		a.askToQuit()
 	case RenamePane:
@@ -1810,12 +1709,12 @@ func (a *app) handle(in gunim.Intent) {
 		if in.Login && in.Machine != "" {
 			a.nextFar[in.Machine] = LoginShell
 		}
-		err = a.open(in.Machine, Placement{})
+		err = a.open(in.Machine, Placement{Group: in.Group})
 	case FilesOn:
 		err = a.filesOn(in.Machine, in.Path)
 	case OpenFilesOn:
 		if in.NewTab {
-			err = a.filePaneOn(in.Machine, in.Path, Placement{}, false)
+			err = a.filePaneOn(in.Machine, in.Path, Placement{Group: in.Group}, false)
 		} else {
 			err = a.filesOn(in.Machine, in.Path)
 		}
@@ -1946,13 +1845,7 @@ func (a *app) handle(in gunim.Intent) {
 			}
 		}
 		a.showTray()
-	case TogglePaneTitles:
-		a.st.PaneTitles = !a.st.PaneTitles
-		if a.settings != nil {
-			if err := a.settings.PutPaneTitles(a.st.PaneTitles); err != nil {
-				a.failed("Couldn't keep the pane titles for next time", err.Error())
-			}
-		}
+
 	case DialogClosed:
 	}
 	if err != nil {
@@ -2022,17 +1915,6 @@ func (a *app) titleOf(id string) string {
 	return ""
 }
 
-func setShare(b *Box, id string, share float32) {
-	if b == nil {
-		return
-	}
-	if b.ID == id {
-		b.Share = share
-	}
-	setShare(b.A, id, share)
-	setShare(b.B, id, share)
-}
-
 func (a *app) has(id string) bool {
 	return slices.ContainsFunc(a.st.Panes, func(p Pane) bool { return p.ID == id })
 }
@@ -2045,6 +1927,8 @@ type Placement struct {
 	// Instead puts the pane in the place of that one, a split's chooser,
 	// which goes: the chooser's split is the one it lands in.
 	Instead string
+	// Group puts it as a tab of that group, as a bar's + asked.
+	Group string
 }
 
 // hooks are what a pane's shell tells the program.
@@ -2294,54 +2178,51 @@ func (a *app) addPane(p Pane, sh *screen.Shell, at Placement) {
 		log.Printf("opened %s", a.paneForLog(p))
 	}
 	a.stayEmpty = false
-	a.winOf[p.ID] = a.frontID()
 	a.place(p.ID, at)
 	a.st.Focus = p.ID
 }
 
-// place puts a pane in no group yet where at says: in a split beside
-// another, or in a group of its own.
+// place puts a pane in no window yet where at says: in the place of a
+// chooser, in a split beside another pane, or as a tab of the group with
+// the keyboard in the window in front.
 func (a *app) place(id string, at Placement) {
-	if at.Instead != "" {
-		if _, ok := a.groupOf[at.Instead]; !ok {
-			// The chooser has gone already, to an earlier pick: beside
-			// the pane it was split from, then, in the same split.
-			at = Placement{Beside: a.choosers[at.Instead]}
-		}
+	if at.Instead != "" && a.layout.Node(at.Instead) == nil {
+		// The chooser has gone already, to an earlier pick: beside the
+		// pane it was split from, then, in the same split.
+		at = Placement{Beside: a.choosers[at.Instead]}
 	}
-	if g, ok := a.groupOf[at.Instead]; ok && at.Instead != "" {
+	if g := a.layout.GroupOf(at.Instead); at.Instead != "" && g != nil {
 		// In the chooser's place, which goes, as picked in it.
-		a.groups[g] = a.groups[g].replace(at.Instead, &Box{Pane: id})
-		a.groupOf[id] = g
-		a.sameWindow(id, at.Instead)
-		delete(a.groupOf, at.Instead)
+		i := slices.IndexFunc(g.Kids, func(k *dock.Node) bool { return k.ID == at.Instead })
+		a.layout.Add(id, dock.Target{At: g.ID, Index: i})
+		a.layout.Remove(at.Instead)
 		a.dropChooser(at.Instead)
 		return
 	}
-	a.nextGroup++
-	g, ok := a.groupOf[at.Beside]
-	if at.Beside == "" || !ok {
-		g = a.nextGroup
-		a.groups[g] = &Box{Pane: id}
-	} else {
-		a.splits++
-		box := &Box{
-			ID: "s" + strconv.Itoa(a.splits), Vertical: at.Vertical, Share: 0.5, Opening: true,
-			A: &Box{Pane: at.Beside}, B: &Box{Pane: id},
-		}
-		a.groups[g] = a.groups[g].replace(at.Beside, box)
-		a.sameWindow(id, at.Beside)
+	if at.Group != "" && a.layout.Node(at.Group) != nil {
+		a.layout.Add(id, dock.Target{At: at.Group, Index: -1})
+		return
 	}
-	a.groupOf[id] = g
+	if at.Beside != "" && a.layout.Node(at.Beside) != nil {
+		side := dock.Right
+		if at.Vertical {
+			side = dock.Bottom
+		}
+		a.layout.Add(id, dock.Target{At: at.Beside, Side: side})
+		return
+	}
+	a.putIn(id, a.frontID())
 }
 
-// sameWindow puts pane id in the window of the pane it joins in a
-// split, other: a group's panes are in one window, which may not be the
-// one in front by the time a pane asked for arrives.
-func (a *app) sameWindow(id, other string) {
-	if n, ok := a.winOf[other]; ok {
-		a.winOf[id] = n
+// putIn adds pane id to window win: as a tab of its group with the
+// keyboard, or alone in a window with none.
+func (a *app) putIn(id string, win int) {
+	a.keepWindow(win)
+	if g := a.keysGroup(win); g != nil {
+		a.layout.Add(id, dock.Target{At: g.ID, Index: -1})
+		return
 	}
+	a.layout.Add(id, dock.Target{Win: win})
 }
 
 // machineOf returns the machine a pane is on, "" for this one.
@@ -2370,9 +2251,9 @@ func (a *app) noteMachineUsed() {
 
 // openTerminal opens a shell where the focused pane is, on a stage of
 // its own: on this computer, the one the focused pane runs.
-func (a *app) openTerminal() error {
+func (a *app) openTerminal(at Placement) error {
 	a.likeHere()
-	return a.open(a.filesKey(a.st.Focus), Placement{})
+	return a.open(a.filesKey(a.st.Focus), at)
 }
 
 // split opens a shell beside the focused pane, on its machine.
@@ -2432,7 +2313,6 @@ func (a *app) dropChooser(id string) {
 	delete(a.farHost, id)
 	if i := slices.IndexFunc(a.st.Panes, func(p Pane) bool { return p.ID == id }); i >= 0 {
 		a.st.Panes = slices.Delete(a.st.Panes, i, i+1)
-		delete(a.winOf, id)
 	}
 }
 
@@ -2451,79 +2331,27 @@ func (a *app) movePane(in MovePane) {
 	i := slices.IndexFunc(a.st.Panes, func(p Pane) bool { return p.ID == in.Pane })
 	next := a.take(in.Pane)
 	if from != to {
-		a.winOf[in.Pane] = to.id
 		a.refocus(from, in.Pane, next, i)
 	}
 	a.place(in.Pane, Placement{Beside: in.Beside, Vertical: in.Vertical, Instead: in.Instead})
 	a.focus(in.Pane)
 }
 
-// take takes a pane out of its group's arrangement, and reports the
-// pane that should have the keyboard in its place: the nearest pane on
-// the other side of the split it leaves.
+// take takes a pane out of the layout, and reports the pane that should
+// have the keyboard in its place, as beside says.
 func (a *app) take(id string) string {
-	g, ok := a.groupOf[id]
-	if !ok {
-		return ""
-	}
-	delete(a.groupOf, id)
-	next := a.groups[g].beside(id)
-	rest := a.groups[g].replace(id, nil)
-	if rest == nil {
-		delete(a.groups, g)
-		return ""
-	}
-	a.groups[g] = rest
+	next := a.beside(id)
+	a.layout.Remove(id)
 	return next
 }
 
-// foldTime is how long a closing pane takes to fold away before it
-// goes.
-const foldTime = 350 * time.Millisecond
-
-// closePane closes a pane. One in a split folds away first: the split
-// gives its space to the other side, and the pane goes once it has.
-// The keyboard moves to the pane beside it at once.
+// closePane closes a pane. What stands beside it in a split grows over
+// its room, and takes the keyboard.
 func (a *app) closePane(id string) {
-	if a.closing[id] || !a.has(id) || a.closeFilePane(id) || a.keepDraft(id) {
+	if !a.has(id) || a.closeFilePane(id) || a.keepDraft(id) {
 		return
 	}
-	g, ok := a.groupOf[id]
-	if !ok || !fold(a.groups[g], id) {
-		a.remove(id)
-		return
-	}
-	a.closing[id] = true
-	if w := a.ownerOf(id); w != nil && a.focusIn(w) == id {
-		if next := a.groups[g].beside(id); next != "" {
-			a.setFocusIn(w, next)
-		}
-	}
-	if sh := a.shells.Get(id); sh != nil {
-		sh.Close()
-	}
-	time.AfterFunc(foldTime, func() {
-		a.events <- func() {
-			delete(a.closing, id)
-			a.remove(id)
-		}
-	})
-}
-
-// fold aims the split holding pane at the other side, and reports
-// whether pane was in a split.
-func fold(b *Box, pane string) bool {
-	switch {
-	case b == nil || b.Pane != "":
-		return false
-	case b.A.Pane == pane:
-		b.Share = 0
-		return true
-	case b.B.Pane == pane:
-		b.Share = 1
-		return true
-	}
-	return fold(b.A, pane) || fold(b.B, pane)
+	a.remove(id)
 }
 
 // remove takes a pane away at once.
@@ -2587,14 +2415,10 @@ func (a *app) remove(id string) {
 	if a.agents.by[id] != nil {
 		_ = a.unsharePane(id)
 	}
-	after := a.tabAfter(id)
+	w := a.ownerOf(id)
 	next := a.take(id)
-	if next == "" {
-		next = after
-	}
-	a.refocus(a.ownerOf(id), id, next, i)
+	a.refocus(w, id, next, i)
 	a.st.Panes = slices.Delete(a.st.Panes, i, i+1)
-	delete(a.winOf, id)
 }
 
 func (a *app) nextPane(back bool) {
@@ -2611,21 +2435,28 @@ func (a *app) nextPane(back bool) {
 	a.st.Focus = panes[(i+step)%n].ID
 }
 
-// popOut moves the focused pane onto a stage of its own.
+// popOut moves the focused pane out of its split, into the tabs beside
+// it.
 func (a *app) popOut() {
 	id := a.st.Focus
-	b := a.groups[a.groupOf[id]]
-	if b == nil {
+	g := a.layout.GroupOf(id)
+	if g == nil {
 		return
 	}
-	if b.Pane == id {
-		a.notify("Nothing to pop out", "This pane is not in a split: it has a stage of its own already.", "")
+	p := a.layout.Parent(g.ID)
+	if p == nil {
+		a.notify("Nothing to pop out", "This pane is not in a split: there are no tabs beside it to join.", "")
 		return
 	}
-	a.take(id)
-	a.nextGroup++
-	a.groups[a.nextGroup] = &Box{Pane: id}
-	a.groupOf[id] = a.nextGroup
+	near := p.Kids[0]
+	if near.ID == g.ID {
+		near = p.Kids[1]
+	}
+	into := a.layout.GroupOf(frontOf(near))
+	if into == nil {
+		return
+	}
+	a.layout.Move(id, dock.Target{At: into.ID, Index: -1})
 }
 
 func (a *app) retitle(id, title string) {

@@ -3,61 +3,31 @@ package app
 import (
 	"slices"
 
-	"github.com/marrasen/gunim/geom"
-
-	"github.com/marrasen/kakel/words"
+	"github.com/marrasen/gunim/widget/dock"
 )
 
-// A window's tabs are its groups: each group of panes, alone or in
-// splits, is a tab, and the tab in front is the group on stage. The
-// tabs keep an order of their own, new ones last, which the user
-// changes by dragging them. A tab dragged to another window moves there
-// whole; one dropped on a pane joins it in a split; one let go outside
-// every window opens a window of its own.
-
-// Tab is one of a window's tabs.
-type Tab struct {
-	// Group numbers it, for the intents about it.
-	Group int
-	// Pane is the pane in it that last had the keyboard, whose title
-	// the tab shows, and Panes counts the panes in it.
-	Pane  string
-	Panes int
-}
+// Panes stand in a layout, which gunim's dock shows: every window is a
+// tree of splits, each part of it a group of tabs, each tab a pane, as
+// an editor has. The tab in front of each group shows. The pane with
+// the keyboard is always in front of its group. A tab dragged along a
+// bar moves along it, onto another bar joins that group, onto the edge
+// of a pane splits it, into another window moves there, and let go
+// outside every window opens one of its own.
 
 // Intents for tabs.
 type (
-	// ShowTab puts a tab in front, with the keyboard on the pane in it
-	// that had it last.
-	ShowTab struct{ Group int }
-	// NextTab puts the tab after the one in front in front, or the one
-	// before with Back, going round.
+	// NextTab puts the tab after the one in front of the group with the
+	// keyboard in front, or the one before with Back, going round.
 	NextTab struct{ Back bool }
-	// MoveTab moves a tab to just before the tab Before, or last when
-	// Before is 0, in the window the intent came from, and puts it in
-	// front. A tab of another window moves into this one.
-	MoveTab struct{ Group, Before int }
-	// ShiftTab moves the tab in front one place later, or one earlier
-	// with Back.
+	// ShiftTab moves the tab in front one place later along its bar, or
+	// one earlier with Back.
 	ShiftTab struct{ Back bool }
-	// DockTab takes a tab's panes into a split beside the pane Beside:
-	// to its right, or below it with Vertical, or to its left or above
-	// it with First. The tab goes.
-	DockTab struct {
-		Group           int
-		Beside          string
-		Vertical, First bool
-	}
-	// CloseTab closes every pane in a tab, or in the tab in front when
-	// Group is 0.
-	CloseTab struct{ Group int }
-	// TabToNewWindow moves a tab into a window of its own, opened with
-	// its top left corner at At, in the space of the window the intent
-	// came from, and Size large. Group 0 is the tab in front.
-	TabToNewWindow struct {
-		Group int
-		At    geom.Point
-		Size  geom.Size
+	// MoveTab moves pane Pane to where To says, and gives it the
+	// keyboard. To.Win is the window it goes to, or in another window,
+	// To.At says which.
+	MoveTab struct {
+		Pane string
+		To   dock.Target
 	}
 )
 
@@ -65,292 +35,263 @@ type (
 // was one.
 func (a *app) handleTab(in any) bool {
 	switch in := in.(type) {
-	case ShowTab:
-		// Only a tab of the window it was asked in, whose bar may be a
-		// step behind.
-		if a.groupWin(in.Group) == a.cur {
-			a.showTab(in.Group)
-		}
 	case NextTab:
 		a.nextTab(in.Back)
-	case MoveTab:
-		a.moveTab(in.Group, in.Before)
 	case ShiftTab:
 		a.shiftTab(in.Back)
-	case DockTab:
-		a.dockTab(in)
-	case CloseTab:
-		g := in.Group
-		if g == 0 {
-			g = a.groupOf[a.st.Focus]
-		}
-		if a.groupWin(g) == a.cur {
-			a.closeTab(g)
-		}
-	case TabToNewWindow:
-		a.tabToNewWindow(in)
+	case MoveTab:
+		a.moveTab(in.Pane, in.To)
 	default:
 		return false
 	}
 	return true
 }
 
-// closeTab closes every pane in group g at once: folding them one by
-// one would hand the keyboard to panes on their way out.
-func (a *app) closeTab(g int) {
-	ids := a.groups[g].leaves(nil)
-	if n := a.fileOpsIn(ids); n > 0 {
-		// Closing a file manager stops what it runs: asked first, as the
-		// file manager itself asks.
-		a.askThen(a.ctx, Ask{
-			Title: "Close this tab?", Text: "Still running here: " + words.ManyOf(n, "copy", "copies") + ", which stop where they have got to.",
-			Yes: "Close", Danger: true,
-		}, func(ans AskAnswered) {
-			if ans.Yes {
-				a.removeAll(ids)
-			}
-		})
-		return
+// paneWin returns the number of the window pane id stands in, and
+// whether it stands in one.
+func (a *app) paneWin(id string) (int, bool) { return a.layout.Where(id) }
+
+// keepWindow has the layout hold window win.
+func (a *app) keepWindow(win int) {
+	if a.layout.Window(win) == nil {
+		a.layout.Windows = append(a.layout.Windows, dock.Window{ID: win, Keep: true})
 	}
-	a.removeAll(ids)
 }
 
-// removeAll takes the panes ids away at once, those not closing already.
-func (a *app) removeAll(ids []string) {
-	for _, id := range ids {
-		if !a.closing[id] {
-			a.remove(id)
+// frontOf is the pane n shows first: the pane itself, the one in front
+// of a group, or the first of a split's. "" for none.
+func frontOf(n *dock.Node) string {
+	switch {
+	case n == nil:
+		return ""
+	case n.Kind == dock.Item:
+		return n.ID
+	case n.Kind == dock.Group:
+		for _, k := range n.Kids {
+			if k.ID == n.Front {
+				return frontOf(k)
+			}
+		}
+		return ""
+	}
+	for _, k := range n.Kids {
+		if id := frontOf(k); id != "" {
+			return id
 		}
 	}
+	return ""
 }
 
-// groupWin returns the window group g is in, or nil for no such group.
-func (a *app) groupWin(g int) *ownWin {
-	l := a.groups[g].leaves(nil)
-	if len(l) == 0 {
+// beside is the pane that takes the keyboard as pane id leaves: the tab
+// beside it, the one after, or the one before where it was last; or
+// alone in its group, the pane nearest on the other side of the split
+// it stands in; "" for none.
+func (a *app) beside(id string) string {
+	g := a.layout.GroupOf(id)
+	if g == nil {
+		return ""
+	}
+	if len(g.Kids) >= 2 {
+		i := slices.IndexFunc(g.Kids, func(k *dock.Node) bool { return k.ID == id })
+		if i+1 < len(g.Kids) {
+			return g.Kids[i+1].ID
+		}
+		return g.Kids[i-1].ID
+	}
+	p := a.layout.Parent(g.ID)
+	if p == nil {
+		return ""
+	}
+	if p.Kids[0].ID == g.ID {
+		return frontOf(p.Kids[1])
+	}
+	// The side before it: the last of what that shows, the nearest.
+	n := p.Kids[0]
+	for n.Kind == dock.Row || n.Kind == dock.Column {
+		n = n.Kids[1]
+	}
+	return frontOf(n)
+}
+
+// keysGroup is the group a new tab in window win joins: that of the
+// pane with the keyboard there, or a group of its panes for one with
+// none, or the Machines pane's only where it holds nothing else. nil
+// for a window with no group yet.
+func (a *app) keysGroup(win int) *dock.Node {
+	w := a.layout.Window(win)
+	if w == nil || w.Root == nil {
 		return nil
 	}
-	return a.ownerOf(l[0])
-}
-
-// sortTabs brings the tabs' order up to date: groups gone leave it, and
-// new ones join it last, oldest first.
-func (a *app) sortTabs() {
-	a.tabOrder = slices.DeleteFunc(a.tabOrder, func(g int) bool { return a.groups[g] == nil })
-	var fresh []int
-	for g := range a.groups {
-		if !slices.Contains(a.tabOrder, g) {
-			fresh = append(fresh, g)
+	focus := ""
+	if o := a.winByID(win); o != nil {
+		focus = a.focusIn(o)
+	}
+	if g := a.layout.GroupOf(focus); g != nil && !a.isServers(focus) {
+		return g
+	}
+	var first, other *dock.Node
+	var walk func(n *dock.Node)
+	walk = func(n *dock.Node) {
+		switch n.Kind {
+		case dock.Group:
+			if first == nil {
+				first = n
+			}
+			if other == nil && !a.isServers(frontOf(n)) {
+				other = n
+			}
+		case dock.Row, dock.Column:
+			walk(n.Kids[0])
+			walk(n.Kids[1])
 		}
 	}
-	slices.Sort(fresh)
-	a.tabOrder = append(a.tabOrder, fresh...)
+	walk(w.Root)
+	if other != nil {
+		return other
+	}
+	return first
 }
 
-// tabsOf returns w's tabs, in order.
-func (a *app) tabsOf(w *ownWin) []Tab {
-	a.sortTabs()
-	var out []Tab
-	for _, g := range a.tabOrder {
-		if a.groupWin(g) != w {
-			continue
+// isServers reports whether pane id is the Machines pane.
+func (a *app) isServers(id string) bool {
+	return slices.ContainsFunc(a.st.Panes, func(p Pane) bool { return p.ID == id && p.Kind == KindServers })
+}
+
+// keepFocusShown has the pane with the keyboard, in each window, in
+// front of its group.
+func (a *app) keepFocusShown() {
+	for _, w := range a.liveWins() {
+		if id := a.focusIn(w); id != "" {
+			if g := a.layout.GroupOf(id); g != nil && g.Front != id {
+				a.layout.Show(id)
+			}
 		}
-		l := a.groups[g].leaves(nil)
-		out = append(out, Tab{Group: g, Pane: a.tabPane(g), Panes: len(l)})
+	}
+}
+
+func (a *app) nextTab(back bool) {
+	g := a.layout.GroupOf(a.st.Focus)
+	if g == nil || len(g.Kids) < 2 {
+		return
+	}
+	i := slices.IndexFunc(g.Kids, func(k *dock.Node) bool { return k.ID == a.st.Focus })
+	step := 1
+	if back {
+		step = len(g.Kids) - 1
+	}
+	a.focus(g.Kids[(i+step)%len(g.Kids)].ID)
+}
+
+func (a *app) shiftTab(back bool) {
+	id := a.st.Focus
+	g := a.layout.GroupOf(id)
+	if g == nil {
+		return
+	}
+	i := slices.IndexFunc(g.Kids, func(k *dock.Node) bool { return k.ID == id })
+	switch {
+	case back && i > 0:
+		a.layout.Move(id, dock.Target{At: g.ID, Side: dock.Into, Index: i - 1})
+	case !back && i+1 < len(g.Kids):
+		a.layout.Move(id, dock.Target{At: g.ID, Side: dock.Into, Index: i + 2})
+	}
+}
+
+// moveTab moves pane id where to says, and gives it the keyboard. The
+// window it left gives the keyboard to what stood beside it.
+func (a *app) moveTab(id string, to dock.Target) {
+	from := a.ownerOf(id)
+	if from == nil {
+		return
+	}
+	i := slices.IndexFunc(a.st.Panes, func(p Pane) bool { return p.ID == id })
+	next := a.beside(id)
+	if to.At == "" {
+		a.keepWindow(to.Win)
+	}
+	if !a.layout.Move(id, to) {
+		// Nowhere new: in front, as a tab dropped is.
+		a.focus(id)
+		return
+	}
+	w := a.ownerOf(id)
+	if w != from {
+		a.refocus(from, id, next, i)
+	}
+	if w == a.cur || w == nil {
+		a.focus(id)
+		return
+	}
+	a.setFocusIn(w, id)
+}
+
+// boxOf is how node n shows on a stage: its splits, and in each part
+// the pane in front. nil for a node showing nothing.
+func boxOf(n *dock.Node) *Box {
+	switch {
+	case n == nil:
+		return nil
+	case n.Kind == dock.Item:
+		return &Box{Pane: n.ID}
+	case n.Kind == dock.Group:
+		for _, k := range n.Kids {
+			if k.ID == n.Front {
+				return boxOf(k)
+			}
+		}
+		return nil
+	}
+	x, y := boxOf(n.Kids[0]), boxOf(n.Kids[1])
+	switch {
+	case x == nil:
+		return y
+	case y == nil:
+		return x
+	}
+	share := n.Share
+	if share <= 0 || share >= 1 {
+		share = 0.5
+	}
+	return &Box{ID: n.ID, Vertical: n.Kind == dock.Column, Share: share, A: x, B: y}
+}
+
+// behindOf adds the panes n holds that do not show to out.
+func behindOf(n *dock.Node, out []string) []string {
+	switch {
+	case n == nil || n.Kind == dock.Item:
+	case n.Kind == dock.Group:
+		for _, k := range n.Kids {
+			if k.ID != n.Front {
+				out = append(out, k.Items()...)
+			} else {
+				out = behindOf(k, out)
+			}
+		}
+	default:
+		for _, k := range n.Kids {
+			out = behindOf(k, out)
+		}
 	}
 	return out
 }
 
-// tabPane returns the pane in group g that last had the keyboard, or
-// its first when that has left it.
-func (a *app) tabPane(g int) string {
-	if id := a.groupFocus[g]; id != "" && a.groupOf[id] == g {
-		return id
+// OverTabs is window win of l as All Panes shows it: first what shows
+// now, each split as it stands, then each pane behind another. The first
+// is in front.
+func OverTabs(l *dock.Layout, win int) []OverTab {
+	w := l.Window(win)
+	if w == nil || w.Root == nil {
+		return nil
 	}
-	if l := a.groups[g].leaves(nil); len(l) > 0 {
-		return l[0]
+	var out []OverTab
+	add := func(b *Box, pane string) {
+		out = append(out, OverTab{Group: len(out) + 1, Box: b, Pane: pane})
 	}
-	return ""
-}
-
-// noteTabFocus keeps, for each window, which pane of its tab in front
-// has the keyboard, so the tab brings it back when it is shown again.
-func (a *app) noteTabFocus() {
-	for _, w := range a.liveWins() {
-		if id := a.focusIn(w); id != "" {
-			if g, ok := a.groupOf[id]; ok {
-				a.groupFocus[g] = id
-			}
-		}
+	if b := boxOf(w.Root); b != nil {
+		add(b, frontOf(w.Root))
 	}
-	for g := range a.groupFocus {
-		if a.groups[g] == nil {
-			delete(a.groupFocus, g)
-		}
+	for _, id := range behindOf(w.Root, nil) {
+		add(&Box{Pane: id}, id)
 	}
-}
-
-// showTab puts group g in front, in its window, with that window in
-// front.
-func (a *app) showTab(g int) {
-	a.noteTabFocus()
-	if id := a.tabPane(g); id != "" {
-		a.focus(id)
-	}
-}
-
-// frontTab returns the window in front's tabs, and where the one in
-// front is among them, -1 for none.
-func (a *app) frontTab() ([]Tab, int) {
-	tabs := a.tabsOf(a.cur)
-	g, ok := a.groupOf[a.st.Focus]
-	if !ok {
-		return tabs, -1
-	}
-	return tabs, slices.IndexFunc(tabs, func(t Tab) bool { return t.Group == g })
-}
-
-func (a *app) nextTab(back bool) {
-	tabs, i := a.frontTab()
-	if len(tabs) < 2 || i < 0 {
-		return
-	}
-	step := 1
-	if back {
-		step = len(tabs) - 1
-	}
-	a.showTab(tabs[(i+step)%len(tabs)].Group)
-}
-
-func (a *app) shiftTab(back bool) {
-	tabs, i := a.frontTab()
-	if i < 0 {
-		return
-	}
-	switch {
-	case back && i > 0:
-		a.moveTab(tabs[i].Group, tabs[i-1].Group)
-	case !back && i+2 < len(tabs):
-		a.moveTab(tabs[i].Group, tabs[i+2].Group)
-	case !back && i+1 < len(tabs):
-		a.moveTab(tabs[i].Group, 0)
-	}
-}
-
-// moveTab moves group g to just before group before, 0 for last, in
-// the window in front, and puts it in front there.
-func (a *app) moveTab(g, before int) {
-	if a.groups[g] == nil || !a.movable(g) {
-		return
-	}
-	if g == before {
-		// Let go where it stands: in front, as a tab dropped is.
-		a.showTab(g)
-		return
-	}
-	a.groupToWindow(g, a.cur)
-	a.sortTabs()
-	a.tabOrder = slices.DeleteFunc(a.tabOrder, func(o int) bool { return o == g })
-	i := slices.Index(a.tabOrder, before)
-	if before == 0 || i < 0 || a.groupWin(before) != a.cur {
-		// Last among this window's tabs: last of all does that.
-		i = len(a.tabOrder)
-	}
-	a.tabOrder = slices.Insert(a.tabOrder, i, g)
-	a.showTab(g)
-}
-
-// movable reports whether group g may move: not while a pane in it is
-// folding away.
-func (a *app) movable(g int) bool {
-	for _, id := range a.groups[g].leaves(nil) {
-		if a.closing[id] {
-			return false
-		}
-	}
-	return true
-}
-
-// groupToWindow moves group g's panes into w, whole. The window it
-// left puts its next tab in front.
-func (a *app) groupToWindow(g int, w *ownWin) {
-	from := a.groupWin(g)
-	if from == nil || from == w {
-		return
-	}
-	a.noteTabFocus()
-	after := a.tabBeside(from, g)
-	gone := a.focusIn(from)
-	for _, id := range a.groups[g].leaves(nil) {
-		a.winOf[id] = w.id
-	}
-	if a.groupOf[gone] == g {
-		a.setFocusIn(from, a.tabPane(after))
-	}
-	a.setFocusIn(w, a.tabPane(g))
-}
-
-// tabAfter returns the pane to give the keyboard to when pane id
-// leaves its window, where it is its tab's only pane: the pane of the
-// tab beside, or "" otherwise.
-func (a *app) tabAfter(id string) string {
-	g, ok := a.groupOf[id]
-	if !ok || a.groups[g].Pane != id {
-		return ""
-	}
-	w := a.ownerOf(id)
-	if w == nil {
-		return ""
-	}
-	if after := a.tabBeside(w, g); after != 0 {
-		return a.tabPane(after)
-	}
-	return ""
-}
-
-// tabBeside returns the tab w puts in front when group g leaves it: the
-// one after it, or the one before when it was last, and 0 when it was
-// the only one.
-func (a *app) tabBeside(w *ownWin, g int) int {
-	tabs := a.tabsOf(w)
-	i := slices.IndexFunc(tabs, func(t Tab) bool { return t.Group == g })
-	switch {
-	case i < 0 || len(tabs) < 2:
-		return 0
-	case i+1 < len(tabs):
-		return tabs[i+1].Group
-	}
-	return tabs[i-1].Group
-}
-
-// dockTab takes a tab's panes into a split beside a pane of another
-// tab, in the window in front.
-func (a *app) dockTab(in DockTab) {
-	a.dockGroup(in.Group, in.Beside, in.Vertical, in.First, a.cur)
-}
-
-// tabToNewWindow opens a window at in.At and moves a tab into it.
-func (a *app) tabToNewWindow(in TabToNewWindow) {
-	if in.Group == 0 {
-		in.Group = a.groupOf[a.st.Focus]
-	}
-	from := a.groupWin(in.Group)
-	if from == nil || !a.movable(in.Group) {
-		return
-	}
-	if len(a.tabsOf(from)) == 1 {
-		// Its window's only tab: the window is where it was wanted
-		// already.
-		return
-	}
-	a.openWindowThen(in.At, in.Size, func(w *ownWin) bool {
-		// Asked again now it is open: the tab may have closed, or been
-		// left its window's only one, meanwhile.
-		from := a.groupWin(in.Group)
-		if from == nil || !a.movable(in.Group) || len(a.tabsOf(from)) == 1 {
-			return false
-		}
-		a.groupToWindow(in.Group, w)
-		return true
-	})
+	return out
 }

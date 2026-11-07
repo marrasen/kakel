@@ -22,6 +22,7 @@ import (
 	"github.com/marrasen/gunim/text"
 	"github.com/marrasen/gunim/theme"
 	"github.com/marrasen/gunim/widget"
+	"github.com/marrasen/gunim/widget/dock"
 )
 
 // The pane switcher, All Panes: every pane of every window shown live
@@ -104,13 +105,12 @@ type overEnv struct {
 	keys     *ui.Keymap
 	fontSize float32
 	faces    [4]*text.Face
-	titles   bool
 	machines []machines.Info
 }
 
 // overEnv is what a switcher over w draws with.
 func (w *Window) overEnv() overEnv {
-	return overEnv{shells: w.shells, keys: w.keys, fontSize: w.fontSize, faces: w.font.Faces, titles: w.titles, machines: w.machineList}
+	return overEnv{shells: w.shells, keys: w.keys, fontSize: w.fontSize, faces: w.font.Faces, machines: w.machineList}
 }
 
 type tile struct {
@@ -295,25 +295,9 @@ func overviewOf(st app.State) ([]app.OverWindow, []app.Pane) {
 	if len(st.Overview) > 0 {
 		return st.Overview, all
 	}
-	own := app.OverWindow{ID: st.Window}
-	seen := map[*app.Box]bool{}
-	for _, t := range st.Tabs {
-		if b := st.Groups[t.Pane]; b != nil {
-			seen[b] = true
-			own.Tabs = append(own.Tabs, app.OverTab{Group: t.Group, Box: b, Pane: t.Pane})
-		}
-	}
-	for _, p := range st.Panes {
-		b := st.Groups[p.ID]
-		if b != nil && seen[b] || slices.ContainsFunc(own.Tabs, func(t app.OverTab) bool { return slices.Contains(boxLeaves(t.Box, nil), p.ID) }) {
-			continue
-		}
-		if b == nil {
-			b = &app.Box{Pane: p.ID}
-		}
-		seen[b] = true
-		// A tab numbered apart from the program's.
-		own.Tabs = append(own.Tabs, app.OverTab{Group: -1 - len(own.Tabs), Box: b, Pane: p.ID})
+	own := app.OverWindow{ID: st.Window, Tabs: app.OverTabs(&st.Layout, st.Window)}
+	if len(own.Tabs) > 0 {
+		own.Front = own.Tabs[0].Group
 	}
 	return []app.OverWindow{own}, all
 }
@@ -383,7 +367,7 @@ func (s *switcher) sync(wins []app.OverWindow, panes []app.Pane, u *gunim.UI) {
 				t.title, t.win, t.group = p.Title, ow.ID, tb.Group
 				// Every pane lands under its caption, one never on stage
 				// as well. In a split, a pane has its line anyway.
-				t.titled = s.env.titles || namedInSplit(tb.Box, s.byID)
+				t.titled = namedInSplit(tb.Box, s.byID)
 				if t.titled {
 					t.caption = text.Default().Shape(captionIn(s.env.machines, p), smallText.Get(u.Theme()))
 				}
@@ -440,8 +424,11 @@ func (s *switcher) drawsLive(t *tile) bool {
 	return ok
 }
 
+// captionHeight is the height of the line over a pane in All Panes.
+const captionHeight = 22
+
 // namedInSplit reports whether the panes of tab box b have a line
-// naming them on stage: two or more of them, the Machines pane apart.
+// naming them in All Panes: two or more of them, the Machines pane apart.
 func namedInSplit(b *app.Box, panes map[string]app.Pane) bool {
 	n := 0
 	for _, id := range boxLeaves(b, nil) {
@@ -458,11 +445,6 @@ func (s *switcher) slotAt(t *tile, u *gunim.UI) (geom.Rect, bool) {
 	if s.w != nil {
 		if t.win != s.here {
 			return geom.Rect{}, false
-		}
-		if c := s.w.captions[t.id]; t.titled && c != nil {
-			if r, ok := u.Bounds(c); ok {
-				return r, true
-			}
 		}
 		return s.w.standsAt(t.id, u)
 	}
@@ -1013,31 +995,37 @@ func (s *switcher) paintNothing(p *paint.Painter, f gunim.Frame, tl *tile, r geo
 // fills r: split as gunim's Split splits, the first half its share of
 // the room less the gap between them. ok is false when id is not in it.
 func placeIn(group *app.Box, id string, r geom.Rect, th *theme.Live) (geom.Rect, bool) {
+	// As the dock divides it: its room starts at the title row, over the
+	// stage, and each pane's bar comes off the top of the pane's share.
+	bar, space := dock.BarHeight.Get(th), dock.BarSpace.Get(th)
+	whole := r
+	whole.Min.Y -= bar
+	return placeInDock(group, id, whole, bar+space, dock.Gap.Get(th))
+}
+
+// placeInDock is where pane id stands in the room r a part of a split
+// has, its bar taking top of it, and gap between the parts.
+func placeInDock(group *app.Box, id string, r geom.Rect, top, gap float32) (geom.Rect, bool) {
 	switch {
 	case group == nil:
 		return geom.Rect{}, false
 	case group.Pane != "":
+		r.Min.Y = min(r.Min.Y+top, r.Max.Y)
 		return r, group.Pane == id
 	}
-	length := r.Size().W
-	if group.Vertical {
-		length = r.Size().H
-	}
 	v := min(max(group.Share, 0), 1)
-	gap := widget.SplitGap.Get(th) * min(max(min(v, 1-v)*20, 0), 1)
-	first := float32(int((length-gap)*v + 0.5))
 	a, b := r, r
 	if group.Vertical {
-		a.Max.Y = r.Min.Y + first
+		a.Max.Y = r.Min.Y + max(r.Size().H-gap, 0)*v
 		b.Min.Y = a.Max.Y + gap
 	} else {
-		a.Max.X = r.Min.X + first
+		a.Max.X = r.Min.X + max(r.Size().W-gap, 0)*v
 		b.Min.X = a.Max.X + gap
 	}
-	if at, ok := placeIn(group.A, id, a, th); ok {
+	if at, ok := placeInDock(group.A, id, a, top, gap); ok {
 		return at, true
 	}
-	return placeIn(group.B, id, b, th)
+	return placeInDock(group.B, id, b, top, gap)
 }
 
 // light puts the ring on tile i.

@@ -47,7 +47,7 @@ func pasteStage(t *testing.T, check bool) (*Window, *sessiontest.Typed) {
 	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
 	sh.Set("p1", screen.Open(typed, vt.DefaultPalette(), quiet))
 	t.Cleanup(func() { _ = sh.Get("p1").T.Close() })
-	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1", PasteCheck: check})
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1"}}, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1", PasteCheck: check})
 	return win, typed
 }
 
@@ -181,7 +181,7 @@ func TestAPastesEditorTakesItsPanesShell(t *testing.T) {
 	sh.Set("p1", screen.Open(typed, vt.DefaultPalette(), quiet))
 	t.Cleanup(func() { _ = sh.Get("p1").T.Close() })
 	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1", ShellKind: shellsetup.PowerShell}},
-		Stage: &app.Box{Pane: "p1"}, Focus: "p1", PasteCheck: true})
+		Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1", PasteCheck: true})
 	lastUI.SetClipboard("$x = 1\nWrite-Host $x")
 	win.terms["p1"].pasteClipboard(lastUI)
 	frames(5)
@@ -222,7 +222,7 @@ func TestAPasteForAnotherShellIsMarked(t *testing.T) {
 	sh.Set("p1", screen.Open(typed, vt.DefaultPalette(), quiet))
 	t.Cleanup(func() { _ = sh.Get("p1").T.Close() })
 	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1", ShellKind: shellsetup.PowerShell}},
-		Stage: &app.Box{Pane: "p1"}, Focus: "p1", PasteCheck: true})
+		Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1", PasteCheck: true})
 	lastUI.SetClipboard("cd project\nexport GOOS=windows\ngo build ./... 2>/dev/null")
 	win.terms["p1"].pasteClipboard(lastUI)
 	frames(5)

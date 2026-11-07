@@ -61,7 +61,7 @@ func TestAFileManagerPaneShowsInItsPlace(t *testing.T) {
 	filemanager.RegisterViews(lastWindow)
 	fw := filePane(t, "p1")
 	both := []app.Pane{{ID: "p1", Title: "dir", Kind: app.KindFileManager}, {ID: "p2", Title: "Copies", Kind: app.KindCopies}}
-	publish(app.State{Panes: both, Stage: &app.Box{Pane: "p1"}, Focus: "p2"})
+	publish(app.State{Panes: both, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p2"})
 	fw.Attach(lastWindow.Client(), app.FilePaneHost("p1"))
 	var listing gunim.Node
 	framesUntil(t, "the file manager shows in its place", func() bool {
@@ -74,7 +74,7 @@ func TestAFileManagerPaneShowsInItsPlace(t *testing.T) {
 	}
 
 	// Its tab hidden, it is parked, and keeps its views.
-	publish(app.State{Panes: both, Stage: &app.Box{Pane: "p2"}, Focus: "p2"})
+	publish(app.State{Panes: both, Layout: boxLayout(&app.Box{Pane: "p2"}), Focus: "p2"})
 	for range 30 {
 		lastWindow.Frame(time.Second / 60)
 	}
@@ -83,7 +83,7 @@ func TestAFileManagerPaneShowsInItsPlace(t *testing.T) {
 	}
 
 	// Back on stage with the keyboard, its listing has it.
-	publish(app.State{Panes: both, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
+	publish(app.State{Panes: both, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1"})
 	framesUntil(t, "the listing has the keyboard", func() bool { return lastUI.Focused() == listing })
 
 	// Kakel's Edit menu works on its files, Cut too.
@@ -134,13 +134,13 @@ func TestAFileManagerPaneShowsInItsPlace(t *testing.T) {
 	}
 
 	// The help in front, the menus are kakel's alone again.
-	publish(app.State{Panes: both, Stage: &app.Box{Pane: "p2"}, Focus: "p2"})
+	publish(app.State{Panes: both, Layout: boxLayout(&app.Box{Pane: "p2"}), Focus: "p2"})
 	if win.menuAt("Go") >= 0 {
 		t.Fatal("the Go menu stayed with the help in front")
 	}
 
 	// Gone from the window, its place goes too.
-	publish(app.State{Panes: both[1:], Stage: &app.Box{Pane: "p2"}, Focus: "p2"})
+	publish(app.State{Panes: both[1:], Layout: boxLayout(&app.Box{Pane: "p2"}), Focus: "p2"})
 	for range 60 {
 		lastWindow.Frame(time.Second / 60)
 	}
@@ -155,7 +155,7 @@ func TestF5RefreshesTheFileManagerInFrontWithTheKeyboardElsewhere(t *testing.T) 
 	_, _, publish := windowStage(t)
 	filemanager.RegisterViews(lastWindow)
 	fw := filePane(t, "p1")
-	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "dir", Kind: app.KindFileManager}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "dir", Kind: app.KindFileManager}}, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1"})
 	fw.Attach(lastWindow.Client(), app.FilePaneHost("p1"))
 	framesUntil(t, "the file manager shows", func() bool { return filemanager.FocusIn(lastUI, app.FilePaneViews("p1")) != nil })
 	for _, k := range []gi.KeyPress{{Key: gi.KeyF5}, {Key: gi.KeyR, Mods: gi.ModControl}} {
@@ -183,32 +183,29 @@ func TestATabDroppedOnAFileManagerDocks(t *testing.T) {
 	win, _, publish := windowStage(t)
 	filemanager.RegisterViews(lastWindow)
 	fw := filePane(t, "p1")
-	b1, b2 := &app.Box{Pane: "p1"}, &app.Box{Pane: "p2"}
 	publish(app.State{
 		Window: 1,
 		Panes:  []app.Pane{{ID: "p1", Title: "dir", Kind: app.KindFileManager}, {ID: "p2", Title: "Log", Kind: app.KindLog}},
-		Stage:  b1, Focus: "p1",
-		Groups: map[string]*app.Box{"p1": b1, "p2": b2},
-		Tabs:   []app.Tab{{Group: 1, Pane: "p1", Panes: 1}, {Group: 2, Pane: "p2", Panes: 1}},
+		Layout: tabsLayout("p1", "p1", "p2"), Focus: "p1",
 	})
 	fw.Attach(lastWindow.Client(), app.FilePaneHost("p1"))
 	framesUntil(t, "the file manager shows in its place", func() bool {
 		return filemanager.FocusIn(lastUI, app.FilePaneViews("p1")) != nil
 	})
 	drain()
-	r, ok := lastUI.Bounds(win.paneNode("p1"))
+	r, ok := lastUI.Bounds(win.bareNode("p1"))
 	if !ok {
 		t.Fatal("the file manager pane is not drawn")
 	}
 	at := geom.Pt(r.Max.X-10, r.Center().Y)
-	tab := dock.Drag{ID: "2", Win: 1}
+	tab := dock.Drag{ID: "p2", Win: 1}
 	lastWindow.Input(gi.DragOver{Pos: at, Data: tab})
 	lastWindow.Frame(time.Second / 60)
 	lastWindow.Input(gi.Drop{Pos: at, Data: tab})
 	lastWindow.Frame(time.Second / 60)
 	for {
-		if in, ok := nextIntent(t).(app.DockTab); ok {
-			if in.Group != 2 || in.Beside != "p1" || in.Vertical || in.First {
+		if in, ok := nextIntent(t).(app.MoveTab); ok {
+			if in.Pane != "p2" || in.To.Side != dock.Right {
 				t.Fatalf("dropped at the pane's right edge, the window sent %#v", in)
 			}
 			return

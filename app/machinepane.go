@@ -107,7 +107,7 @@ func (a *app) showMachine(m machines.ID, row string) error {
 // open already.
 func (a *app) addServer() {
 	for _, p := range a.st.Panes {
-		if p.Kind == KindMachine && p.Draft && !a.closing[p.ID] {
+		if p.Kind == KindMachine && p.Draft {
 			a.focusRaised(p.ID)
 			return
 		}
@@ -141,7 +141,7 @@ func (a *app) keepDraft(id string) bool {
 // machinePane is the pane of machine m open, or "".
 func (a *app) machinePane(m machines.ID) string {
 	for _, p := range a.st.Panes {
-		if p.Kind == KindMachine && !p.Draft && p.Machine == m && !a.closing[p.ID] {
+		if p.Kind == KindMachine && !p.Draft && p.Machine == m {
 			return p.ID
 		}
 	}

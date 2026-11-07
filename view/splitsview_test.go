@@ -22,7 +22,7 @@ import (
 func TestSplitPutsAChooserInTheNewHalf(t *testing.T) {
 	win, _, publish := windowStage(t)
 	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "left", Kind: app.KindFileManager}, {ID: "p2", Title: "right", Kind: app.KindFileManager}},
-		Stage: &app.Box{Pane: "p1"}, Focus: "p1"}
+		Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1"}
 	publish(st)
 	for len(lastWindow.Client().Intents()) > 0 {
 		<-lastWindow.Client().Intents()
@@ -33,7 +33,7 @@ func TestSplitPutsAChooserInTheNewHalf(t *testing.T) {
 	}
 	// The program splits, with the chooser beside the pane.
 	st.Panes = append(st.Panes, app.Pane{ID: "c1", Title: "Split", Kind: app.KindChooser, SplitFrom: "p1"})
-	st.Stage = &app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "c1"}, Share: 0.5}
+	st.Layout = boxLayout(&app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "c1"}, Share: 0.5})
 	st.Focus = "c1"
 	publish(st)
 	for range 20 {
@@ -75,7 +75,7 @@ func TestSplitPutsAChooserInTheNewHalf(t *testing.T) {
 func TestAChooserFollowsThePanes(t *testing.T) {
 	win, _, publish := windowStage(t)
 	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "left", Kind: app.KindFileManager}, {ID: "c1", Title: "Split", Kind: app.KindChooser, SplitFrom: "p1"}},
-		Stage: &app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "c1"}, Share: 0.5}, Focus: "c1"}
+		Layout: boxLayout(&app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "c1"}, Share: 0.5}), Focus: "c1"}
 	publish(st)
 	frames := func() {
 		for range 5 {
@@ -116,7 +116,7 @@ func TestAChoosersArrowsLightWhatTheyReach(t *testing.T) {
 	}
 	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "left"}, {ID: "p2", Title: "two"},
 		{ID: "c1", Title: "Split", Kind: app.KindChooser, SplitFrom: "p1"}},
-		Stage: &app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "c1"}, Share: 0.5}, Focus: "c1"})
+		Layout: boxLayout(&app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "c1"}, Share: 0.5}), Focus: "c1"})
 	run := func() {
 		for range 20 {
 			lastWindow.Frame(time.Second / 60)
@@ -153,7 +153,7 @@ func TestAChoosersArrowsLightWhatTheyReach(t *testing.T) {
 func TestAChooserShowsWhereTheKeyboardIsAsItOpens(t *testing.T) {
 	win, _, publish := windowStage(t)
 	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "left", Kind: app.KindFileManager}, {ID: "c1", Title: "Split", Kind: app.KindChooser, SplitFrom: "p1"}},
-		Stage: &app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "c1"}, Share: 0.5}, Focus: "c1"})
+		Layout: boxLayout(&app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "c1"}, Share: 0.5}), Focus: "c1"})
 	for range 30 {
 		lastWindow.Frame(time.Second / 60)
 	}

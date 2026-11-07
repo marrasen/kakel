@@ -18,7 +18,7 @@ import (
 func TestSettingsTextHoldsItsColourAcrossUpdates(t *testing.T) {
 	win, _, publish := windowStage(t)
 	var looks []look.Themed
-	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "Settings", Kind: app.KindSettings}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1", Theme: "Dark"}
+	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "Settings", Kind: app.KindSettings}}, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1", Theme: "Dark"}
 	for _, th := range themes.Built() {
 		l, err := look.Of(th)
 		if err != nil {

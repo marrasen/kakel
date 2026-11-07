@@ -27,7 +27,7 @@ func TestANewWindowOpensOnATerminalOf80By30(t *testing.T) {
 	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
 	sh.Set("p1", screen.Open(sessiontest.New(), vt.DefaultPalette(), quiet))
 	t.Cleanup(func() { _ = sh.Get("p1").T.Close() })
-	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1", FontSize: defaultSize, PaneTitles: true}
+	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1"}}, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1", FontSize: defaultSize}
 	for range 10 {
 		publish(st)
 	}
@@ -46,7 +46,7 @@ func TestTheWindowDrawsInTheFontAndZoomsWithCtrlAndTheWheel(t *testing.T) {
 		t.Fatal(err)
 	}
 	font := app.Font{Name: dosFamily, Faces: [4]*text.Face{face}}
-	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1", Fonts: []string{bundledFamily, dosFamily}, Font: font, FontSize: defaultSize}
+	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1"}}, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1", Fonts: []string{bundledFamily, dosFamily}, Font: font, FontSize: defaultSize}
 	publish(st)
 	if win.terms["p1"].cells.Faces != font.Faces {
 		t.Fatal("the terminal is not drawn in the font picked")

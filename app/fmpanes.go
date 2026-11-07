@@ -232,8 +232,11 @@ func (a *app) closeFilePane(id string) bool {
 		return false
 	}
 	// In front, so the question about what runs in it is seen, for one
-	// closed from elsewhere, as the Machines pane.
-	a.focusRaised(id)
+	// closed from elsewhere, as the Machines pane. With nothing to ask,
+	// the keyboard stays where it is.
+	if a.fileOpsIn([]string{id}) > 0 {
+		a.focusRaised(id)
+	}
 	fp.w.Close()
 	return true
 }

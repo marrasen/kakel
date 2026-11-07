@@ -40,10 +40,10 @@ func TestATabsShortTitleDropsOnlyAMachineInFront(t *testing.T) {
 			{ID: "t", Kind: app.KindTerminal, Machine: "w1", Title: "PowerShell 7"},
 		},
 	}
-	if got := w.tabShort(app.Tab{Pane: "f"}); got != "log" {
+	if got := w.tabShort("f"); got != "log" {
 		t.Errorf("files on a server are short for %q, want %q", got, "log")
 	}
-	if got := w.tabShort(app.Tab{Pane: "t"}); got != "" {
+	if got := w.tabShort("t"); got != "" {
 		t.Errorf("a terminal through a window is short for %q, want nothing shorter", got)
 	}
 }

@@ -11,7 +11,7 @@ import (
 // has got of the size listed, and asks for nothing more meanwhile.
 func TestTheReaderShowsHowFarItsFirstReadHasGot(t *testing.T) {
 	win, _, publish := windowStage(t)
-	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "big.log", Kind: app.KindReader}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"}
+	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "big.log", Kind: app.KindReader}}, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1"}
 	st.Readers = map[string]app.Reader{"p1": {Path: "/x/big.log", Name: "big.log", Expect: 4 << 20}}
 	publish(st)
 	st.Readers = map[string]app.Reader{"p1": {Path: "/x/big.log", Name: "big.log", Expect: 4 << 20, SoFar: 1 << 20}}
@@ -41,7 +41,7 @@ func TestTheReaderShowsHowFarItsFirstReadHasGot(t *testing.T) {
 // reaches the reader.
 func TestTheReaderTakesTheNameOfferedToSaveUnder(t *testing.T) {
 	win, _, publish := windowStage(t)
-	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "log.txt", Kind: app.KindReader}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"}
+	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "log.txt", Kind: app.KindReader}}, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1"}
 	st.Readers = map[string]app.Reader{"p1": {Path: "/x/log.txt", Name: "log.txt", Lines: []string{"a"}, Seq: 1, SaveAs: "~/log.txt"}}
 	publish(st)
 	st.Readers = map[string]app.Reader{"p1": {Path: "/x/log.txt", Name: "log.txt", Lines: []string{"a"}, Seq: 1, SaveAs: "~/log 2.txt"}}

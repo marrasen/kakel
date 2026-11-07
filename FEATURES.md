@@ -120,19 +120,24 @@ The whole list. The [README](README.md) has the short version.
   directly or through a relay: the window opens the stream from its own
   machine, so a server on that machine's network is reached from
   anywhere the window is.
-- **Tabs.** Each window holds tabs, and each tab a pane or a split. New
-  Terminal opens one, and the tab bar shows in the title bar, even
-  with only one tab, so a lone pane can be dragged by its tab to
-  another window. Click a tab to show it. Middle-click it, or click its ×, to
-  close it. Ctrl+PageDown and Ctrl+PageUp go to the next and the
-  previous tab, and Ctrl+Shift+PageDown and Ctrl+Shift+PageUp move the
-  tab in front. Drag a tab along the bar to move it. Drag it onto
-  another kakel window's bar to move it there, splits and all. Drop it
-  on a pane to join that pane in a split, on the side it is nearest.
-  Let it go outside every window and it opens a window of its own.
-  In a split each pane has a line naming it: drag the line to dock the
-  pane beside another, onto a tab of its own, or out into a window of
-  its own.
+- **Tabs in each pane.** A window is split into panes, and each pane
+  holds tabs, as an editor's do. A window's tabs stand in the title bar,
+  even with only one tab, so a lone pane can be dragged by its tab to
+  another window. In a split, the bars along the window's top are its
+  title bar, the left one after the menu button, the right one before the
+  window's buttons, and the room after their tabs moves the window; a bar
+  lower down stands over its own pane. Click a tab to show it.
+  Middle-click it, or click its ×, to close it. Ctrl+PageDown and
+  Ctrl+PageUp go to the next and the previous tab of the pane with the
+  keyboard, and Ctrl+Shift+PageDown and Ctrl+Shift+PageUp move the tab.
+  Drag a tab along its bar to move it, onto another bar to join those
+  tabs, in this window or another. Drop it on a pane: near an edge it
+  splits the pane on that side, and in the middle it joins its tabs. Let
+  it go outside every window and it opens a window of its own.
+- **Maximize a pane.** Double-click a tab, or press Ctrl+Shift+M, and its
+  pane fills the window, the others sliding away. Double-click it again,
+  press the same key, or click the button at the end of its bar, and they
+  slide back. Asking for another pane puts them back too.
 - **In the tray, and one kakel at a time.** kakel shows an icon in the
   system tray, whose menu lists this computer and every saved server,
   each with Terminal, Files and the rest, and Machines, New Window,

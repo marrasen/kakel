@@ -79,7 +79,7 @@ func TestThePaletteLeavesNewTerminalAndFilesToTheMachineLines(t *testing.T) {
 func TestNextPaneGoesInTheSidebarsOrder(t *testing.T) {
 	win, _, publish := windowStage(t)
 	panes := []app.Pane{{ID: "p1", Title: "one", Kind: app.KindFileManager}, {ID: "p2", Title: "two", Kind: app.KindFileManager, Machine: "srv"}, {ID: "p3", Title: "three", Kind: app.KindFileManager}}
-	publish(app.State{Panes: panes, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
+	publish(app.State{Panes: panes, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1"})
 	for len(lastWindow.Client().Intents()) > 0 {
 		<-lastWindow.Client().Intents()
 	}

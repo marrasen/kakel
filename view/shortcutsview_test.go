@@ -19,7 +19,7 @@ import (
 func shortcutsStage(t *testing.T) (*Window, func(app.State), app.State) {
 	t.Helper()
 	win, _, publish := windowStageOf(t, geom.Sz(1100, 800))
-	st := app.State{Panes: []app.Pane{{ID: "p1", Kind: app.KindSettings, Title: "Settings"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1", SettingsTab: app.SettingsTabShortcuts, SettingsAsked: 1}
+	st := app.State{Panes: []app.Pane{{ID: "p1", Kind: app.KindSettings, Title: "Settings"}}, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1", SettingsTab: app.SettingsTabShortcuts, SettingsAsked: 1}
 	publish(st)
 	lastWindow.Frame(time.Second / 60)
 	return win, publish, st
@@ -373,7 +373,7 @@ func TestAFailedMoveLeavesNothingBehind(t *testing.T) {
 // Narrow, the groups are out of the keyboard's way, and draw nothing.
 func TestANarrowPaneHasNoGroups(t *testing.T) {
 	win, _, publish := windowStageOf(t, geom.Sz(600, 500))
-	publish(app.State{Panes: []app.Pane{{ID: "p1", Kind: app.KindSettings, Title: "Settings"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1", SettingsTab: app.SettingsTabShortcuts, SettingsAsked: 1})
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Kind: app.KindSettings, Title: "Settings"}}, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1", SettingsTab: app.SettingsTabShortcuts, SettingsAsked: 1})
 	settle()
 	p := win.shortcuts
 	if !p.side.SkipFocus || p.focusTarget() != gunim.Node(p.search) || p.sideX > 0.5 {
@@ -407,7 +407,7 @@ func TestDownFromTheSearchReachesARowScrolledAway(t *testing.T) {
 // that stays chosen.
 func TestShortcutsOpenAsATabOfSettings(t *testing.T) {
 	win, _, publish := windowStageOf(t, geom.Sz(1100, 800))
-	st := app.State{Panes: []app.Pane{{ID: "p1", Kind: app.KindSettings, Title: "Settings"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"}
+	st := app.State{Panes: []app.Pane{{ID: "p1", Kind: app.KindSettings, Title: "Settings"}}, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1"}
 	publish(st)
 	settle()
 	if win.settings.onShortcuts() {

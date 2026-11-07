@@ -338,7 +338,7 @@ func (a *app) rehome() {
 	}
 	var lost []string
 	for _, p := range a.st.Panes {
-		if w := a.ownerOf(p.ID); (w == nil || w.gone) && !a.closing[p.ID] {
+		if w := a.ownerOf(p.ID); w == nil || w.gone {
 			lost = append(lost, p.ID)
 		}
 	}
@@ -364,7 +364,8 @@ func (a *app) rehome() {
 		a.front(w)
 	}
 	for _, id := range lost {
-		a.winOf[id] = w.id
+		a.layout.Remove(id)
+		a.putIn(id, w.id)
 	}
 	for i := range a.st.Asks {
 		if o := a.winByID(a.st.Asks[i].win); o == nil || o.gone {

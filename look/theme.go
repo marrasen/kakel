@@ -371,6 +371,15 @@ func Of(t themes.Theme) (Themed, error) {
 		// kakel.small's default and a point, as the bar always had.
 		theme.Set(dock.TabText, 13),
 		theme.Set(dock.TabGap, 2),
+		// The top row of bars is the title bar, and a pane stands right
+		// under its bar, with the split's own gap between panes.
+		theme.Set(dock.BarSpace, 0),
+		theme.Set(dock.BarRadius, 0),
+		theme.Set(dock.Gap, widget.SplitGap.Default()),
+		theme.Set(dock.Divider, alpha(faint, 0x70)),
+		theme.Set(dock.DividerHot, accent),
+		theme.Set(dock.TabMark, accent),
+		theme.Set(dock.EmptyText, ""),
 	)...)
 	// On stage, the terminal's own colours, and an accent that reads on
 	// its ground.
@@ -446,7 +455,7 @@ var (
 		widget.ControlHeight, widget.ControlGap, widget.TabHeight, widget.TabPadding,
 		widget.TableRowHeight, widget.ToastGap, widget.TilePadding, widget.TileGap,
 		widget.SegmentedHeight, widget.SegmentedPadding,
-		SidebarRow, SidebarPad,
+		SidebarRow, SidebarPad, dock.BarHeight,
 	}
 	cornerTokens = []theme.Token[float32]{
 		widget.ButtonRadius, widget.DialogRadius, widget.CardRadius, widget.FieldRadius,
