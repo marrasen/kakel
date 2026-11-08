@@ -416,14 +416,7 @@ func TestShortcutsOpenAsATabOfSettings(t *testing.T) {
 	if !win.run("help.shortcuts", lastUI) {
 		t.Fatal("the command was not taken")
 	}
-	got := nextIntent(t)
-	for {
-		if _, sized := got.(app.StageSized); !sized {
-			break
-		}
-		got = nextIntent(t)
-	}
-	if got != (app.ShowSettings{Tab: app.SettingsTabShortcuts}) {
+	if got := nextIntent(t); got != (app.ShowSettings{Tab: app.SettingsTabShortcuts}) {
 		t.Fatalf("the command sent %#v", got)
 	}
 	st.SettingsTab, st.SettingsAsked = app.SettingsTabShortcuts, 1

@@ -545,9 +545,18 @@ func TestAProfileIsMovedAmongTheProfiles(t *testing.T) {
 	// Past the last profile, it goes no further: Add Profile stays put.
 	lastWindow.Input(gi.KeyPress{Key: gi.KeyDown, Mods: gi.ModAlt})
 	frames(1)
-	if len(lastWindow.Client().Intents()) > 0 {
-		t.Fatalf("Alt+Down past the last profile sent %#v", nextIntent(t))
+	for len(lastWindow.Client().Intents()) > 0 {
+		if in := (<-lastWindow.Client().Intents()).Intent; !isStageSized(in) {
+			t.Fatalf("Alt+Down past the last profile sent %#v", in)
+		}
 	}
+}
+
+// isStageSized reports whether in only says where the window's stage
+// and tabs are, as it does as they move.
+func isStageSized(in gunim.Intent) bool {
+	_, ok := in.(app.StageSized)
+	return ok
 }
 
 // drainIntents empties what the window has sent so far.

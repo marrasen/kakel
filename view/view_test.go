@@ -225,14 +225,21 @@ func nextIntentPast(t *testing.T) gunim.Intent {
 	}
 }
 
+// nextIntent is the next intent the window sends, past where it says
+// its stage and its tabs are, which it says as they move.
 func nextIntent(t *testing.T) gunim.Intent {
 	t.Helper()
-	select {
-	case env := <-lastWindow.Client().Intents():
-		return env.Intent
-	case <-time.After(time.Second):
-		t.Fatal("the window sent nothing")
-		return nil
+	for {
+		select {
+		case env := <-lastWindow.Client().Intents():
+			if isStageSized(env.Intent) {
+				continue
+			}
+			return env.Intent
+		case <-time.After(time.Second):
+			t.Fatal("the window sent nothing")
+			return nil
+		}
 	}
 }
 
