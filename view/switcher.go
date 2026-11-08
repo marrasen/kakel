@@ -17,6 +17,7 @@ import (
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/anim"
 	"github.com/marrasen/gunim/geom"
+	"github.com/marrasen/gunim/icon"
 	"github.com/marrasen/gunim/input"
 	"github.com/marrasen/gunim/paint"
 	"github.com/marrasen/gunim/text"
@@ -49,12 +50,15 @@ type switcher struct {
 	here int
 	env  overEnv
 	// wins are the windows shown, a card each, and byID their panes.
-	wins  []app.OverWindow
-	byID  map[string]app.Pane
-	tiles []*tile
-	cards []*card
-	hot   int
-	in    *anim.Float
+	wins []app.OverWindow
+	byID map[string]app.Pane
+	// ownTabs is where w's tabs are, from its own dock, as sync last
+	// asked.
+	ownTabs map[string]geom.Rect
+	tiles   []*tile
+	cards   []*card
+	hot     int
+	in      *anim.Float
 	// picked is the pane chosen, growing to fill the stage; -1 while
 	// the choice is open.
 	picked int
@@ -121,13 +125,17 @@ type tile struct {
 	box        *anim.Rect
 	fade       *anim.Float
 	ring       *anim.Float
-	// caption is the line over the pane while panes show their titles,
-	// drawn shrunk with it, so the tile lands as the pane stands; empty
-	// while they do not.
-	caption text.Run
-	titled  bool
-	// full is the size of its place on its window's stage, caption
-	// and all.
+	// barred says the pane has its tab drawn over it, shrunk with it, as
+	// a pane in a split has its own bar: tab and icon are the tab's title
+	// and image, and tabAt where it stands, from the pane's top left at
+	// full size. plain says its bar is in the title row, with no fill of
+	// its own; the rest have one, as a bar on the stage has.
+	barred bool
+	tab    text.Run
+	icon   *icon.Icon
+	tabAt  geom.Rect
+	plain  bool
+	// full is the size of its place on its window's stage.
 	full geom.Size
 	// mirror draws it while it is a terminal of another window, or one
 	// of this window's never drawn here.
@@ -163,6 +171,9 @@ type tabSlot struct {
 	at    geom.Rect
 	label text.Run
 	front bool
+	// split says its panes stand side by side, each under its own tab,
+	// which name them: the tab has no line over it.
+	split bool
 }
 
 // The room the overview leaves, in logical pixels.
@@ -309,6 +320,9 @@ func (s *switcher) sync(wins []app.OverWindow, panes []app.Pane, u *gunim.UI) {
 		return
 	}
 	s.wins = wins
+	if s.w != nil {
+		s.ownTabs = s.w.tabsAt()
+	}
 	s.byID = map[string]app.Pane{}
 	for _, p := range panes {
 		s.byID[p.ID] = p
@@ -351,7 +365,7 @@ func (s *switcher) sync(wins []app.OverWindow, panes []app.Pane, u *gunim.UI) {
 		c.tabs = c.tabs[:0]
 		for _, tb := range ow.Tabs {
 			title := titleIn(s.env.machines, s.byID[tb.Pane])
-			c.tabs = append(c.tabs, tabSlot{group: tb.Group, label: text.Default().Shape(title, 12), front: tb.Group == ow.Front})
+			c.tabs = append(c.tabs, tabSlot{group: tb.Group, label: text.Default().Shape(title, 12), front: tb.Group == ow.Front, split: len(boxLeaves(tb.Box, nil)) > 1})
 			for _, id := range boxLeaves(tb.Box, nil) {
 				t := old[id]
 				if t == nil {
@@ -365,11 +379,10 @@ func (s *switcher) sync(wins []app.OverWindow, panes []app.Pane, u *gunim.UI) {
 					t.heldUntil = time.Time{}
 				}
 				t.title, t.win, t.group = p.Title, ow.ID, tb.Group
-				// Every pane lands under its caption, one never on stage
-				// as well. In a split, a pane has its line anyway.
-				t.titled = namedInSplit(tb.Box, s.byID)
-				if t.titled {
-					t.caption = text.Default().Shape(captionIn(s.env.machines, p), smallText.Get(u.Theme()))
+				// In a split, a pane is drawn under its tab, as it stands.
+				t.barred = len(boxLeaves(tb.Box, nil)) > 1
+				if t.barred {
+					s.faceTab(t, p, ow, tb.Box, u.Theme())
 				}
 				if !s.drawsLive(t) && t.mirror == nil && s.env.shells != nil {
 					if sh := s.env.shells.Get(id); sh != nil {
@@ -424,19 +437,34 @@ func (s *switcher) drawsLive(t *tile) bool {
 	return ok
 }
 
-// captionHeight is the height of the line over a pane in All Panes.
-const captionHeight = 22
-
-// namedInSplit reports whether the panes of tab box b have a line
-// naming them in All Panes: two or more of them, the Machines pane apart.
-func namedInSplit(b *app.Box, panes map[string]app.Pane) bool {
-	n := 0
-	for _, id := range boxLeaves(b, nil) {
-		if panes[id].Kind != app.KindServers {
-			n++
-		}
+// faceTab sets tile t's tab, for pane p in group of window ow: what it
+// says, and where it stands, as ow said, or as a bar would put it
+// first where ow has not said.
+func (s *switcher) faceTab(t *tile, p app.Pane, ow app.OverWindow, group *app.Box, th *theme.Live) {
+	face := widget.Font.Get(th)
+	if dock.TabBold.Get(th) {
+		face = widget.BoldFont.Get(th)
 	}
-	return n > 1
+	t.tab = face.Shape(titleIn(s.env.machines, p), dock.TabText.Get(th))
+	t.icon = kindIcons[p.Kind]
+	if t.icon == nil {
+		t.icon = icon.SquareTerminal
+	}
+	bar, space, inset := dock.BarHeight.Get(th), dock.BarSpace.Get(th), dock.TabInset.Get(th)
+	if at, ok := placeIn(group, p.ID, geom.Rect{Max: s.stageOf(ow).Point()}, th); ok {
+		t.plain = at.Min.Y <= space+0.5
+	}
+	tabs := ow.TabsAt
+	if s.w != nil && ow.ID == s.here {
+		tabs = s.ownTabs
+	}
+	if at, ok := tabs[p.ID]; ok {
+		t.tabAt = at
+		return
+	}
+	pad, iconW := dock.TabPadding.Get(th), dock.TabIcon.Get(th)
+	w := min(max(2*pad+iconW+6+t.tab.Advance+tabCross+2, dock.TabLeast.Get(th)), dock.TabWidest.Get(th))
+	t.tabAt = geom.Rc(inset, inset-bar-space, w, bar-2*inset)
 }
 
 // slotAt is where tile t's pane stands on its window's stage, with the
@@ -836,6 +864,14 @@ func (s *switcher) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, _ gunim
 	th := f.Theme
 	t := min(max(s.in.Value(), 0), 1)
 	if s.w != nil {
+		// The tabs in the title row the tiles' own tabs leave from and
+		// land on are covered at once, as the stage is, under the
+		// ground coming in over the rest of the row.
+		for _, tl := range s.tiles {
+			if r, ok := s.titleTab(tl, th); ok {
+				p.RRect(r.Inset(geom.Uniform(-1)), 0, paint.Solid(widget.MenubarFill.Get(th)))
+			}
+		}
 		// The window's own ground, solid once the switcher is in: the
 		// panes are shown only as the tiles, not behind them as well.
 		scrim := widget.Background.Get(th)
@@ -905,7 +941,7 @@ func (s *switcher) paintCard(p *paint.Painter, f gunim.Frame, c *card, in float3
 		c.label.Paint(p, geom.Point{}, widget.Ink.Get(th))
 	}()
 	for _, tb := range c.tabs {
-		if tb.at.Empty() {
+		if tb.at.Empty() || tb.split {
 			continue
 		}
 		ink := look.Faint.Get(th)
@@ -947,25 +983,8 @@ func (s *switcher) paintPane(p *paint.Painter, f gunim.Frame, tl *tile, r geom.R
 		ground = look.TermBackground.Get(th)
 	}
 	p.ShadowRRect(r, radius, paint.Solid(ground), paint.Shadow{Offset: geom.Pt(0, 4), Blur: 18, Color: color.NRGBA{A: uint8(0x90 * shadow)}})
-	// The caption line, shrunk as the pane is, over it.
-	if tl.titled {
-		// Shrunk with the tile, and never taller than the line on stage:
-		// a terminal's grid can be a little shorter than its pane.
-		full := tl.full
-		if full.H <= 0 {
-			full = r.Size()
-		}
-		scale := min(1, r.Size().H/full.H)
-		line := r
-		line.Max.Y = r.Min.Y + captionHeight*scale
-		p.RRect(line, 0, paint.Solid(widget.MenuFill.Get(th)))
-		func() {
-			defer p.Layer(paint.LayerOpts{Bounds: line, Opacity: 1, Clip: true})()
-			defer p.Push(paint.Translate(line.Min))()
-			defer p.Push(paint.Scale(scale, geom.Point{}))()
-			tl.caption.Paint(p, geom.Pt(10, (captionHeight-tl.caption.Height())/2), look.Faint.Get(th))
-		}()
-		r.Min.Y = line.Max.Y
+	if tl.barred {
+		s.paintTab(p, th, tl, r)
 	}
 	// A terminal live, and any other pane as it was last drawn.
 	drawn := s.w != nil && tl.win == s.here && s.w.paintMiniature(p, f, tl.id, r, s.size)
@@ -978,6 +997,69 @@ func (s *switcher) paintPane(p *paint.Painter, f gunim.Frame, tl *tile, r geom.R
 		grow := 3 * on
 		p.RRectStroke(r.Inset(geom.Uniform(-grow)), 6+grow, paint.Fill{}, paint.Stroke{Width: 2, Color: c})
 	}
+}
+
+// paintTab draws tile tl's tab over it, in r, shrunk as the pane is,
+// and the bar under it where the bar has a fill: where the bar stands
+// on the stage, so the tab lands on it.
+func (s *switcher) paintTab(p *paint.Painter, th *theme.Live, tl *tile, r geom.Rect) {
+	pad := s.padOf(tl, th)
+	k := float32(1)
+	if w := tl.full.W - 2*pad; w > 0 {
+		k = r.Size().W / w
+	}
+	// The pane's own top left, outside what its terminal holds in.
+	o := geom.Pt(r.Min.X-pad*k, r.Min.Y-pad*k)
+	at := func(q geom.Rect) geom.Rect {
+		return geom.Rect{Min: o.Add(geom.Pt(q.Min.X*k, q.Min.Y*k)), Max: o.Add(geom.Pt(q.Max.X*k, q.Max.Y*k))}
+	}
+	if !tl.plain && tl.full.W > 0 {
+		bar, space := dock.BarHeight.Get(th), dock.BarSpace.Get(th)
+		p.RRect(at(geom.Rc(0, -bar-space, tl.full.W, bar)), dock.BarRadius.Get(th)*k, paint.Solid(dock.BarFill.Get(th)))
+	}
+	tab := at(tl.tabAt)
+	if tab.Size().W < 1 || tab.Size().H < 1 {
+		return
+	}
+	p.RRect(tab, dock.TabRadius.Get(th)*k, paint.Solid(dock.TabFront.Get(th)))
+	defer p.Layer(paint.LayerOpts{Bounds: tab, Opacity: 1, Clip: true})()
+	defer p.Push(paint.Translate(tab.Min))()
+	defer p.Push(paint.Scale(k, geom.Point{}))()
+	size := tl.tabAt.Size()
+	ink, pad2, iconW := dock.TabInk.Get(th), dock.TabPadding.Get(th), dock.TabIcon.Get(th)
+	mid := size.H / 2
+	widget.PaintIcon(p, th, tl.icon, geom.Rc(pad2, mid-iconW/2, iconW, iconW), ink)
+	x := pad2 + iconW + 6
+	// Its × in the corner, as a tab in front shows one, where it is
+	// wide enough to.
+	stop := size.W - pad2
+	if size.W >= dock.TabLeast.Default() {
+		const cross = 12
+		widget.PaintIcon(p, th, icon.X, geom.Rc(stop-cross+2, mid-cross/2, cross, cross), dock.TabFaint.Get(th))
+		stop -= tabCross
+	}
+	tl.tab.PaintFaded(p, geom.Pt(x, mid-tl.tab.Height()/2), ink, stop-x, widget.TextFade.Get(th))
+}
+
+// tabCross is the room a tab's × takes, as a dock's bar leaves it.
+const tabCross = 16
+
+// titleTab is where tile tl's tab stands in the title row of the window
+// the switcher is over, when it is a pane of that window with its tab
+// there.
+func (s *switcher) titleTab(tl *tile, th *theme.Live) (geom.Rect, bool) {
+	if s.w == nil || tl.win != s.here || !tl.barred || !tl.plain {
+		return geom.Rect{}, false
+	}
+	tb := s.tabOf(tl.win, tl.group)
+	if tb == nil || !s.frontOf(tl.win, tl.group) {
+		return geom.Rect{}, false
+	}
+	at, ok := placeIn(tb.Box, tl.id, geom.Rect{Max: s.stageAt.Size().Point()}, th)
+	if !ok {
+		return geom.Rect{}, false
+	}
+	return tl.tabAt.Add(s.stageAt.Min.Add(at.Min)), true
 }
 
 // paintNothing draws a pane there is no picture of yet: its name, in
@@ -1131,12 +1213,18 @@ func (s *switcher) pick(i int, u *gunim.UI) {
 // padded is r, the place of tile t's pane, less the room round a
 // terminal's cells: where its picture lands.
 func (s *switcher) padded(t *tile, r geom.Rect, u *gunim.UI) geom.Rect {
+	return r.Inset(geom.Uniform(s.padOf(t, u.Theme())))
+}
+
+// padOf is how far tile t's pane is drawn in from the edges of its
+// place.
+func (s *switcher) padOf(t *tile, th *theme.Live) float32 {
 	switch s.byID[t.id].Kind {
 	case app.KindTerminal, app.KindLog:
 		// Drawn by a terminal, which bareNode holds in from the edges.
-		return r.Inset(geom.Uniform(termPadding.Get(u.Theme())))
+		return termPadding.Get(th)
 	}
-	return r
+	return 0
 }
 
 // cancel closes the overview without a choice; the panes on stage go

@@ -12,6 +12,7 @@ import (
 	"github.com/marrasen/gunim"
 	gi "github.com/marrasen/gunim/input"
 	"github.com/marrasen/gunim/paint"
+	"github.com/marrasen/gunim/widget/dock"
 
 	"github.com/marrasen/kakel/vt"
 )
@@ -139,6 +140,49 @@ func TestTheSwitcherCoversTheStageAtOnce(t *testing.T) {
 		}
 	}
 	t.Fatalf("on its first frame, the switcher leaves the stage at %v showing", sw.stageAt)
+}
+
+// In a split, a pane in All Panes starts as it stands, its tab drawn
+// over it where its bar has it: no line of its own pushes the pane down,
+// and the tab leaves from the bar's tab.
+func TestASplitsPanesStartUnderTheirTabs(t *testing.T) {
+	win, _, publish := windowStage(t)
+	publish(app.State{Panes: []app.Pane{
+		{ID: "p1", Title: "a", Kind: app.KindFileManager},
+		{ID: "p2", Title: "b", Kind: app.KindFileManager},
+	}, Layout: boxLayout(&app.Box{A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "p2"}, Share: 0.5}), Focus: "p1"})
+	for range 30 {
+		lastWindow.Frame(time.Second / 60)
+	}
+	win.openSwitcher(lastUI)
+	lastWindow.Frame(time.Second / 60)
+	sw := win.sw
+	th := lastUI.Theme()
+	if len(sw.tiles) != 2 {
+		t.Fatalf("All Panes shows %d panes of the split's two", len(sw.tiles))
+	}
+	for _, tl := range sw.tiles {
+		pane, ok := win.dock.FinalRect(tl.id)
+		if !ok {
+			t.Fatalf("pane %s has no place", tl.id)
+		}
+		if got := tl.box.Value(); got != pane {
+			t.Fatalf("pane %s starts at %v in All Panes, and stands at %v", tl.id, got, pane)
+		}
+		if !tl.barred {
+			t.Fatalf("pane %s of a split starts with no tab over it", tl.id)
+		}
+		tab, _ := win.dock.TabRect(tl.id)
+		found := false
+		for _, op := range lastWindow.Offscreen().Ops() {
+			if r, ok := op.(*paint.RRectOp); ok && r.Rect == tab && r.Fill.Solid == dock.TabFront.Get(th) {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("pane %s's tab is not drawn at %v, where its bar has it", tl.id, tab)
+		}
+	}
 }
 
 // A file manager pane's caption names where it runs alone: the file

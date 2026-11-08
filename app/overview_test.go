@@ -13,11 +13,12 @@ import (
 	"github.com/marrasen/kakel/screen"
 )
 
-// All Panes is shown every window, with its tabs and the size of its
-// stage.
+// All Panes is shown every window, with its tabs, the size of its
+// stage and where its panes' tabs are.
 func TestTheOverviewShowsEveryWindow(t *testing.T) {
 	a, one, two := twoWindowApp(t)
-	a.overviewIn(one, StageSized{At: geom.Rc(0, 40, 640, 400), Window: geom.Sz(640, 460)})
+	tabs := map[string]geom.Rect{"p1": geom.Rc(80, -27, 90, 24)}
+	a.overviewIn(one, StageSized{At: geom.Rc(0, 40, 640, 400), Window: geom.Sz(640, 460), Tabs: tabs})
 	ov := a.overview()
 	if len(ov) != 2 || ov[0].ID != one.id || ov[1].ID != two.id {
 		t.Fatalf("the overview shows %+v", ov)
@@ -27,6 +28,15 @@ func TestTheOverviewShowsEveryWindow(t *testing.T) {
 	}
 	if ov[0].Stage != geom.Sz(640, 400) || ov[0].StageAt != geom.Rc(0, 40, 640, 400) || ov[0].Size != geom.Sz(640, 460) || ov[0].Front != ov[0].Tabs[0].Group {
 		t.Fatalf("the first window's stage is %v, with group %d in front", ov[0].Stage, ov[0].Front)
+	}
+	if ov[0].TabsAt["p1"] != tabs["p1"] {
+		t.Fatalf("the first window's tabs are at %v", ov[0].TabsAt)
+	}
+	// Its tabs moving, alone, is news too.
+	tabs2 := map[string]geom.Rect{"p1": geom.Rc(120, -27, 90, 24)}
+	a.overviewIn(one, StageSized{At: geom.Rc(0, 40, 640, 400), Window: geom.Sz(640, 460), Tabs: tabs2})
+	if a.overview()[0].TabsAt["p1"] != tabs2["p1"] {
+		t.Fatalf("the first window's tabs moved, and are at %v", a.overview()[0].TabsAt)
 	}
 }
 

@@ -2,6 +2,7 @@ package app
 
 import (
 	"log"
+	"maps"
 	"os"
 	"time"
 
@@ -37,6 +38,9 @@ type OverWindow struct {
 	// Panes' own window; empty where that cannot be said, and in the
 	// windows' own state.
 	Home geom.Rect
+	// TabsAt is where each pane's tab stands on its bar, from the top
+	// left of the pane, as StageSized says.
+	TabsAt map[string]geom.Rect
 }
 
 // OverTab is one tab of a window, how its panes are arranged, and Pane
@@ -55,6 +59,9 @@ type (
 	StageSized struct {
 		At     geom.Rect
 		Window geom.Size
+		// Tabs is where each pane's tab stands on its bar, from the top
+		// left of the pane: for All Panes to draw it there over the pane.
+		Tabs map[string]geom.Rect
 	}
 	// ToggleOverview opens All Panes in a window of its own, over the
 	// screen the window it came from is on, or closes it.
@@ -101,11 +108,11 @@ func (a *app) overviewIn(w *ownWin, in any) bool {
 				a.over.c.ToFront()
 			}
 		}
-		if w.stage == in.At && w.size == in.Window {
+		if w.stage == in.At && w.size == in.Window && maps.Equal(w.tabsAt, in.Tabs) {
 			a.quiet = true
 			return true
 		}
-		w.stage, w.size = in.At, in.Window
+		w.stage, w.size, w.tabsAt = in.At, in.Window, in.Tabs
 		// Worth showing only where All Panes is open.
 		a.quiet = !a.overviewOpen()
 	case OverviewShown:
@@ -150,7 +157,7 @@ func (a *app) overviewOpen() bool {
 func (a *app) overview() []OverWindow {
 	var out []OverWindow
 	for _, w := range a.liveWins() {
-		ow := OverWindow{ID: w.id, Stage: w.stage.Size(), StageAt: w.stage, Size: w.size}
+		ow := OverWindow{ID: w.id, Stage: w.stage.Size(), StageAt: w.stage, Size: w.size, TabsAt: w.tabsAt}
 		ow.Tabs = OverTabs(&a.layout, w.id)
 		if len(ow.Tabs) > 0 {
 			ow.Front = ow.Tabs[0].Group

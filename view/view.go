@@ -236,10 +236,11 @@ type Window struct {
 	sharedAt      time.Time
 	overviewing   bool
 	overviewAlone bool
-	// stageSaid is where the program was last told the stage is, and
-	// sizeSaid how large the window is.
+	// stageSaid is where the program was last told the stage is,
+	// sizeSaid how large the window is and tabsSaid where its tabs are.
 	stageSaid geom.Rect
 	sizeSaid  geom.Size
+	tabsSaid  map[string]geom.Rect
 	// overWins and allPanes are every window and every pane, as All
 	// Panes shows them.
 	overWins    []app.OverWindow

@@ -2,6 +2,7 @@ package view
 
 import (
 	"image/color"
+	"maps"
 	"sync"
 	"time"
 
@@ -151,18 +152,41 @@ func forgetShared(live func(id string) bool) {
 	}
 }
 
-// sayStage tells the program where the stage is in the window, and how
-// large the window is, box, when either has changed: All Panes draws
-// the window's tabs that shape, and the window as it stands.
+// sayStage tells the program where the stage is in the window, how
+// large the window is, box, and where each pane's tab is on its bar,
+// when any of them has changed: All Panes draws the window's tabs that
+// shape, the window as it stands, and each pane under its tab.
 func (w *Window) sayStage(f gunim.Frame, box geom.Size) {
 	u := f.UI()
 	if u == nil {
 		return
 	}
 	r, ok := u.Bounds(w.stage)
-	if !ok || r == w.stageSaid && box == w.sizeSaid {
+	tabs := w.tabsAt()
+	if !ok || r == w.stageSaid && box == w.sizeSaid && maps.Equal(tabs, w.tabsSaid) {
 		return
 	}
-	w.stageSaid, w.sizeSaid = r, box
-	f.Send(w, app.StageSized{At: r, Window: box})
+	w.stageSaid, w.sizeSaid, w.tabsSaid = r, box, tabs
+	f.Send(w, app.StageSized{At: r, Window: box, Tabs: tabs})
+}
+
+// tabsAt is where each pane shown has its tab, from the pane's top left
+// where it comes to rest.
+func (w *Window) tabsAt() map[string]geom.Rect {
+	if w.dock == nil {
+		return nil
+	}
+	var out map[string]geom.Rect
+	for _, id := range w.dock.Shown() {
+		tab, ok := w.dock.TabRect(id)
+		pane, ok2 := w.dock.FinalRect(id)
+		if !ok || !ok2 {
+			continue
+		}
+		if out == nil {
+			out = map[string]geom.Rect{}
+		}
+		out[id] = tab.Add(geom.Pt(-pane.Min.X, -pane.Min.Y))
+	}
+	return out
 }

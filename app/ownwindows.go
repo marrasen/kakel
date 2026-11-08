@@ -38,10 +38,12 @@ type ownWin struct {
 	// the bells rung in its panes.
 	pings Pings
 	bells uint64
-	// stage is where its stage is in it, and size its own size, as it
-	// last said, and overview says All Panes is open over it.
+	// stage is where its stage is in it, size its own size and tabsAt
+	// where each pane's tab is, from the pane's top left, as it last
+	// said; overview says All Panes is open over it.
 	stage    geom.Rect
 	size     geom.Size
+	tabsAt   map[string]geom.Rect
 	overview bool
 	// fresh says it opened while All Panes was over the screen, and
 	// has not shown yet.
