@@ -119,6 +119,9 @@ type Terminal struct {
 	// cmd is what the shell's prompt marks have said so far.
 	cmd Command
 
+	// pins are the lines callers asked to have kept up to date.
+	pins pins
+
 	// notice is the last message a program asked to have shown, and
 	// noticeNum counts them so the same words twice are two messages.
 	notice    string
@@ -173,8 +176,19 @@ func (t *Terminal) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// Resize changes the screen size.
-func (t *Terminal) Resize(cols, rows int) { t.scr.Resize(cols, rows) }
+// Resize changes the screen size, moving the lines the terminal holds along with their text, and returns where each
+// cell went.
+func (t *Terminal) Resize(cols, rows int) Moved {
+	moved := t.scr.Resize(cols, rows)
+	if t.cmd.hasFrom {
+		t.cmd.from, _ = moved(t.cmd.from, 0)
+	}
+	for i := range t.images {
+		t.images[i].Line, t.images[i].Col = moved(t.images[i].Line, t.images[i].Col)
+	}
+	t.pins.move(moved)
+	return moved
+}
 
 // Render copies the visible screen into g.
 func (t *Terminal) Render(g *grid.Grid) { t.scr.Render(g) }

@@ -194,11 +194,9 @@ func (s *Split) Layout(size Size) {
 	layoutIfVisible(s.b, rb)
 }
 
-// layoutIfVisible passes a size on, unless there is no room at all.
-//
-// A pane squeezed out by a narrow window keeps the size it had. Telling
-// a terminal it has no columns reflows its scrollback into one, and
-// widening the window again does not bring it back.
+// layoutIfVisible passes a size on unless there is no room at all, so a
+// squeezed-out terminal keeps its size rather than re-wrapping into one
+// column.
 func layoutIfVisible(w Widget, area Rect) {
 	if w == nil || area.Empty() {
 		return

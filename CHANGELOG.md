@@ -7,6 +7,29 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
+## v0.12.2-beta.13
+
+### Fixed
+
+**A terminal keeps its text when its pane gets narrower.** Splitting a
+pane, dragging a divider or resizing the window used to cut every line
+at the new width, in the scrollback too, and widening it again did not
+bring the text back. Now the lines wrap onto more rows in a narrow pane
+and join up again in a wide one. The cursor, the selection and where
+you had scrolled back to stay on their text.
+
+**A pane whose program has ended takes the room it is given**, rather
+than keeping the size it had when the program ended.
+
+## v0.12.2-beta.12
+
+### Fixed
+
+**All Panes shows each pane's tab over it.** It still drew the old pane
+caption inside every pane of a split, which pushed the content down.
+Now each pane's tab sits above it, and shrinks and grows with the pane,
+so the panes match the real ones as All Panes opens and closes.
+
 ## v0.12.2-beta.11
 
 ### Changed

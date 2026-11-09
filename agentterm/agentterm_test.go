@@ -6,6 +6,7 @@ import (
 
 	"github.com/marrasen/kakel/agent"
 	uiterm "github.com/marrasen/kakel/ui/term"
+	"github.com/marrasen/kakel/vt"
 )
 
 // An agent's asking is cut to one plain line.
@@ -55,7 +56,7 @@ func TestTypingKnowsWhenItsPromptIsBack(t *testing.T) {
 	if h.Watching() || h.Yours(5) {
 		t.Fatal("before any typing it watches or claims a command")
 	}
-	h = Typing{at: "$ ", line: 10, done: 3, sent: true}
+	h = Typing{at: "$ ", line: vt.New(20, 4, vt.DefaultPalette(), 0, vt.Callbacks{}).Pin(10), done: 3, sent: true}
 	read := func(line uint64, before string) uiterm.Reading {
 		return uiterm.Reading{Line: line, Before: before}
 	}

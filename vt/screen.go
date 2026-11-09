@@ -57,6 +57,9 @@ type Screen struct {
 	// the shell's cursor when a full-screen program exits.
 	saved [2]cursorState
 
+	// priCur is the ordinary screen's cursor as the alternate screen was entered.
+	priCur cursorState
+
 	top, bot int // scroll region, inclusive, 0-based
 
 	mode    modes
@@ -174,13 +177,16 @@ func (s *Screen) resizeTabs(cols int) {
 	s.tabs = next
 }
 
-// Resize changes the screen dimensions. The cursor is clamped into the
-// new bounds and the scroll region is reset, which is what xterm does.
-func (s *Screen) Resize(cols, rows int) {
+// Resize changes the screen dimensions, re-wrapping the ordinary screen at a new width, and returns where each cell
+// went.
+func (s *Screen) Resize(cols, rows int) Moved {
 	cols = max(cols, 1)
 	rows = max(rows, 1)
 	if cols == s.cols && rows == s.rows {
-		return
+		return stayed
+	}
+	if cols != s.cols {
+		return s.reflow(cols, rows)
 	}
 	// Lines below the floor are what a clear put behind the screen, and
 	// they stay behind it however much taller the window gets.
@@ -209,9 +215,82 @@ func (s *Screen) Resize(cols, rows int) {
 		s.saved[i].X = min(s.saved[i].X, cols-1)
 		s.saved[i].Y = min(max(s.saved[i].Y+shift, 0), rows-1)
 	}
+	s.priCur.Y = min(max(s.priCur.Y+priShift, 0), rows-1)
 	s.resizeTabs(cols)
 	s.clampScrollOff()
 	s.touchAll()
+	return stayed
+}
+
+// reflow gives the screen a new width, re-wrapping the ordinary screen and its history so that a line cut by a
+// narrow pane comes back whole in a wide one.
+func (s *Screen) reflow(cols, rows int) Moved {
+	onPri := s.cur == s.pri
+	pc := s.priCur
+	if onPri {
+		pc = s.cursor
+	}
+	was := len(s.pri.scrollback)
+	base := s.gone - uint64(was)
+	viewTop := int64(s.gone) - int64(s.scrollOff)
+	m, top := s.pri.reflow(cols, rows, s.blank(), pc.Y, pc.X, int(int64(s.floor)-int64(base)))
+	s.gone = base + uint64(top)
+	moved := func(line uint64, col int) (uint64, int) {
+		if line < base {
+			return line, col
+		}
+		r, c := m.at(int(line-base), col)
+		return base + uint64(max(r, 0)), c
+	}
+
+	// A cursor stays on the cell it was on, or just past the last one written when it owes a wrap.
+	place := func(c cursorState) cursorState {
+		r, x := m.at(was+c.Y, c.X)
+		x = min(x, cols-1)
+		if c.WrapNext && x < cols-1 {
+			x++
+			c.WrapNext = false
+		}
+		c.X, c.Y = x, min(max(r-top, 0), rows-1)
+		return c
+	}
+	s.saved[0] = place(s.saved[0])
+	if onPri {
+		s.cursor = place(s.cursor)
+	} else {
+		s.priCur = place(s.priCur)
+	}
+
+	// The alternate screen is cut or padded: a full-screen program draws it again at the new size.
+	altY := s.saved[1].Y
+	if !onPri {
+		altY = s.cursor.Y
+	}
+	shift := s.alt.resize(cols, rows, s.eraseCell(), altY, rows)
+	clampTo := func(c *cursorState) {
+		c.X = min(c.X, cols-1)
+		c.Y = min(max(c.Y+shift, 0), rows-1)
+		c.WrapNext = false
+	}
+	clampTo(&s.saved[1])
+	if !onPri {
+		clampTo(&s.cursor)
+	}
+
+	if s.floor > base {
+		s.floor, _ = moved(s.floor, 0)
+	}
+	if s.scrollOff > 0 && viewTop >= int64(base) {
+		at, _ := moved(uint64(viewTop), 0)
+		s.scrollOff = int(int64(s.gone) - int64(at))
+	}
+
+	s.cols, s.rows = cols, rows
+	s.top, s.bot = 0, rows-1
+	s.resizeTabs(cols)
+	s.clampScrollOff()
+	s.touchAll()
+	return moved
 }
 
 // line returns the current buffer's row y, or nil when out of range.
@@ -812,6 +891,7 @@ func (s *Screen) UseAltBuffer(on, clearOnEntry bool) {
 		return
 	}
 	if on {
+		s.priCur = s.cursor
 		s.cur = s.alt
 		s.mode.Alt = true
 		if clearOnEntry {
@@ -1021,10 +1101,11 @@ func (s *Screen) Floor() uint64 { return s.floor }
 // LineNumber names the line showing at a row of the primary screen.
 //
 // It counts from the first line the screen ever had and goes on counting
-// past what history keeps, so it names a line for as long as the screen
-// lives: a caller that wrote one down can tell whether the cursor has
-// passed it. Rows of the alternate screen are not lines of this at all,
-// and it says what the primary screen has there.
+// past what history keeps, so a caller that wrote one down can tell
+// whether the cursor has passed it. A resize to another width numbers
+// the lines again; Terminal.Pin keeps a number on its line. Rows of the
+// alternate screen are not lines of this at all, and it says what the
+// primary screen has there.
 func (s *Screen) LineNumber(row int) uint64 { return s.gone + uint64(max(row, 0)) }
 
 // ViewTop is the number of the line at the view's top row, counted as

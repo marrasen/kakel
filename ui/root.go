@@ -64,10 +64,8 @@ func (r *Root) SetWidget(w Widget) {
 	if w == nil {
 		return
 	}
-	// Not while the root has no area of its own. Telling a widget it has
-	// no room is not the same as telling it nothing: a terminal resizes
-	// its shell to one column and reflows the scrollback, and the next
-	// Layout cannot undo that.
+	// Not while the root has no area of its own, which would re-wrap a
+	// terminal's scrollback into one column.
 	if !r.area.Empty() {
 		w.Layout(r.area.Size())
 	}
