@@ -7,6 +7,22 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
+## v0.12.2-beta.14
+
+### Added
+
+**A profile can close its pane when the shell ends.** A profile's page
+has a new When it ends menu, with three choices:
+
+- **Always ask** shows Start Again and Close, as before. It is the
+  default.
+- **Ask when it fails** closes the pane when the shell exits with 0,
+  and asks after any other exit.
+- **Close the pane** closes it every time.
+
+A server connection that is lost still asks, so Reconnect stays on
+offer. A pane that runs a single command still asks too.
+
 ## v0.12.2-beta.13
 
 ### Fixed

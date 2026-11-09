@@ -102,9 +102,16 @@ func TestAPaneStartsItsOwnShellAgain(t *testing.T) {
 // what answers whatever it asks: the host key, and the password.
 func serverPane(t *testing.T) (a *app, id string, answering func()) {
 	t.Helper()
+	a, id, answering, _ = serverPaneOf(t)
+	return a, id, answering
+}
+
+// serverPaneOf is serverPane, and the server the shell is on.
+func serverPaneOf(t *testing.T) (a *app, id string, answering func(), s *sshtest.Server) {
+	t.Helper()
 	testhome.New(t)
 	t.Setenv("SSH_AUTH_SOCK", "")
-	s := sshtest.New(t)
+	s = sshtest.New(t)
 	host, port := s.Host()
 	w := gunimtest.New(t, geom.Sz(400, 300), nil)
 	a = newApp(w.Client(), screen.NewShells())
@@ -130,7 +137,7 @@ func serverPane(t *testing.T) (a *app, id string, answering func()) {
 	target := "tester@" + net.JoinHostPort(host, strconv.Itoa(port))
 	a.handle(ConnectTo{Target: target})
 	waitFor(t, a, "a shell on the server", func() bool { answering(); return oneShell(a) })
-	return a, a.st.Panes[0].ID, answering
+	return a, a.st.Panes[0].ID, answering, s
 }
 
 // A pane whose shell on a server ended starts again over the connection
@@ -265,4 +272,47 @@ func TestAnEndIsCountedOncePerRun(t *testing.T) {
 	if a.endings[id] != 1 {
 		t.Fatalf("a late word of the run before counted as an end: %d", a.endings[id])
 	}
+}
+
+// endingWith has pane id run a profile that says when to ask once it ends.
+func endingWith(a *app, id string, when settings.EndAsk) {
+	argv := shellSaying("profiled")
+	a.st.Profiles = append(a.st.Profiles, settings.Profile{ID: "profiled", Name: "Profiled", Command: argv, Ended: when})
+	a.argvs[id] = argv
+}
+
+func TestAProfileThatAsksOnlyOnFailureClosesACleanEnd(t *testing.T) {
+	a, _ := agentApp(t)
+	id := a.st.Panes[0].ID
+	endingWith(a, id, settings.EndAskFailed)
+	a.terminal(id).Paste("exit 0\r")
+	waitFor(t, a, "the pane to close", func() bool { return !a.has(id) })
+}
+
+func TestAProfileThatAsksOnlyOnFailureAsksOnAFailure(t *testing.T) {
+	a, _ := agentApp(t)
+	id := a.st.Panes[0].ID
+	endingWith(a, id, settings.EndAskFailed)
+	shellEnds(t, a, id, "3")
+	waitFor(t, a, "the question with the status", func() bool {
+		return a.terminal(id).Asking() == "The shell has finished. Exit 3."
+	})
+}
+
+func TestAProfileThatNeverAsksClosesAFailure(t *testing.T) {
+	a, _ := agentApp(t)
+	id := a.st.Panes[0].ID
+	endingWith(a, id, settings.EndAskNever)
+	a.terminal(id).Paste("exit 3\r")
+	waitFor(t, a, "the pane to close", func() bool { return !a.has(id) })
+}
+
+func TestAProfileThatNeverAsksStillOffersReconnectWhenTheConnectionGoes(t *testing.T) {
+	a, id, _, s := serverPaneOf(t)
+	name := a.st.Panes[0].Machine
+	a.st.Found = append(a.st.Found, settings.FoundProfile{HostID: string(name), ID: LoginShell, Ended: settings.EndAskNever})
+	s.CloseClients()
+	waitFor(t, a, "the question", func() bool {
+		return a.has(id) && a.terminal(id).Asking() == "Connection closed."
+	})
 }

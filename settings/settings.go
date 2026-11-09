@@ -469,7 +469,23 @@ type Profile struct {
 	// unset, as its machine says: Shell Setup here, and on a saved
 	// server, the server's own tick.
 	Setup *bool `json:"setup,omitempty"`
+
+	// Ended says when a pane whose program ended asks whether to start it again; otherwise the pane closes.
+	Ended EndAsk `json:"ended,omitempty"`
 }
+
+// EndAsk says when a pane whose program ended asks whether to start it again.
+type EndAsk string
+
+// The choices for EndAsk.
+const (
+	// EndAskAlways asks every time, and is the default.
+	EndAskAlways EndAsk = ""
+	// EndAskFailed asks when the program failed or its status is unknown.
+	EndAskFailed EndAsk = "failed"
+	// EndAskNever never asks.
+	EndAskNever EndAsk = "never"
+)
 
 // FoundProfile is what the user changed of a profile kakel finds
 // itself, by the machine it is on, HostID, empty for this computer, and
@@ -493,15 +509,16 @@ type FoundProfile struct {
 	Color string `json:"color,omitempty"`
 	Icon  string `json:"icon,omitempty"`
 
-	// Folder, Env and Setup are, for a terminal, as a Profile has them.
+	// Folder, Env, Setup and Ended are, for a terminal, as a Profile has them.
 	Folder string   `json:"folder,omitempty"`
 	Env    []string `json:"env,omitempty"`
 	Setup  *bool    `json:"setup,omitempty"`
+	Ended  EndAsk   `json:"ended,omitempty"`
 }
 
 // empty reports whether f changes nothing, and so need not be kept.
 func (f FoundProfile) empty() bool {
-	return f.Name == "" && !f.Hidden && f.Folder == "" && len(f.Env) == 0 && f.Setup == nil && f.Color == "" && f.Icon == ""
+	return f.Name == "" && !f.Hidden && f.Folder == "" && len(f.Env) == 0 && f.Setup == nil && f.Ended == EndAskAlways && f.Color == "" && f.Icon == ""
 }
 
 // AgentMay is what a hand-over allows an agent beyond reading a pane and

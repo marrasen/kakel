@@ -10,9 +10,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/gunimtest"
 	gi "github.com/marrasen/gunim/input"
+	"github.com/marrasen/gunim/widget"
 
 	"github.com/marrasen/kakel/app"
 	"github.com/marrasen/kakel/input"
@@ -328,4 +330,45 @@ func TestShotsShortcuts(t *testing.T) {
 	publish(st)
 	settle()
 	shot("narrow")
+}
+
+// TestShotsProfileEnded writes a profile's page, and frames of its When it ends menu opening.
+func TestShotsProfileEnded(t *testing.T) {
+	dir := os.Getenv("KAKEL_SHOTS")
+	if dir == "" {
+		t.Skip("KAKEL_SHOTS names no folder to write the screenshots to")
+	}
+	shot := func(name string) {
+		gunimtest.WritePNG(t, filepath.Join(dir, name+".png"), gunimtest.Pixels(t, lastWindow))
+	}
+	win, _, publish := windowStageOf(t, geom.Sz(1300, 860))
+	st := shotsState()
+	st.Profiles = []settings.Profile{{ID: "profile:fish", Name: "Fish", Command: []string{"/usr/bin/fish", "-l"}, Ended: settings.EndAskFailed}}
+	st.Panes = append(st.Panes, app.Pane{ID: "mp", Title: "machine", Kind: app.KindMachine, Machine: "", Row: mpProfile + "profile:fish", RowAt: 1})
+	st.Layout, st.Focus = boxLayout(&app.Box{Pane: "mp"}), "mp"
+	publish(st)
+	settle()
+	shot("profile-ended")
+	mp := win.machinePanes["mp"]
+	var menu *widget.Dropdown
+	walkNodes(mp.right, func(n gunim.Node) {
+		if d, ok := n.(*widget.Dropdown); ok && d.Label == "When it ends" {
+			menu = d
+		}
+	})
+	if menu == nil {
+		t.Fatal("no When it ends menu on the profile's page")
+	}
+	box, ok := lastUI.Bounds(menu)
+	if !ok {
+		t.Fatal("the When it ends menu is not on screen")
+	}
+	lastWindow.Input(gi.PointerDown{Pos: box.Center(), Button: gi.ButtonPrimary})
+	lastWindow.Input(gi.PointerUp{Pos: box.Center(), Button: gi.ButtonPrimary})
+	for i := 1; i <= 3; i++ {
+		frames(3)
+		shot("profile-ended-open-" + strconv.Itoa(i))
+	}
+	settle()
+	shot("profile-ended-open")
 }

@@ -466,11 +466,13 @@ func (mp *machinePane) signature() string {
 			if p.own.Setup != nil {
 				b.WriteString(boolWord(*p.own.Setup))
 			}
+			b.WriteString("\x05" + string(p.own.Ended))
 		}
 		b.WriteString(p.edit.Folder + strings.Join(p.edit.Env, ";") + boolWord(p.def) + boolWord(p.edit.Hidden))
 		if p.edit.Setup != nil {
 			b.WriteString(boolWord(*p.edit.Setup))
 		}
+		b.WriteString("\x05" + string(p.edit.Ended))
 		if t := it.tunnel; t != nil {
 			b.WriteString("\x04" + t.title() + boolWord(t.live()) + boolWord(t.open != nil) + boolWord(t.saved != nil))
 		}
@@ -834,6 +836,8 @@ func (mp *machinePane) profileSide(p mpProfileOf, adding bool, u *gunim.UI) guni
 		line.Placeholder, dir.Placeholder = "such as tmux new -A -s main", "Optional, such as ~/src"
 	}
 	teach := widget.NewCheckbox("Let kakel follow the shell's folder and commands")
+	ended := widget.NewDropdown(widget.Labels(endAskLabels...))
+	ended.Label = "When it ends"
 	setup := mp.setupOn()
 	switch {
 	case p.own != nil:
@@ -844,6 +848,7 @@ func (mp *machinePane) profileSide(p mpProfileOf, adding bool, u *gunim.UI) guni
 		if p.own.Setup != nil {
 			setup = *p.own.Setup
 		}
+		ended.SetSelected(endAskIndex(p.own.Ended), nil)
 	case p.found:
 		name.SetText(p.edit.Name, nil)
 		name.Placeholder = p.name
@@ -852,6 +857,7 @@ func (mp *machinePane) profileSide(p mpProfileOf, adding bool, u *gunim.UI) guni
 		if p.edit.Setup != nil {
 			setup = *p.edit.Setup
 		}
+		ended.SetSelected(endAskIndex(p.edit.Ended), nil)
 	}
 	teach.SetChecked(setup, nil)
 	form := widget.NewForm().Add("Name", name)
@@ -866,7 +872,7 @@ func (mp *machinePane) profileSide(p mpProfileOf, adding bool, u *gunim.UI) guni
 	if !(p.found && !here) {
 		form.Add("Folder", dir).Add("Environment", env)
 	}
-	form.Add("", teach)
+	form.Add("", teach).Add("When it ends", ended)
 	save := widget.NewButton("Save")
 	save.Kind = widget.ButtonPrimary
 	problem := faintLabel("")
@@ -882,7 +888,7 @@ func (mp *machinePane) profileSide(p mpProfileOf, adding bool, u *gunim.UI) guni
 		case p.found:
 			f := p.edit
 			f.HostID, f.ID = string(mp.machine), p.id
-			f.Name, f.Setup = strings.TrimSpace(name.Text()), setupOf()
+			f.Name, f.Setup, f.Ended = strings.TrimSpace(name.Text()), setupOf(), endAsks[ended.Selected()]
 			if here {
 				f.Folder = strings.TrimSpace(dir.Text())
 				if f.Folder != "" {
@@ -906,7 +912,7 @@ func (mp *machinePane) profileSide(p mpProfileOf, adding bool, u *gunim.UI) guni
 			if err != nil {
 				return nil, err
 			}
-			got.Setup = setupOf()
+			got.Setup, got.Ended = setupOf(), endAsks[ended.Selected()]
 			return app.SaveProfile{Profile: got}, nil
 		}
 	}
@@ -926,6 +932,7 @@ func (mp *machinePane) profileSide(p mpProfileOf, adding bool, u *gunim.UI) guni
 	name.OnChange, line.OnChange, dir.OnChange = changed, changed, changed
 	env.OnChange = changed
 	teach.OnChange = func(bool, *gunim.UI) gunim.Intent { check(u); return nil }
+	ended.OnChange = func(int, *gunim.UI) gunim.Intent { check(u); return nil }
 	check(nil)
 	save.OnClick = func(u *gunim.UI) gunim.Intent {
 		in, err := parse()
@@ -968,6 +975,15 @@ func (mp *machinePane) profileSide(p mpProfileOf, adding bool, u *gunim.UI) guni
 	col.Cross, col.Gap = widget.CrossStretch, mpGap
 	return widget.NewSized(col, 640, 0)
 }
+
+// endAsks are the choices of a profile's When it ends, in the order endAskLabels names them.
+var endAsks = []settings.EndAsk{settings.EndAskAlways, settings.EndAskFailed, settings.EndAskNever}
+
+// endAskLabels name endAsks in the profile's When it ends.
+var endAskLabels = []string{"Always ask", "Ask when it fails", "Close the pane"}
+
+// endAskIndex is where e stands in endAsks, the first for one it does not know.
+func endAskIndex(e settings.EndAsk) int { return max(slices.Index(endAsks, e), 0) }
 
 // folderSide is the right side for a folder's row, or for saving one
 // with adding, a location with location and else a favourite: its name,
