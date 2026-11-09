@@ -21,15 +21,18 @@ import (
 
 // A terminal pane whose program ends stays open, with what it printed,
 // and asks in the pane whether to start the program again or close the
-// pane. Enter closes it, so typing exit and Enter
-// still leaves nothing behind.
+// pane, unless its profile says to close it. Enter closes it, so typing
+// exit and Enter still leaves nothing behind.
 
 // paneEnded marks a terminal pane whose program has ended, and asks
-// what next. Other panes, which read a log, close.
+// what next or closes it, as its profile says. Other panes, which read a log, close.
 //
 // The terminal says so twice, once as the program's output ends and
 // again once its exit status is in.
-func (a *app) paneEnded(id string) {
+func (a *app) paneEnded(id string) { a.endPane(id, false) }
+
+// endPane is paneEnded, and with ask it asks even when the profile would close the pane, as after a failed start again.
+func (a *app) endPane(id string, ask bool) {
 	a.countEnding(id)
 	t := a.terminal(id)
 	switch {
@@ -52,7 +55,8 @@ func (a *app) paneEnded(id string) {
 	if a.machineOf(id) != "" {
 		start, question = "Reconnect", "Connection closed."
 	}
-	status, known := exitStatus(t.Ending())
+	why, over := t.Ending()
+	status, known := exitStatus(why, over)
 	if known && status != 0 {
 		question += " Exit " + strconv.Itoa(status) + "."
 	}
@@ -68,7 +72,7 @@ func (a *app) paneEnded(id string) {
 	// One that ended with no status, as when its connection went, says
 	// why instead.
 	if i := slices.IndexFunc(a.st.Panes, func(p Pane) bool { return p.ID == id }); i >= 0 {
-		switch why, over := t.Ending(); {
+		switch {
 		case known:
 			log.Printf("%s ended, exit %d", a.paneForLog(a.st.Panes[i]), status)
 		case over && why != nil:
@@ -82,6 +86,19 @@ func (a *app) paneEnded(id string) {
 		front := w != nil && a.focusIn(w) == id
 		p := a.pingsIn(w)
 		countEnd(p, front, status)
+	}
+	// The profile may close the pane in place of asking, once the status is in.
+	if _, isCommand := a.commands[id]; !isCommand && !ask {
+		if when := a.endAsk(id); when == settings.EndAskFailed || when == settings.EndAskNever {
+			if !over {
+				return
+			}
+			// A connection that went is no end of the program, so Reconnect stays on offer.
+			if when == settings.EndAskNever && !a.cutOff(id, t) || known && status == 0 {
+				a.closePane(id)
+				return
+			}
+		}
 	}
 	// The choices are made on the window's goroutine, where the pane
 	// takes its keys, and carried out on the program's.
@@ -99,6 +116,31 @@ func (a *app) paneEnded(id string) {
 			post(func() { a.closePane(id) })
 			return nil
 		}})
+}
+
+// endAsk is when pane id asks what next once its program ends, as the profile it runs says.
+func (a *app) endAsk(id string) settings.EndAsk {
+	machine := a.machineOf(id)
+	if machine == machines.Local {
+		argv := a.argvs[id]
+		if p, ok := a.profileOf(argv); ok {
+			return p.Ended
+		}
+		if found := a.shellFoundAs(argv); found != "" {
+			return a.foundEdit("", found).Ended
+		}
+		return settings.EndAskAlways
+	}
+	if a.machines.Get(machine).Window != nil {
+		return settings.EndAskAlways
+	}
+	if p, ok := a.farProfile(machine, a.farRuns[id]); ok {
+		return p.Ended
+	}
+	if a.farRuns[id] == "" {
+		return a.foundEdit(string(machine), LoginShell).Ended
+	}
+	return settings.EndAskAlways
 }
 
 // startAgain starts a new program in a pane whose program has ended:
@@ -214,7 +256,7 @@ func (a *app) startAgainOr(id string, dial bool) error {
 	conn, ok, err := a.connOf(machine)
 	if err != nil {
 		// Said, and asked again once it can be.
-		a.paneEnded(id)
+		a.endPane(id, true)
 		return err
 	}
 	if !ok {
@@ -291,7 +333,7 @@ func (a *app) countEnding(id string) {
 // failed.
 func (a *app) askAgain(id string) {
 	delete(a.restarting, id)
-	a.paneEnded(id)
+	a.endPane(id, true)
 }
 
 // restarted puts a new session in a pane.

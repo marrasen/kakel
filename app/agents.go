@@ -571,7 +571,7 @@ func (w agentWindow) Restart(id string) (agent.Pane, error) {
 		// through.
 		if err := w.a.startAgainOr(h.pane, false); err != nil {
 			// Not started: the question goes back up for the user.
-			w.a.paneEnded(h.pane)
+			w.a.endPane(h.pane, true)
 			return struct{}{}, err
 		}
 		return struct{}{}, nil
