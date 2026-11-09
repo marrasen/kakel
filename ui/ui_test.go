@@ -1622,10 +1622,8 @@ func TestMouseCaptureIgnoresAStrayRelease(t *testing.T) {
 	}
 }
 
-// TestRootSetWidgetWithNoAreaDoesNotResize checks the trap that squashes
-// a shell before the first frame. A root has no area until Layout, and
-// telling a terminal it has no room resizes its shell to one column and
-// reflows the scrollback, which the next Layout cannot undo.
+// TestRootSetWidgetWithNoAreaDoesNotResize checks that a root with no
+// area yet tells the widget nothing.
 func TestRootSetWidgetWithNoAreaDoesNotResize(t *testing.T) {
 	r := &Root{}
 	w := &fake{name: "w"}

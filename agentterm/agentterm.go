@@ -12,6 +12,7 @@ import (
 	"github.com/marrasen/kakel/input"
 	"github.com/marrasen/kakel/ui"
 	uiterm "github.com/marrasen/kakel/ui/term"
+	"github.com/marrasen/kakel/vt"
 )
 
 // Typing is where an agent last typed in a pane: the prompt it typed
@@ -19,9 +20,17 @@ import (
 // typed at all.
 type Typing struct {
 	at   string
-	line uint64
+	line *vt.Pin
 	done uint64
 	sent bool
+}
+
+// typedOn is the line the agent last typed on, as it is numbered now.
+func (h *Typing) typedOn() uint64 {
+	if h.line == nil {
+		return 0
+	}
+	return h.line.Line()
 }
 
 // Watching reports whether it knows the prompt the agent typed at, to
@@ -40,7 +49,7 @@ func (h *Typing) OutputFrom(at uiterm.Reading) (uint64, string, error) {
 	case marked && (!h.sent || mine):
 		return from, "This is what the last command printed, from where the shell said its output began.", nil
 	case h.sent:
-		return h.line, "This shell does not say where a command's output begins, so this is everything the pane has said since you last typed. It starts on the line you typed at, so the first line is the prompt with your command echoed after it.", nil
+		return h.typedOn(), "This shell does not say where a command's output begins, so this is everything the pane has said since you last typed. It starts on the line you typed at, so the first line is the prompt with your command echoed after it.", nil
 	}
 	return 0, "", errors.New("nothing here knows where the last command's output began: this shell does not mark its commands, and you have typed nothing in this pane. Read the pane with read_pane instead")
 }
@@ -53,10 +62,10 @@ func (h *Typing) Mark(t *uiterm.Terminal) {
 	if read.Alt {
 		return
 	}
-	if h.at != "" && read.Line == h.line && strings.HasPrefix(read.Before, h.at) {
+	if h.at != "" && read.Line == h.typedOn() && strings.HasPrefix(read.Before, h.at) {
 		return
 	}
-	h.at, h.line = read.Before, read.Line
+	h.at, h.line = read.Before, t.PinLine(read.Line)
 }
 
 // Back reports whether the prompt the agent typed at is back, on a
@@ -65,7 +74,7 @@ func (h *Typing) Back(read uiterm.Reading) bool {
 	if h.at == "" || read.Alt {
 		return false
 	}
-	return read.Line > h.line && read.Before == h.at
+	return read.Line > h.typedOn() && read.Before == h.at
 }
 
 // SecretLine is what the pane says when an agent asks for a secret.

@@ -487,8 +487,7 @@ func (t *Terminal) retire(r *run) {
 
 // Restart puts a new session under the terminal, keeping what is on the
 // screen and in the scrollback, and gives both the room the pane has
-// now, which reflows the scrollback and cuts it where the pane has
-// narrowed since.
+// now, which re-wraps the scrollback at that width.
 //
 // It refuses a terminal whose program is still running, and hands back
 // the old session's hangup error rather than starting a second program
@@ -732,14 +731,7 @@ func (t *Terminal) Layout(size ui.Size) {
 }
 
 // resize gives the terminal a size, whoever decided it.
-//
-// A terminal whose program has gone keeps the size it was written at,
-// because reflowing its screen at another width cuts the scrollback
-// rather than moving it.
 func (t *Terminal) resize(size ui.Size) {
-	if t.exited.Load() {
-		return
-	}
 	if t.haveSize && t.size == size {
 		return
 	}
@@ -756,7 +748,15 @@ func (t *Terminal) setSize(size ui.Size) {
 
 	t.mu.Lock()
 	t.g.Resize(cols, rows)
-	t.term.Resize(cols, rows)
+	scr := t.term.Screen()
+	alt, top := scr.OnAltBuffer(), scr.ViewTop()
+	moved := t.term.Resize(cols, rows)
+	if alt {
+		// The alternate screen is not re-wrapped, so a selection on it stays on its rows.
+		by := int64(scr.ViewTop() - top)
+		moved = func(line uint64, col int) (uint64, int) { return uint64(max(int64(line)+by, 0)), col }
+	}
+	t.moveSelection(moved)
 	t.mu.Unlock()
 	t.pending.Store(true)
 
@@ -765,6 +765,20 @@ func (t *Terminal) setSize(size ui.Size) {
 	if err := t.current().sess.Resize(cols, rows); err != nil && !t.exited.Load() {
 		t.fail(lateResize(err))
 	}
+}
+
+// moveSelection keeps the selection on the text it covered when a resize re-wraps the screen.
+func (t *Terminal) moveSelection(moved vt.Moved) {
+	at := func(p grid.Point) grid.Point {
+		if p.Y < 0 {
+			return p
+		}
+		line, col := moved(uint64(p.Y), p.X)
+		return grid.Point{X: col, Y: int(line)}
+	}
+	t.sel.Anchor, t.sel.Cursor = at(t.sel.Anchor), at(t.sel.Cursor)
+	t.growFrom.Anchor, t.growFrom.Cursor = at(t.growFrom.Anchor), at(t.growFrom.Cursor)
+	t.unitFrom, t.unitTo = at(t.unitFrom), at(t.unitTo)
 }
 
 // lateResize words a resize failure as the late news it is: a remote
@@ -822,10 +836,9 @@ func (t *Terminal) SetCaption(text string) {
 // capRows is how many rows the line above the screen takes.
 //
 // None while the host paints the screen itself, and none unless the
-// screen has left a row for it: a size that is somebody else's -- a
-// watcher holding it, or a program that has ended and kept the size it
-// was written at -- is not the layout's to take a row from, and a line
-// over such a screen would cut its bottom row off.
+// screen has left a row for it: a size a watcher holds is not the
+// layout's to take a row from, and a line over such a screen would cut
+// its bottom row off.
 func (t *Terminal) capRows() int {
 	if t.caption == "" || t.elsewhere || t.box.Rows < 2 {
 		return 0

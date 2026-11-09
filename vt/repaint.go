@@ -216,9 +216,11 @@ func lastShowing(g *grid.Grid, y, cols int) int {
 // with no character, so a red space and a plain one are the same
 // image. The background and the attributes are, because a space can
 // be coloured, underlined or reversed and every one of those shows.
-func blank(c grid.Cell, g *grid.Grid) bool {
-	return (c.Rune == ' ' || c.Rune == 0) && len(c.Comb) == 0 &&
-		c.Attr&^grid.AttrDim == 0 && c.BG == g.DefaultBG
+func blank(c grid.Cell, g *grid.Grid) bool { return blankOn(c, g.DefaultBG) }
+
+// blankOn reports whether a cell would look the same as one never written to on the background bg.
+func blankOn(c grid.Cell, bg color.RGBA) bool {
+	return (c.Rune == ' ' || c.Rune == 0) && len(c.Comb) == 0 && c.Attr&^grid.AttrDim == 0 && c.BG == bg
 }
 
 // sameStyle reports whether two cells are drawn the same way, so the

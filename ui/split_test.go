@@ -558,9 +558,7 @@ func TestSplitWheelDoesNotStealFocus(t *testing.T) {
 }
 
 // TestSplitSqueezedPaneKeepsItsSize checks that a window too narrow to
-// show both panes does not resize the hidden one to nothing. A terminal
-// told it has one column reflows its scrollback, and widening the window
-// again does not bring it back.
+// show both panes does not resize the hidden one to nothing.
 func TestSplitSqueezedPaneKeepsItsSize(t *testing.T) {
 	a, b := &filler{ch: 'a'}, &filler{ch: 'b'}
 	s := NewSplit(Columns, a, b)

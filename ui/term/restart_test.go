@@ -266,11 +266,10 @@ func TestRestartTakesTheRoomThePaneHasNow(t *testing.T) {
 	term, f := newTestTerm(t, 20, 4, Config{})
 	endProgram(t, term, f)
 
-	// The room the layout gives a dead pane, which the emulator does not
-	// take until there is a program to take it for.
+	// The room the layout gives a dead pane, which its screen takes at once.
 	term.Layout(ui.Size{Cols: 40, Rows: 10})
-	if got := term.Size(); got != (ui.Size{Cols: 20, Rows: 4}) {
-		t.Fatalf("a dead terminal resized itself to %+v", got)
+	if got := term.Size(); got != (ui.Size{Cols: 40, Rows: 10}) {
+		t.Fatalf("a dead terminal is %+v, want the room it was given", got)
 	}
 
 	next := restart(t, term)

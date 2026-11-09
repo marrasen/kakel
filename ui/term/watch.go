@@ -408,6 +408,13 @@ func (t *Terminal) ReadFrom(line uint64, most int) (Reading, int) {
 	return read, there
 }
 
+// PinLine keeps line, numbered as Reading.Line numbers it, up to date as a resize re-wraps the screen.
+func (t *Terminal) PinLine(line uint64) *vt.Pin {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.term.Pin(line)
+}
+
 // dropLast takes n lines off the end of some text.
 func dropLast(text string, n int) string {
 	for ; n > 0; n-- {

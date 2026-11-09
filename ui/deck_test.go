@@ -395,10 +395,8 @@ func TestDetachThroughADeck(t *testing.T) {
 	}
 }
 
-// TestDeckLayoutWithNoRoomTellsNobody checks the guard that stops a
-// strip squeezed to nothing telling every shell it has no columns. A
-// terminal told that reflows its scrollback, and growing back does not
-// undo it.
+// TestDeckLayoutWithNoRoomTellsNobody checks that a strip squeezed to
+// nothing tells no shell it has no columns.
 func TestDeckLayoutWithNoRoomTellsNobody(t *testing.T) {
 	one, two := &filler{ch: '1'}, &filler{ch: '2'}
 	tb := NewDeck(one, two)

@@ -431,9 +431,8 @@ func TestMenubarContainerContract(t *testing.T) {
 	}
 }
 
-// TestMenubarDoesNotTellTheChildItHasNoRoom checks the rule a terminal
-// depends on: a size of nothing is not a size. A shell told it has no
-// rows reflows its scrollback, and the next layout cannot undo that.
+// TestMenubarDoesNotTellTheChildItHasNoRoom checks that a size of
+// nothing is not passed on as a size.
 func TestMenubarDoesNotTellTheChildItHasNoRoom(t *testing.T) {
 	child := &fake{name: "x"}
 	b, _ := newTestBar(t, child)
