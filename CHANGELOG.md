@@ -7,6 +7,15 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
+## v0.12.2-beta.12
+
+### Fixed
+
+**All Panes shows each pane's tab over it.** It still drew the old pane
+caption inside every pane of a split, which pushed the content down.
+Now each pane's tab sits above it, and shrinks and grows with the pane,
+so the panes match the real ones as All Panes opens and closes.
+
 ## v0.12.2-beta.11
 
 ### Changed
