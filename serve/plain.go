@@ -100,3 +100,18 @@ func (p *PlainWriter) Write(b []byte) (int, error) {
 	}
 	return took, nil
 }
+
+// lineRoom is the most of a far end's words Line keeps.
+const lineRoom = 300
+
+// Line is s as Plain gives it, on one line, its runs of space made one,
+// and cut to lineRoom characters with an ellipsis: what a far end says
+// in a title, a toast or a line of the Window Log, which a far end must
+// not stretch over the screen.
+func Line(s string) string {
+	s = strings.Join(strings.Fields(Plain(s)), " ")
+	if utf8.RuneCountInString(s) <= lineRoom {
+		return s
+	}
+	return string([]rune(s)[:lineRoom-1]) + "…"
+}

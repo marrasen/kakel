@@ -28,6 +28,7 @@ import (
 	"github.com/marrasen/kakel/serve"
 	"github.com/marrasen/kakel/session"
 	"github.com/marrasen/kakel/settings"
+	shellfind "github.com/marrasen/kakel/shells"
 	uiterm "github.com/marrasen/kakel/ui/term"
 )
 
@@ -200,6 +201,10 @@ type serving struct {
 	// paths overrides where the host key and the authorized keys are,
 	// for a test.
 	hostKey, allowed string
+	// older serves as a kakel from before a pane could be asked for in a
+	// folder, or closed by the window that asked for it, for a test of
+	// how a window connected to it does without.
+	older bool
 }
 
 // servePaths are the host key's file and the authorized keys'.
@@ -414,23 +419,29 @@ func (a *app) startServing(in StartServing) error {
 		}
 		lns = append(lns, rl)
 	}
+	openIn, closeOpened := a.openInFor, a.closeOpenedFor
+	if a.serving.older {
+		openIn, closeOpened = nil, nil
+	}
 	srv, err := serve.Listen(serve.Config{
-		Addr:       addr,
-		Listeners:  lns,
-		HostKey:    hostKey,
-		Allowed:    allowed,
-		Opens:      a.opens,
-		Attach:     a.attachFor,
-		Open:       a.openFor,
-		OpenOn:     a.openOnFor,
-		Dial:       a.dialFor,
-		DialAs:     a.dialAs,
-		Log:        a.logFor,
-		Disconnect: a.disconnectFor,
-		StartAgain: a.startAgainFor,
-		Files:      a.serveFiles,
-		Image:      func(png []byte) error { return takeImage(png) },
-		OnJoin:     func(c *serve.Client) { post(func() { a.clientCame(c) }) },
+		Addr:        addr,
+		Listeners:   lns,
+		HostKey:     hostKey,
+		Allowed:     allowed,
+		Opens:       a.opens,
+		Attach:      a.attachFor,
+		Open:        a.openFor,
+		OpenOn:      a.openOnFor,
+		OpenIn:      openIn,
+		CloseOpened: closeOpened,
+		Dial:        a.dialFor,
+		DialAs:      a.dialAs,
+		Log:         a.logFor,
+		Disconnect:  a.disconnectFor,
+		StartAgain:  a.startAgainFor,
+		Files:       a.serveFiles,
+		Image:       func(png []byte) error { return takeImage(png) },
+		OnJoin:      func(c *serve.Client) { post(func() { a.clientCame(c) }) },
 		Tunnels: func(c *serve.Client, notes []serve.TunnelNote) {
 			post(func() { a.clientsTunnels(c, notes) })
 		},
@@ -784,6 +795,63 @@ func (a *app) openFor(cols, rows int) (session.Session, serve.Attached, error) {
 // its own here that the other window watches. host is the machine as
 // this window's list names it, "" for this machine.
 func (a *app) openOnFor(host, command, dir string, cols, rows int) (session.Session, serve.Attached, error) {
+	return a.openOnHow(host, command, dir, false, cols, rows)
+}
+
+// openInFor is openOnFor as a layout in a connected window asks for a
+// pane: a terminal on this machine starts in dir too, and a folder on
+// this machine that is not there is serve.ErrNoFolder, for that window
+// to say so and ask again without it. dir is as the pane's shell said
+// it there, which a shell here may have said in its own way, as
+// PowerShell's C:/Users/me, Git Bash's /c/Users/me or a WSL shell's
+// /home/me: it is read as the shell new terminals start here would say
+// it, which is the shell that will start in it. It is looked for on this
+// goroutine, the server's, as a share that has gone would hold up the
+// program. A terminal on a machine this window reaches starts where
+// that machine starts it: whether it can start elsewhere is not known
+// here.
+func (a *app) openInFor(host, command, dir string, cols, rows int) (session.Session, serve.Attached, error) {
+	if dir != "" && host == "" {
+		here, err := onApp(a, func() (string, error) { return a.newShellPath(dir, pathSep == `\`), nil })
+		if err != nil {
+			return nil, serve.Attached{}, err
+		}
+		dir = folderHere(here)
+		if dir == "" {
+			return nil, serve.Attached{}, serve.ErrNoFolder
+		}
+	}
+	return a.openOnHow(host, command, dir, true, cols, rows)
+}
+
+// newShellPath is folder dir, as a shell said it, as this computer names
+// it, read as the shell new terminals start would say it: on Windows
+// that system says, a WSL shell's /home/me is the distribution's share,
+// and Git Bash's /c/Users/me is C:\Users\me.
+func (a *app) newShellPath(dir string, windows bool) string {
+	sh, _ := shellfind.Running(a.found, a.localShell())
+	return localPathOf(sh, dir, windows)
+}
+
+// closeOpenedFor closes pane what.ID, which this window opened for a
+// connected window that no longer wants it: one closed here, or never
+// opened for another window, is left as it is.
+func (a *app) closeOpenedFor(what serve.Attached) error {
+	_, err := onApp(a, func() (struct{}, error) {
+		if !a.openedFor[what.ID] {
+			return struct{}{}, fmt.Errorf("%q was not opened for another window", what.ID)
+		}
+		if i := slices.IndexFunc(a.st.Panes, func(p Pane) bool { return p.ID == what.ID }); i >= 0 {
+			log.Printf("the window that opened %s no longer wants it", a.paneForLog(a.st.Panes[i]))
+			a.closePane(what.ID)
+		}
+		return struct{}{}, nil
+	})
+	return err
+}
+
+// openOnHow is openOnFor, and with in, openInFor, its folder found.
+func (a *app) openOnHow(host, command, dir string, in bool, cols, rows int) (session.Session, serve.Attached, error) {
 	type result struct {
 		id  string
 		err error
@@ -794,6 +862,12 @@ func (a *app) openOnFor(host, command, dir string, cols, rows int) (session.Sess
 		machine, err := a.servedMachine(host)
 		if err != nil {
 			return struct{}{}, err
+		}
+		if command == "" && in && dir != "" && machine == machines.Local {
+			// The shell new terminals start, in dir, as a layout's
+			// terminal here starts.
+			a.next++
+			return struct{}{}, a.startLocalIn("p"+strconv.Itoa(a.next), a.slotArgv(settings.SavedPane{}, dir), dir, Placement{}, then)
 		}
 		if command == "" {
 			return struct{}{}, a.openThen(machine, Placement{}, then)

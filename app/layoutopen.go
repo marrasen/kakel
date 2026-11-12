@@ -9,13 +9,16 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/marrasen/gunim/driver"
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/widget/dock"
 
 	"github.com/marrasen/kakel/machines"
+	"github.com/marrasen/kakel/relay"
 	"github.com/marrasen/kakel/screen"
+	"github.com/marrasen/kakel/serve"
 	"github.com/marrasen/kakel/settings"
 	shellfind "github.com/marrasen/kakel/shells"
 	"github.com/marrasen/kakel/vfs"
@@ -32,6 +35,13 @@ import (
 // or a host key is asked once, and its panes start as it comes up. A
 // server that cannot be reached fails only its own panes, which say why
 // and offer Retry.
+//
+// A pane through another kakel window goes with that window's: the
+// window is connected to once for all the panes through it, on its own
+// machine or on those it reaches, and each is then asked of it anew, in
+// a pane of its own there that this one watches, as New Terminal there
+// opens one. Nothing it has open already is attached to: a layout opens
+// what it holds afresh, wherever it runs.
 
 // Intents for opening a layout.
 type (
@@ -203,11 +213,13 @@ func (a *app) fillLayout(plan layoutPlan, w *ownWin) {
 	a.layout.Window(w.id).Root = plan.root
 	ids := make([]string, 0, len(plan.slots))
 	for _, s := range plan.slots {
-		m, err := a.machineNow(s.recipe.Host, s.recipe.HostID)
+		m, err := a.slotMachine(s.recipe)
 		if err != nil {
 			// A server removed since: its pane says so as it starts.
 			m = machines.Local
 		}
+		m = a.slotOn(s.recipe, m)
+		a.nameBeyond(s.recipe, m)
 		p := a.paneOn(m, Pane{ID: s.id, Kind: KindWaiting, Title: a.waitTitle(s.recipe, m), Becomes: s.recipe.Kind, Named: s.recipe.Title != ""})
 		// What it is called with no name given, as a rename to nothing
 		// brings back.
@@ -258,6 +270,11 @@ func (a *app) waitTitle(r settings.SavedPane, m machines.ID) string {
 		}
 		return a.localShellName(nil)
 	}
+	if window, key, far := m.Far(); far && r.Window {
+		// Named after the machine alone, as one opened there is: where
+		// it is reached through is said beside it.
+		return a.machines.FarName(window, key)
+	}
 	name := a.machineName(r, m)
 	if p, ok := a.farProfile(m, r.Profile); ok {
 		return p.Name + " on " + name
@@ -266,16 +283,117 @@ func (a *app) waitTitle(r settings.SavedPane, m machines.ID) string {
 }
 
 // machineName is what the machine of r, found as m, is called now: a
-// saved server by its name now, and one removed by the name it was
-// saved with.
+// saved server or window by its name now, and one removed by the name it
+// was saved with, a window's address without a relay's secret.
 func (a *app) machineName(r settings.SavedPane, m machines.ID) string {
-	if m == machines.Local {
-		if r.Host != "" {
-			return r.Host
-		}
-		return "this computer"
+	switch {
+	case m != machines.Local:
+		return a.machines.Name(m)
+	case r.Window:
+		return relay.Shown(r.Host)
+	case r.Host != "":
+		return r.Host
 	}
-	return a.machines.Name(m)
+	return "this computer"
+}
+
+// slotMachine is the machine connected to for a layout's pane kept as r:
+// this computer, the server it runs on, or the kakel window it is
+// through, found as machineNow finds a server, or for a window kept by
+// its address alone, the window known at that address, or a quick
+// connection made to it. One removed from the list is refused.
+func (a *app) slotMachine(r settings.SavedPane) (machines.ID, error) {
+	if !r.Window || r.HostID != "" {
+		return a.machineNow(r.Host, r.HostID)
+	}
+	addr := serveAddr(r.Host)
+	if addr == "" {
+		return "", errors.New("the layout has no address for the window")
+	}
+	if known := a.windowAt(addr); known != "" {
+		return known, nil
+	}
+	return a.machines.NewQuick(addr, true), nil
+}
+
+// slotOn is the machine a layout's pane kept as r runs on, reached by
+// connecting to dial: dial itself, or for a pane on a machine beyond a
+// kakel window, that machine there, by the window's key for it. Once the
+// window has listed what it has open and the machines it reaches, the
+// key kept is used where the window lists it, as after a rename there;
+// otherwise the machine it lists by the name kept, as one it reaches by
+// a quick connection, whose key is new each run; and one it lists by
+// neither goes by its name, which the window also takes, and says in
+// its words that it does not reach. A window that has not listed them
+// in time is asked by the key kept, or the name where none was.
+func (a *app) slotOn(r settings.SavedPane, dial machines.ID) machines.ID {
+	if !r.Window || r.On == "" && r.OnKey == "" || dial == machines.Local {
+		return dial
+	}
+	key := r.OnKey
+	if key == "" {
+		key = r.On
+	}
+	if w := a.machines.Get(dial).Window; w != nil && listed(w) {
+		ms := w.Serve.Machines()
+		byKey := r.OnKey != "" && (slices.ContainsFunc(ms, func(m serve.Machine) bool { return m.Key == r.OnKey }) ||
+			slices.ContainsFunc(w.Serve.Opens(), func(o serve.Open) bool { return o.Key() == r.OnKey }))
+		named := slices.IndexFunc(ms, func(m serve.Machine) bool { return m.Name == r.On })
+		switch {
+		case byKey:
+			key = r.OnKey
+		case named >= 0:
+			key = ms[named].Key
+		case r.On != "":
+			key = r.On
+		}
+	}
+	return machines.FarID(dial, key)
+}
+
+// nameBeyond notes what the window calls machine m beyond it, a
+// layout's pane kept as r runs on, where the window has not said it
+// yet: what it lists, or else the name kept, so the pane and what it
+// says name the machine as the user knows it, and not by a key.
+func (a *app) nameBeyond(r settings.SavedPane, m machines.ID) {
+	window, key, far := m.Far()
+	if !far {
+		return
+	}
+	if w := a.machines.Get(window).Window; w != nil {
+		for _, l := range w.Serve.Machines() {
+			if l.Key == key {
+				a.machines.NameFar(window, key, l.Name)
+				return
+			}
+		}
+	}
+	if a.machines.FarName(window, key) == key && r.On != "" {
+		a.machines.NameFar(window, key, r.On)
+	}
+}
+
+// listed reports whether window w has said what it has open, and which
+// machines it reaches, or will not.
+func listed(w *machines.Window) bool {
+	select {
+	case <-w.Serve.Listed():
+		return true
+	default:
+		return false
+	}
+}
+
+// listWait is the longest a layout's pane beyond a window waits for the
+// window's first list, to find its machine there by: it comes a moment
+// after the connection does.
+const listWait = 5 * time.Second
+
+// dialOf is the machine connected to for a pane on m: m, or the window
+// a machine beyond one is reached through.
+func dialOf(m machines.ID) machines.ID {
+	window, _, _ := m.Far()
+	return window
 }
 
 // doingOf is what a waiting pane for r on machine m says it waits for.
@@ -309,7 +427,7 @@ func (a *app) startSlots(ids []string) {
 		if s == nil {
 			continue
 		}
-		k := s.recipe.HostID + "\n" + s.recipe.Host
+		k := s.recipe.HostID + "\n" + s.recipe.Host + "\n" + strconv.FormatBool(s.recipe.Window)
 		if _, ok := by[k]; !ok {
 			keys = append(keys, k)
 		}
@@ -325,7 +443,7 @@ func (a *app) startSlots(ids []string) {
 // the machine is connected to, once for them all.
 func (a *app) startOn(ids []string) {
 	r := a.slots[ids[0]].recipe
-	m, err := a.machineNow(r.Host, r.HostID)
+	m, err := a.slotMachine(r)
 	if err != nil {
 		title := "Couldn't connect to " + a.machineName(r, machines.Local)
 		a.failed(title, reason(err))
@@ -333,7 +451,8 @@ func (a *app) startOn(ids []string) {
 		return
 	}
 	for _, id := range ids {
-		a.slots[id].machine = m
+		s := a.slots[id]
+		s.machine = a.slotOn(s.recipe, m)
 	}
 	if m == machines.Local || a.up(m) {
 		for _, id := range ids {
@@ -440,10 +559,43 @@ func (a *app) startSlot(id string) {
 			a.slotsFailed([]string{id}, title, err, said)
 		}
 	}
+	if w := a.machines.Get(dialOf(s.machine)).Window; s.recipe.Window && s.recipe.On+s.recipe.OnKey != "" && w != nil && !listed(w) {
+		// A machine beyond a window just connected to is found by what
+		// the window lists, which comes a moment later.
+		go func() {
+			t := time.NewTimer(listWait)
+			defer t.Stop()
+			select {
+			case <-w.Serve.Listed():
+			case <-t.C:
+			case <-a.ctx.Done():
+				return
+			}
+			a.events <- func() {
+				if still() {
+					a.startSlotNow(id, still, fail)
+				}
+			}
+		}()
+		return
+	}
+	a.startSlotNow(id, still, fail)
+}
+
+// startSlotNow is startSlot once a machine beyond a window can be found.
+func (a *app) startSlotNow(id string, still func() bool, fail failure) {
+	s := a.slots[id]
+	if s.recipe.Window {
+		// The window's key for a machine beyond it, as it lists it.
+		s.machine = a.slotOn(s.recipe, dialOf(s.machine))
+		a.nameBeyond(s.recipe, s.machine)
+	}
 	r, m := s.recipe, s.machine
 	switch {
 	case r.Kind == settings.LayoutFiles:
 		a.startFilesSlot(id, m, r, still, fail)
+	case a.machines.IsWindow(dialOf(m)):
+		a.startWindowSlot(id, m, r, still, fail)
 	case r.Kind == settings.LayoutCommand:
 		a.startCommandSlot(id, m, r, still, fail)
 	case m == machines.Local:
@@ -517,12 +669,6 @@ var errClosed = errors.New("the connection has closed")
 func (a *app) startFarSlot(id string, m machines.ID, r settings.SavedPane, still func() bool, fail failure) {
 	name := a.machines.Name(m)
 	title := "Couldn't open a shell on " + name
-	if a.machines.Get(m).Window != nil {
-		err := errors.New(name + " is a kakel window. Open a terminal on it from the Machines pane")
-		a.failed(title, reason(err))
-		fail(title, err, true)
-		return
-	}
 	run := r.Profile
 	switch _, known := a.farProfile(m, run); {
 	case run == LoginShell, known:
@@ -559,6 +705,57 @@ func (a *app) startFarSlot(id string, m machines.ID, r settings.SavedPane, still
 			}
 		})
 	})
+}
+
+// startWindowSlot opens a terminal or a command kept as r in waiting pane
+// id, through the kakel window it ran through, connected: on the
+// window's own machine, m being the window, or on the machine beyond it
+// m names. The window opens it anew, in a pane of its own that this one
+// watches, as New Terminal there opens one, running the shell new
+// terminals start there: which one ran is the window's own, and is not
+// kept. A terminal on the window's machine starts in the folder kept,
+// one on a machine beyond starts where that machine starts it, which is
+// said, and a command runs in its folder wherever it runs.
+func (a *app) startWindowSlot(id string, m machines.ID, r settings.SavedPane, still func() bool, fail failure) {
+	window, key := dialOf(m), ""
+	if _, k, far := m.Far(); far {
+		key = k
+	}
+	name := a.machines.Name(m)
+	cmd := command{dir: r.Folder}
+	title := "Couldn't open a shell on " + name
+	instead := "The terminal starts in the default folder."
+	// Called as one opened there is, until its shell names it.
+	called := name
+	if key != "" {
+		called = a.machines.FarName(window, key)
+	}
+	if r.Kind == settings.LayoutCommand {
+		cmd.argv = splitLine(r.Line)
+		called = joinLine(cmd.argv)
+		title = "Couldn't run " + called + " on " + name
+		instead = "The command runs in the default folder."
+	} else if key != "" && cmd.dir != "" {
+		a.failed("Couldn't restore the folder", cmd.dir+"\n\nThe terminal on "+name+" starts in the default folder.")
+		cmd.dir = ""
+	}
+	a.next++
+	pane := "p" + strconv.Itoa(a.next)
+	if len(cmd.argv) > 0 {
+		// To run again, as any command pane is.
+		a.commands[pane] = cmd
+	}
+	how := throughHow{in: true, instead: instead, still: still}
+	err := a.openThroughHow(window, key, cmd, pane, a.freeTitle(called), Placement{Instead: id}, how, func(_ string, err error) {
+		if err != nil {
+			// The start said it in a toast already.
+			fail(title, err, true)
+		}
+	})
+	if err != nil {
+		a.failed(title, reason(err))
+		fail(title, err, true)
+	}
 }
 
 // startCommandSlot runs the command kept in waiting pane id, on m, in
@@ -773,12 +970,12 @@ func (a *app) slotClosed(id string) {
 		return
 	}
 	a.forgetSlot(id)
-	m := s.machine
+	m := dialOf(s.machine)
 	if m == machines.Local || !a.layoutDials[m] || a.machines.Get(m).Dialing == nil {
 		return
 	}
 	for _, o := range a.slots {
-		if o.machine == m && !o.failed {
+		if dialOf(o.machine) == m && !o.failed {
 			return
 		}
 	}
