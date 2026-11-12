@@ -213,7 +213,7 @@ func newLayoutsPane(w *Window) *layoutsPane {
 		w.run("layout.save", u)
 		return nil
 	}
-	none := widget.NewLabel("Arrange a window, then choose Save Layout… from the ☰ menu.")
+	none := widget.NewLabel("Arrange a window, then choose Save Layout… in File › Layouts.")
 	none.Color = look.Faint
 	pad := widget.NewPad(none)
 	pad.Padding = layoutsEmptyPad

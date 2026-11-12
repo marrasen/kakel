@@ -69,7 +69,7 @@ func TestTheWindowDrawsInTheFontAndZoomsWithCtrlAndTheWheel(t *testing.T) {
 }
 
 // What the program publishes, as a window first hears it: the default
-// font size, and the faces compiled in, in the Font menu's order.
+// font size, and the faces compiled in, in the order offered.
 const (
 	defaultSize   float32 = 15
 	bundledFamily         = "Go Mono (bundled)"

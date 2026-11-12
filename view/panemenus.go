@@ -2,8 +2,6 @@ package view
 
 import (
 	"slices"
-	"strings"
-	"unicode"
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/filemanager"
@@ -88,31 +86,20 @@ var submenus = map[string]struct {
 	"layouts": {icon.LayoutPanelLeft, (*Window).layoutLines},
 }
 
-// layoutLines are the lines of File's Layouts: each layout to open, in
-// the order kept, and the commands that save and manage them, which
-// keep their letters whatever the layouts are called.
+// layoutLines are the lines of File's Layouts: the commands that save
+// and manage layouts, first, so a long list never pushes them out of
+// view, then each layout to open, in the order kept. The commands keep
+// their letters whatever the layouts are called. A long name is cut by
+// the menu, at the width it allows.
 func (w *Window) layoutLines() []menuItem {
-	var out []menuItem
-	for _, l := range w.layouts {
-		out = append(out, menuItem{id: layoutOpenPrefix + l.ID, title: menuName(l.Name)})
+	out := []menuItem{
+		{id: "layout.save", title: "Save Layout…", keyFirst: true},
+		{id: "layout.manage", title: "Manage Layouts", keyFirst: true},
 	}
-	return append(out,
-		menuItem{id: "layout.save", title: "Save Layout…", group: len(out) > 0, keyFirst: true},
-		menuItem{id: "layout.manage", title: "Manage Layouts", keyFirst: true})
-}
-
-// menuNameMax is the most characters a name takes on a menu line, so a
-// long one leaves the menu a menu's width.
-const menuNameMax = 40
-
-// menuName is a name as a menu line shows it: cut short with an … past
-// menuNameMax characters.
-func menuName(s string) string {
-	rs := []rune(s)
-	if len(rs) <= menuNameMax {
-		return s
+	for i, l := range w.layouts {
+		out = append(out, menuItem{id: layoutOpenPrefix + l.ID, title: l.Name, group: i == 0})
 	}
-	return strings.TrimRightFunc(string(rs[:menuNameMax-1]), unicode.IsSpace) + "…"
+	return out
 }
 
 // barPicks are what the lines of the bar's menus run, as the bar last

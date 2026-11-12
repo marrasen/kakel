@@ -147,9 +147,9 @@ closing the panes still in it, and the last window's asks as Exit does.
 A layout is one window, saved to open again as it is.
 
 - **Save.** Arrange the window, then choose File › Layouts › Save
-  Layout… and give it a name. A window opened from a layout offers that layout's
-  name, to save over it. A name another layout has replaces that
-  layout, and the dialog says so before you press Save.
+  Layout… and give it a name. A window opened from a layout offers that
+  layout's name, to save over it. A name another layout has replaces
+  that layout, and the dialog says so before you press Save.
 - **What is saved.** The splits and tabs, the window's place and size,
   and for each terminal, command and file manager the machine, the
   shell or profile, the folder and the command. Left out are readers,
@@ -171,11 +171,11 @@ A layout is one window, saved to open again as it is.
   connect to it from that window, then press Retry.
 - **From a window of tools.** Save Layout in a window that holds only
   tool panes saves the window you last worked in.
-- **Open.** Choose it in File › Layouts, which lists every layout, a
-  key given to it beside its name. Or type its name in the palette
+- **Open.** Choose it in File › Layouts, which lists every layout, a key
+  given to it beside its name. Or type its name in the palette
   (`Ctrl+Shift+K`) or the launcher, or press Open on its card in File ›
-  Layouts › Manage Layouts. It always opens in a new window, so
-  nothing running is closed. Each pane starts afresh.
+  Layouts › Manage Layouts. It always opens in a new window, so nothing
+  running is closed. Each pane starts afresh.
 - **When a server fails.** Each server, and each kakel window, is
   connected to once for all its panes. One that cannot be reached
   fails only its own panes, which say why and offer Retry. One removed

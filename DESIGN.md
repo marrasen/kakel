@@ -141,14 +141,15 @@ a few that stands out most (`standout`).
 
 **The typeface is the user's, not the theme's.** A theme never changes
 it, so switching themes leaves the font where the user put it. The
-Font menu's pick is kept in the settings as `fontFamily` and taken at
-the next start. A compiled-in face is taken at once. One on disk waits
-for the scan of the system's fonts, since the window opens before the
-scan finishes, and a kept face no longer installed is let go with a
-line in the log. A typeface named with `-font` or `-font-family` wins
-over the kept one for that run, and does not replace it. A font that
-is there and will not read is a failure rather than a miss, so that
-error reaches the user instead of being swallowed as "not found".
+family picked in Settings or the palette is kept in the settings as
+`fontFamily` and taken at the next start. A compiled-in face is taken at
+once. One on disk waits for the scan of the system's fonts, since the
+window opens before the scan finishes, and a kept face no longer
+installed is let go with a line in the log. A typeface named with
+`-font` or `-font-family` wins over the kept one for that run, and does
+not replace it. A font that is there and will not read is a failure
+rather than a miss, so that error reaches the user instead of being
+swallowed as "not found".
 
 Two faces are compiled in: Go Mono, and the IBM VGA set that suits the
 Phosphor theme. `fonts/README.md` says where the second came from and what its

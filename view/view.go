@@ -275,8 +275,8 @@ type Window struct {
 	// files kept.
 	dialing  []machines.ID
 	keyFiles []string
-	// fonts are the families on the Font menu, and font the one the
-	// terminals are drawn in.
+	// fonts are the families on offer, and font the one the terminals
+	// are drawn in.
 	fonts []string
 	font  app.Font
 	// zoomed gathers Ctrl and the wheel until it makes a point of font

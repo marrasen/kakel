@@ -174,19 +174,19 @@ The whole list. The [README](README.md) has the short version.
   you last used, in whichever window.
 - **Layouts: a window saved, to open again.** File › Layouts › Save
   Layout… writes the window in front down under a name: its splits and
-  tabs, where it stood on the screen, and for each terminal, command
-  and file manager the machine, shell or profile, folder and command it
-  runs. Opening a layout, from File › Layouts, the palette, the
-  launcher or File › Layouts › Manage Layouts, opens a new window in
-  that shape and starts every pane afresh: nothing that ran is kept. Each server is connected to once
-  for all its panes; one that cannot be reached fails only its own
-  panes, which say why and offer Retry. A pane through another kakel
-  window is kept too, by the window and the machine beyond it: the
-  window is connected to once, and asked for a new pane in its place,
-  in the same folder on the window's own machine. A layout can open as
-  kakel starts, and be given a key in Settings › Shortcuts. Tool panes
-  such as Settings are left out; so are readers and tunnels, and saving
-  names those.
+  tabs, where it stood on the screen, and for each terminal, command and
+  file manager the machine, shell or profile, folder and command it
+  runs. Opening a layout, from File › Layouts, the palette, the launcher
+  or File › Layouts › Manage Layouts, opens a new window in that shape
+  and starts every pane afresh: nothing that ran is kept. Each server is
+  connected to once for all its panes; one that cannot be reached fails
+  only its own panes, which say why and offer Retry. A pane through
+  another kakel window is kept too, by the window and the machine beyond
+  it: the window is connected to once, and asked for a new pane in its
+  place, in the same folder on the window's own machine. A layout can
+  open as kakel starts, and be given a key in Settings › Shortcuts. Tool
+  panes such as Settings are left out; so are readers and tunnels, and
+  saving names those.
 - **Splits that ask in place.** Split Right and Split Down split at
   once, and the new half offers what goes there: `+ Terminal`, one
   button for each shell here and each machine, `+ Command…`, and small

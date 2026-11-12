@@ -253,8 +253,9 @@ func (a *app) filesWin(w *ownWin) bool {
 const cascade = 32
 
 // filesPlace is where a new file manager window opens: where the last
-// one was, as it closed, a step down and right of each window already
-// there; or nil, where none was written down.
+// one was, as it closed, brought to the screen's scale now, a step down
+// and right of each window already there; or nil, where none was
+// written down.
 func (a *app) filesPlace() *driver.Placement {
 	if a.settings == nil {
 		return nil
@@ -266,6 +267,14 @@ func (a *app) filesPlace() *driver.Placement {
 	p := placementOf(&kept)
 	if p.Maximized {
 		return p
+	}
+	if a.monitors != nil {
+		// At the scale the screen has now, as the windows open there
+		// are, so one is not taken for another's place after the scale
+		// changed.
+		if fit, ok := driver.FitPlacement(*p, a.monitors(), geom.Insets{}); ok {
+			p = &fit
+		}
 	}
 	for moved := true; moved; {
 		moved = false

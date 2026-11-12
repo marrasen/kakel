@@ -15,7 +15,7 @@ import (
 // two menus start alike, the one that reads best after it.
 var menuKeys = map[string]rune{
 	"File": 'f', "Edit": 'e', "View": 'v', "Pane": 'p', "Machine": 'm', "Machines": 's',
-	"Share": 'a', "Secrets": 'c', "Options": 'o', "Font": 'n', "Help": 'h', "Go": 'g', "Tab": 't',
+	"Share": 'a', "Secrets": 'c', "Options": 'o', "Help": 'h', "Go": 'g', "Tab": 't',
 }
 
 // menuAt is the place of the menu titled title on the bar, or -1.
