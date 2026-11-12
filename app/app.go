@@ -619,9 +619,10 @@ type app struct {
 	// another window, or watches again there, by pane: what a layout
 	// saved from them writes down, connected or not.
 	farPanes map[string]farPane
-	// claimed are the panes on other windows being watched again, as the
-	// attach to each is on its way: see claimOf.
-	claimed map[string]bool
+	// claimed are the panes on other windows being watched again, or
+	// attached to by hand, as the attach to each is on its way, with the
+	// waiting pane that will watch it, "" for a hand attach: see claimOf.
+	claimed map[string]string
 	// recordEdits are what is waiting to be written of the panes layouts
 	// opened on other windows, and recordWrites how often it was, for a
 	// test.
@@ -631,6 +632,9 @@ type app struct {
 	// the window has not yet said what it calls, with the window: what
 	// is waiting to be written is written once it has.
 	naming map[string]machines.ID
+	// listWaits are what waits for each window connected to to list what
+	// it has open, in the order it asked: see whenListed.
+	listWaits map[machines.ID][]listWait
 	// programTitle is the title each pane's program last gave, as it
 	// gave it, to name the pane again once the shells here are known.
 	programTitle map[string]string
@@ -913,8 +917,9 @@ func newApp(c gunim.Client, sh *screen.Shells) *app {
 	a := &app{
 		runToken:     newRunToken(),
 		farPanes:     map[string]farPane{},
-		claimed:      map[string]bool{},
+		claimed:      map[string]string{},
 		naming:       map[string]machines.ID{},
+		listWaits:    map[machines.ID][]listWait{},
 		c:            c,
 		shells:       sh,
 		st:           State{FontSize: defaultFontSize, Fonts: []string{bundledFamily, dosFamily}},

@@ -421,7 +421,8 @@ var ErrCannotAttachIn = errors.New("serve: that window cannot say before an atta
 // AttachIn is Attach for a client that opens something new in its
 // place where it is not open: what the other window cannot attach to is
 // an error saying why, rather than a session that says it and ends. A
-// window of an older build says ErrCannotAttachIn.
+// window of an older build says ErrCannotAttachIn, and one that does not
+// have it open ErrNotOpen.
 func (w *Window) AttachIn(open Open, cols, rows int) (session.Session, error) {
 	sess, err := w.session(AttachInChannel, ssh.Marshal(openSession{
 		Cols: uint32(cols), Rows: uint32(rows),
@@ -434,6 +435,8 @@ func (w *Window) AttachIn(open Open, cols, rows int) (session.Session, error) {
 		return sess, err
 	case refused.Reason == ssh.UnknownChannelType:
 		return nil, ErrCannotAttachIn
+	case refused.Reason == rejectNotOpen:
+		return nil, ErrNotOpen
 	}
 	return nil, errors.New(Line(refused.Message))
 }
@@ -606,7 +609,7 @@ func (w *Window) startAgain(kind string, what Attached) error {
 	case string(reply) == ErrNotOpen.Error():
 		return ErrNotOpen
 	}
-	return errors.New(Plain(string(reply)))
+	return errors.New(Line(string(reply)))
 }
 
 // open asks the other window for a session and wraps what comes back.

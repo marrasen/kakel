@@ -766,7 +766,7 @@ func (a *app) attachFor(want serve.Attached, cols, rows int) (session.Session, e
 	return onApp(a, func() (session.Session, error) {
 		t := a.terminal(want.ID)
 		if t == nil {
-			return nil, fmt.Errorf("there is no terminal called %q open here any more", want.ID)
+			return nil, notOpenHere(want.ID)
 		}
 		return a.watchPane(t, cols, rows)
 	})
@@ -1434,3 +1434,14 @@ func (a *app) setRelayProxy(proxy string) error {
 	a.showServing()
 	return nil
 }
+
+// notOpenHere is why a window cannot attach to id: it is not open here.
+// It reads as it always has, and is serve.ErrNotOpen to whoever asks, so
+// a window watching it again opens a new one in its place.
+type notOpenHere string
+
+func (id notOpenHere) Error() string {
+	return fmt.Sprintf("there is no terminal called %q open here any more", string(id))
+}
+
+func (notOpenHere) Is(target error) bool { return target == serve.ErrNotOpen }

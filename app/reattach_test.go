@@ -23,17 +23,17 @@ func deskLayout(t *testing.T, b *app) string {
 	)).ID
 }
 
-// farIDs are what desk calls the pane each pane of window w watches, in
-// the order the panes stand, "" for one it does not name.
+// farIDs are what the window each pane of window w watches through
+// calls the pane it watches, in the order the panes stand, "" for one it
+// does not name.
 func farIDs(b *app, w *ownWin) []string {
-	desk := b.machines.Get("desk").Window
 	var out []string
 	for _, p := range b.panesIn(w) {
 		id := ""
-		if desk != nil {
-			for far, pane := range desk.Bound {
+		if far := b.machines.Get(p.Machine).Window; far != nil {
+			for fid, pane := range far.Bound {
 				if pane == p.ID {
-					id = far
+					id = fid
 				}
 			}
 		}
@@ -64,8 +64,12 @@ func listedThere(t *testing.T, a, b *app) {
 	a.publish()
 	want := a.opens().Open
 	pumpBoth(t, a, b, "the window's list", func() bool {
-		desk := b.machines.Get("desk").Window
-		return desk == nil || slices.Equal(desk.Serve.Opens(), want)
+		for _, name := range b.machines.Windows() {
+			if !slices.Equal(b.machines.Get(name).Window.Serve.Opens(), want) {
+				return false
+			}
+		}
+		return true
 	})
 }
 

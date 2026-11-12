@@ -46,12 +46,14 @@ const mostPerSlot = 4
 // farPane is what this kakel opened on another window for a pane here,
 // or watches again there: the window, as connected to and as a record
 // names it, the run of the window it is in, what the window calls it,
-// the window's key for the machine it runs on, and its kind there.
+// the window's key for the machine it runs on, and its kind there; and
+// for one a layout opened, the layout and the slot it fills.
 type farPane struct {
 	window        machines.ID
 	kept          string
 	run, far, key string
 	kind          string
+	layout, slot  string
 }
 
 // thisComputer names this computer in what a layout writes down of the
@@ -59,16 +61,6 @@ type farPane struct {
 func thisComputer() string {
 	name, _ := os.Hostname()
 	return strings.ToLower(name)
-}
-
-// windowKeptAs is how a layout's pane kept as r names its window in what
-// is written down of it: a saved window by its id, and one connected to
-// by address alone by that address.
-func windowKeptAs(r settings.SavedPane) string {
-	if r.HostID != "" {
-		return r.HostID
-	}
-	return serveAddr(r.Host)
 }
 
 // windowKeptOf is window as a record names it: its id when saved, and
@@ -81,6 +73,23 @@ func (a *app) windowKeptOf(window machines.ID) string {
 		return serveAddr(target)
 	}
 	return string(window)
+}
+
+// windowIs reports whether kept, as a record names a window, is window:
+// by its id while it is saved, or by the address it is reached at,
+// saved or not. A window saved since the record was written, or written
+// while it was saved and reached by address now, is the same window.
+func (a *app) windowIs(kept string, window machines.ID) bool {
+	if kept == a.windowKeptOf(window) {
+		return true
+	}
+	addr := ""
+	if h, saved := a.machines.Saved(window); saved {
+		addr = h.ServeAddr()
+	} else if target, _, ok := a.machines.Quick(window); ok {
+		addr = target
+	}
+	return addr != "" && sameWindow(serveAddr(kept), serveAddr(addr))
 }
 
 // noteFarPane notes pane id here as one this kakel opened on window w,
@@ -109,9 +118,23 @@ func (a *app) recordsFor(s *slot) []settings.LayoutPane {
 		return nil
 	}
 	here := thisComputer()
-	return slices.DeleteFunc(a.settings.LayoutPanes(), func(p settings.LayoutPane) bool {
+	return slices.DeleteFunc(a.layoutPanes(), func(p settings.LayoutPane) bool {
 		return p.Layout != s.layout || p.Slot != s.name || p.From != here
 	})
+}
+
+// layoutPanes is what is written down of the panes layouts opened on
+// other windows, with what is waiting to be written: one list for every
+// read, whether written yet or not.
+func (a *app) layoutPanes() []settings.LayoutPane {
+	if a.settings == nil {
+		return nil
+	}
+	have := a.settings.LayoutPanes()
+	for _, e := range a.recordEdits {
+		have = e(have)
+	}
+	return have
 }
 
 // hasRecord reports whether slot s opened a pane on another window that
@@ -119,9 +142,16 @@ func (a *app) recordsFor(s *slot) []settings.LayoutPane {
 func (a *app) hasRecord(s *slot) bool { return len(a.recordsFor(s)) > 0 }
 
 // claimOf names far pane far on window for claims: one being watched
-// again is claimed, so a second copy of a layout opening at the same
-// moment does not take it too.
+// again, or attached to by hand, is claimed while that is on its way,
+// so a second copy of a layout opening at the same moment, or a hand
+// attach, does not take it too.
 func claimOf(window machines.ID, far string) string { return string(window) + "\x00" + far }
+
+// isClaimed reports whether far pane far on window is claimed.
+func (a *app) isClaimed(window machines.ID, far string) bool {
+	_, ok := a.claimed[claimOf(window, far)]
+	return ok
+}
 
 // watchedHere reports whether a pane here watches what window w calls
 // far.
@@ -168,12 +198,12 @@ func (a *app) reattach(id string, m machines.ID, r settings.SavedPane, still fun
 	for _, rec := range recs {
 		o, ok := w.Serve.OpenNamed(rec.Pane)
 		switch {
-		case rec.Window != windowKeptAs(r) || rec.Kind != r.Kind || rec.Line != r.Line || rec.Key != key,
+		case !a.windowIs(rec.Window, window) || rec.Kind != r.Kind || rec.Line != r.Line || rec.Key != key,
 			rec.Run != run, !ok, o.Key() != rec.Key, o.Kind != rec.FarKind:
 			// The slot holds something else now, or the pane is not
 			// there in this run: it can never be watched again.
 			stale = append(stale, rec)
-		case pick != nil, a.claimed[claimOf(window, rec.Pane)], a.watchedHere(w, rec.Pane):
+		case pick != nil, a.isClaimed(window, rec.Pane), a.watchedHere(w, rec.Pane):
 		default:
 			pick, open = &rec, o
 		}
@@ -188,7 +218,7 @@ func (a *app) reattach(id string, m machines.ID, r settings.SavedPane, still fun
 	}
 	rec := *pick
 	claim := claimOf(window, rec.Pane)
-	a.claimed[claim] = true
+	a.claimed[claim] = id
 	a.starting++
 	go func() {
 		var err error
@@ -215,14 +245,30 @@ func (a *app) reattach(id string, m machines.ID, r settings.SavedPane, still fun
 				a.settleRecords()
 				return
 			}
-			if err != nil {
-				log.Printf("couldn't watch %q on %s again, so a new pane opens: %v", open.Label, a.machines.Name(m), err)
-				if !errors.Is(err, serve.ErrCannotAttachIn) {
+			switch {
+			case errors.Is(err, serve.ErrNotOpen) || errors.Is(err, serve.ErrCannotAttachIn):
+				// Gone there since the list read here: a new one in its
+				// place, as for one never opened.
+				log.Printf("%q is not open on %s any more, so a new pane opens", open.Label, a.machines.Name(m))
+				if errors.Is(err, serve.ErrNotOpen) {
 					a.queueRecords(func(have []settings.LayoutPane) []settings.LayoutPane {
 						return slices.DeleteFunc(have, func(p settings.LayoutPane) bool { return p == rec })
 					})
 				}
 				a.startWindowNew(id, m, r, still, fail)
+				return
+			case err != nil:
+				// Still open there, but not to be watched now, as one
+				// whose machine the window is not connected to: said,
+				// and Retry tries the same pane again. A new one opened
+				// beside it would be left over once it can be.
+				title := "Couldn't open a shell on " + a.machines.Name(m)
+				if r.Kind == settings.LayoutCommand {
+					title = "Couldn't run " + a.slotCalled(m, r) + " on " + a.machines.Name(m)
+				}
+				err = errors.New(serve.Line(err.Error()))
+				a.failed(title, reason(err))
+				fail(title, err, true)
 				return
 			}
 			a.next++
@@ -233,7 +279,7 @@ func (a *app) reattach(id string, m machines.ID, r settings.SavedPane, still fun
 			}
 			p := a.paneOn(m, Pane{ID: pane, Title: a.freeTitle(a.slotCalled(m, r)), Command: r.Kind == settings.LayoutCommand})
 			a.addPane(p, screen.Open(sess, a.palette, a.withLinks(a.hooks(pane), pane, m)), Placement{Instead: id})
-			a.farPanes[pane] = farPane{window: window, kept: rec.Window, run: run, far: open.ID, key: key, kind: open.Kind}
+			a.farPanes[pane] = farPane{window: window, kept: rec.Window, run: run, far: open.ID, key: key, kind: open.Kind, layout: rec.Layout, slot: rec.Slot}
 			a.bindFar(w, open.ID, pane)
 		}
 	}()
@@ -249,12 +295,16 @@ func (a *app) landedFor(s *slot, r settings.SavedPane) func(string) {
 	if s == nil || s.layout == "" || a.settings == nil {
 		return nil
 	}
-	layout, name := s.layout, s.name
 	return func(id string) {
 		fp, ok := a.farPanes[id]
 		if !ok || fp.run == "" {
 			return
 		}
+		// As the slot is named now: a save while it waited names it
+		// afresh.
+		layout, name := s.layout, s.name
+		fp.layout, fp.slot = layout, name
+		a.farPanes[id] = fp
 		rec := settings.LayoutPane{Layout: layout, Slot: name, From: thisComputer(), Window: fp.kept,
 			Run: fp.run, Pane: fp.far, Key: fp.key, FarKind: fp.kind, Kind: r.Kind, Line: r.Line}
 		a.queueRecords(func(have []settings.LayoutPane) []settings.LayoutPane {
@@ -305,7 +355,12 @@ func (a *app) settleRecords() {
 		// Not for a window that has listed what it has open with no run
 		// token, one of a build that may never name a pane: nothing is
 		// written of it anyway.
-		if w := a.machines.Get(window).Window; w == nil || !listed(w) || w.Serve.Run() != "" {
+		w := a.machines.Get(window).Window
+		if w == nil {
+			// Gone: it will not name the pane now.
+			continue
+		}
+		if !listed(w) || w.Serve.Run() != "" {
 			return
 		}
 	}
@@ -349,16 +404,30 @@ func (a *app) editRecords(edit func([]settings.LayoutPane) []settings.LayoutPane
 // panes whose slots names gives by pane, the panes it holds on other
 // windows, in place of what was written down for it from this computer
 // before: a slot still waiting keeps what was written for the slot it
-// waits for, and a pane this kakel opened on a window, or watches again
+// waits for, and is named afresh, so what it opens is written under its
+// new name; and a pane this kakel opened on a window, or watches again
 // there, that pane, whether that window is connected now or not. So a
 // layout saved over another, its slots named afresh, comes back to the
 // same panes, and a slot whose pane is not one of those any more comes
-// back to none.
+// back to none. Another copy of the layout open now keeps the panes it
+// watches, under the new names of its slots, where the saved window
+// still has them.
 func (a *app) recordSaved(layout string, l settings.SavedLayout, names map[string]string) {
 	if a.settings == nil {
 		return
 	}
 	here := thisComputer()
+	// The saved window's slots, by the names the layout had for them.
+	renamed := map[string]string{}
+	for id, name := range names {
+		if fp, ok := a.farPanes[id]; ok && fp.layout == layout {
+			renamed[fp.slot] = name
+		}
+		if s := a.slots[id]; s != nil && s.layout == layout {
+			renamed[s.name] = name
+		}
+	}
+	had := slices.DeleteFunc(a.layoutPanes(), func(p settings.LayoutPane) bool { return p.Layout != layout || p.From != here })
 	var recs []settings.LayoutPane
 	for id, name := range names {
 		if s := a.slots[id]; s != nil {
@@ -366,6 +435,7 @@ func (a *app) recordSaved(layout string, l settings.SavedLayout, names map[strin
 				old.Layout, old.Slot = layout, name
 				recs = append(recs, old)
 			}
+			s.layout, s.name = layout, name
 			continue
 		}
 		r := l.Panes[name]
@@ -373,10 +443,30 @@ func (a *app) recordSaved(layout string, l settings.SavedLayout, names map[strin
 		if !ok || fp.run == "" || !r.Window || r.Kind == settings.LayoutFiles {
 			continue
 		}
+		fp.layout, fp.slot = layout, name
+		a.farPanes[id] = fp
 		recs = append(recs, settings.LayoutPane{Layout: layout, Slot: name, From: here, Window: fp.kept,
 			Run: fp.run, Pane: fp.far, Key: fp.key, FarKind: fp.kind, Kind: r.Kind, Line: r.Line})
 	}
-	slices.SortFunc(recs, func(x, y settings.LayoutPane) int { return strings.Compare(x.Slot, y.Slot) })
+	for id, fp := range a.farPanes {
+		if _, saved := names[id]; saved || fp.layout != layout {
+			continue
+		}
+		name, ok := renamed[fp.slot]
+		if !ok {
+			continue
+		}
+		for _, rec := range had {
+			if rec.Slot == fp.slot && rec.Pane == fp.far && rec.Run == fp.run {
+				rec.Slot = name
+				recs = append(recs, rec)
+				fp.slot = name
+				a.farPanes[id] = fp
+				break
+			}
+		}
+	}
+	slices.SortStableFunc(recs, func(x, y settings.LayoutPane) int { return strings.Compare(x.Slot, y.Slot) })
 	a.editRecords(func(have []settings.LayoutPane) []settings.LayoutPane {
 		have = slices.DeleteFunc(have, func(p settings.LayoutPane) bool { return p.Layout == layout && p.From == here })
 		return append(have, recs...)
@@ -389,7 +479,7 @@ func (a *app) recordsOf(layout string) []settings.LayoutPane {
 	if a.settings == nil {
 		return nil
 	}
-	return slices.DeleteFunc(a.settings.LayoutPanes(), func(p settings.LayoutPane) bool { return p.Layout != layout })
+	return slices.DeleteFunc(a.layoutPanes(), func(p settings.LayoutPane) bool { return p.Layout != layout })
 }
 
 // restoreRecords puts back recs, written down for a layout removed, for

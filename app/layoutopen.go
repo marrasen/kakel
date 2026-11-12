@@ -389,10 +389,10 @@ func listed(w *machines.Window) bool {
 	}
 }
 
-// listWait is the longest a layout's pane beyond a window waits for the
+// listWaitFor is the longest a layout's pane beyond a window waits for the
 // window's first list, to find its machine there by: it comes a moment
 // after the connection does.
-const listWait = 5 * time.Second
+const listWaitFor = 5 * time.Second
 
 // dialOf is the machine connected to for a pane on m: m, or the window
 // a machine beyond one is reached through.
@@ -565,28 +565,68 @@ func (a *app) startSlot(id string) {
 			a.slotsFailed([]string{id}, title, err, said)
 		}
 	}
-	if w := a.machines.Get(dialOf(s.machine)).Window; s.recipe.Window && (s.recipe.On+s.recipe.OnKey != "" || a.hasRecord(s)) && w != nil && !listed(w) {
+	if w := a.machines.Get(dialOf(s.machine)).Window; s.recipe.Window && (s.recipe.On+s.recipe.OnKey != "" || a.hasRecord(s)) && w != nil {
 		// A machine beyond a window just connected to is found by what
 		// the window lists, which comes a moment later, and so is a pane
-		// opened there before, to watch again.
-		go func() {
-			t := time.NewTimer(listWait)
-			defer t.Stop()
-			select {
-			case <-w.Serve.Listed():
-			case <-t.C:
-			case <-a.ctx.Done():
-				return
+		// opened there before, to watch again. Listed already, it waits
+		// for the slots started with it all the same, to be taken in
+		// order.
+		a.whenListed(dialOf(s.machine), w, id, func() {
+			if still() {
+				a.startSlotNow(id, still, fail)
 			}
-			a.events <- func() {
-				if still() {
-					a.startSlotNow(id, still, fail)
-				}
-			}
-		}()
+		})
 		return
 	}
 	a.startSlotNow(id, still, fail)
+}
+
+// whenListed runs then, for waiting pane id, once window w, connected as
+// window, has listed what it has open, or listWaitFor has passed: on the
+// program's goroutine, with what else waits on that window, in the
+// order the waiting panes were made. So the slots of two copies of a
+// layout opened one after the other come back to the panes each opened
+// before in that order, whichever of them heard first that the window
+// was connected to.
+func (a *app) whenListed(window machines.ID, w *machines.Window, id string, then func()) {
+	next := listWait{order: paneNumber(id), then: then}
+	if waiting, ok := a.listWaits[window]; ok {
+		a.listWaits[window] = append(waiting, next)
+		return
+	}
+	a.listWaits[window] = []listWait{next}
+	go func() {
+		t := time.NewTimer(listWaitFor)
+		defer t.Stop()
+		select {
+		case <-w.Serve.Listed():
+		case <-t.C:
+		case <-a.ctx.Done():
+			return
+		}
+		a.events <- func() {
+			waiting := a.listWaits[window]
+			delete(a.listWaits, window)
+			slices.SortStableFunc(waiting, func(x, y listWait) int { return x.order - y.order })
+			for _, f := range waiting {
+				f.then()
+			}
+		}
+	}()
+}
+
+// listWait is what waits for a window's list, and the number of the
+// waiting pane it is for, which orders it.
+type listWait struct {
+	order int
+	then  func()
+}
+
+// paneNumber is the number in pane id, "p12", which grows as panes are
+// made, and 0 for none.
+func paneNumber(id string) int {
+	n, _ := strconv.Atoi(strings.TrimPrefix(id, "p"))
+	return n
 }
 
 // startSlotNow is startSlot once a machine beyond a window can be found.

@@ -2,6 +2,7 @@ package serve
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
 	"sync/atomic"
 	"testing"
@@ -200,25 +201,33 @@ func TestWhatAClientTookAndClosedStaysOpen(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("the session was not let go of")
 	}
+	// What closes it there comes just after the session is let go of.
 	select {
 	case what := <-closed:
 		t.Fatalf("it closed %+v there", what)
-	default:
+	case <-time.After(500 * time.Millisecond):
 	}
 }
 
-// An attach that has nothing to attach to is refused, saying why,
-// before any session is shown; one that has is carried as Attach's is;
-// and a window that cannot tell first says so.
+// An attach that has nothing to attach to is refused before any session
+// is shown, as ErrNotOpen whatever words the window has for it; one
+// refused for another reason says it, on one line; and one that has
+// something is carried as Attach's is.
 func TestAnAttachToWhatIsGoneIsRefused(t *testing.T) {
 	_, w := takenOverServing(t, Config{Attach: func(want Attached, cols, rows int) (session.Session, error) {
-		if want.ID != "p1" {
-			return nil, errors.New("there is no terminal called \"" + want.ID + "\" open here any more")
+		switch want.ID {
+		case "p1":
+			return newEchoSession(cols, rows), nil
+		case "p2":
+			return nil, errors.New("busy\nnow")
 		}
-		return newEchoSession(cols, rows), nil
+		return nil, fmt.Errorf("no %s here: %w", want.ID, ErrNotOpen)
 	}})
-	if _, err := w.AttachIn(Open{ID: "p3", Kind: "Terminal"}, 80, 24); err == nil || err.Error() != `there is no terminal called "p3" open here any more` {
+	if _, err := w.AttachIn(Open{ID: "p3", Kind: "Terminal"}, 80, 24); !errors.Is(err, ErrNotOpen) {
 		t.Fatalf("attached to what is gone, it gave %v", err)
+	}
+	if _, err := w.AttachIn(Open{ID: "p2", Kind: "Terminal"}, 80, 24); err == nil || err.Error() != "busy now" || errors.Is(err, ErrNotOpen) {
+		t.Fatalf("refused otherwise, it gave %v", err)
 	}
 	sess, err := w.AttachIn(Open{ID: "p1", Kind: "Terminal"}, 80, 24)
 	if err != nil {

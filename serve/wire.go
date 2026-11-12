@@ -138,6 +138,10 @@ const (
 // gives, as the refusal's words are for people and may change.
 const rejectNoFolder ssh.RejectionReason = 0x6b616b01
 
+// rejectNotOpen is the reason AttachInChannel is refused with for what
+// is not open, as the attacher returns ErrNotOpen for it.
+const rejectNotOpen ssh.RejectionReason = 0x6b616b02
+
 // opened names what the served window opened, in the same three parts a
 // client would use to ask for it again.
 //

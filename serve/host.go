@@ -300,7 +300,11 @@ func (s *Server) runAttachIn(ctx context.Context, nch ssh.NewChannel, want openS
 	rows := min(max(int(want.Rows), 1), mostCells)
 	sess, _, err := s.starter(want)(cols, rows)
 	if err != nil {
-		_ = nch.Reject(ssh.ConnectionFailed, err.Error())
+		why := ssh.ConnectionFailed
+		if errors.Is(err, ErrNotOpen) {
+			why = rejectNotOpen
+		}
+		_ = nch.Reject(why, err.Error())
 		return
 	}
 	ch, reqs, err := nch.Accept()

@@ -719,6 +719,15 @@ func (a *app) attachWindow(in AttachWindow) error {
 		a.bringHere(pane)
 		return nil
 	}
+	// One a layout's pane is about to watch again is shown there, rather
+	// than watched twice; one asked for twice is attached to once.
+	claim := claimOf(in.Window, in.ID)
+	if pane, ok := a.claimed[claim]; ok {
+		if a.has(pane) {
+			a.bringHere(pane)
+		}
+		return nil
+	}
 	open, ok := w.Serve.OpenNamed(in.ID)
 	if !ok {
 		return fmt.Errorf("%s no longer has that open", a.machines.Name(in.Window))
@@ -728,9 +737,11 @@ func (a *app) attachWindow(in AttachWindow) error {
 	}
 	a.next++
 	id := "p" + strconv.Itoa(a.next)
+	a.claimed[claim] = ""
 	go func() {
 		sess, err := w.Serve.Attach(open, screen.Cols, screen.Rows)
 		a.events <- func() {
+			delete(a.claimed, claim)
 			if err != nil {
 				a.failed("Couldn't work in "+open.Label, err.Error())
 				return
