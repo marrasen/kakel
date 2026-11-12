@@ -79,6 +79,21 @@ type SavedPane struct {
 	Host   string `json:"host,omitempty"`
 	HostID string `json:"hostId,omitempty"`
 
+	// Window says Host and HostID name another kakel window, which opens
+	// the pane in a pane of its own that this one watches: a window in
+	// the server list by its name and id, as a server is, or one
+	// connected to by address alone by that address in Host, with no id.
+	// On is, for a pane on a machine that window reaches, that machine as
+	// the window names it, and empty for the window's own machine; OnKey
+	// is what the window knew it by, which a rename there leaves as it
+	// was. The key is asked for first, and the name where the window
+	// knows no machine by the key, as one it reaches by a quick
+	// connection, whose key is new each time it runs. A layout from
+	// before these were kept has none of them, and holds no such pane.
+	Window bool   `json:"window,omitempty"`
+	On     string `json:"on,omitempty"`
+	OnKey  string `json:"onKey,omitempty"`
+
 	// Profile is the id of the profile a terminal runs: one of the
 	// user's or one kakel finds, on its machine, or the server's own
 	// login shell. Command is, for a terminal on this computer that

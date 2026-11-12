@@ -23,20 +23,23 @@ import (
 	"github.com/marrasen/kakel/ui"
 )
 
-// threeLayouts are a layout on three machines, one of one terminal
-// here, opened at start, and one with a long name.
+// threeLayouts are a layout on three machines and through a kakel
+// window, desk, to its own machine and one beyond it, one of one
+// terminal here, opened at start, and one with a long name.
 func threeLayouts() []settings.SavedLayout {
 	item := func(id string) *settings.LayoutNode { return &settings.LayoutNode{ID: id, Kind: "item"} }
 	return []settings.SavedLayout{
 		{ID: "work", Name: "Work", Root: &settings.LayoutNode{ID: "#1", Kind: "row", Kids: []*settings.LayoutNode{
 			{ID: "#2", Kind: "group", Front: "p1", Kids: []*settings.LayoutNode{item("p1"), item("p2")}},
-			{ID: "#3", Kind: "group", Front: "p3", Kids: []*settings.LayoutNode{item("p3"), item("p4"), item("p5")}},
+			{ID: "#3", Kind: "group", Front: "p3", Kids: []*settings.LayoutNode{item("p3"), item("p4"), item("p5"), item("p6"), item("p7")}},
 		}}, Panes: map[string]settings.SavedPane{
 			"p1": {Kind: settings.LayoutTerminal},
 			"p2": {Kind: settings.LayoutTerminal, Host: "web", HostID: "s1"},
 			"p3": {Kind: settings.LayoutCommand, Host: "db-primary", HostID: "s2", Line: "tail -f /var/log/syslog"},
 			"p4": {Kind: settings.LayoutFiles, Folder: "/home/me"},
 			"p5": {Kind: settings.LayoutTerminal, Host: "web", HostID: "s1"},
+			"p6": {Kind: settings.LayoutTerminal, Host: "desk", HostID: "s3", Window: true},
+			"p7": {Kind: settings.LayoutTerminal, Host: "desk", HostID: "s3", Window: true, On: "nas"},
 		}},
 		{ID: "here", Name: "Here", AtStart: true, Root: item("p1"), Panes: map[string]settings.SavedPane{"p1": {Kind: settings.LayoutTerminal}}},
 		{ID: "long", Name: "Deploying the whole of the shop front on a Friday afternoon, with the database too", Root: item("p1"),
@@ -119,10 +122,10 @@ func TestTheLayoutsPaneShowsACardForEachLayout(t *testing.T) {
 	publish(layoutsState(threeLayouts()))
 	settle()
 	work := cardOf(t, win, "work")
-	if got := pageText(work.holds); got != "3 terminals, 1 command and 1 file manager" {
+	if got := pageText(work.holds); got != "5 terminals, 1 command and 1 file manager" {
 		t.Errorf("Work says it holds %q", got)
 	}
-	if got := chipsOf(work); !slices.Equal(got, []string{"This computer", "www", "db-primary"}) {
+	if got := chipsOf(work); !slices.Equal(got, []string{"This computer", "www", "db-primary", "desk", "nas through desk"}) {
 		t.Errorf("Work's machines are %q", got)
 	}
 	if work.start.Checked() || !cardOf(t, win, "here").start.Checked() {
@@ -205,7 +208,7 @@ func TestALayoutCardChangesInPlace(t *testing.T) {
 	if gone != nil {
 		t.Fatal("the chip of the old name is still kept")
 	}
-	if got := chipsOf(work); !slices.Equal(got, []string{"This computer", "web2", "db-primary"}) {
+	if got := chipsOf(work); !slices.Equal(got, []string{"This computer", "web2", "db-primary", "desk", "nas through desk"}) {
 		t.Fatalf("the server renamed, the machines are %q", got)
 	}
 	var widths []float32
@@ -220,10 +223,10 @@ func TestALayoutCardChangesInPlace(t *testing.T) {
 	}
 	noJumps(t, "the new chip", widths)
 
-	all[0].Panes["p6"] = settings.SavedPane{Kind: settings.LayoutTerminal}
-	all[0].Root.Kids[0].Kids = append(all[0].Root.Kids[0].Kids, &settings.LayoutNode{ID: "p6", Kind: "item"})
+	all[0].Panes["p8"] = settings.SavedPane{Kind: settings.LayoutTerminal}
+	all[0].Root.Kids[0].Kids = append(all[0].Root.Kids[0].Kids, &settings.LayoutNode{ID: "p8", Kind: "item"})
 	publish(layoutsState(all))
-	if cardOf(t, win, "work") != work || pageText(work.holds) != "4 terminals, 1 command and 1 file manager" {
+	if cardOf(t, win, "work") != work || pageText(work.holds) != "6 terminals, 1 command and 1 file manager" {
 		t.Fatalf("saved over, the card says %q", pageText(work.holds))
 	}
 }

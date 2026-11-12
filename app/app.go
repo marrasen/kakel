@@ -2185,21 +2185,11 @@ func (a *app) openThen(machine machines.ID, at Placement, then func(id string, e
 		if argv == nil {
 			argv = a.localShell()
 		}
-		// Called after its shell, until the shell names the pane.
-		title := a.freeTitle(a.localShellName(argv))
 		dir := a.dirHere()
 		if a.nextDir != "" {
 			dir = a.nextDir
 		}
-		sess, err := a.startLocalSession(argv, dir, screen.Cols, screen.Rows, true)
-		if err != nil {
-			return fmt.Errorf("kakel: start the shell: %w", err)
-		}
-		sh := screen.Open(sess, a.palette, a.withLinks(a.hooks(id), id, ""))
-		a.argvs[id] = withoutFolder(argv)
-		a.addPane(Pane{ID: id, Title: title}, sh, at)
-		then(id, nil)
-		return nil
+		return a.startLocalIn(id, argv, dir, at, then)
 	}
 	if a.machines.Get(machine).Window != nil {
 		return a.openThrough(machine, "", command{}, id, a.freeTitle(a.machines.Name(machine)), at, then)
@@ -2212,6 +2202,22 @@ func (a *app) openThen(machine machines.ID, at Placement, then func(id string, e
 		return fmt.Errorf("kakel: %s is not connected", a.machines.Name(machine))
 	}
 	a.startFar(machine, conn, run, "", id, at, nil, then)
+	return nil
+}
+
+// startLocalIn starts argv on this computer in folder dir, "" for where
+// it starts, as terminal pane id placed at at, and tells then.
+func (a *app) startLocalIn(id string, argv []string, dir string, at Placement, then func(id string, err error)) error {
+	// Called after its shell, until the shell names the pane.
+	title := a.freeTitle(a.localShellName(argv))
+	sess, err := a.startLocalSession(argv, dir, screen.Cols, screen.Rows, true)
+	if err != nil {
+		return fmt.Errorf("kakel: start the shell: %w", err)
+	}
+	sh := screen.Open(sess, a.palette, a.withLinks(a.hooks(id), id, ""))
+	a.argvs[id] = withoutFolder(argv)
+	a.addPane(Pane{ID: id, Title: title}, sh, at)
+	then(id, nil)
 	return nil
 }
 

@@ -21,7 +21,7 @@ func TestSavingALayoutSaysWhatItLeftOut(t *testing.T) {
 
 	a.handle(SaveLayout{Window: one.id, Name: "Work"})
 	n := a.st.Notices
-	if len(n) != 1 || n[0].Title != "Saved Work" || n[0].Kind != NoticeWorked || n[0].Body != "Left out: 1 reader and 1 pane through another window." {
+	if len(n) != 1 || n[0].Title != "Saved Work" || n[0].Kind != NoticeWorked || n[0].Body != "Left out: 1 reader." {
 		t.Fatalf("saved, it said %+v", n)
 	}
 	a.handle(SaveLayout{Window: one.id, Name: "work", Replace: true})

@@ -196,6 +196,44 @@ func TestALayoutFromALaterKakelLoads(t *testing.T) {
 	}
 }
 
+// A layout's panes through another kakel window come back from the file
+// as they went in: the window by name and id, or by its address alone,
+// and the machine beyond it. A layout written before those were kept,
+// with none of them, loads as it was, its panes on no window.
+func TestPanesThroughAWindowComeBackFromTheFile(t *testing.T) {
+	path := at(t)
+	old := `{"version": 1, "layouts": [{"id": "old", "name": "Old", "root": {"id": "p1", "kind": "item"},` +
+		`"panes": {"p1": {"kind": "terminal", "host": "web", "hostId": "h-web", "profile": "login", "folder": "/srv"}}}]}`
+	if err := os.WriteFile(path, []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := SavedPane{Kind: LayoutTerminal, Host: "web", HostID: "h-web", Profile: "login", Folder: "/srv"}
+	if got := s.Layouts(); len(got) != 1 || !reflect.DeepEqual(got[0].Panes["p1"], want) {
+		t.Fatalf("the old layout reads %+v", got)
+	}
+
+	l := aLayout("Through")
+	l.Panes["p1"] = SavedPane{Kind: LayoutTerminal, Host: "desk", HostID: "h-desk", Window: true, Folder: "/home/me"}
+	l.Panes["p2"] = SavedPane{Kind: LayoutCommand, Host: "desk", HostID: "h-desk", Window: true, On: "db", OnKey: "k-db", Line: "top", Title: "db top"}
+	l.Panes["p3"] = SavedPane{Kind: LayoutFiles, Host: "laptop.example:7022", Window: true, Folder: "/tmp"}
+	kept, _, err := s.SaveLayout(l, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := again.Layouts()
+	if len(got) != 2 || !reflect.DeepEqual(got[1], kept) || !reflect.DeepEqual(got[1].Panes, l.Panes) {
+		t.Fatalf("read back %+v, want %+v", got, kept)
+	}
+}
+
 // Saving over a name is decided on the file as it is, not as this
 // kakel last read it: a layout another kakel saved since is replaced,
 // keeping its ID and whether it opens at start, and the layout handed

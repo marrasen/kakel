@@ -18,8 +18,9 @@ import (
 	shellfind "github.com/marrasen/kakel/shells"
 )
 
-// layoutApp is a program with settings and one saved server, web, whose
-// id it returns, and a window at a known place on the screen.
+// layoutApp is a program with settings, one saved server, web, whose id
+// it returns, and one saved kakel window, desk, and a window at a known
+// place on the screen.
 func layoutApp(t *testing.T) (*app, machines.ID) {
 	t.Helper()
 	a := newApp(gunimtest.New(t, geom.Sz(400, 300), nil).Client(), screen.NewShells())
@@ -37,17 +38,31 @@ func layoutApp(t *testing.T) (*app, machines.ID) {
 	if err := book.Put(remote.Host{Name: "web", Address: "web.example"}, ""); err != nil {
 		t.Fatal(err)
 	}
+	if err := book.Put(remote.Host{Name: "desk", Address: "desk.example", Window: true}, ""); err != nil {
+		t.Fatal(err)
+	}
 	a.book = book
 	a.placed = func(*ownWin) (driver.Placement, bool) {
 		return driver.Placement{Bounds: geom.Rc(10, 20, 800, 600)}, true
 	}
-	return a, machines.ID(book.Hosts()[0].ID)
+	web, _ := book.Lookup("web")
+	return a, machines.ID(web.ID)
+}
+
+// deskOf is the id of the saved window layoutApp gives a.
+func deskOf(t *testing.T, a *app) machines.ID {
+	t.Helper()
+	h, ok := a.book.Lookup("desk")
+	if !ok {
+		t.Fatal("desk is not saved")
+	}
+	return machines.ID(h.ID)
 }
 
 // workWindow fills window one with two tabs, a shell here and one on
 // web, beside a command and a file manager in tabs, with Settings split
-// off below them, a pane through another window among the tabs and a
-// split's chooser beside the shells. The split between the two sides is
+// off below them, a shell on a machine beyond the saved window desk among
+// the tabs and a split's chooser beside the shells. The split between the two sides is
 // moved off the middle. A second window, in front, holds a shell of its
 // own.
 func workWindow(t *testing.T, a *app, web machines.ID) (one *ownWin) {
@@ -61,7 +76,8 @@ func workWindow(t *testing.T, a *app, web machines.ID) (one *ownWin) {
 	a.addPane(Pane{ID: "p4", Title: "Settings", Kind: KindSettings}, nil, Placement{Beside: "p3", Vertical: true})
 	a.fmFolders = map[string][2]string{"p5": {"", "/home/me"}}
 	a.addPane(Pane{ID: "p5", Title: "me", Kind: KindFileManager}, nil, Placement{Group: a.layout.GroupOf("p3").ID})
-	a.addPane(Pane{ID: "p6", Title: "far", Machine: "win", On: "box"}, nil, Placement{Group: a.layout.GroupOf("p3").ID})
+	a.addPane(Pane{ID: "p6", Title: "far", Machine: deskOf(t, a), On: "box"}, nil, Placement{Group: a.layout.GroupOf("p3").ID})
+	a.machines.NameFar(deskOf(t, a), "box", "box.lan")
 	a.addPane(Pane{ID: "p7", Kind: KindChooser}, nil, Placement{Group: a.layout.GroupOf("p1").ID})
 	a.layout.SetShare(a.layout.Parent(a.layout.GroupOf("p1").ID).ID, 0.3)
 	two := a.addWindow(gunimtest.New(t, geom.Sz(400, 300), nil).Client(), nil)
@@ -73,11 +89,12 @@ func workWindow(t *testing.T, a *app, web machines.ID) (one *ownWin) {
 // A window is saved as the same tree of splits and tabs, its panes in
 // slots p1, p2 and on, with what each runs: the profile a shell on a
 // saved server runs, by the server's name and id, the program a shell
-// here runs, a command's line and folder, a file manager's folder. A
-// Settings tab, a split's chooser and a pane through another window are
-// left out, the split Settings stood in closing up; only the pane
-// through another window is counted, as the tools open again from their
-// own commands. The window saved need not be the one in front.
+// here runs, a command's line and folder, a file manager's folder, and
+// a shell beyond a kakel window by the window's name and id, and the
+// window's key for the machine and what it calls it. A Settings tab and a split's chooser are
+// left out, the split Settings stood in closing up, and not counted, as
+// the tools open again from their own commands. The window saved need
+// not be the one in front.
 func TestAWindowIsSavedAsALayout(t *testing.T) {
 	a, web := layoutApp(t)
 	one := workWindow(t, a, web)
@@ -87,8 +104,8 @@ func TestAWindowIsSavedAsALayout(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if skipped != (leftOut{through: 1}) {
-		t.Errorf("left out %+v, want the pane through another window", skipped)
+	if skipped != (leftOut{}) {
+		t.Errorf("left out %+v, want nothing counted", skipped)
 	}
 	root := got.Root
 	if root == nil || root.Kind != "row" || len(root.Kids) != 2 || root.Share != 0.3 {
@@ -104,7 +121,7 @@ func TestAWindowIsSavedAsALayout(t *testing.T) {
 	if left.Kind != "group" || !reflect.DeepEqual(slots(left), []string{"p1", "p2"}) || left.Front != "p2" {
 		t.Errorf("the left is %+v", left)
 	}
-	if right.Kind != "group" || !reflect.DeepEqual(slots(right), []string{"p3", "p4"}) || right.Front != "p4" {
+	if right.Kind != "group" || !reflect.DeepEqual(slots(right), []string{"p3", "p4", "p5"}) || right.Front != "p5" {
 		t.Errorf("the right, Settings split off it, is %+v", right)
 	}
 	want := map[string]settings.SavedPane{
@@ -112,6 +129,7 @@ func TestAWindowIsSavedAsALayout(t *testing.T) {
 		"p2": {Kind: settings.LayoutTerminal, Host: "web", HostID: string(web), Profile: "profile:tmux"},
 		"p3": {Kind: settings.LayoutCommand, Line: `make "watch it"`, Folder: "/src", Title: "build"},
 		"p4": {Kind: settings.LayoutFiles, Folder: "/home/me"},
+		"p5": {Kind: settings.LayoutTerminal, Host: "desk", HostID: string(deskOf(t, a)), Window: true, On: "box.lan", OnKey: "box"},
 	}
 	if !reflect.DeepEqual(got.Panes, want) {
 		t.Errorf("the panes are\n%+v\nwant\n%+v", got.Panes, want)

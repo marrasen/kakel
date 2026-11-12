@@ -1,5 +1,7 @@
 package serve
 
+import "golang.org/x/crypto/ssh"
+
 // What one kakel says to another.
 //
 // Kept to SSH's own shapes wherever there is one that fits. A session
@@ -84,6 +86,28 @@ const (
 	// both ends misreading each other.
 	SessionOnChannel = "session-on@gridterm"
 
+	// SessionInChannel is SessionOnChannel as a layout opens a pane
+	// through the served window: its payload is openOn too, but Dir is
+	// the folder a terminal on the served window's own machine starts in
+	// as well as a command's, and what cannot be opened is refused with
+	// the reason, as a channel's refusal, rather than said in a session
+	// that ends at once. A folder that is not there is refused with
+	// rejectNoFolder, for the client to ask again without it.
+	//
+	// A channel of its own, for the same reason SessionOnChannel is one:
+	// a window of an older build refuses it by name, and the client
+	// opens with SessionOnChannel instead, saying the folder could not
+	// be restored, rather than having it silently dropped.
+	SessionInChannel = "session-in@gridterm"
+
+	// reqCloseThere, on a session channel, asks the served window to
+	// close the pane it opened for that session: a pane a client asked
+	// for and no longer wants, as a layout's pane closed while it was
+	// being opened. Only what was opened for that channel can be closed
+	// this way, so it names nothing. A window of an older build says a
+	// bare no, and the pane stays open there.
+	reqCloseThere = "close-there@gridterm"
+
 	// chanDial carries one stream of a tunnel: the served window dials
 	// Addr from a machine it reaches, and the channel carries the bytes
 	// both ways. Its payload is dialOn. It is refused, saying why, when
@@ -99,6 +123,11 @@ const (
 	// far, and each line as it is written. Its payload is logOf.
 	chanLog = "log@gridterm"
 )
+
+// rejectNoFolder is the reason SessionInChannel is refused with for a
+// folder that is not there: a number of kakel's own, past those RFC 4254
+// gives, as the refusal's words are for people and may change.
+const rejectNoFolder ssh.RejectionReason = 0x6b616b01
 
 // opened names what the served window opened, in the same three parts a
 // client would use to ask for it again.

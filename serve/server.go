@@ -114,6 +114,18 @@ type Config struct {
 	// this machine. A nil one refuses, and a client is told so.
 	OpenOn func(host, command, dir string, cols, rows int) (session.Session, Attached, error)
 
+	// OpenIn is OpenOn as a layout asks for a pane, over
+	// SessionInChannel: dir is also the folder a terminal on this
+	// machine starts in, and ErrNoFolder says it is not there. What it
+	// returns an error for is refused with the error's words. A nil one
+	// refuses the channel by name, as a window of an older build does.
+	OpenIn func(host, command, dir string, cols, rows int) (session.Session, Attached, error)
+
+	// CloseOpened closes what this window opened for a client, what, as
+	// that client asked once it no longer wanted it. A nil one refuses,
+	// and it stays open.
+	CloseOpened func(what Attached) error
+
 	// DialAs opens a stream to addr for a plain SSH client's tunnel,
 	// ssh -L or ssh -J, from the machine the user name it logged in with
 	// names: a saved machine this window reaches, or this machine for

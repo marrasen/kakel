@@ -181,13 +181,30 @@ func (s *Server) serveChannels(ctx context.Context, c *Client, chans <-chan ssh.
 				continue
 			}
 			running.Go(func() {
-				s.runSession(ctx, ch, reqs, want.Cols, want.Rows, func(cols, rows int) (session.Session, Attached, error) {
+				s.runSession(ctx, ch, reqs, want.Cols, want.Rows, false, func(cols, rows int) (session.Session, Attached, error) {
 					if s.cfg.OpenOn == nil {
 						return nil, Attached{}, errors.New("this kakel cannot open anything on the machines it reaches")
 					}
 					return s.cfg.OpenOn(want.Host, want.Command, want.Dir, cols, rows)
 				})
 			})
+			continue
+		}
+		if nch.ChannelType() == SessionInChannel {
+			var want openOn
+			if err := ssh.Unmarshal(nch.ExtraData(), &want); err != nil {
+				_ = nch.Reject(ssh.ConnectionFailed,
+					"that is not a session request this kakel understands: "+
+						"both windows have to be the same build")
+				continue
+			}
+			if s.cfg.OpenIn == nil {
+				// As a window of an older build refuses it, so the client
+				// opens it the way it would there.
+				_ = nch.Reject(ssh.UnknownChannelType, "this kakel does not open panes in a folder")
+				continue
+			}
+			running.Go(func() { s.runSessionIn(ctx, nch, want) })
 			continue
 		}
 		if nch.ChannelType() != SessionChannel {
@@ -219,13 +236,49 @@ func (s *Server) serveChannels(ctx context.Context, c *Client, chans <-chan ssh.
 			continue
 		}
 		running.Go(func() {
-			s.runSession(ctx, ch, reqs, want.Cols, want.Rows, s.starter(want))
+			s.runSession(ctx, ch, reqs, want.Cols, want.Rows, false, s.starter(want))
 		})
 	}
 	// The connection is finished. Waiting here is what keeps the window
 	// from saying the client has gone while a shell it started is still
 	// being hung up on.
 	running.Wait()
+}
+
+// runSessionIn opens what a client asked for over SessionInChannel, and
+// carries it, or refuses the channel with why it could not be opened,
+// for the client to say where it waits for it. It is opened before the
+// channel is taken, so the size asked for is clamped here as runSession
+// clamps it.
+func (s *Server) runSessionIn(ctx context.Context, nch ssh.NewChannel, want openOn) {
+	cols := min(max(int(want.Cols), 1), mostCells)
+	rows := min(max(int(want.Rows), 1), mostCells)
+	sess, named, err := s.cfg.OpenIn(want.Host, want.Command, want.Dir, cols, rows)
+	if err != nil {
+		why := ssh.ConnectionFailed
+		if errors.Is(err, ErrNoFolder) {
+			why = rejectNoFolder
+		}
+		_ = nch.Reject(why, err.Error())
+		s.onError(fmt.Errorf("serve: open a session: %w", err))
+		return
+	}
+	ch, reqs, err := nch.Accept()
+	if err != nil {
+		// The client has gone: what was opened for it goes too.
+		_ = sess.Close()
+		if s.cfg.CloseOpened != nil && named.ID != "" {
+			_ = s.cfg.CloseOpened(named)
+		}
+		s.onError(fmt.Errorf("serve: take a session: %w", err))
+		return
+	}
+	// Taking the channel can work after the client has gone, as the
+	// answer can still be written before this end hears the connection
+	// close: runSession asks the client to say it has the channel.
+	s.runSession(ctx, ch, reqs, want.Cols, want.Rows, true, func(int, int) (session.Session, Attached, error) {
+		return sess, named, nil
+	})
 }
 
 // runLog gives a client a machine's log to read, or refuses the channel
@@ -243,7 +296,7 @@ func (s *Server) runLog(ctx context.Context, nch ssh.NewChannel, want logOf) {
 		s.onError(fmt.Errorf("serve: take a log: %w", err))
 		return
 	}
-	s.runSession(ctx, ch, reqs, 80, 24, func(int, int) (session.Session, Attached, error) {
+	s.runSession(ctx, ch, reqs, 80, 24, false, func(int, int) (session.Session, Attached, error) {
 		return sess, Attached{}, nil
 	})
 }
@@ -420,8 +473,14 @@ func (s *Server) starter(want openSession) func(cols, rows int) (session.Session
 
 // runSession starts something for the client to work in, with start,
 // and carries it until one end or the other is done.
+//
+// With confirm, what start opened was opened for this channel before the
+// client took it, and the client is asked to answer for it: one gone by
+// then never sees it, so it is closed, here and in the pane opened for
+// it, rather than left with nobody watching. A client that asks for
+// such a channel answers every request that wants an answer.
 func (s *Server) runSession(ctx context.Context, ch ssh.Channel,
-	reqs <-chan *ssh.Request, wantCols, wantRows uint32,
+	reqs <-chan *ssh.Request, wantCols, wantRows uint32, confirm bool,
 	start func(cols, rows int) (session.Session, Attached, error)) {
 
 	// Clamped here rather than where it was sent from. Nothing stops a
@@ -444,7 +503,7 @@ func (s *Server) runSession(ctx context.Context, ch ssh.Channel,
 	// A failure is said and the session carries on. The shell is running
 	// and its pane is open here; ending it over a name that did not
 	// arrive would cost the user their work to save them a second row.
-	if named.ID != "" {
+	if named.ID != "" && !confirm {
 		_, err := ch.SendRequest(reqOpened, false, ssh.Marshal(opened(named)))
 		if err != nil && !errors.Is(err, io.EOF) {
 			s.onError(fmt.Errorf("serve: say what was opened: %w", err))
@@ -473,12 +532,23 @@ func (s *Server) runSession(ctx context.Context, ch ssh.Channel,
 	go func() {
 		for req := range reqs {
 			ok := false
-			if req.Type == reqWindowChange {
+			switch req.Type {
+			case reqWindowChange:
 				var size windowChange
 				if err := ssh.Unmarshal(req.Payload, &size); err == nil {
 					ok = sess.Resize(
 						min(max(int(size.Cols), 1), mostCells),
 						min(max(int(size.Rows), 1), mostCells)) == nil
+				}
+			case reqCloseThere:
+				// Only what was opened for this channel: an attach to
+				// something open here names nothing, and is not closed.
+				if s.cfg.CloseOpened != nil && named.ID != "" {
+					err := s.cfg.CloseOpened(named)
+					if err != nil {
+						s.onError(fmt.Errorf("serve: close what was opened: %w", err))
+					}
+					ok = err == nil
 				}
 			}
 			if req.WantReply {
@@ -486,6 +556,20 @@ func (s *Server) runSession(ctx context.Context, ch ssh.Channel,
 			}
 		}
 	}()
+
+	// Asked once the requests above are read, so what the client sends
+	// meanwhile cannot hold up its answer.
+	if confirm {
+		if _, err := ch.SendRequest(reqOpened, true, ssh.Marshal(opened(named))); err != nil {
+			_ = sess.Close()
+			if s.cfg.CloseOpened != nil && named.ID != "" {
+				_ = s.cfg.CloseOpened(named)
+			}
+			_ = ch.Close()
+			s.onError(fmt.Errorf("serve: the client went before it took the session: %w", err))
+			return
+		}
+	}
 
 	// What the client types, into the program.
 	go func() {

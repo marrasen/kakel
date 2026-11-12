@@ -533,8 +533,29 @@ func (a *app) watchesWindow(id string) bool {
 // in a pane of its own, which this one watches. then hears the pane,
 // or why there is none.
 func (a *app) openThrough(window machines.ID, key string, cmd command, id, title string, at Placement, then func(string, error)) error {
+	return a.openThroughHow(window, key, cmd, id, title, at, throughHow{}, then)
+}
+
+// throughHow is how openThroughHow asks a window for something.
+type throughHow struct {
+	// in asks as a layout's pane does, with serve.Window.OpenIn: a
+	// terminal on the window's own machine starts in cmd.dir too, and
+	// what the window cannot open is a failure saying why rather than a
+	// pane saying it. A folder not there is said, with instead, the
+	// sentence saying where it opens instead, and it opens there.
+	in      bool
+	instead string
+	// still, when set, says whether the pane is still wanted once it has
+	// opened: one no longer wanted is closed, there too, and then hears
+	// nothing.
+	still func() bool
+}
+
+// openThroughHow is openThrough, asking as how says.
+func (a *app) openThroughHow(window machines.ID, key string, cmd command, id, title string, at Placement, how throughHow, then func(string, error)) error {
 	w := a.machines.Get(window).Window
 	if w == nil {
+		delete(a.commands, id)
 		return fmt.Errorf("this window is not connected to %s any more", a.machines.Name(window))
 	}
 	on := window
@@ -566,15 +587,53 @@ func (a *app) openThrough(window machines.ID, key string, cmd command, id, title
 		}
 		var sess session.Session
 		var err error
-		if key == "" && len(cmd.argv) == 0 {
+		// What became of the folder: not there, or not restored by a
+		// window that cannot start a terminal in one.
+		noFolder, older := false, false
+		dir := cmd.dir
+		if how.in {
+			sess, err = w.Serve.OpenIn(key, joinLine(cmd.argv), dir, screen.Cols, screen.Rows, named)
+			if errors.Is(err, serve.ErrNoFolder) {
+				noFolder, dir = true, ""
+				sess, err = w.Serve.OpenIn(key, joinLine(cmd.argv), dir, screen.Cols, screen.Rows, named)
+			}
+			if errors.Is(err, serve.ErrCannotOpenIn) {
+				// A window of a build before it could: opened as it
+				// opens anything, a terminal with no folder.
+				older, err = dir != "" && len(cmd.argv) == 0, nil
+			}
+		}
+		switch {
+		case sess != nil || err != nil:
+		case key == "" && len(cmd.argv) == 0:
 			// A terminal on its own machine, as every build can open.
 			sess, err = w.Serve.Open(screen.Cols, screen.Rows, named)
-		} else {
-			sess, err = w.Serve.OpenOn(key, joinLine(cmd.argv), cmd.dir, screen.Cols, screen.Rows, named)
+		default:
+			sess, err = w.Serve.OpenOn(key, joinLine(cmd.argv), dir, screen.Cols, screen.Rows, named)
 		}
 		a.events <- func() {
 			a.starting--
+			if how.still != nil && !how.still() {
+				delete(a.commands, id)
+				if err == nil {
+					a.closeThere(window, sess)
+				}
+				return
+			}
+			switch {
+			case noFolder:
+				a.failed("Folder not found", cmd.dir+"\n\n"+how.instead)
+			case older:
+				a.failed("Couldn't restore the folder", cmd.dir+"\n\n"+a.machines.Name(window)+" runs an older kakel. "+how.instead)
+			}
+			if c, ok := a.commands[id]; ok && noFolder {
+				// Run where it ran, as a command here whose folder has
+				// gone is: kept so, it would be said again at each open.
+				c.dir = ""
+				a.commands[id] = c
+			}
 			if err != nil {
+				delete(a.commands, id)
 				what := "Couldn't open a shell on "
 				if len(cmd.argv) > 0 {
 					what = "Couldn't run " + joinLine(cmd.argv) + " on "
@@ -593,6 +652,40 @@ func (a *app) openThrough(window machines.ID, key string, cmd command, id, title
 	}()
 	return nil
 }
+
+// closeThere closes sess, which window opened in a pane of its own for a
+// pane here no longer wanted, and asks the window to close that pane:
+// closing the session alone leaves it open there. A window of an older
+// build cannot, and its pane stays, which is written in the Window Log;
+// so is a window that does not answer within closeThereWait, which is
+// not waited for longer.
+func (a *app) closeThere(window machines.ID, sess session.Session) {
+	called := a.machines.Name(window)
+	go func() {
+		defer func() { _ = sess.Close() }()
+		c, ok := sess.(interface{ CloseThere() error })
+		if !ok {
+			return
+		}
+		done := make(chan error, 1)
+		go func() { done <- c.CloseThere() }()
+		t := time.NewTimer(closeThereWait)
+		defer t.Stop()
+		var err error
+		select {
+		case err = <-done:
+		case <-t.C:
+			err = errors.New("it did not answer")
+		}
+		if err != nil {
+			log.Printf("couldn't close the pane %s opened for a pane closed here: %v", called, err)
+		}
+	}()
+}
+
+// closeThereWait is the longest closeThere waits for the window to say
+// it closed what it opened.
+const closeThereWait = 10 * time.Second
 
 // attachWindow works in something a window has open, in a pane here,
 // or goes to the pane already showing it.
