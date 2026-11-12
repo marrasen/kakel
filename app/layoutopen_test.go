@@ -155,16 +155,19 @@ func waitingIn(a *app, w *ownWin) []Pane {
 	return slices.DeleteFunc(a.panesIn(w), func(p Pane) bool { return p.Kind != KindWaiting })
 }
 
-// opens opens layout id and waits for its window, returning it.
+// opens opens layout id and waits for its window, returning it. The
+// window is one that was not open before: the window is counted as
+// opened before the program has it, and until then the last window it
+// has is one open already, which may hold panes of its own.
 func opens(t *testing.T, a *app, opened *atomic.Int32, id string) *ownWin {
 	t.Helper()
-	before := opened.Load()
+	before, had := opened.Load(), slices.Clone(a.wins)
 	a.handle(OpenLayout{ID: id})
 	if len(a.st.Notices) > 0 {
 		t.Fatalf("opening said %+v", a.st.Notices)
 	}
 	waitFor(t, a, "the layout's window", func() bool {
-		return opened.Load() == before+1 && len(a.wins) > 0 && len(a.panesIn(layoutWindow(a))) > 0
+		return opened.Load() == before+1 && len(a.wins) > 0 && !slices.Contains(had, layoutWindow(a)) && len(a.panesIn(layoutWindow(a))) > 0
 	})
 	return layoutWindow(a)
 }
