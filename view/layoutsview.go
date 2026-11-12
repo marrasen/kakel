@@ -448,8 +448,12 @@ func holdsLabel(s string) *widget.Label {
 func hostChip(h app.LayoutHost) *itemChip {
 	chip := newItemChip(h.Name)
 	chip.mark.Icon, chip.mark.Color = icon.Server, look.Faint
-	if h.Here {
+	switch {
+	case h.Here:
 		chip.mark.Icon = icon.Laptop
+	case h.Window:
+		// As the Machines pane and the launcher mark a kakel window.
+		chip.mark.Icon = icon.AppWindow
 	}
 	return chip
 }

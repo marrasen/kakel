@@ -153,20 +153,32 @@ A layout is one window, saved to open again as it is.
 - **What is saved.** The splits and tabs, the window's place and size,
   and for each terminal, command and file manager the machine, the
   shell or profile, the folder and the command. Left out are readers,
-  tunnels, panes through another kakel window and panes on a server
-  removed from the list, and saving names them. Settings, the Jobs,
-  the Layouts and the other tool panes are left out too, unsaid, as
-  their own commands open them.
+  tunnels, and panes on a server or through a kakel window removed
+  from the list, and saving names them. Settings, the Jobs, the
+  Layouts and the other tool panes are left out too, unsaid, as their
+  own commands open them.
+- **Panes through another kakel window.** These are kept by the
+  window, and by the machine beyond it when the pane ran on one the
+  window reaches. Opening the layout connects to the window once for
+  all of them and asks it for new panes, as New Terminal there does:
+  it never attaches to what is open there. A terminal runs the shell
+  new terminals start on that machine, as the window picks it. On the
+  window's own machine it starts in the folder it was in; on a machine
+  beyond the window it starts where that machine starts it. A machine
+  renamed on that window is still found. A window running an older
+  kakel opens the terminal in its default folder, and says so. A machine beyond the window
+  that the window is not connected to fails its pane, saying why:
+  connect to it from that window, then press Retry.
 - **From a window of tools.** Save Layout in a window that holds only
   tool panes saves the window you last worked in.
 - **Open.** Type the layout's name in the palette (`Ctrl+Shift+K`) or
   the launcher, or press Open on its card in File › Manage Layouts. It
   always opens in a new window, so nothing running is closed. Each pane
   starts afresh.
-- **When a server fails.** Each server is connected to once for all its
-  panes. One that cannot be reached fails only its own panes, which say
-  why and offer Retry. A server removed from the list since fails its
-  panes the same way.
+- **When a server fails.** Each server, and each kakel window, is
+  connected to once for all its panes. One that cannot be reached
+  fails only its own panes, which say why and offer Retry. One removed
+  from the list since fails its panes the same way.
 - **Open at start.** Turn on Open at start on a layout's card, and it
   opens in its own window each time kakel starts.
 - **Manage.** File › Manage Layouts lists the layouts as cards: Open,

@@ -69,6 +69,11 @@ type Window struct {
 	// how Wait knows the last thing the other window said has been
 	// read.
 	watched chan struct{}
+
+	// listed is closed once the first list of what the other window has
+	// open has been read, or once none will be: listedOnce closes it.
+	listed     chan struct{}
+	listedOnce sync.Once
 }
 
 // WindowUser is the user name a kakel window logs in to another as.
@@ -263,7 +268,7 @@ func Dial(ctx context.Context, cfg DialConfig) (*Window, error) {
 		return nil, fmt.Errorf("serve: reach %s: %w", shown, err)
 	}
 	w := &Window{client: ssh.NewClient(cc, chans, reqs), addr: shown,
-		watched: make(chan struct{})}
+		watched: make(chan struct{}), listed: make(chan struct{})}
 	w.watch()
 	return w, nil
 }
@@ -323,11 +328,13 @@ func (w *Window) watch() {
 	if err != nil {
 		// Nothing will be read, so nothing waits for it.
 		close(w.watched)
+		w.listedNow()
 		return
 	}
 	go ssh.DiscardRequests(reqs)
 	go func() {
 		defer close(w.watched)
+		defer w.listedNow()
 		defer func() { _ = ch.Close() }()
 		// A snapshot a line at a time. The buffer is generous because a
 		// window with a great many things open sends a long line, and a
@@ -341,6 +348,14 @@ func (w *Window) watch() {
 				// next one replaces it whole.
 				continue
 			}
+			// What names a machine is shown in titles and on chips, as
+			// one line.
+			for i := range snap.Open {
+				snap.Open[i].Host = Line(snap.Open[i].Host)
+			}
+			for i := range snap.Machines {
+				snap.Machines[i].Name = Line(snap.Machines[i].Name)
+			}
 			w.mu.Lock()
 			if snap.Going != "" {
 				// The window is going on purpose. It carries no list,
@@ -350,9 +365,22 @@ func (w *Window) watch() {
 				w.open, w.folders, w.machines = snap.Open, snap.Folders, snap.Machines
 			}
 			w.mu.Unlock()
+			if snap.Going == "" {
+				w.listedNow()
+			}
 		}
 	}()
 }
+
+// listedNow says the first list has been read, or none will be.
+func (w *Window) listedNow() { w.listedOnce.Do(func() { close(w.listed) }) }
+
+// Listed is closed once the other window's first list of what it has
+// open, and of the machines it reaches, has been read, or once none
+// will be: a window that refuses to say, or one gone. Something that
+// names a machine by what the window calls it waits for it, bounded:
+// the list arrives a moment after the connection is made.
+func (w *Window) Listed() <-chan struct{} { return w.listed }
 
 // Addr is where this window was reached.
 func (w *Window) Addr() string { return w.addr }
@@ -473,6 +501,41 @@ func (w *Window) OpenOn(host, command, dir string, cols, rows int, named func(At
 	}
 	return sess, err
 }
+
+// ErrCannotOpenIn is what OpenIn says when the window over there does
+// not know how: a build from before it could, which OpenOn still opens
+// on, with no folder for a terminal.
+var ErrCannotOpenIn = errors.New("serve: that window cannot open a terminal in a folder: it is a kakel from before that")
+
+// ErrNoFolder is what OpenIn says when the folder asked for is not
+// there, on the machine that would open it. The served window refuses
+// the channel with rejectNoFolder for it, so the two ends agree on a
+// number rather than on these words, which may change.
+var ErrNoFolder = errors.New("serve: that folder is not there")
+
+// OpenIn is OpenOn as a layout asks for a pane: dir is also the folder
+// a terminal on the window's own machine starts in, a folder not there
+// is ErrNoFolder, and what the window cannot open is an error saying
+// why, where OpenOn hands back a session that says it and ends. A
+// window of an older build says ErrCannotOpenIn.
+func (w *Window) OpenIn(host, command, dir string, cols, rows int, named func(Attached)) (session.Session, error) {
+	sess, err := w.session(SessionInChannel, ssh.Marshal(openOn{Cols: uint32(cols), Rows: uint32(rows), Host: host, Command: command, Dir: dir}), named)
+	var open *ssh.OpenChannelError
+	switch {
+	case !errors.As(err, &open):
+		return sess, err
+	case open.Reason == ssh.UnknownChannelType:
+		return nil, ErrCannotOpenIn
+	case open.Reason == rejectNoFolder:
+		return nil, ErrNoFolder
+	}
+	return nil, errors.New(Line(open.Message))
+}
+
+// ErrNotClosedThere is what CloseThere says when the window over there
+// did not close what it opened: one of a build from before it could, or
+// one that had closed it already.
+var ErrNotClosedThere = errors.New("serve: that window did not close it")
 
 // ErrCannotStartAgain is what StartAgain says when the window over there
 // does not know how: a build from before it could.
@@ -666,6 +729,22 @@ type remoteSession struct {
 
 	closeOnce sync.Once
 	closeErr  error
+}
+
+// CloseThere asks the other window to close the pane it opened for this
+// session, which is no longer wanted here, as a layout's pane closed
+// while it was being opened. It is asked before the session is closed:
+// closing the session alone leaves the pane open there, as it is when
+// a pane here that watches one closes.
+func (s *remoteSession) CloseThere() error {
+	ok, err := s.ch.SendRequest(reqCloseThere, true, nil)
+	switch {
+	case err != nil:
+		return fmt.Errorf("serve: ask to close it there: %w", err)
+	case !ok:
+		return ErrNotClosedThere
+	}
+	return nil
 }
 
 // Mirrors implements session.Mirrors: the other window runs the program

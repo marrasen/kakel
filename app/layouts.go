@@ -8,6 +8,7 @@ import (
 
 	"github.com/marrasen/gunim/widget/dock"
 	"github.com/marrasen/kakel/machines"
+	"github.com/marrasen/kakel/relay"
 	"github.com/marrasen/kakel/settings"
 	shellfind "github.com/marrasen/kakel/shells"
 	"github.com/marrasen/kakel/words"
@@ -19,11 +20,12 @@ import (
 // command. Nothing that ran is kept, so opening a layout starts each
 // pane afresh.
 //
-// Only terminals, commands and file managers are kept, and only those
-// this window runs itself. A tool pane, as Settings or the Jobs, opens
-// from its own command and holds nothing of the user's; a reader is of
-// a file or a pane that may not be there next time; and a pane through
-// another kakel window is that window's to start.
+// Only terminals, commands and file managers are kept. A tool pane, as
+// Settings or the Jobs, opens from its own command and holds nothing of
+// the user's; and a reader is of a file or a pane that may not be there
+// next time. A pane through another kakel window is kept as the window
+// it went through and the machine there it ran on, and opening the
+// layout asks that window for a new one, as New Terminal there does.
 
 // Intents for layouts.
 type (
@@ -108,8 +110,8 @@ func (a *app) sayLayoutSaved(l settings.SavedLayout, replaced bool, left leftOut
 }
 
 // leftOut counts the panes of a window a layout leaves out that the user
-// might look for when it opens: readers, tunnels' panes, panes through
-// another kakel window and panes on a server removed from the list. The
+// might look for when it opens: readers, tunnels' panes, and panes on a
+// server or through a kakel window removed from the list. The
 // panes that hold nothing of the user's, the tools such as Settings, the
 // Jobs, the Layouts and a connection's log, and a split's chooser, are
 // not counted, as they are opened again from their own commands.
@@ -130,7 +132,7 @@ func (l leftOut) said() string {
 	}{
 		{l.readers, "reader", "readers"},
 		{l.tunnels, "tunnel", "tunnels"},
-		{l.through, "pane through another window", "panes through another window"},
+		{l.through, "pane through a removed window", "panes through a removed window"},
 		{l.removed, "pane on a removed server", "panes on a removed server"},
 		{l.other, "other pane", "other panes"},
 	} {
@@ -154,7 +156,7 @@ func (a *app) countLeftOut(l *leftOut, p Pane) {
 		l.tunnels++
 	case p.Kind != KindTerminal && p.Kind != KindFileManager:
 		// A tool, or a split's chooser: opened again by its command.
-	case p.On != "" || a.machines.IsWindow(p.Machine):
+	case a.stillSaved(p.Machine) != nil && a.isThrough(p):
 		l.through++
 	case a.stillSaved(p.Machine) != nil:
 		l.removed++
@@ -235,25 +237,33 @@ func (a *app) recipeOf(p Pane) (settings.SavedPane, bool) {
 		// A layout's pane still waiting: as that layout kept it.
 		return s.recipe, true
 	}
-	if p.On != "" || a.machines.IsWindow(p.Machine) {
-		// Through another kakel window: that window's to start.
+	if p.Kind != KindTerminal && p.Kind != KindFileManager {
 		return settings.SavedPane{}, false
 	}
 	if a.stillSaved(p.Machine) != nil {
-		// On a server removed from the list while the pane stayed open:
-		// with no id, its name would be dialled as an address, or found
-		// as another server given it since.
+		// On a server, or through a window, removed from the list while
+		// the pane stayed open: with no id, its name would be dialled as
+		// an address, or found as another given it since.
 		return settings.SavedPane{}, false
 	}
+	through := a.isThrough(p)
 	r := settings.SavedPane{Host: a.keptAs(p.Machine), HostID: a.serverID(p.Machine)}
+	if through {
+		var ok bool
+		if r, ok = a.windowKept(p); !ok {
+			return settings.SavedPane{}, false
+		}
+	}
 	if p.Named {
 		r.Title = p.Title
 	}
 	switch {
 	case p.Kind == KindFileManager:
-		r.Kind, r.Folder = settings.LayoutFiles, a.filesFolder(p.ID, p.Machine)
-	case p.Kind != KindTerminal:
-		return settings.SavedPane{}, false
+		files := p.Machine
+		if p.On != "" {
+			files = machines.FarID(p.Machine, p.On)
+		}
+		r.Kind, r.Folder = settings.LayoutFiles, a.filesFolder(p.ID, files)
 	case p.Command:
 		cmd, ok := a.commands[p.ID]
 		if !ok {
@@ -261,8 +271,46 @@ func (a *app) recipeOf(p Pane) (settings.SavedPane, bool) {
 		}
 		r.Kind, r.Line, r.Folder = settings.LayoutCommand, joinLine(cmd.argv), cmd.dir
 	default:
-		r.Kind, r.Folder = settings.LayoutTerminal, a.terminalDir(p.ID, p.Machine)
-		r.Profile, r.Command = a.runsOf(p)
+		r.Kind = settings.LayoutTerminal
+		if p.On == "" {
+			// Beyond a window, a terminal starts where its machine starts
+			// it: a folder kept would only be said not to be restored, at
+			// each open.
+			r.Folder = a.terminalDir(p.ID, p.Machine)
+		}
+		if !through {
+			// Through a window, its shell is the window's to pick: this
+			// one is not told which it ran.
+			r.Profile, r.Command = a.runsOf(p)
+		}
+	}
+	return r, true
+}
+
+// isThrough reports whether pane p is through another kakel window: on
+// its own machine, or on one it reaches.
+func (a *app) isThrough(p Pane) bool {
+	return p.On != "" || a.machines.IsWindow(p.Machine) || a.machines.Get(p.Machine).Window != nil
+}
+
+// windowKept is how a layout names the kakel window pane p is through,
+// and the machine beyond it there: a window in the server list by its
+// name and id, as a server is, and one connected to by address alone by
+// that address, the only way to reach it again. The machine beyond goes
+// by the window's key for it, which a rename there leaves as it is, and
+// by what the window calls it, which lasts where a quick connection's
+// key there does not. False for a window known by neither.
+func (a *app) windowKept(p Pane) (settings.SavedPane, bool) {
+	r := settings.SavedPane{Window: true}
+	if target, _, quick := a.machines.Quick(p.Machine); quick {
+		r.Host = target
+	} else if _, saved := a.machines.Saved(p.Machine); saved {
+		r.Host, r.HostID = a.machines.Name(p.Machine), string(p.Machine)
+	} else {
+		return settings.SavedPane{}, false
+	}
+	if p.On != "" {
+		r.On, r.OnKey = a.machines.FarName(p.Machine, p.On), p.On
 	}
 	return r, true
 }
@@ -415,8 +463,6 @@ func (a *app) keepsAny(w *ownWin) bool {
 			return true
 		case p.Kind != KindTerminal && p.Kind != KindFileManager:
 			return false
-		case p.On != "" || a.machines.IsWindow(p.Machine):
-			return false
 		}
 		return a.stillSaved(p.Machine) == nil
 	})
@@ -455,17 +501,21 @@ func LayoutMachines(l settings.SavedLayout, named func(id string) (string, bool)
 	return out
 }
 
-// LayoutHost is a machine a layout opens panes on: its name, and whether
-// it is this computer.
+// LayoutHost is a machine a layout opens panes on: its name, whether it
+// is this computer, and whether it is another kakel window's own.
 type LayoutHost struct {
-	Name string
-	Here bool
+	Name   string
+	Here   bool
+	Window bool
 }
 
 // LayoutHosts are the machines layout l opens panes on, each once, in
-// the order its panes stand: "This computer", and a server by what named
-// calls the saved server with its id now, or else by the name it was
-// saved under.
+// the order its panes stand: "This computer", and a server or a kakel
+// window by what named calls the saved one with its id now, or else by
+// the name it was saved under, or for a window connected to by address,
+// by its address as the sidebar shows it, a relay's secret left out. A
+// machine beyond a window is named "db through desk", as the sidebar
+// names it.
 func LayoutHosts(l settings.SavedLayout, named func(id string) (string, bool)) []LayoutHost {
 	var out []LayoutHost
 	var walk func(n *settings.LayoutNode)
@@ -485,6 +535,15 @@ func LayoutHosts(l settings.SavedLayout, named func(id string) (string, bool)) [
 			case p.HostID != "" && named != nil:
 				if now, ok := named(p.HostID); ok {
 					h.Name = now
+				}
+			case p.Window:
+				h.Name = relay.Shown(p.Host)
+			}
+			if p.Window {
+				if p.On != "" {
+					h.Name = p.On + " through " + h.Name
+				} else {
+					h.Window = true
 				}
 			}
 			if !slices.Contains(out, h) {

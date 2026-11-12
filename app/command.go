@@ -99,7 +99,7 @@ func (a *app) runCommandWith(in RunCommand, still func() bool, then func(id stri
 	if a.machines.Get(through).Window != nil {
 		// The window runs it, in a pane of its own, which this one
 		// watches: its own machine's, or one it reaches.
-		return a.openThrough(through, key, cmd, id, title, Placement{Beside: in.Beside, Vertical: in.Vertical, Instead: in.Instead}, then)
+		return a.openThroughHow(through, key, cmd, id, title, Placement{Beside: in.Beside, Vertical: in.Vertical, Instead: in.Instead}, throughHow{still: still}, then)
 	}
 	return a.startCommand(in.Machine, cmd, commandStart{
 		then: func(sess session.Session) {
