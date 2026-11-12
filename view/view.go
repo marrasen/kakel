@@ -368,6 +368,14 @@ type Window struct {
 	paletteIDs   []string
 	paletteChips [][]string
 	paletteLast  map[machines.ID]string
+	// menus are the bar's menus as made last, and subs the lines of
+	// their lines' submenus, as w.layout's. picks are what the lines
+	// of the menus the bar has run, and barStale says newer menus wait
+	// for the bar to close.
+	menus    []widget.BarMenu
+	subs     [][][]menuItem
+	picks    barPicks
+	barStale bool
 	// secretCopies counts secrets copied, so only the last one copied
 	// clears the clipboard when its time is up.
 	secretCopies uint64
@@ -400,19 +408,22 @@ func NewWindow(sh *screen.Shells, keys *ui.Keymap, all []look.Themed) *Window {
 	w.buildBar(false)
 	w.bar.OnHighlight = func(m, i int, u *gunim.UI) gunim.Intent {
 		id := ""
+		p := w.picks
 		switch {
-		case m < 0 || m >= len(w.layout):
-		case w.layout[m].title == "Machines":
-			if i >= 0 && i < len(w.serverIDs) {
-				id = w.serverIDs[i]
+		case m < 0 || m >= len(p.layout):
+		case p.layout[m].title == "Machines":
+			if i >= 0 && i < len(p.serverIDs) {
+				id = p.serverIDs[i]
 			}
-		case w.layout[m].title == "Font":
-		case i >= 0 && i < len(w.layout[m].items):
-			id = w.layout[m].items[i].id
+		case i >= 0 && i < len(p.layout[m].items):
+			id = p.layout[m].items[i].id
 		}
 		if m >= 0 && i < 0 {
 			// A menu opening: the ticks of the pane's lines as it is now.
 			w.tickPaneMenus(u)
+		}
+		if m < 0 {
+			w.barClosed(u)
 		}
 		if i < 0 {
 			id = ""
@@ -420,26 +431,8 @@ func NewWindow(sh *screen.Shells, keys *ui.Keymap, all []look.Themed) *Window {
 		w.status.setHint(w.fullTitle(id, m, i), u)
 		return nil
 	}
-	w.bar.OnPick = func(m, i int, u *gunim.UI) gunim.Intent {
-		switch {
-		case m >= len(w.layout) || m < 0:
-		case w.layout[m].title == "Machines":
-			if i < len(w.serverIDs) {
-				w.run(w.serverIDs[i], u)
-			}
-		case w.layout[m].title == "Font":
-			if i < len(w.fonts) {
-				return app.PickFont{Name: w.fonts[i]}
-			}
-		case i < len(w.layout[m].items):
-			if it := w.layout[m].items[i]; it.pane != "" {
-				w.runPane(it.pane, u)
-				return nil
-			}
-			w.run(w.layout[m].items[i].id, u)
-		}
-		return nil
-	}
+	w.bar.OnPick = w.pickLine
+	w.bar.OnPickSub = w.pickSubLine
 	w.toasts = widget.NewToasts()
 	w.chips = newChipBar()
 	// The pin before minimize keeps the window above the others.
@@ -882,8 +875,8 @@ func (w *Window) zoom(s input.Scroll, u *gunim.UI) {
 // notch, as the drivers count it.
 const zoomNotch = 40
 
-// showFonts fills the Font menu, the family in use ticked, and draws
-// every terminal and reader in that family.
+// showFonts takes the families on offer into the palette, and draws
+// every terminal and reader in the family in use.
 func (w *Window) showFonts(st app.State) {
 	if st.Font.Name != w.font.Name {
 		for _, t := range w.terms {
@@ -895,15 +888,6 @@ func (w *Window) showFonts(st app.State) {
 	}
 	w.fonts, w.font = st.Fonts, st.Font
 	w.servers(w.saved)
-	m := widget.BarMenu{Title: "Font"}
-	for i, name := range st.Fonts {
-		// A line under Go Mono.
-		m.Items = append(m.Items, widget.MenuItem{Label: name,
-			Checked: app.FontCommandID(name) == app.FontCommandID(st.Font.Name), Break: i == 1})
-	}
-	if i := w.menuAt("Font"); i >= 0 && i < len(w.bar.Menus) {
-		w.bar.Menus[i] = withAccessKeys(m)
-	}
 }
 
 // showTitle names the window after the pane in front: "kakel" and the
@@ -1312,10 +1296,11 @@ func (w *Window) servers(saved []remote.Host) {
 		widget.MenuItem{Label: "Import from SSH Config", Icon: icon.FileInput},
 		widget.MenuItem{Label: "Reload Server List", Icon: icon.RefreshCw})
 	w.serverIDs = append(w.serverIDs, "server.connect", "app.launcher", "server.add", "server.import", "server.reload")
-	if i := w.menuAt("Machines"); i >= 0 && i < len(w.bar.Menus) {
+	if i := w.menuAt("Machines"); i >= 0 && i < len(w.menus) {
 		// The lines always there first.
 		n := len(m.Items)
-		w.bar.Menus[i] = withAccessKeys(m, n-5, n-4, n-3, n-2, n-1)
+		w.menus[i] = withAccessKeys(m, n-5, n-4, n-3, n-2, n-1)
+		w.publishBar()
 	}
 	// First every machine by name, the latest used first, the saved
 	// servers not connected to as well, as the launcher has them: one
@@ -2365,14 +2350,14 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 		}
 		for i, it := range w.layout[m].items {
 			if it.pane != "" {
-				w.bar.Menus[m].Items[i].Checked = it.on
-				w.bar.Menus[m].Items[i].Disabled = false
+				w.menus[m].Items[i].Checked = it.on
+				w.menus[m].Items[i].Disabled = false
 				continue
 			}
 			if on, isSwitch := w.switchOn(it.id, st, u); isSwitch {
-				w.bar.Menus[m].Items[i].Checked = on
+				w.menus[m].Items[i].Checked = on
 			}
-			w.bar.Menus[m].Items[i].Disabled = !it.caption && !w.applies(it.id)
+			w.menus[m].Items[i].Disabled = !it.caption && !w.applies(it.id)
 		}
 	}
 	for i, id := range w.paletteIDs {
@@ -2444,7 +2429,7 @@ func (w *Window) tickSwitch(id string, on bool) {
 	for m := range w.layout {
 		for i, it := range w.layout[m].items {
 			if it.id == id {
-				w.bar.Menus[m].Items[i].Checked = on
+				w.menus[m].Items[i].Checked = on
 			}
 		}
 	}

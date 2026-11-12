@@ -146,8 +146,8 @@ closing the panes still in it, and the last window's asks as Exit does.
 
 A layout is one window, saved to open again as it is.
 
-- **Save.** Arrange the window, then choose File › Save Layout… and
-  give it a name. A window opened from a layout offers that layout's
+- **Save.** Arrange the window, then choose File › Layouts › Save
+  Layout… and give it a name. A window opened from a layout offers that layout's
   name, to save over it. A name another layout has replaces that
   layout, and the dialog says so before you press Save.
 - **What is saved.** The splits and tabs, the window's place and size,
@@ -159,8 +159,10 @@ A layout is one window, saved to open again as it is.
   their own commands open them.
 - **From a window of tools.** Save Layout in a window that holds only
   tool panes saves the window you last worked in.
-- **Open.** Type the layout's name in the palette (`Ctrl+Shift+K`) or
-  the launcher, or press Open on its card in File › Manage Layouts. It
+- **Open.** Choose it in File › Layouts, which lists every layout, a
+  key given to it beside its name. Or type its name in the palette
+  (`Ctrl+Shift+K`) or the launcher, or press Open on its card in File ›
+  Layouts › Manage Layouts. It
   always opens in a new window, so nothing running is closed. Each pane
   starts afresh.
 - **When a server fails.** Each server is connected to once for all its
@@ -169,7 +171,7 @@ A layout is one window, saved to open again as it is.
   panes the same way.
 - **Open at start.** Turn on Open at start on a layout's card, and it
   opens in its own window each time kakel starts.
-- **Manage.** File › Manage Layouts lists the layouts as cards: Open,
+- **Manage.** File › Layouts › Manage Layouts lists the layouts as cards: Open,
   Rename, Remove (with Undo on the notice) and Open at start.
 - **A key for a layout.** Settings › Shortcuts lists each layout under
   Layouts, as Open and its name; give it a key there. Its command is

@@ -24,6 +24,12 @@ func TestAskIconsAreKeyedByTheirLucideNames(t *testing.T) {
 func TestEveryCommandInTheMenusAndThePaletteHasAnIcon(t *testing.T) {
 	for _, m := range menus {
 		for _, it := range m.items {
+			if it.sub != "" {
+				if submenus[it.sub].icon == nil {
+					t.Errorf("%s → %s opens a submenu with no icon", m.title, it.title)
+				}
+				continue
+			}
 			if !it.caption && commandIcons[it.id] == nil {
 				t.Errorf("%s → %s (%s) has no icon", m.title, it.title, it.id)
 			}

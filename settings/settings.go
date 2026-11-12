@@ -1362,13 +1362,16 @@ func (s *Settings) PutFontSize(pt float64) error {
 // WindowPlace is where a window was on the screen, and whether it was
 // maximized: X and Y its top left corner, W and H its size, all in the
 // screen's own coordinates, as gunim reads them. A maximized window's
-// are where it goes back to when it is no longer maximized.
+// are where it goes back to when it is no longer maximized. Scale is
+// the screen's coordinates per logical pixel there, so a window opened
+// after the scale changed keeps its size; 0 where it was not known.
 type WindowPlace struct {
 	X         float32 `json:"x"`
 	Y         float32 `json:"y"`
 	W         float32 `json:"width"`
 	H         float32 `json:"height"`
 	Maximized bool    `json:"maximized,omitempty"`
+	Scale     float32 `json:"scale,omitempty"`
 }
 
 // Window is where the window was as it last closed, and whether that

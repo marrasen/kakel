@@ -2,9 +2,12 @@ package view
 
 import (
 	"slices"
+	"strings"
+	"unicode"
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/filemanager"
+	"github.com/marrasen/gunim/icon"
 	"github.com/marrasen/gunim/widget"
 
 	"github.com/marrasen/kakel/app"
@@ -34,26 +37,157 @@ func baseLayout() []barMenu {
 // those made from the window's state again: the servers. A window being
 // made fills them as its state comes.
 func (w *Window) buildBar(refill bool) {
-	w.bar.Menus = w.bar.Menus[:0]
-	for _, m := range w.layout {
-		bm := widget.BarMenu{Title: m.title}
-		var first []int
-		for i, it := range m.items {
-			if it.keyFirst {
-				first = append(first, i)
+	w.menus = w.menus[:0:0]
+	w.subs = make([][][]menuItem, len(w.layout))
+	for m, bm := range w.layout {
+		w.subs[m] = make([][]menuItem, len(bm.items))
+		for i, it := range bm.items {
+			if it.sub != "" {
+				w.subs[m][i] = submenus[it.sub].lines(w)
 			}
-			hint := it.hint
-			if chord, ok := w.keys.ChordFor(it.id); ok && !it.caption && it.pane == "" {
-				hint = chordLabel(chord)
-			}
-			bm.Items = append(bm.Items, widget.MenuItem{Label: w.commandTitle(it.id, it.title), Hint: hint, Icon: commandIcons[it.id],
-				Checked: it.on, Caption: it.caption, Break: it.group || (it.caption && i > 0)})
 		}
-		w.bar.Menus = append(w.bar.Menus, withAccessKeys(bm, first...))
+		w.menus = append(w.menus, w.barMenu(bm.title, bm.items, w.subs[m]))
 	}
 	if refill {
 		w.servers(w.saved)
 	}
+	w.publishBar()
+}
+
+// barMenu makes a menu of the bar, or a submenu's lines, titled title,
+// from items, with subs the lines of each item's submenu.
+func (w *Window) barMenu(title string, items []menuItem, subs [][]menuItem) widget.BarMenu {
+	bm := widget.BarMenu{Title: title}
+	var first []int
+	for i, it := range items {
+		if it.keyFirst {
+			first = append(first, i)
+		}
+		hint := it.hint
+		if chord, ok := w.keys.ChordFor(it.id); ok && !it.caption && it.pane == "" {
+			hint = chordLabel(chord)
+		}
+		line := widget.MenuItem{Label: w.commandTitle(it.id, it.title), Hint: hint, Icon: commandIcons[it.id],
+			Checked: it.on, Caption: it.caption, Break: it.group || (it.caption && i > 0)}
+		if it.sub != "" {
+			line.Icon = submenus[it.sub].icon
+			line.Sub = &widget.Submenu{Items: w.barMenu("", subs[i], nil).Items}
+		}
+		bm.Items = append(bm.Items, line)
+	}
+	return withAccessKeys(bm, first...)
+}
+
+// submenus are the submenus a line of the bar opens, by the name its
+// sub gives: the icon of the line, and the submenu's lines, made from
+// the window's state.
+var submenus = map[string]struct {
+	icon  *icon.Icon
+	lines func(w *Window) []menuItem
+}{
+	"layouts": {icon.LayoutPanelLeft, (*Window).layoutLines},
+}
+
+// layoutLines are the lines of File's Layouts: each layout to open, in
+// the order kept, and the commands that save and manage them, which
+// keep their letters whatever the layouts are called.
+func (w *Window) layoutLines() []menuItem {
+	var out []menuItem
+	for _, l := range w.layouts {
+		out = append(out, menuItem{id: layoutOpenPrefix + l.ID, title: menuName(l.Name)})
+	}
+	return append(out,
+		menuItem{id: "layout.save", title: "Save Layout…", group: len(out) > 0, keyFirst: true},
+		menuItem{id: "layout.manage", title: "Manage Layouts", keyFirst: true})
+}
+
+// menuNameMax is the most characters a name takes on a menu line, so a
+// long one leaves the menu a menu's width.
+const menuNameMax = 40
+
+// menuName is a name as a menu line shows it: cut short with an … past
+// menuNameMax characters.
+func menuName(s string) string {
+	rs := []rune(s)
+	if len(rs) <= menuNameMax {
+		return s
+	}
+	return strings.TrimRightFunc(string(rs[:menuNameMax-1]), unicode.IsSpace) + "…"
+}
+
+// barPicks are what the lines of the bar's menus run, as the bar last
+// took its menus: the layout, the submenus' lines, and the Machines
+// menu's commands.
+type barPicks struct {
+	layout    []barMenu
+	subs      [][][]menuItem
+	serverIDs []string
+}
+
+// publishBar gives the bar the menus made last, and what their lines
+// run with them. The bar keeps the menus it opened with until it
+// closes, and a pick is an index into them, so while it is open the
+// new menus wait, and come once it has closed.
+func (w *Window) publishBar() {
+	if w.bar.IsOpen() {
+		w.barStale = true
+		return
+	}
+	w.barStale = false
+	w.bar.Menus = slices.Clone(w.menus)
+	w.picks = barPicks{layout: w.layout, subs: w.subs, serverIDs: w.serverIDs}
+}
+
+// barClosed gives the bar the menus that waited while it was open,
+// after the pick that closed it has run against the menus it showed.
+func (w *Window) barClosed(u *gunim.UI) {
+	if !w.barStale {
+		return
+	}
+	u.After(0, func(u *gunim.UI) {
+		if w.barStale {
+			w.publishBar()
+			u.Invalidate()
+		}
+	})
+}
+
+// pickLine runs the line at item of menu m, as the bar showed it.
+func (w *Window) pickLine(m, item int, u *gunim.UI) gunim.Intent {
+	p := w.picks
+	switch {
+	case m < 0 || m >= len(p.layout) || item < 0:
+	case p.layout[m].title == "Machines":
+		if item < len(p.serverIDs) {
+			w.run(p.serverIDs[item], u)
+		}
+	case item < len(p.layout[m].items):
+		w.runLine(p.layout[m].items[item], u)
+	}
+	return nil
+}
+
+// pickSubLine runs the line at path of menu m's submenus, as the bar
+// showed them: the line whose submenu holds it, then its place there.
+func (w *Window) pickSubLine(m int, path []int, u *gunim.UI) gunim.Intent {
+	p := w.picks
+	if len(path) != 2 || m < 0 || m >= len(p.subs) || path[0] < 0 || path[0] >= len(p.subs[m]) {
+		return nil
+	}
+	if lines := p.subs[m][path[0]]; path[1] >= 0 && path[1] < len(lines) {
+		w.runLine(lines[path[1]], u)
+	}
+	return nil
+}
+
+// runLine runs a line of a menu: a line of the pane in front's, or a
+// command.
+func (w *Window) runLine(it menuItem, u *gunim.UI) {
+	if it.pane != "" {
+		w.runPane(it.pane, u)
+		return
+	}
+	w.run(it.id, u)
 }
 
 // terminalOnly are kakel's lines for a terminal alone, which a file
@@ -104,6 +238,11 @@ func paneLayout(fm []filemanager.Menu) []barMenu {
 // layoutMenus takes the lines of the pane in front into the menus,
 // building the bar again where their lines changed, not their ticks.
 func (w *Window) layoutMenus(u *gunim.UI) {
+	if w.barStale {
+		// Menus that waited for a bar closed with no word, as by being
+		// taken off the window.
+		w.publishBar()
+	}
 	next := baseLayout()
 	if _, ok := w.fmHosts[w.focused]; ok {
 		if fm := filemanager.Menus(u, app.FilePaneViews(w.focused)); fm != nil {
@@ -111,10 +250,7 @@ func (w *Window) layoutMenus(u *gunim.UI) {
 		}
 	}
 	if !sameLines(next, w.layout) {
-		if w.bar.IsOpen() {
-			// Not under the user's pointer: once the menu closes.
-			return
-		}
+		// While a menu is open, the bar takes them once it closes.
 		w.layout = next
 		w.buildBar(true)
 		return
@@ -145,8 +281,8 @@ func (w *Window) tickPaneMenus(u *gunim.UI) {
 	}
 	for m := range next {
 		for i, it := range next[m].items {
-			if it.pane != "" && m < len(w.bar.Menus) && i < len(w.bar.Menus[m].Items) {
-				w.bar.Menus[m].Items[i].Checked = it.on
+			if it.pane != "" && m < len(w.menus) && i < len(w.menus[m].Items) {
+				w.menus[m].Items[i].Checked = it.on
 			}
 		}
 	}

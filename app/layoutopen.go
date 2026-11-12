@@ -122,7 +122,7 @@ func placementOf(place *settings.WindowPlace) *driver.Placement {
 	if place == nil || place.W <= 0 || place.H <= 0 {
 		return nil
 	}
-	return &driver.Placement{Bounds: geom.Rc(place.X, place.Y, place.W, place.H), Maximized: place.Maximized}
+	return &driver.Placement{Bounds: geom.Rc(place.X, place.Y, place.W, place.H), Maximized: place.Maximized, CoordsPerLogical: place.Scale}
 }
 
 // planLayout is layout l made ready to open: its tree with its slots

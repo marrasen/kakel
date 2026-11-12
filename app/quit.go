@@ -223,7 +223,7 @@ func (a *app) placeOf(w *ownWin) (settings.WindowPlace, bool) {
 		return settings.WindowPlace{}, false
 	}
 	b := p.Bounds
-	return settings.WindowPlace{X: b.Min.X, Y: b.Min.Y, W: b.Size().W, H: b.Size().H, Maximized: p.Maximized}, true
+	return settings.WindowPlace{X: b.Min.X, Y: b.Min.Y, W: b.Size().W, H: b.Size().H, Maximized: p.Maximized, Scale: p.CoordsPerLogical}, true
 }
 
 // placement is where w is on the screen, as its window says.
@@ -263,7 +263,7 @@ func (a *app) filesPlace() *driver.Placement {
 	if !ok || kept.W <= 0 || kept.H <= 0 {
 		return nil
 	}
-	p := &driver.Placement{Bounds: geom.Rc(kept.X, kept.Y, kept.W, kept.H), Maximized: kept.Maximized}
+	p := placementOf(&kept)
 	if p.Maximized {
 		return p
 	}

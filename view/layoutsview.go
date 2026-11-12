@@ -37,7 +37,8 @@ func (w *Window) setLayouts(layouts []settings.SavedLayout, u *gunim.UI) {
 	if same {
 		return
 	}
-	w.servers(w.saved)
+	// File's Layouts, and with it the Machines menu and the palette.
+	w.buildBar(true)
 	if w.sayReplaces != nil {
 		w.sayReplaces(u)
 	}

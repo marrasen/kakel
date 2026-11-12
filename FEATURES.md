@@ -172,12 +172,12 @@ The whole list. The [README](README.md) has the short version.
   you last worked in, and that window comes to the front. A pane you ask
   for again is shown where it is. A secret you type goes to the terminal
   you last used, in whichever window.
-- **Layouts: a window saved, to open again.** File › Save Layout…
-  writes the window in front down under a name: its splits and tabs,
+- **Layouts: a window saved, to open again.** File › Layouts › Save
+  Layout… writes the window in front down under a name: its splits and tabs,
   where it stood on the screen, and for each terminal, command and file
   manager the machine, shell or profile, folder and command it runs.
-  Opening a layout, from the palette, the launcher or File › Manage
-  Layouts, opens a new window in that shape and starts every pane
+  Opening a layout, from File › Layouts, the palette, the launcher or
+  File › Layouts › Manage Layouts, opens a new window in that shape and starts every pane
   afresh: nothing that ran is kept. Each server is connected to once
   for all its panes; one that cannot be reached fails only its own
   panes, which say why and offer Retry. A layout can open as kakel
