@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -34,7 +35,7 @@ func TestALayoutComesBackFromTheFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	kept, err := s.SaveLayout(aLayout("  Work, mostly "), false)
+	kept, _, err := s.SaveLayout(aLayout("  Work, mostly "), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,14 +75,14 @@ func TestALayoutNameUsedIsRefused(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.SaveLayout(aLayout("Work"), false); err != nil {
+	if _, _, err := s.SaveLayout(aLayout("Work"), false); err != nil {
 		t.Fatal(err)
 	}
-	other, err := s.SaveLayout(aLayout("Home"), false)
+	other, _, err := s.SaveLayout(aLayout("Home"), false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.SaveLayout(aLayout("work"), false); !errors.Is(err, ErrLayoutNameUsed) {
+	if _, _, err := s.SaveLayout(aLayout("work"), false); !errors.Is(err, ErrLayoutNameUsed) {
 		t.Fatalf("adding a second Work gave %v", err)
 	}
 	if err := s.RenameLayout(other.ID, "WORK"); !errors.Is(err, ErrLayoutNameUsed) {
@@ -100,7 +101,7 @@ func TestAReplacedLayoutKeepsItsIDAndPlace(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"One", "Two", "Three"} {
-		if _, err := s.SaveLayout(aLayout(name), false); err != nil {
+		if _, _, err := s.SaveLayout(aLayout(name), false); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -119,7 +120,7 @@ func TestAReplacedLayoutKeepsItsIDAndPlace(t *testing.T) {
 	if len(got) != 3 || got[1].ID != "two" || got[1].Name != "Second" || !got[1].AtStart || got[1].Panes["p1"].Kind != LayoutFiles {
 		t.Fatalf("after the replace the layouts are %+v", got)
 	}
-	again, err := s.SaveLayout(aLayout("Two"), false)
+	again, _, err := s.SaveLayout(aLayout("Two"), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +142,7 @@ func TestLayoutsGivesBackACopy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.SaveLayout(aLayout("Work"), false); err != nil {
+	if _, _, err := s.SaveLayout(aLayout("Work"), false); err != nil {
 		t.Fatal(err)
 	}
 	got := s.Layouts()
@@ -209,7 +210,7 @@ func TestALayoutIsSavedOverWhatAnotherKakelSaved(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	kept, err := theirs.SaveLayout(aLayout("Work"), false)
+	kept, _, err := theirs.SaveLayout(aLayout("Work"), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,12 +218,12 @@ func TestALayoutIsSavedOverWhatAnotherKakelSaved(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := mine.SaveLayout(aLayout("work"), false); !errors.Is(err, ErrLayoutNameUsed) {
+	if _, _, err := mine.SaveLayout(aLayout("work"), false); !errors.Is(err, ErrLayoutNameUsed) {
 		t.Fatalf("saving over it unasked gave %v", err)
 	}
 	now := aLayout("  work  ")
 	now.Panes = map[string]SavedPane{"p1": {Kind: LayoutFiles}}
-	got, err := mine.SaveLayout(now, true)
+	got, _, err := mine.SaveLayout(now, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,7 +244,66 @@ func TestALayoutIsSavedOverWhatAnotherKakelSaved(t *testing.T) {
 	if err := theirs.DropLayout(kept.ID); err != nil {
 		t.Fatal(err)
 	}
-	if again, err := mine.SaveLayout(aLayout("Work"), true); err != nil || again.AtStart || again.ID != "work" {
+	if again, _, err := mine.SaveLayout(aLayout("Work"), true); err != nil || again.AtStart || again.ID != "work" {
 		t.Fatalf("saved again after the removal: %+v, %v", again, err)
 	}
+}
+
+// A layout put back after Remove goes where it stood, the place clamped
+// to the list as it is now, with its ID; given a new ID where another
+// layout took its own since, and refused where another took its name.
+// Put back twice, it is there once.
+func TestALayoutIsPutBack(t *testing.T) {
+	s, err := Load(at(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"One", "Two", "Three"} {
+		if _, _, err := s.SaveLayout(aLayout(name), false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	two := s.Layouts()[1]
+	if err := s.DropLayout(two.ID); err != nil {
+		t.Fatal(err)
+	}
+	back, err := s.PutLayoutBack(two, 1)
+	if err != nil || back.ID != two.ID {
+		t.Fatal(back, err)
+	}
+	if _, err := s.PutLayoutBack(two, 1); err != nil {
+		t.Fatalf("put back twice: %v", err)
+	}
+	if names := layoutNames(s); !slices.Equal(names, []string{"One", "Two", "Three"}) || s.Layouts()[1].ID != two.ID {
+		t.Fatalf("put back, the layouts are %q", names)
+	}
+
+	if err := s.DropLayout(two.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.SaveLayout(aLayout("two"), false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.PutLayoutBack(two, 1); !errors.Is(err, ErrLayoutNameUsed) {
+		t.Fatalf("put back over a name taken: %v", err)
+	}
+
+	if err := s.DropLayout(s.Layouts()[2].ID); err != nil {
+		t.Fatal(err)
+	}
+	gone := two
+	gone.Name, gone.ID = "Five", s.Layouts()[0].ID
+	back, err = s.PutLayoutBack(gone, 99)
+	if err != nil || back.ID == gone.ID || s.Layouts()[len(s.Layouts())-1].Name != "Five" {
+		t.Fatalf("put back with its ID taken: %+v, %v; the layouts are %q", back, err, layoutNames(s))
+	}
+}
+
+// layoutNames are the names of the layouts s holds, in order.
+func layoutNames(s *Settings) []string {
+	var out []string
+	for _, l := range s.Layouts() {
+		out = append(out, l.Name)
+	}
+	return out
 }

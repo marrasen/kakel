@@ -86,10 +86,10 @@ Keeping things:
 the keymap and what `ui/term` and `ui/files` are built on. `internal`
 holds the build stamp, test helpers and the icon writer.
 
-gunim is imported by `app`, `view`, `look`, `winkeys`, `settings` and
-`main`. The terminal packages, `serve`, `remote`, `vfs` and `jobs` do
-not import it. So everything fiddly is testable without a display,
-which is how the emulator got written.
+gunim is imported by `app`, `view`, `look`, `winkeys`,
+`internal/sound` and `main`. The terminal packages, `serve`, `remote`,
+`vfs`, `jobs` and `settings` do not import it. So everything fiddly is
+testable without a display, which is how the emulator got written.
 
 ## The notes
 

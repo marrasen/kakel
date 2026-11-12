@@ -11,6 +11,7 @@ import (
 	"github.com/marrasen/kakel/settings"
 	"github.com/marrasen/kakel/tunnel"
 	"github.com/marrasen/kakel/winkeys"
+	"github.com/marrasen/kakel/words"
 
 	"github.com/marrasen/gunim"
 	gi "github.com/marrasen/gunim/input"
@@ -345,7 +346,7 @@ func (a *app) launchMachines() []LaunchMachine {
 // launchThings are what the launcher finds besides the machines: each
 // shell here, files and a terminal on each machine, the files of each
 // WSL distribution, a connection's log, the favourites, the saved
-// commands, copies and tunnels, and kakel's own windows.
+// commands, copies and tunnels, the layouts, and kakel's own windows.
 func (a *app) launchThings(ms []LaunchMachine) []LaunchThing {
 	var out []LaunchThing
 	for _, sh := range a.st.Shells {
@@ -428,6 +429,10 @@ func (a *app) launchThings(ms []LaunchMachine) []LaunchThing {
 		out = append(out, LaunchThing{Title: what, Note: "via " + via, Also: []string{"tunnel", "saved", "port", "forward", t.Listen, t.Target},
 			Kind: "tunnel", Machine: machines.ID(t.HostID), Action: "tunnel:" + kept(t)})
 	}
+	for _, l := range a.st.Layouts {
+		out = append(out, LaunchThing{Title: l.Name, Note: LayoutNote(l), Also: append([]string{"layout", "window", "open", "saved"}, LayoutMachines(l, a.serverNamed)...),
+			Kind: "layout", Action: "layout:" + l.ID})
+	}
 	if a.overviewAlone() && len(a.st.Panes) > 0 {
 		out = append(out, LaunchThing{Title: "All Panes", Note: "kakel", Also: []string{"show all panes", "overview", "every pane", "windows", "mission control"},
 			Kind: "panes", Action: "app:panes"})
@@ -469,6 +474,11 @@ func (a *app) handleLaunch(in gunim.Intent) {
 				a.front(a.work)
 				a.toggleOverview()
 			}
+			return
+		}
+		if id, ok := strings.CutPrefix(in.Action, "layout:"); ok {
+			// A window of its own, as a layout always opens in.
+			a.handle(OpenLayout{ID: id})
 			return
 		}
 		if in.Action == "app:window" {
@@ -533,6 +543,21 @@ func (a *app) launchOn(in Launch) {
 	default:
 		a.handle(OpenOn{Machine: in.Machine})
 	}
+}
+
+// LayoutNote is what the launcher and the palette say of layout l
+// beside its name: that it is a layout, and what it opens.
+func LayoutNote(l settings.SavedLayout) string {
+	return "Layout · " + words.ManyOf(len(l.Panes), "pane", "panes")
+}
+
+// serverNamed is what the saved server with id is called now, and false
+// for one no longer saved.
+func (a *app) serverNamed(id string) (string, bool) {
+	if _, ok := a.machines.Saved(machines.ID(id)); !ok {
+		return "", false
+	}
+	return a.machines.Name(machines.ID(id)), true
 }
 
 // kept is a saved copy or tunnel written into a launcher action: by

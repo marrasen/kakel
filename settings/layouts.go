@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -138,7 +139,7 @@ func (s *Settings) Layouts() []SavedLayout {
 }
 
 // SaveLayout keeps l under its name, and saves. It returns the layout as
-// the file now holds it.
+// the file now holds it, and whether it took the place of another.
 //
 // A layout of a new name goes after the others, with an ID made from
 // the name. A name another layout has is refused with
@@ -147,9 +148,10 @@ func (s *Settings) Layouts() []SavedLayout {
 //
 // All of it is decided on the list as the file holds it now, so a
 // layout another kakel saved or removed since is seen.
-func (s *Settings) SaveLayout(l SavedLayout, replace bool) (SavedLayout, error) {
+func (s *Settings) SaveLayout(l SavedLayout, replace bool) (SavedLayout, bool, error) {
 	l = l.Clone()
 	l.Name = strings.TrimSpace(l.Name)
+	replaced := false
 	err := s.putLayouts(func(have []SavedLayout) ([]SavedLayout, error) {
 		if l.Name == "" {
 			return nil, errEnterName
@@ -161,6 +163,7 @@ func (s *Settings) SaveLayout(l SavedLayout, replace bool) (SavedLayout, error) 
 		case i >= 0:
 			l.ID, l.AtStart = have[i].ID, have[i].AtStart
 			have[i] = l
+			replaced = true
 			return have, nil
 		}
 		l.ID = NewID("", l.Name, "layout", func(id string) bool {
@@ -169,9 +172,9 @@ func (s *Settings) SaveLayout(l SavedLayout, replace bool) (SavedLayout, error) 
 		return append(have, l), nil
 	})
 	if err != nil {
-		return SavedLayout{}, err
+		return SavedLayout{}, false, err
 	}
-	return l.Clone(), nil
+	return l.Clone(), replaced, nil
 }
 
 // ReplaceLayout puts l in place of the layout with its ID, where that
@@ -203,6 +206,39 @@ func (s *Settings) DropLayout(id string) error {
 	return s.putLayouts(func(have []SavedLayout) ([]SavedLayout, error) {
 		return slices.DeleteFunc(have, func(at SavedLayout) bool { return at.ID == id }), nil
 	})
+}
+
+// PutLayoutBack puts l, as it was before it was removed, back in the
+// list at index at, or at the end where the list is shorter now, and
+// saves: Undo after DropLayout. It keeps its ID, unless another layout
+// was given that ID since, when it is given one of its own as a new
+// layout is. A name another layout took since is refused with
+// ErrLayoutNameUsed, as a layout saved under it would be. A layout back
+// in the list already, just as it was, is left as it is.
+func (s *Settings) PutLayoutBack(l SavedLayout, at int) (SavedLayout, error) {
+	l = l.Clone()
+	err := s.putLayouts(func(have []SavedLayout) ([]SavedLayout, error) {
+		if slices.ContainsFunc(have, func(o SavedLayout) bool { return reflect.DeepEqual(o, l) }) {
+			// Back already, as after a second Undo: nothing to do.
+			return have, nil
+		}
+		// Checked against every layout: one given its ID since is
+		// another layout.
+		if err := layoutNameFree(have, strings.TrimSpace(l.Name), ""); err != nil {
+			return nil, err
+		}
+		taken := func(id string) bool {
+			return slices.ContainsFunc(have, func(o SavedLayout) bool { return o.ID == id })
+		}
+		if l.ID == "" || taken(l.ID) {
+			l.ID = NewID("", l.Name, "layout", taken)
+		}
+		return slices.Insert(have, min(max(at, 0), len(have)), l), nil
+	})
+	if err != nil {
+		return SavedLayout{}, err
+	}
+	return l.Clone(), nil
 }
 
 // editLayout changes the layout with id as edit says, on the list as the

@@ -4,11 +4,13 @@ import (
 	"errors"
 	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/marrasen/gunim/widget/dock"
 	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/settings"
 	shellfind "github.com/marrasen/kakel/shells"
+	"github.com/marrasen/kakel/words"
 )
 
 // Layouts: one kakel window written down, to open again later as it
@@ -42,44 +44,132 @@ type (
 		ID string
 		On bool
 	}
-	// RemoveLayout takes the layout with ID off the list.
+	// RemoveLayout takes the layout with ID off the list, and says so
+	// with Undo.
 	RemoveLayout struct{ ID string }
+	// RestoreLayout puts Layout, removed, back in the list where it
+	// stood, at At: Undo after RemoveLayout.
+	RestoreLayout struct {
+		Layout settings.SavedLayout
+		At     int
+	}
+	// ShowLayouts opens the Layouts pane, or goes to it.
+	ShowLayouts struct{}
 )
 
-// errNothingToSave refuses a layout of a window holding nothing a
-// layout can open again.
-var errNothingToSave = errors.New("this window has no terminals, commands or files to save")
+// KindLayouts is the Layouts pane, which lists the layouts to open,
+// rename and remove.
+const KindLayouts = "layouts"
 
-// saveLayout writes a window down as a layout, and returns it as kept
-// and how many of the window's panes it leaves out. A split's chooser,
-// which is waiting to be given a pane, is not counted among them.
-func (a *app) saveLayout(in SaveLayout) (settings.SavedLayout, int, error) {
+// ErrNothingToSave refuses a layout of a window holding nothing a
+// layout can open again.
+var ErrNothingToSave = errors.New("this window has no terminals, commands or files to save")
+
+// saveLayout writes a window down as a layout, and returns it as kept,
+// what of the window's panes it leaves out, and whether it took the
+// place of a layout of its name.
+func (a *app) saveLayout(in SaveLayout) (settings.SavedLayout, leftOut, bool, error) {
 	if a.settings == nil {
-		return settings.SavedLayout{}, 0, errNoSettings
+		return settings.SavedLayout{}, leftOut{}, false, errNoSettings
 	}
 	w := a.cur
 	if in.Window != 0 {
 		w = a.winByID(in.Window)
 	}
 	if w == nil || w.gone {
-		return settings.SavedLayout{}, 0, errors.New("the window was closed")
+		return settings.SavedLayout{}, leftOut{}, false, errors.New("the window was closed")
 	}
-	l, skipped, err := a.layoutOf(w)
+	l, left, err := a.layoutOf(w)
 	if err != nil {
-		return settings.SavedLayout{}, skipped, err
+		return settings.SavedLayout{}, left, false, err
 	}
 	l.Name = in.Name
-	kept, err := a.settings.SaveLayout(l, in.Replace)
+	kept, replaced, err := a.settings.SaveLayout(l, in.Replace)
 	a.st.Layouts = a.settings.Layouts()
-	return kept, skipped, err
+	if err == nil {
+		// Saved as it, the window is offered it to save over next time.
+		w.fromLayout = kept.ID
+	}
+	return kept, left, replaced, err
 }
 
-// layoutOf is window w as a layout, not yet named, and how many of its
+// sayLayoutSaved says layout l was saved, or saved over one of its
+// name, and what of the window's panes it left out.
+func (a *app) sayLayoutSaved(l settings.SavedLayout, replaced bool, left leftOut) {
+	title := "Saved " + l.Name
+	if replaced {
+		title = "Replaced " + l.Name
+	}
+	body := ""
+	if said := left.said(); said != "" {
+		body = "Left out: " + said + "."
+	}
+	a.worked(title, body, "")
+}
+
+// leftOut counts the panes of a window a layout leaves out that the user
+// might look for when it opens: readers, tunnels' panes, panes through
+// another kakel window and panes on a server removed from the list. The
+// panes that hold nothing of the user's, the tools such as Settings, the
+// Jobs, the Layouts and a connection's log, and a split's chooser, are
+// not counted, as they are opened again from their own commands.
+type leftOut struct {
+	readers, tunnels, through, removed, other int
+}
+
+// total is how many panes were left out.
+func (l leftOut) total() int { return l.readers + l.tunnels + l.through + l.removed + l.other }
+
+// said says what was left out, as "1 reader and 2 panes on a removed
+// server", or "" for nothing.
+func (l leftOut) said() string {
+	var parts []string
+	for _, n := range []struct {
+		n         int
+		one, many string
+	}{
+		{l.readers, "reader", "readers"},
+		{l.tunnels, "tunnel", "tunnels"},
+		{l.through, "pane through another window", "panes through another window"},
+		{l.removed, "pane on a removed server", "panes on a removed server"},
+		{l.other, "other pane", "other panes"},
+	} {
+		if n.n > 0 {
+			parts = append(parts, words.ManyOf(n.n, n.one, n.many))
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return listOf(parts)
+}
+
+// countLeftOut counts pane p, which the layout leaves out, where the user might
+// look for it.
+func (a *app) countLeftOut(l *leftOut, p Pane) {
+	switch {
+	case p.Kind == KindReader:
+		l.readers++
+	case p.Kind == KindTunnel:
+		l.tunnels++
+	case p.Kind != KindTerminal && p.Kind != KindFileManager:
+		// A tool, or a split's chooser: opened again by its command.
+	case p.On != "" || a.machines.IsWindow(p.Machine):
+		l.through++
+	case a.stillSaved(p.Machine) != nil:
+		l.removed++
+	default:
+		l.other++
+	}
+}
+
+// layoutOf is window w as a layout, not yet named, and what of its
 // panes it leaves out.
-func (a *app) layoutOf(w *ownWin) (settings.SavedLayout, int, error) {
+func (a *app) layoutOf(w *ownWin) (settings.SavedLayout, leftOut, error) {
+	var left leftOut
 	win := a.layout.Window(w.id)
 	if win == nil || win.Root == nil {
-		return settings.SavedLayout{}, 0, errNothingToSave
+		return settings.SavedLayout{}, left, ErrNothingToSave
 	}
 	// The tree without the panes left out, each taken out as a closed
 	// pane is: a tab beside it comes to the front in its place, a split
@@ -87,7 +177,6 @@ func (a *app) layoutOf(w *ownWin) (settings.SavedLayout, int, error) {
 	// goes.
 	one := dock.Layout{Grouped: a.layout.Grouped, Windows: []dock.Window{{Root: win.Root.Clone(), Keep: true}}}
 	recipes := map[string]settings.SavedPane{}
-	skipped := 0
 	for _, id := range win.Root.Items() {
 		i := slices.IndexFunc(a.st.Panes, func(p Pane) bool { return p.ID == id })
 		if i >= 0 {
@@ -95,21 +184,19 @@ func (a *app) layoutOf(w *ownWin) (settings.SavedLayout, int, error) {
 				recipes[id] = r
 				continue
 			}
-			if a.st.Panes[i].Kind != KindChooser {
-				skipped++
-			}
+			a.countLeftOut(&left, a.st.Panes[i])
 		}
 		one.Remove(id)
 	}
 	if len(recipes) == 0 {
-		return settings.SavedLayout{}, skipped, errNothingToSave
+		return settings.SavedLayout{}, left, ErrNothingToSave
 	}
 	l := settings.SavedLayout{Panes: map[string]settings.SavedPane{}}
 	l.Root = slotted(one.Windows[0].Root, recipes, l.Panes)
 	if place, ok := a.placeOf(w); ok {
 		l.Place = &place
 	}
-	return l, skipped, nil
+	return l, left, nil
 }
 
 // slotted is the tree n as a layout keeps it, its panes named for slots
@@ -265,12 +352,150 @@ func (a *app) setLayoutAtStart(in SetLayoutAtStart) error {
 	return err
 }
 
-// removeLayout takes a layout off the list.
+// removeLayout takes a layout off the list, and says so, with Undo to
+// put it back where it stood.
 func (a *app) removeLayout(id string) error {
 	if a.settings == nil {
 		return errNoSettings
 	}
-	err := a.settings.DropLayout(id)
+	have := a.settings.Layouts()
+	at := slices.IndexFunc(have, func(l settings.SavedLayout) bool { return l.ID == id })
+	if err := a.settings.DropLayout(id); err != nil {
+		return err
+	}
 	a.st.Layouts = a.settings.Layouts()
+	if at >= 0 {
+		a.post(Notice{Title: "Removed " + have[at].Name, Kind: NoticeWorked, Action: "Undo", On: RestoreLayout{Layout: have[at], At: at}})
+	}
+	return nil
+}
+
+// restoreLayout puts a layout removed back where it stood. One whose
+// name another layout was given since stays removed.
+func (a *app) restoreLayout(in RestoreLayout) error {
+	if a.settings == nil {
+		return errNoSettings
+	}
+	_, err := a.settings.PutLayoutBack(in.Layout, in.At)
+	a.st.Layouts = a.settings.Layouts()
+	if errors.Is(err, settings.ErrLayoutNameUsed) {
+		return errors.New("another layout is called " + strings.TrimSpace(in.Layout.Name) + " now")
+	}
 	return err
+}
+
+// showLayouts opens the Layouts pane, or goes to it.
+func (a *app) showLayouts() {
+	if id := a.paneOf(KindLayouts); id != "" {
+		a.bringHere(id)
+		return
+	}
+	a.next++
+	a.addPane(Pane{ID: "p" + itoa(a.next), Title: "Layouts", Kind: KindLayouts}, nil, Placement{})
+}
+
+// savesFrom is the window Save Layout in w saves: w, or where w holds
+// nothing a layout keeps, as a window of tools, the window last worked
+// in. It is nil where neither holds anything to keep.
+func (a *app) savesFrom(w *ownWin) *ownWin {
+	for _, at := range []*ownWin{w, a.work} {
+		if at != nil && !at.gone && a.keepsAny(at) {
+			return at
+		}
+	}
+	return nil
+}
+
+// keepsAny reports whether window w holds a pane a layout keeps, as
+// recipeOf would find, without asking each what it shows.
+func (a *app) keepsAny(w *ownWin) bool {
+	return slices.ContainsFunc(a.panesIn(w), func(p Pane) bool {
+		switch {
+		case p.Kind == KindWaiting:
+			return true
+		case p.Kind != KindTerminal && p.Kind != KindFileManager:
+			return false
+		case p.On != "" || a.machines.IsWindow(p.Machine):
+			return false
+		}
+		return a.stillSaved(p.Machine) == nil
+	})
+}
+
+// LayoutHolds says in words what layout l opens: "2 terminals and 1
+// file manager".
+func LayoutHolds(l settings.SavedLayout) string {
+	n := map[string]int{}
+	for _, p := range l.Panes {
+		n[p.Kind]++
+	}
+	var parts []string
+	for _, k := range []struct{ kind, one, many string }{
+		{settings.LayoutTerminal, "terminal", "terminals"},
+		{settings.LayoutCommand, "command", "commands"},
+		{settings.LayoutFiles, "file manager", "file managers"},
+	} {
+		if n[k.kind] > 0 {
+			parts = append(parts, words.ManyOf(n[k.kind], k.one, k.many))
+		}
+	}
+	if len(parts) == 0 {
+		return words.ManyOf(len(l.Panes), "pane", "panes")
+	}
+	return listOf(parts)
+}
+
+// LayoutMachines are the names of the machines layout l opens panes on,
+// as LayoutHosts gives them.
+func LayoutMachines(l settings.SavedLayout, named func(id string) (string, bool)) []string {
+	var out []string
+	for _, h := range LayoutHosts(l, named) {
+		out = append(out, h.Name)
+	}
+	return out
+}
+
+// LayoutHost is a machine a layout opens panes on: its name, and whether
+// it is this computer.
+type LayoutHost struct {
+	Name string
+	Here bool
+}
+
+// LayoutHosts are the machines layout l opens panes on, each once, in
+// the order its panes stand: "This computer", and a server by what named
+// calls the saved server with its id now, or else by the name it was
+// saved under.
+func LayoutHosts(l settings.SavedLayout, named func(id string) (string, bool)) []LayoutHost {
+	var out []LayoutHost
+	var walk func(n *settings.LayoutNode)
+	walk = func(n *settings.LayoutNode) {
+		if n == nil {
+			return
+		}
+		if n.Kind == string(dock.Item) {
+			p, ok := l.Panes[n.ID]
+			if !ok {
+				return
+			}
+			h := LayoutHost{Name: p.Host, Here: p.Host == "" && p.HostID == ""}
+			switch {
+			case h.Here:
+				h.Name = "This computer"
+			case p.HostID != "" && named != nil:
+				if now, ok := named(p.HostID); ok {
+					h.Name = now
+				}
+			}
+			if !slices.Contains(out, h) {
+				out = append(out, h)
+			}
+			return
+		}
+		for _, k := range n.Kids {
+			walk(k)
+		}
+	}
+	walk(l.Root)
+	return out
 }

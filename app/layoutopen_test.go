@@ -112,7 +112,7 @@ func answering(a *app, asked *int) {
 // keep saves l, returning it as kept.
 func keep(t *testing.T, a *app, l settings.SavedLayout) settings.SavedLayout {
 	t.Helper()
-	kept, err := a.settings.SaveLayout(l, false)
+	kept, _, err := a.settings.SaveLayout(l, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,7 +229,7 @@ func TestALayoutOpensAsANewWindowAndSavesTheSame(t *testing.T) {
 		t.Fatalf("the keyboard is on %q in window %d, want %q", a.focusIn(w), a.cur.id, frontOf(left))
 	}
 
-	again, _, err := a.saveLayout(SaveLayout{Window: w.id, Name: "Again"})
+	again, _, _, err := a.saveLayout(SaveLayout{Window: w.id, Name: "Again"})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -56,6 +56,13 @@ first time rather than being rewritten later.
 
 "Keys" means SSH keys throughout, and the keyboard kind is "shortcuts".
 
+A **layout** is one kakel window saved to open again: its splits, tabs
+and the recipe of each pane. It is never a "saved window", which is a
+kakel window on another machine, saved in the server list, nor a
+"workspace" or "session". A layout is saved, opened, renamed, removed,
+and opens at start; a name another layout has *replaces* it. What it
+does not keep is *left out*.
+
 ## Command titles
 
 A command title is read in a flat list in the palette, with no menu or

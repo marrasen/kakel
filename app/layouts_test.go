@@ -73,21 +73,21 @@ func workWindow(t *testing.T, a *app, web machines.ID) (one *ownWin) {
 // slots p1, p2 and on, with what each runs: the profile a shell on a
 // saved server runs, by the server's name and id, the program a shell
 // here runs, a command's line and folder, a file manager's folder. A
-// Settings tab and a pane through another window are left out and
-// counted, the split Settings stood in closes up, and a split's chooser
-// is left out without being counted. The window saved need not be the
-// one in front.
+// Settings tab, a split's chooser and a pane through another window are
+// left out, the split Settings stood in closing up; only the pane
+// through another window is counted, as the tools open again from their
+// own commands. The window saved need not be the one in front.
 func TestAWindowIsSavedAsALayout(t *testing.T) {
 	a, web := layoutApp(t)
 	one := workWindow(t, a, web)
 
-	got, skipped, err := a.saveLayout(SaveLayout{Window: one.id, Name: "Work"})
+	got, skipped, _, err := a.saveLayout(SaveLayout{Window: one.id, Name: "Work"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if skipped != 2 {
-		t.Errorf("%d panes left out, want 2", skipped)
+	if skipped != (leftOut{through: 1}) {
+		t.Errorf("left out %+v, want the pane through another window", skipped)
 	}
 	root := got.Root
 	if root == nil || root.Kind != "row" || len(root.Kids) != 2 || root.Share != 0.3 {
@@ -136,7 +136,7 @@ func TestWhatAShellHereRunsIsKept(t *testing.T) {
 		a.addPane(Pane{ID: id}, nil, Placement{})
 	}
 
-	got, _, err := a.saveLayout(SaveLayout{Name: "Here"})
+	got, _, _, err := a.saveLayout(SaveLayout{Name: "Here"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,7 +179,7 @@ func TestAShellsFolderIsKept(t *testing.T) {
 		return d1 != "" && h2 == "web01.example.com" && h3 == "db"
 	})
 
-	got, _, err := a.saveLayout(SaveLayout{Name: "Folders"})
+	got, _, _, err := a.saveLayout(SaveLayout{Name: "Folders"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,13 +204,13 @@ func TestAPaneOnAServerRemovedIsLeftOut(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, skipped, err := a.saveLayout(SaveLayout{Name: "Left"})
+	got, skipped, _, err := a.saveLayout(SaveLayout{Name: "Left"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if skipped != 1 || len(got.Panes) != 1 {
-		t.Fatalf("%d left out, the panes are %+v", skipped, got.Panes)
+	if skipped != (leftOut{removed: 1}) || len(got.Panes) != 1 {
+		t.Fatalf("%+v left out, the panes are %+v", skipped, got.Panes)
 	}
 	if p := got.Panes["p1"]; p.HostID != "" || p.Host != a.machines.Name(quick) || p.Host == "" {
 		t.Fatalf("the quick connection's pane is %+v", p)
@@ -224,7 +224,7 @@ func TestAServersLoginShellIsKept(t *testing.T) {
 	a, web := layoutApp(t)
 	a.addPane(Pane{ID: "p1", Machine: web}, nil, Placement{})
 
-	got, _, err := a.saveLayout(SaveLayout{Name: "Web"})
+	got, _, _, err := a.saveLayout(SaveLayout{Name: "Web"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -234,17 +234,17 @@ func TestAServersLoginShellIsKept(t *testing.T) {
 	}
 }
 
-// A window holding nothing a layout can open again is refused, with
-// what it left out still counted, and nothing is kept.
+// A window holding nothing a layout can open again is refused, and
+// nothing is kept. Its tools are not counted as left out.
 func TestAWindowOfToolsIsNotSaved(t *testing.T) {
 	a, _ := layoutApp(t)
 	a.addPane(Pane{ID: "p1", Title: "Settings", Kind: KindSettings}, nil, Placement{})
 	a.addPane(Pane{ID: "p2", Title: "Jobs", Kind: KindJobs}, nil, Placement{})
 
-	_, skipped, err := a.saveLayout(SaveLayout{Name: "Tools"})
+	_, skipped, _, err := a.saveLayout(SaveLayout{Name: "Tools"})
 
-	if !errors.Is(err, errNothingToSave) || skipped != 2 {
-		t.Fatalf("saving gave %v, %d left out", err, skipped)
+	if !errors.Is(err, ErrNothingToSave) || skipped.total() != 0 {
+		t.Fatalf("saving gave %v, %+v left out", err, skipped)
 	}
 	if kept := a.settings.Layouts(); len(kept) != 0 {
 		t.Fatalf("kept %+v", kept)
@@ -261,16 +261,16 @@ func TestLayoutsAreSavedAndChangedAsAsked(t *testing.T) {
 	a.handle(SaveLayout{Name: "Work"})
 	a.handle(RenameLayout{ID: "work", Name: "Office"})
 	a.handle(SetLayoutAtStart{ID: "work", On: true})
-	if kept := a.st.Layouts; len(kept) != 1 || kept[0].Name != "Office" || !kept[0].AtStart || len(a.st.Notices) != 0 {
+	if kept := a.st.Layouts; len(kept) != 1 || kept[0].Name != "Office" || !kept[0].AtStart || len(a.st.Notices) != 1 {
 		t.Fatalf("the layouts are %+v; notices %+v", kept, a.st.Notices)
 	}
 	a.addPane(Pane{ID: "p2", Kind: KindFileManager}, nil, Placement{})
 
 	a.handle(SaveLayout{Name: "office"})
-	if len(a.st.Notices) != 1 || a.st.Notices[0].Title != "Couldn't save the layout" {
+	if len(a.st.Notices) != 2 || a.st.Notices[1].Title != "Couldn't save the layout" {
 		t.Fatalf("saving over Office unasked said %+v", a.st.Notices)
 	}
-	again, _, err := a.saveLayout(SaveLayout{Name: "  office ", Replace: true})
+	again, _, _, err := a.saveLayout(SaveLayout{Name: "  office ", Replace: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,7 +280,7 @@ func TestLayoutsAreSavedAndChangedAsAsked(t *testing.T) {
 		t.Fatalf("handed back %+v, kept %+v", again, kept)
 	}
 	a.handle(RemoveLayout{ID: "work"})
-	if len(a.settings.Layouts()) != 0 || len(a.st.Layouts) != 0 || len(a.st.Notices) != 1 {
+	if len(a.settings.Layouts()) != 0 || len(a.st.Layouts) != 0 || len(a.st.Notices) != 3 {
 		t.Fatalf("removed, the layouts are %+v; notices %+v", a.st.Layouts, a.st.Notices)
 	}
 }

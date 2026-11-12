@@ -223,7 +223,14 @@ type State struct {
 	SavedCopies []settings.SavedCopy
 	// Layouts are the windows saved to open again, in the order they
 	// were saved.
-	Layouts       []settings.SavedLayout
+	Layouts []settings.SavedLayout
+	// SaveWindow is the window Save Layout saves from this one: this
+	// window, or where it holds nothing a layout keeps, the window last
+	// worked in; 0 where neither does. SaveFrom is the ID of the layout
+	// that window was opened from or last saved as, for Save Layout to
+	// offer its name.
+	SaveWindow    int
+	SaveFrom      string
 	Shortcuts     []keys.Change
 	ShortcutsRead uint64
 	// SettingsTab is the Settings tab last asked for, by its title, or ""
@@ -1357,6 +1364,8 @@ func failedTitle(in gunim.Intent) string {
 		return "Couldn't change whether the layout opens at start"
 	case RemoveLayout:
 		return "Couldn't remove the layout"
+	case RestoreLayout:
+		return "Couldn't restore the layout"
 	case OpenLayout:
 		return "Couldn't open the layout"
 	}
@@ -1856,15 +1865,22 @@ func (a *app) handle(in gunim.Intent) {
 	case ShowCopies:
 		a.showCopies()
 	case SaveLayout:
-		// How many panes it left out goes unsaid until a window asks
-		// for it, and says it.
-		_, _, err = a.saveLayout(in)
+		var l settings.SavedLayout
+		var left leftOut
+		var replaced bool
+		if l, left, replaced, err = a.saveLayout(in); err == nil {
+			a.sayLayoutSaved(l, replaced, left)
+		}
 	case RenameLayout:
 		err = a.renameLayout(in)
 	case SetLayoutAtStart:
 		err = a.setLayoutAtStart(in)
 	case RemoveLayout:
 		err = a.removeLayout(in.ID)
+	case RestoreLayout:
+		err = a.restoreLayout(in)
+	case ShowLayouts:
+		a.showLayouts()
 	case OpenLayout:
 		err = a.openLayout(in.ID)
 	case RetryWaiting:
