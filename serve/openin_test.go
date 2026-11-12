@@ -2,12 +2,14 @@ package serve
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/marrasen/kakel/session"
+	"golang.org/x/crypto/ssh"
 )
 
 // A layout's pane is asked for in a folder: the folder crosses for a
@@ -172,4 +174,65 @@ func TestWhatWasOpenedForAClientGoneIsClosed(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("the session opened for the client gone was not closed")
 	}
+}
+
+// A client that takes what it asked for and closes it at once, as a
+// pane closed as soon as it opened, leaves it open there, as any pane
+// closed there does: only a client gone before it took it has it closed.
+// The client here never answers what it is asked, as one that closed
+// the channel before reading it, which is what the window must not take
+// for a client gone.
+func TestWhatAClientTookAndClosedStaysOpen(t *testing.T) {
+	opened := newEchoSession(80, 24)
+	closed := make(chan Attached, 1)
+	_, w := takenOverServing(t, Config{
+		OpenIn: func(string, string, string, int, int) (session.Session, Attached, error) {
+			return opened, Attached{ID: "p9", Kind: "Terminal"}, nil
+		},
+		CloseOpened: func(what Attached) error { closed <- what; return nil },
+	})
+	ch, _, err := w.client.OpenChannel(SessionInChannel, ssh.Marshal(openOn{Cols: 80, Rows: 24}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = ch.Close()
+	select {
+	case <-opened.done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the session was not let go of")
+	}
+	// What closes it there comes just after the session is let go of.
+	select {
+	case what := <-closed:
+		t.Fatalf("it closed %+v there", what)
+	case <-time.After(500 * time.Millisecond):
+	}
+}
+
+// An attach that has nothing to attach to is refused before any session
+// is shown, as ErrNotOpen whatever words the window has for it; one
+// refused for another reason says it, on one line; and one that has
+// something is carried as Attach's is.
+func TestAnAttachToWhatIsGoneIsRefused(t *testing.T) {
+	_, w := takenOverServing(t, Config{Attach: func(want Attached, cols, rows int) (session.Session, error) {
+		switch want.ID {
+		case "p1":
+			return newEchoSession(cols, rows), nil
+		case "p2":
+			return nil, errors.New("busy\nnow")
+		}
+		return nil, fmt.Errorf("no %s here: %w", want.ID, ErrNotOpen)
+	}})
+	if _, err := w.AttachIn(Open{ID: "p3", Kind: "Terminal"}, 80, 24); !errors.Is(err, ErrNotOpen) {
+		t.Fatalf("attached to what is gone, it gave %v", err)
+	}
+	if _, err := w.AttachIn(Open{ID: "p2", Kind: "Terminal"}, 80, 24); err == nil || err.Error() != "busy now" || errors.Is(err, ErrNotOpen) {
+		t.Fatalf("refused otherwise, it gave %v", err)
+	}
+	sess, err := w.AttachIn(Open{ID: "p1", Kind: "Terminal"}, 80, 24)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sess.Close()
+	read(t, sess, "started at 80x24")
 }

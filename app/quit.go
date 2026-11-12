@@ -66,6 +66,7 @@ func (a *app) leave() {
 	a.closeFileManager()
 	a.closeOverview()
 	a.keepPlaces()
+	a.flushRecords()
 	for _, w := range a.wins {
 		if !w.gone {
 			w.c.Leave()

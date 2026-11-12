@@ -160,15 +160,27 @@ A layout is one window, saved to open again as it is.
 - **Panes through another kakel window.** These are kept by the
   window, and by the machine beyond it when the pane ran on one the
   window reaches. Opening the layout connects to the window once for
-  all of them and asks it for new panes, as New Terminal there does:
-  it never attaches to what is open there. A terminal runs the shell
-  new terminals start on that machine, as the window picks it. On the
+  all of them. A pane the layout opened there last time, and that is
+  still open there, is watched again, with its program still running
+  and its screen as it is. One closed there since, or any pane after
+  that window's kakel was started again, opens new, as New Terminal
+  there does. Closing a pane here, or the layout's window, or quitting,
+  leaves the pane open on the other window: close it there to end it.
+  If the layout is open twice at once, each copy has panes of its own
+  there, and each comes back to its own the next time, for up to four
+  copies. A pane the other window's user opened, that you worked in
+  from here, is saved as a terminal there: the layout opens a new one,
+  and leaves theirs alone.
+- **Opening a new pane there.** A terminal runs the shell new
+  terminals start on that machine, as the window picks it. On the
   window's own machine it starts in the folder it was in; on a machine
-  beyond the window it starts where that machine starts it. A machine
-  renamed on that window is still found. A window running an older
-  kakel opens the terminal in its default folder, and says so. A machine beyond the window
-  that the window is not connected to fails its pane, saying why:
-  connect to it from that window, then press Retry.
+  beyond the window it starts where that machine starts it. A pane
+  whose program ended there is started again there. A machine renamed
+  on that window is still found. A window running an older kakel opens
+  a new pane each time, a terminal in its default folder, and says so.
+  A machine beyond the window that the window is not connected to
+  fails its pane, saying why: connect to it from that window, then
+  press Retry.
 - **From a window of tools.** Save Layout in a window that holds only
   tool panes saves the window you last worked in.
 - **Open.** Choose it in File › Layouts, which lists every layout, a key

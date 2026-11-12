@@ -207,6 +207,17 @@ func (s *Server) serveChannels(ctx context.Context, c *Client, chans <-chan ssh.
 			running.Go(func() { s.runSessionIn(ctx, nch, want) })
 			continue
 		}
+		if nch.ChannelType() == AttachInChannel {
+			var want openSession
+			if err := ssh.Unmarshal(nch.ExtraData(), &want); err != nil || want.Attach == "" {
+				_ = nch.Reject(ssh.ConnectionFailed,
+					"that is not an attach request this kakel understands: "+
+						"both windows have to be the same build")
+				continue
+			}
+			running.Go(func() { s.runAttachIn(ctx, nch, want) })
+			continue
+		}
 		if nch.ChannelType() != SessionChannel {
 			why := "this is kakel, and it serves " + SessionChannel
 			if nch.ChannelType() == "session" {
@@ -279,6 +290,49 @@ func (s *Server) runSessionIn(ctx context.Context, nch ssh.NewChannel, want open
 	s.runSession(ctx, ch, reqs, want.Cols, want.Rows, true, func(int, int) (session.Session, Attached, error) {
 		return sess, named, nil
 	})
+}
+
+// runAttachIn attaches to what a client named over AttachInChannel, and
+// carries it, or refuses the channel with why it could not: the session
+// is made before the channel is taken.
+func (s *Server) runAttachIn(ctx context.Context, nch ssh.NewChannel, want openSession) {
+	cols := min(max(int(want.Cols), 1), mostCells)
+	rows := min(max(int(want.Rows), 1), mostCells)
+	sess, _, err := s.starter(want)(cols, rows)
+	if err != nil {
+		why := ssh.ConnectionFailed
+		if errors.Is(err, ErrNotOpen) {
+			why = rejectNotOpen
+		}
+		_ = nch.Reject(why, err.Error())
+		return
+	}
+	ch, reqs, err := nch.Accept()
+	if err != nil {
+		_ = sess.Close()
+		s.onError(fmt.Errorf("serve: take a session: %w", err))
+		return
+	}
+	s.runSession(ctx, ch, reqs, want.Cols, want.Rows, false, func(int, int) (session.Session, Attached, error) {
+		return sess, Attached{}, nil
+	})
+}
+
+// goneWait is how long after a channel goes unanswered its connection is
+// waited on to end, to tell a client gone from one that closed it.
+const goneWait = 2 * time.Second
+
+// connectionGone reports whether the connection ctx follows ends within
+// goneWait.
+func connectionGone(ctx context.Context) bool {
+	t := time.NewTimer(goneWait)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return true
+	case <-t.C:
+		return false
+	}
 }
 
 // runLog gives a client a machine's log to read, or refuses the channel
@@ -559,8 +613,13 @@ func (s *Server) runSession(ctx context.Context, ch ssh.Channel,
 
 	// Asked once the requests above are read, so what the client sends
 	// meanwhile cannot hold up its answer.
+	//
+	// No answer is either: the client closed the channel itself, having
+	// taken it, as when its pane closed at once, which leaves what was
+	// opened open, as any pane closed there does; or its connection went.
+	// Only the second is the end of the connection soon after.
 	if confirm {
-		if _, err := ch.SendRequest(reqOpened, true, ssh.Marshal(opened(named))); err != nil {
+		if _, err := ch.SendRequest(reqOpened, true, ssh.Marshal(opened(named))); err != nil && connectionGone(ctx) {
 			_ = sess.Close()
 			if s.cfg.CloseOpened != nil && named.ID != "" {
 				_ = s.cfg.CloseOpened(named)

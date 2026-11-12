@@ -202,8 +202,9 @@ type serving struct {
 	// for a test.
 	hostKey, allowed string
 	// older serves as a kakel from before a pane could be asked for in a
-	// folder, or closed by the window that asked for it, for a test of
-	// how a window connected to it does without.
+	// folder, or closed by the window that asked for it, or one it opened
+	// be told from another run's, for a test of how a window connected
+	// to it does without.
 	older bool
 }
 
@@ -680,6 +681,9 @@ func (a *app) tellServed() {
 		return
 	}
 	snap := serve.Snapshot{}
+	if !a.serving.older {
+		snap.Run = a.runToken
+	}
 	for _, p := range a.st.Panes {
 		kind := servedKind(p.Kind)
 		if kind == "" {
@@ -696,7 +700,7 @@ func (a *app) tellServed() {
 		if _, saved := a.machines.Saved(p.Machine); saved {
 			hostID = string(p.Machine)
 		}
-		o := serve.Open{ID: p.ID, Host: host, HostID: hostID, Kind: kind, Label: p.Title, State: meter.Opened.String()}
+		o := serve.Open{ID: p.ID, Host: host, HostID: hostID, Kind: kind, Label: p.Title, State: meter.Opened.String(), Ended: p.Ended}
 		if t := a.terminal(p.ID); t != nil {
 			size := t.Size()
 			o.Cols, o.Rows = size.Cols, size.Rows
@@ -723,7 +727,7 @@ func (a *app) tellServed() {
 		}
 	}
 	a.serving.mu.Lock()
-	same := slices.Equal(a.serving.snap.Open, snap.Open) && slices.Equal(a.serving.snap.Machines, snap.Machines) &&
+	same := a.serving.snap.Run == snap.Run && slices.Equal(a.serving.snap.Open, snap.Open) && slices.Equal(a.serving.snap.Machines, snap.Machines) &&
 		maps.EqualFunc(a.serving.snap.Folders, snap.Folders, slices.Equal)
 	a.serving.snap = snap
 	a.serving.mu.Unlock()
@@ -762,7 +766,7 @@ func (a *app) attachFor(want serve.Attached, cols, rows int) (session.Session, e
 	return onApp(a, func() (session.Session, error) {
 		t := a.terminal(want.ID)
 		if t == nil {
-			return nil, fmt.Errorf("there is no terminal called %q open here any more", want.ID)
+			return nil, notOpenHere(want.ID)
 		}
 		return a.watchPane(t, cols, rows)
 	})
@@ -987,16 +991,25 @@ func (a *app) servedMachine(host string) (machines.ID, error) {
 // working in it, over a connection this window holds. Whether the
 // window asked to have it dialled makes no difference: it never is.
 func (a *app) startAgainFor(want serve.Attached, _ bool) error {
-	type count struct{ restarts, endings int }
+	type count struct {
+		restarts, endings int
+		running           bool
+	}
 	was, err := onApp(a, func() (count, error) {
-		if a.terminal(want.ID) == nil {
+		t := a.terminal(want.ID)
+		if t == nil {
 			// Closed here: the other window opens one of its own.
 			return count{}, serve.ErrNotOpen
+		}
+		if !t.Exited() {
+			// Running already, as when another window asked first:
+			// nothing to start, and nothing to wait for.
+			return count{running: true}, nil
 		}
 		// An end the terminal has not yet told this window of is the
 		// one it starts again from, and counted before, not after.
 		a.countEnding(want.ID)
-		c := count{a.restarts[want.ID], a.endings[want.ID]}
+		c := count{restarts: a.restarts[want.ID], endings: a.endings[want.ID]}
 		// Never dialled for another window, whichever it asked for: a
 		// connection this window makes is for someone at it to make,
 		// where its questions are asked. A window of an older build asks
@@ -1007,7 +1020,7 @@ func (a *app) startAgainFor(want serve.Attached, _ bool) error {
 		}
 		return c, a.startAgainOr(want.ID, false)
 	})
-	if err != nil {
+	if err != nil || was.running {
 		return err
 	}
 	// Answered once it has started again, so what attaches to it next
@@ -1020,7 +1033,7 @@ func (a *app) startAgainFor(want serve.Attached, _ bool) error {
 			if a.terminal(want.ID) == nil {
 				return count{}, serve.ErrNotOpen
 			}
-			return count{a.restarts[want.ID], a.endings[want.ID]}, nil
+			return count{restarts: a.restarts[want.ID], endings: a.endings[want.ID]}, nil
 		})
 		switch {
 		case err != nil:
@@ -1421,3 +1434,14 @@ func (a *app) setRelayProxy(proxy string) error {
 	a.showServing()
 	return nil
 }
+
+// notOpenHere is why a window cannot attach to id: it is not open here.
+// It reads as it always has, and is serve.ErrNotOpen to whoever asks, so
+// a window watching it again opens a new one in its place.
+type notOpenHere string
+
+func (id notOpenHere) Error() string {
+	return fmt.Sprintf("there is no terminal called %q open here any more", string(id))
+}
+
+func (notOpenHere) Is(target error) bool { return target == serve.ErrNotOpen }

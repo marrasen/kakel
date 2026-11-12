@@ -60,6 +60,8 @@ type Window struct {
 	folders map[string][]string
 	// machines are the machines it is connected to.
 	machines []Machine
+	// run is the token it gave for the run it is in.
+	run string
 
 	// going is why the other window closed the connection, when it said
 	// so before closing it.
@@ -299,6 +301,14 @@ func (w *Window) Machines() []Machine {
 	return slices.Clone(w.machines)
 }
 
+// Run is the token the other window gave for the run it is in, "" for
+// one of an older build, or before its first list.
+func (w *Window) Run() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.run
+}
+
 // OpenNamed is what this window says about one thing it has open, and
 // whether it still has it.
 //
@@ -362,7 +372,7 @@ func (w *Window) watch() {
 				// so what is open is left as it was.
 				w.going = snap.Going
 			} else {
-				w.open, w.folders, w.machines = snap.Open, snap.Folders, snap.Machines
+				w.open, w.folders, w.machines, w.run = snap.Open, snap.Folders, snap.Machines, snap.Run
 			}
 			w.mu.Unlock()
 			if snap.Going == "" {
@@ -403,6 +413,32 @@ func (w *Window) Attach(open Open, cols, rows int) (session.Session, error) {
 		Attach:     open.ID,
 		AttachHost: open.Host, AttachKind: open.Kind,
 	}), nil)
+}
+
+// ErrCannotAttachIn is what AttachIn says of a window of an older build.
+var ErrCannotAttachIn = errors.New("serve: that window cannot say before an attach that it has nothing to attach to")
+
+// AttachIn is Attach for a client that opens something new in its
+// place where it is not open: what the other window cannot attach to is
+// an error saying why, rather than a session that says it and ends. A
+// window of an older build says ErrCannotAttachIn, and one that does not
+// have it open ErrNotOpen.
+func (w *Window) AttachIn(open Open, cols, rows int) (session.Session, error) {
+	sess, err := w.session(AttachInChannel, ssh.Marshal(openSession{
+		Cols: uint32(cols), Rows: uint32(rows),
+		Attach:     open.ID,
+		AttachHost: open.Host, AttachKind: open.Kind,
+	}), nil)
+	var refused *ssh.OpenChannelError
+	switch {
+	case !errors.As(err, &refused):
+		return sess, err
+	case refused.Reason == ssh.UnknownChannelType:
+		return nil, ErrCannotAttachIn
+	case refused.Reason == rejectNotOpen:
+		return nil, ErrNotOpen
+	}
+	return nil, errors.New(Line(refused.Message))
 }
 
 // Files opens a file session on the machine the other window is on.
@@ -573,7 +609,7 @@ func (w *Window) startAgain(kind string, what Attached) error {
 	case string(reply) == ErrNotOpen.Error():
 		return ErrNotOpen
 	}
-	return errors.New(Plain(string(reply)))
+	return errors.New(Line(string(reply)))
 }
 
 // open asks the other window for a session and wraps what comes back.

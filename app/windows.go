@@ -549,6 +549,9 @@ type throughHow struct {
 	// opened: one no longer wanted is closed, there too, and then hears
 	// nothing.
 	still func() bool
+	// landed, when set, hears pane id here, once it is open and the
+	// window has said what it calls it, which can come before or after.
+	landed func(id string)
 }
 
 // openThroughHow is openThrough, asking as how says.
@@ -569,7 +572,7 @@ func (a *app) openThroughHow(window machines.ID, key string, cmd command, id, ti
 	// the window takes the channel, so it waits for the pane then; bound
 	// to a pane not yet here, it was lost, and starting the pane again
 	// opened another shell there in place of the one it had.
-	var farID string
+	var far serve.Attached
 	added := false
 	go func() {
 		// What the window calls it arrives on a goroutine of the
@@ -578,10 +581,15 @@ func (a *app) openThroughHow(window machines.ID, key string, cmd command, id, ti
 			go func() {
 				a.events <- func() {
 					if !added {
-						farID = n.ID
+						far = n
 						return
 					}
 					a.bindFar(w, n.ID, id)
+					a.noteFarPane(window, w, id, n)
+					delete(a.naming, id)
+					if how.landed != nil {
+						how.landed(id)
+					}
 				}
 			}()
 		}
@@ -643,10 +651,22 @@ func (a *app) openThroughHow(window machines.ID, key string, cmd command, id, ti
 				then("", err)
 				return
 			}
+			if how.landed != nil {
+				// What a layout writes of it waits for what the window
+				// calls it, which can come a moment after the pane.
+				a.naming[id] = window
+			}
 			a.addPane(a.paneOn(on, Pane{ID: id, Title: title, Command: len(cmd.argv) > 0}), screen.Open(sess, a.palette, a.withLinks(a.hooks(id), id, on)), at)
 			added = true
-			a.bindFar(w, farID, id)
+			a.bindFar(w, far.ID, id)
 			a.showWindows()
+			if far.ID != "" {
+				delete(a.naming, id)
+				a.noteFarPane(window, w, id, far)
+				if how.landed != nil {
+					how.landed(id)
+				}
+			}
 			then(id, nil)
 		}
 	}()
@@ -699,6 +719,15 @@ func (a *app) attachWindow(in AttachWindow) error {
 		a.bringHere(pane)
 		return nil
 	}
+	// One a layout's pane is about to watch again is shown there, rather
+	// than watched twice; one asked for twice is attached to once.
+	claim := claimOf(in.Window, in.ID)
+	if pane, ok := a.claimed[claim]; ok {
+		if a.has(pane) {
+			a.bringHere(pane)
+		}
+		return nil
+	}
 	open, ok := w.Serve.OpenNamed(in.ID)
 	if !ok {
 		return fmt.Errorf("%s no longer has that open", a.machines.Name(in.Window))
@@ -708,9 +737,11 @@ func (a *app) attachWindow(in AttachWindow) error {
 	}
 	a.next++
 	id := "p" + strconv.Itoa(a.next)
+	a.claimed[claim] = ""
 	go func() {
 		sess, err := w.Serve.Attach(open, screen.Cols, screen.Rows)
 		a.events <- func() {
+			delete(a.claimed, claim)
 			if err != nil {
 				a.failed("Couldn't work in "+open.Label, err.Error())
 				return

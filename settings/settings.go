@@ -217,6 +217,10 @@ type stored struct {
 	// they were saved.
 	Layouts layoutList `json:"layouts,omitempty"`
 
+	// LayoutPanes are the panes layouts opened through another kakel
+	// window, to watch again while they are still open there.
+	LayoutPanes layoutPaneList `json:"layoutPanes,omitempty"`
+
 	// Keys are the private key files the user keeps, newest first, to
 	// pick from when making a connection.
 	Keys []string `json:"keys,omitempty"`

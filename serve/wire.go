@@ -100,6 +100,15 @@ const (
 	// be restored, rather than having it silently dropped.
 	SessionInChannel = "session-in@gridterm"
 
+	// AttachInChannel is an attach, as SessionChannel's openSession asks
+	// for one, refused with the reason, as a channel's refusal, when
+	// what it names is not open, rather than taken and then said in a
+	// session that ends at once: for a client that opens something new
+	// in its place then, as a layout watching a pane again does. Its
+	// payload is openSession. A window of an older build refuses it by
+	// name.
+	AttachInChannel = "attach-in@gridterm"
+
 	// reqCloseThere, on a session channel, asks the served window to
 	// close the pane it opened for that session: a pane a client asked
 	// for and no longer wants, as a layout's pane closed while it was
@@ -128,6 +137,10 @@ const (
 // folder that is not there: a number of kakel's own, past those RFC 4254
 // gives, as the refusal's words are for people and may change.
 const rejectNoFolder ssh.RejectionReason = 0x6b616b01
+
+// rejectNotOpen is the reason AttachInChannel is refused with for what
+// is not open, as the attacher returns ErrNotOpen for it.
+const rejectNotOpen ssh.RejectionReason = 0x6b616b02
 
 // opened names what the served window opened, in the same three parts a
 // client would use to ask for it again.
@@ -324,6 +337,10 @@ type Open struct {
 	// is sent instead, and the pane watching it can say what it is.
 	Cols int `json:"cols,omitempty"`
 	Rows int `json:"rows,omitempty"`
+
+	// Ended says its program has ended, and the pane waits to be started
+	// again or closed. A window of an older build never says it.
+	Ended bool `json:"ended,omitempty"`
 }
 
 // Key is what the machine it is on goes by when asked for again: its ID
@@ -347,6 +364,13 @@ type Snapshot struct {
 	// Window is what the served window calls itself, for a client
 	// showing several at once.
 	Window string `json:"window"`
+
+	// Run is a token the served window makes at random as it starts, the
+	// same for as long as it runs: the IDs in Open are that run's, and a
+	// client that kept one to come back to takes it as naming the same
+	// pane only under the same token. A window of an older build sends
+	// none, and nothing is come back to there.
+	Run string `json:"run,omitempty"`
 
 	// Open is what it has open, in the order it opened them.
 	Open []Open `json:"open"`

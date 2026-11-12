@@ -25,7 +25,9 @@ import (
 // the user's; and a reader is of a file or a pane that may not be there
 // next time. A pane through another kakel window is kept as the window
 // it went through and the machine there it ran on, and opening the
-// layout asks that window for a new one, as New Terminal there does.
+// layout watches again the pane it opened there last time, while that
+// is still open there, or asks that window for a new one, as New
+// Terminal there does.
 
 // Intents for layouts.
 type (
@@ -50,10 +52,12 @@ type (
 	// with Undo.
 	RemoveLayout struct{ ID string }
 	// RestoreLayout puts Layout, removed, back in the list where it
-	// stood, at At: Undo after RemoveLayout.
+	// stood, at At, with Panes, what was written down of the panes it
+	// opened on other windows: Undo after RemoveLayout.
 	RestoreLayout struct {
 		Layout settings.SavedLayout
 		At     int
+		Panes  []settings.LayoutPane
 	}
 	// ShowLayouts opens the Layouts pane, or goes to it.
 	ShowLayouts struct{}
@@ -81,7 +85,7 @@ func (a *app) saveLayout(in SaveLayout) (settings.SavedLayout, leftOut, bool, er
 	if w == nil || w.gone {
 		return settings.SavedLayout{}, leftOut{}, false, errors.New("the window was closed")
 	}
-	l, left, err := a.layoutOf(w)
+	l, names, left, err := a.layoutOf(w)
 	if err != nil {
 		return settings.SavedLayout{}, left, false, err
 	}
@@ -91,6 +95,7 @@ func (a *app) saveLayout(in SaveLayout) (settings.SavedLayout, leftOut, bool, er
 	if err == nil {
 		// Saved as it, the window is offered it to save over next time.
 		w.fromLayout = kept.ID
+		a.recordSaved(kept.ID, kept, names)
 	}
 	return kept, left, replaced, err
 }
@@ -165,13 +170,13 @@ func (a *app) countLeftOut(l *leftOut, p Pane) {
 	}
 }
 
-// layoutOf is window w as a layout, not yet named, and what of its
-// panes it leaves out.
-func (a *app) layoutOf(w *ownWin) (settings.SavedLayout, leftOut, error) {
+// layoutOf is window w as a layout, not yet named, the slot each pane
+// kept went into, by pane, and what of its panes it leaves out.
+func (a *app) layoutOf(w *ownWin) (settings.SavedLayout, map[string]string, leftOut, error) {
 	var left leftOut
 	win := a.layout.Window(w.id)
 	if win == nil || win.Root == nil {
-		return settings.SavedLayout{}, left, ErrNothingToSave
+		return settings.SavedLayout{}, nil, left, ErrNothingToSave
 	}
 	// The tree without the panes left out, each taken out as a closed
 	// pane is: a tab beside it comes to the front in its place, a split
@@ -191,21 +196,23 @@ func (a *app) layoutOf(w *ownWin) (settings.SavedLayout, leftOut, error) {
 		one.Remove(id)
 	}
 	if len(recipes) == 0 {
-		return settings.SavedLayout{}, left, ErrNothingToSave
+		return settings.SavedLayout{}, nil, left, ErrNothingToSave
 	}
 	l := settings.SavedLayout{Panes: map[string]settings.SavedPane{}}
-	l.Root = slotted(one.Windows[0].Root, recipes, l.Panes)
+	names := map[string]string{}
+	l.Root = slotted(one.Windows[0].Root, recipes, l.Panes, names)
 	if place, ok := a.placeOf(w); ok {
 		l.Place = &place
 	}
-	return l, left, nil
+	return l, names, left, nil
 }
 
 // slotted is the tree n as a layout keeps it, its panes named for slots
 // in the order they stand, "p1" first, and its splits and groups "#1"
 // and on, so a layout reads the same however long the run it was saved
-// from. Each pane's recipe goes into panes under its slot.
-func slotted(n *dock.Node, recipes, panes map[string]settings.SavedPane) *settings.LayoutNode {
+// from. Each pane's recipe goes into panes under its slot, and the
+// slot's name into names, by the pane's ID.
+func slotted(n *dock.Node, recipes, panes map[string]settings.SavedPane, names map[string]string) *settings.LayoutNode {
 	items, parts := 0, 0
 	var walk func(n *dock.Node) *settings.LayoutNode
 	walk = func(n *dock.Node) *settings.LayoutNode {
@@ -214,6 +221,7 @@ func slotted(n *dock.Node, recipes, panes map[string]settings.SavedPane) *settin
 			items++
 			out.ID = "p" + strconv.Itoa(items)
 			panes[out.ID] = recipes[n.ID]
+			names[n.ID] = out.ID
 			return out
 		}
 		parts++
@@ -408,12 +416,18 @@ func (a *app) removeLayout(id string) error {
 	}
 	have := a.settings.Layouts()
 	at := slices.IndexFunc(have, func(l settings.SavedLayout) bool { return l.ID == id })
+	recs := a.recordsOf(id)
 	if err := a.settings.DropLayout(id); err != nil {
 		return err
 	}
 	a.st.Layouts = a.settings.Layouts()
+	// The panes it opened elsewhere stay open there; what it wrote down
+	// of them goes with it, and comes back with Undo.
+	a.editRecords(func(p []settings.LayoutPane) []settings.LayoutPane {
+		return slices.DeleteFunc(p, func(r settings.LayoutPane) bool { return r.Layout == id })
+	})
 	if at >= 0 {
-		a.post(Notice{Title: "Removed " + have[at].Name, Kind: NoticeWorked, Action: "Undo", On: RestoreLayout{Layout: have[at], At: at}})
+		a.post(Notice{Title: "Removed " + have[at].Name, Kind: NoticeWorked, Action: "Undo", On: RestoreLayout{Layout: have[at], At: at, Panes: recs}})
 	}
 	return nil
 }
@@ -424,8 +438,11 @@ func (a *app) restoreLayout(in RestoreLayout) error {
 	if a.settings == nil {
 		return errNoSettings
 	}
-	_, err := a.settings.PutLayoutBack(in.Layout, in.At)
+	back, err := a.settings.PutLayoutBack(in.Layout, in.At)
 	a.st.Layouts = a.settings.Layouts()
+	if err == nil {
+		a.restoreRecords(back.ID, in.Panes)
+	}
 	if errors.Is(err, settings.ErrLayoutNameUsed) {
 		return errors.New("another layout is called " + strings.TrimSpace(in.Layout.Name) + " now")
 	}
