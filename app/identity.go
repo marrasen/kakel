@@ -269,12 +269,30 @@ func shortHost(host string) string {
 // D:\src, and its own files are on \\wsl.localhost. Git Bash says /d/src
 // for D:\src.
 func (a *app) localPath(pane, dir string) string {
-	if pathSep == `\` && strings.HasPrefix(dir, "/") {
-		if sh := a.shellOf(pane); sh.OwnPaths() {
-			dir = sh.LocalPath(dir)
-		} else {
-			dir = shellfind.DrivePath(dir)
-		}
+	return localPathOf(a.shellOf(pane), dir, pathSep == `\`)
+}
+
+// localPathOf is folder dir, as shell sh says it, as this computer
+// names it, which windows says runs Windows. That is passed in rather
+// than read, so how each shell's path is turned is tested on every
+// system.
+//
+// On Windows, a WSL shell or Git Bash says a path of its own, turned
+// here into the Windows one. PowerShell says C:/Users/me, as a file URL
+// spells it, which is given back as C:\Users\me, the Command Prompt's
+// form: the same folder is then written down the same way whichever
+// shell said it. Any other shell saying /mnt/d/src is taken to mean
+// D:\src, and any other path from / names no folder here.
+func localPathOf(sh shellfind.Shell, dir string, windows bool) string {
+	switch {
+	case !windows:
+		return dir
+	case strings.HasPrefix(dir, "/") && sh.OwnPaths():
+		return sh.LocalPath(dir)
+	case strings.HasPrefix(dir, "/"):
+		return shellfind.DrivePath(dir)
+	case len(dir) >= 3 && dir[1] == ':' && (dir[2] == '/' || dir[2] == '\\'):
+		return strings.ReplaceAll(dir, "/", `\`)
 	}
 	return dir
 }
