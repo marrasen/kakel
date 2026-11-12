@@ -281,6 +281,23 @@ func (s *Server) runSessionIn(ctx context.Context, nch ssh.NewChannel, want open
 	})
 }
 
+// goneWait is how long after a channel goes unanswered its connection is
+// waited on to end, to tell a client gone from one that closed it.
+const goneWait = 2 * time.Second
+
+// connectionGone reports whether the connection ctx follows ends within
+// goneWait.
+func connectionGone(ctx context.Context) bool {
+	t := time.NewTimer(goneWait)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return true
+	case <-t.C:
+		return false
+	}
+}
+
 // runLog gives a client a machine's log to read, or refuses the channel
 // saying why: a log that ended at once would leave the client a pane
 // that closed before anybody read it.
@@ -559,8 +576,13 @@ func (s *Server) runSession(ctx context.Context, ch ssh.Channel,
 
 	// Asked once the requests above are read, so what the client sends
 	// meanwhile cannot hold up its answer.
+	//
+	// No answer is either: the client closed the channel itself, having
+	// taken it, as when its pane closed at once, which leaves what was
+	// opened open, as any pane closed there does; or its connection went.
+	// Only the second is the end of the connection soon after.
 	if confirm {
-		if _, err := ch.SendRequest(reqOpened, true, ssh.Marshal(opened(named))); err != nil {
+		if _, err := ch.SendRequest(reqOpened, true, ssh.Marshal(opened(named))); err != nil && connectionGone(ctx) {
 			_ = sess.Close()
 			if s.cfg.CloseOpened != nil && named.ID != "" {
 				_ = s.cfg.CloseOpened(named)

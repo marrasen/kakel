@@ -18,9 +18,12 @@ manager again. Open one from the palette, the launcher or File › Manage
 Layouts, and it opens in a new window in the same shape, each pane
 started afresh. Each server is connected to once; one that cannot be
 reached fails only its own panes, with Retry. Panes through another
-kakel window are kept too: the window is connected to once, and asked
-for new panes on its machine or the machines it reaches, a terminal on
-its own machine in the folder it was in. Manage Layouts has a card for
+kakel window are kept too: the window is connected to once, and a pane
+the layout opened there that is still open is watched again, its
+program still running; otherwise a new pane opens on its machine or
+the machine it reaches, a terminal on its own machine in the folder it
+was in. Closing such a pane here leaves it open there. Manage Layouts
+has a card for
 each layout with Open, Rename, Remove (with Undo) and an Open at start
 switch, and Settings › Shortcuts can give each layout a key. Tool panes
 are left out; so are readers and tunnels, and saving names those.

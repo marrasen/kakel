@@ -60,6 +60,8 @@ type Window struct {
 	folders map[string][]string
 	// machines are the machines it is connected to.
 	machines []Machine
+	// run is the token it gave for the run it is in.
+	run string
 
 	// going is why the other window closed the connection, when it said
 	// so before closing it.
@@ -299,6 +301,14 @@ func (w *Window) Machines() []Machine {
 	return slices.Clone(w.machines)
 }
 
+// Run is the token the other window gave for the run it is in, "" for
+// one of an older build, or before its first list.
+func (w *Window) Run() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.run
+}
+
 // OpenNamed is what this window says about one thing it has open, and
 // whether it still has it.
 //
@@ -362,7 +372,7 @@ func (w *Window) watch() {
 				// so what is open is left as it was.
 				w.going = snap.Going
 			} else {
-				w.open, w.folders, w.machines = snap.Open, snap.Folders, snap.Machines
+				w.open, w.folders, w.machines, w.run = snap.Open, snap.Folders, snap.Machines, snap.Run
 			}
 			w.mu.Unlock()
 			if snap.Going == "" {

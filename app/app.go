@@ -611,6 +611,10 @@ type app struct {
 	// openedFor are the panes opened here for another window, which
 	// their rows say for as long as they are open.
 	openedFor map[string]bool
+	// run is this run's token, which the windows connected to this one
+	// are told, so a pane ID one of them kept is known to be this run's.
+	// Made at random as kakel starts, and never logged.
+	runToken string
 	// programTitle is the title each pane's program last gave, as it
 	// gave it, to name the pane again once the shells here are known.
 	programTitle map[string]string
@@ -891,6 +895,7 @@ func (a *app) tellOutput() {
 
 func newApp(c gunim.Client, sh *screen.Shells) *app {
 	a := &app{
+		runToken:     newRunToken(),
 		c:            c,
 		shells:       sh,
 		st:           State{FontSize: defaultFontSize, Fonts: []string{bundledFamily, dosFamily}},

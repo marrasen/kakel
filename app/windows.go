@@ -549,6 +549,9 @@ type throughHow struct {
 	// opened: one no longer wanted is closed, there too, and then hears
 	// nothing.
 	still func() bool
+	// landed, when set, hears pane id here, once it is open and the
+	// window has said what it calls it, which can come before or after.
+	landed func(id string, far serve.Attached)
 }
 
 // openThroughHow is openThrough, asking as how says.
@@ -569,7 +572,7 @@ func (a *app) openThroughHow(window machines.ID, key string, cmd command, id, ti
 	// the window takes the channel, so it waits for the pane then; bound
 	// to a pane not yet here, it was lost, and starting the pane again
 	// opened another shell there in place of the one it had.
-	var farID string
+	var far serve.Attached
 	added := false
 	go func() {
 		// What the window calls it arrives on a goroutine of the
@@ -578,10 +581,13 @@ func (a *app) openThroughHow(window machines.ID, key string, cmd command, id, ti
 			go func() {
 				a.events <- func() {
 					if !added {
-						farID = n.ID
+						far = n
 						return
 					}
 					a.bindFar(w, n.ID, id)
+					if how.landed != nil {
+						how.landed(id, n)
+					}
 				}
 			}()
 		}
@@ -645,8 +651,11 @@ func (a *app) openThroughHow(window machines.ID, key string, cmd command, id, ti
 			}
 			a.addPane(a.paneOn(on, Pane{ID: id, Title: title, Command: len(cmd.argv) > 0}), screen.Open(sess, a.palette, a.withLinks(a.hooks(id), id, on)), at)
 			added = true
-			a.bindFar(w, farID, id)
+			a.bindFar(w, far.ID, id)
 			a.showWindows()
+			if far.ID != "" && how.landed != nil {
+				how.landed(id, far)
+			}
 			then(id, nil)
 		}
 	}()

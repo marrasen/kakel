@@ -40,8 +40,9 @@ import (
 // window is connected to once for all the panes through it, on its own
 // machine or on those it reaches, and each is then asked of it anew, in
 // a pane of its own there that this one watches, as New Terminal there
-// opens one. Nothing it has open already is attached to: a layout opens
-// what it holds afresh, wherever it runs.
+// opens one: unless the layout opened that pane there before and it is
+// still open there, when it is watched again (see reattach.go). Nothing
+// else open there is ever attached to.
 
 // Intents for opening a layout.
 type (
@@ -76,6 +77,9 @@ type slot struct {
 	machine machines.ID
 	failed  bool
 	gen     int
+	// layout and name are the layout's ID and the slot's name in it, by
+	// which a pane it opened on another window is found again.
+	layout, name string
 }
 
 // errNothingToOpen refuses a layout of which no pane can be opened, as
@@ -93,11 +97,12 @@ type layoutPlan struct {
 	front string
 }
 
-// plannedSlot is one waiting pane of a plan: its pane's ID and what goes
-// there.
+// plannedSlot is one waiting pane of a plan: its pane's ID, what goes
+// there, and the slot's name in the layout.
 type plannedSlot struct {
 	id     string
 	recipe settings.SavedPane
+	name   string
 }
 
 // openLayout opens the layout with id in a new window.
@@ -159,7 +164,7 @@ func (a *app) planLayout(l settings.SavedLayout) (layoutPlan, error) {
 			a.next++
 			id := "p" + strconv.Itoa(a.next)
 			ids[n.ID] = id
-			plan.slots = append(plan.slots, plannedSlot{id: id, recipe: r})
+			plan.slots = append(plan.slots, plannedSlot{id: id, recipe: r, name: n.ID})
 			return &dock.Node{ID: id, Kind: dock.Item}
 		case dock.Row, dock.Column, dock.Group:
 			out := &dock.Node{Kind: k, Share: n.Share}
@@ -227,7 +232,7 @@ func (a *app) fillLayout(plan layoutPlan, w *ownWin) {
 		unnamed.Title = ""
 		p.shell = a.waitTitle(unnamed, m)
 		a.st.Panes = append(a.st.Panes, p)
-		a.slots[s.id] = &slot{recipe: s.recipe}
+		a.slots[s.id] = &slot{recipe: s.recipe, layout: plan.from, name: s.name}
 		a.setWait(s.id, Waiting{Doing: a.doingOf(s.recipe, m)})
 		ids = append(ids, s.id)
 	}
@@ -559,9 +564,10 @@ func (a *app) startSlot(id string) {
 			a.slotsFailed([]string{id}, title, err, said)
 		}
 	}
-	if w := a.machines.Get(dialOf(s.machine)).Window; s.recipe.Window && s.recipe.On+s.recipe.OnKey != "" && w != nil && !listed(w) {
+	if w := a.machines.Get(dialOf(s.machine)).Window; s.recipe.Window && (s.recipe.On+s.recipe.OnKey != "" || a.hasRecord(s)) && w != nil && !listed(w) {
 		// A machine beyond a window just connected to is found by what
-		// the window lists, which comes a moment later.
+		// the window lists, which comes a moment later, and so is a pane
+		// opened there before, to watch again.
 		go func() {
 			t := time.NewTimer(listWait)
 			defer t.Stop()
@@ -717,6 +723,26 @@ func (a *app) startFarSlot(id string, m machines.ID, r settings.SavedPane, still
 // one on a machine beyond starts where that machine starts it, which is
 // said, and a command runs in its folder wherever it runs.
 func (a *app) startWindowSlot(id string, m machines.ID, r settings.SavedPane, still func() bool, fail failure) {
+	if a.reattach(id, m, r, still, fail) {
+		return
+	}
+	a.startWindowNew(id, m, r, still, fail)
+}
+
+// slotCalled is what a pane through a window, kept as r and on m, is
+// called until its shell names it: as one opened there is.
+func (a *app) slotCalled(m machines.ID, r settings.SavedPane) string {
+	if r.Kind == settings.LayoutCommand {
+		return joinLine(splitLine(r.Line))
+	}
+	if window, key, far := m.Far(); far {
+		return a.machines.FarName(window, key)
+	}
+	return a.machines.Name(m)
+}
+
+// startWindowNew is startWindowSlot asking the window for a new pane.
+func (a *app) startWindowNew(id string, m machines.ID, r settings.SavedPane, still func() bool, fail failure) {
 	window, key := dialOf(m), ""
 	if _, k, far := m.Far(); far {
 		key = k
@@ -725,14 +751,9 @@ func (a *app) startWindowSlot(id string, m machines.ID, r settings.SavedPane, st
 	cmd := command{dir: r.Folder}
 	title := "Couldn't open a shell on " + name
 	instead := "The terminal starts in the default folder."
-	// Called as one opened there is, until its shell names it.
-	called := name
-	if key != "" {
-		called = a.machines.FarName(window, key)
-	}
+	called := a.slotCalled(m, r)
 	if r.Kind == settings.LayoutCommand {
 		cmd.argv = splitLine(r.Line)
-		called = joinLine(cmd.argv)
 		title = "Couldn't run " + called + " on " + name
 		instead = "The command runs in the default folder."
 	} else if key != "" && cmd.dir != "" {
@@ -745,7 +766,7 @@ func (a *app) startWindowSlot(id string, m machines.ID, r settings.SavedPane, st
 		// To run again, as any command pane is.
 		a.commands[pane] = cmd
 	}
-	how := throughHow{in: true, instead: instead, still: still}
+	how := throughHow{in: true, instead: instead, still: still, landed: a.landedFor(a.slots[id], r)}
 	err := a.openThroughHow(window, key, cmd, pane, a.freeTitle(called), Placement{Instead: id}, how, func(_ string, err error) {
 		if err != nil {
 			// The start said it in a toast already.

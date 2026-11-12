@@ -324,6 +324,10 @@ type Open struct {
 	// is sent instead, and the pane watching it can say what it is.
 	Cols int `json:"cols,omitempty"`
 	Rows int `json:"rows,omitempty"`
+
+	// Ended says its program has ended, and the pane waits to be started
+	// again or closed. A window of an older build never says it.
+	Ended bool `json:"ended,omitempty"`
 }
 
 // Key is what the machine it is on goes by when asked for again: its ID
@@ -347,6 +351,13 @@ type Snapshot struct {
 	// Window is what the served window calls itself, for a client
 	// showing several at once.
 	Window string `json:"window"`
+
+	// Run is a token the served window makes at random as it starts, the
+	// same for as long as it runs: the IDs in Open are that run's, and a
+	// client that kept one to come back to takes it as naming the same
+	// pane only under the same token. A window of an older build sends
+	// none, and nothing is come back to there.
+	Run string `json:"run,omitempty"`
 
 	// Open is what it has open, in the order it opened them.
 	Open []Open `json:"open"`

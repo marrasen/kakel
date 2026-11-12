@@ -182,8 +182,10 @@ The whole list. The [README](README.md) has the short version.
   for all its panes; one that cannot be reached fails only its own
   panes, which say why and offer Retry. A pane through another kakel
   window is kept too, by the window and the machine beyond it: the
-  window is connected to once, and asked for a new pane in its place,
-  in the same folder on the window's own machine. A layout can open as
+  window is connected to once, and a pane the layout opened there that
+  is still open is watched again, program and screen as they are;
+  otherwise a new one opens, in the same folder on the window's own
+  machine. Closing it here leaves it open there. A layout can open as
   kakel starts, and be given a key in Settings › Shortcuts. Tool panes
   such as Settings are left out; so are readers and tunnels, and saving
   names those.

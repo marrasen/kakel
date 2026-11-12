@@ -202,8 +202,9 @@ type serving struct {
 	// for a test.
 	hostKey, allowed string
 	// older serves as a kakel from before a pane could be asked for in a
-	// folder, or closed by the window that asked for it, for a test of
-	// how a window connected to it does without.
+	// folder, or closed by the window that asked for it, or one it opened
+	// be told from another run's, for a test of how a window connected
+	// to it does without.
 	older bool
 }
 
@@ -680,6 +681,9 @@ func (a *app) tellServed() {
 		return
 	}
 	snap := serve.Snapshot{}
+	if !a.serving.older {
+		snap.Run = a.runToken
+	}
 	for _, p := range a.st.Panes {
 		kind := servedKind(p.Kind)
 		if kind == "" {
@@ -696,7 +700,7 @@ func (a *app) tellServed() {
 		if _, saved := a.machines.Saved(p.Machine); saved {
 			hostID = string(p.Machine)
 		}
-		o := serve.Open{ID: p.ID, Host: host, HostID: hostID, Kind: kind, Label: p.Title, State: meter.Opened.String()}
+		o := serve.Open{ID: p.ID, Host: host, HostID: hostID, Kind: kind, Label: p.Title, State: meter.Opened.String(), Ended: p.Ended}
 		if t := a.terminal(p.ID); t != nil {
 			size := t.Size()
 			o.Cols, o.Rows = size.Cols, size.Rows
@@ -723,7 +727,7 @@ func (a *app) tellServed() {
 		}
 	}
 	a.serving.mu.Lock()
-	same := slices.Equal(a.serving.snap.Open, snap.Open) && slices.Equal(a.serving.snap.Machines, snap.Machines) &&
+	same := a.serving.snap.Run == snap.Run && slices.Equal(a.serving.snap.Open, snap.Open) && slices.Equal(a.serving.snap.Machines, snap.Machines) &&
 		maps.EqualFunc(a.serving.snap.Folders, snap.Folders, slices.Equal)
 	a.serving.snap = snap
 	a.serving.mu.Unlock()

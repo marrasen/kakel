@@ -173,3 +173,32 @@ func TestWhatWasOpenedForAClientGoneIsClosed(t *testing.T) {
 		t.Fatal("the session opened for the client gone was not closed")
 	}
 }
+
+// A client that takes what it asked for and closes it at once, as a
+// pane closed as soon as it opened, leaves it open there, as any pane
+// closed there does: only a client gone before it took it has it closed.
+func TestWhatAClientTookAndClosedStaysOpen(t *testing.T) {
+	opened := newEchoSession(80, 24)
+	closed := make(chan Attached, 1)
+	_, w := takenOverServing(t, Config{
+		OpenIn: func(string, string, string, int, int) (session.Session, Attached, error) {
+			return opened, Attached{ID: "p9", Kind: "Terminal"}, nil
+		},
+		CloseOpened: func(what Attached) error { closed <- what; return nil },
+	})
+	sess, err := w.OpenIn("", "", "", 80, 24, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = sess.Close()
+	select {
+	case <-opened.done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the session was not let go of")
+	}
+	select {
+	case what := <-closed:
+		t.Fatalf("it closed %+v there", what)
+	default:
+	}
+}
