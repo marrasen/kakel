@@ -136,6 +136,14 @@ func (w *Window) tabShort(id string) string {
 // anyway: a terminal in another kakel window, watched here, shows that
 // window's mark, so it is not taken for one on this computer.
 func (w *Window) paneIcon(id, kind string) string {
+	if kind == app.KindWaiting {
+		// A layout's pane still waiting shows what it waits to be.
+		for _, p := range w.panes {
+			if p.ID == id {
+				return paneKindIcon(p)
+			}
+		}
+	}
 	if kind != app.KindTerminal {
 		return kind
 	}
