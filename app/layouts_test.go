@@ -4,6 +4,7 @@ import (
 	"errors"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"testing"
 
 	"github.com/marrasen/gunim/driver"
@@ -167,9 +168,16 @@ func osc7(host, dir string) string { return "\x1b]7;file://" + host + dir + "\x0
 // names it, whether or not it is there now; on a server, as the server
 // names it, while it is the server's own. After an ssh typed in the
 // pane, the folder is another machine's, and none is kept.
+//
+// The shell here is this machine's own. On Windows that is no shell of
+// /, and it says a Windows path, as PowerShell spells one in a file URL.
 func TestAShellsFolderIsKept(t *testing.T) {
 	a, web := layoutApp(t)
-	termPane(t, a, "p1", machines.Local, osc7("", "/no/such/folder"))
+	said, here := "/no/such/folder", "/no/such/folder"
+	if runtime.GOOS == "windows" {
+		said, here = "/C:/no/such/folder", `C:\no\such\folder`
+	}
+	termPane(t, a, "p1", machines.Local, osc7("", said))
 	termPane(t, a, "p2", web, osc7("web01", "/srv")+osc7("web01.example.com", "/srv/app"))
 	termPane(t, a, "p3", web, osc7("web01", "/srv")+osc7("db", "/var/lib"))
 	waitFor(t, a, "the shells to say where they are", func() bool {
@@ -184,7 +192,7 @@ func TestAShellsFolderIsKept(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for slot, want := range map[string]string{"p1": "/no/such/folder", "p2": "/srv/app", "p3": ""} {
+	for slot, want := range map[string]string{"p1": here, "p2": "/srv/app", "p3": ""} {
 		if f := got.Panes[slot].Folder; f != want {
 			t.Errorf("%s keeps the folder %q, want %q", slot, f, want)
 		}

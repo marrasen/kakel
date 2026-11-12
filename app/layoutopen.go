@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log"
 	"maps"
-	"path"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -18,6 +17,7 @@ import (
 	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/screen"
 	"github.com/marrasen/kakel/settings"
+	shellfind "github.com/marrasen/kakel/shells"
 	"github.com/marrasen/kakel/vfs"
 )
 
@@ -239,7 +239,9 @@ func (a *app) waitTitle(r settings.SavedPane, m machines.ID) string {
 		case folder == "":
 			return "Files"
 		case far:
-			return path.Base(folder)
+			// A Windows server's folder may be written with either
+			// separator, as C:\Users\me or /C:/Users/me.
+			return folder[strings.LastIndexAny(folder, `/\`)+1:]
 		}
 		return filepath.Base(folder)
 	case settings.LayoutCommand:
@@ -457,17 +459,7 @@ func (a *app) startSlot(id string) {
 // longer there the default folder, each said.
 func (a *app) startLocalSlot(id string, r settings.SavedPane, still func() bool, fail failure) {
 	a.folderThere(r.Folder, "The terminal starts in the default folder.", folderHere, still, func(dir string) {
-		argv := a.localShell()
-		switch {
-		case r.Profile != "":
-			if s, ok := a.foundShell(r.Profile); ok {
-				argv = s.Command(dir)
-			} else {
-				a.failed("Profile not found", profileName(r.Profile)+" is no longer on this computer. The terminal starts the default shell.")
-			}
-		case len(r.Command) > 0:
-			argv = slices.Clone(r.Command)
-		}
+		argv := a.slotArgv(r, dir)
 		sess, err := a.startLocalSession(argv, dir, screen.Cols, screen.Rows, true)
 		if err != nil {
 			a.failed("Couldn't open a terminal", reason(err))
@@ -480,6 +472,30 @@ func (a *app) startLocalSlot(id string, r settings.SavedPane, still func() bool,
 		a.argvs[pane] = withoutFolder(argv)
 		a.addPane(Pane{ID: pane, Title: a.freeTitle(a.localShellName(argv))}, sh, Placement{Instead: id})
 	})
+}
+
+// slotArgv is what a layout's terminal kept as r runs on this computer,
+// started in dir, a folder as Windows names it there: the profile or
+// shell kept, or the program kept, or else the shell new terminals
+// start. dir also goes to the shell as the folder it starts in, which
+// Git Bash and the rest take; a WSL shell takes only a path of its own,
+// so it is told the folder in its words on its command line, the
+// default shell too when that is a WSL one.
+func (a *app) slotArgv(r settings.SavedPane, dir string) []string {
+	switch {
+	case r.Profile != "":
+		if s, ok := a.foundShell(r.Profile); ok {
+			return s.Command(dir)
+		}
+		a.failed("Profile not found", profileName(r.Profile)+" is no longer on this computer. The terminal starts the default shell.")
+	case len(r.Command) > 0:
+		return slices.Clone(r.Command)
+	}
+	argv := a.localShell()
+	if s, ok := shellfind.Running(a.found, argv); ok && len(argv) > 0 {
+		return s.Command(dir)
+	}
+	return argv
 }
 
 // profileName is a profile's or a shell's ID as the user reads it.

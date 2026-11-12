@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -23,12 +24,14 @@ import (
 	"github.com/marrasen/kakel/remote"
 	"github.com/marrasen/kakel/screen"
 	"github.com/marrasen/kakel/settings"
+	shellfind "github.com/marrasen/kakel/shells"
 	"github.com/marrasen/kakel/vfs"
 )
 
 // openingApp is a program with settings, an empty server list, its one
 // window at a known place, and new windows opened as test windows,
-// counted. Shells here run /bin/sh.
+// counted. Shells here run this machine's own shell, as plainShell
+// gives it.
 func openingApp(t *testing.T) (*app, *atomic.Int32) {
 	t.Helper()
 	testhome.New(t)
@@ -189,9 +192,9 @@ func TestALayoutOpensAsANewWindowAndSavesTheSame(t *testing.T) {
 			group("#2", "p2", item("p1"), item("p2")),
 			split("#3", "column", 0.6, group("#4", "p3", item("p3")), group("#5", "p4", item("p4")))),
 		Panes: map[string]settings.SavedPane{
-			"p1": {Kind: settings.LayoutTerminal, Command: []string{"/bin/sh"}},
-			"p2": {Kind: settings.LayoutCommand, Line: "sleep 60", Folder: dir},
-			"p3": {Kind: settings.LayoutTerminal, Command: []string{"/bin/sh"}, Title: "named"},
+			"p1": {Kind: settings.LayoutTerminal, Command: plainShell()},
+			"p2": {Kind: settings.LayoutCommand, Line: waitCommand(60), Folder: dir},
+			"p3": {Kind: settings.LayoutTerminal, Command: plainShell(), Title: "named"},
 			"p4": {Kind: settings.LayoutFiles, Folder: dir},
 		},
 		Place: &settings.WindowPlace{X: 10, Y: 20, W: 800, H: 600},
@@ -323,7 +326,7 @@ func TestWhatIsGoneFallsBackAndSaysSo(t *testing.T) {
 	kept := keep(t, a, alone("Fallen",
 		settings.SavedPane{Kind: settings.LayoutTerminal, Profile: "profile:gone"},
 		settings.SavedPane{Kind: settings.LayoutTerminal, Host: "one", HostID: "one", Profile: "profile:also-gone"},
-		settings.SavedPane{Kind: settings.LayoutTerminal, Command: []string{"/bin/sh", "-c", "pwd; exec sleep 60"}, Folder: filepath.Join(t.TempDir(), "no-such-folder")},
+		settings.SavedPane{Kind: settings.LayoutTerminal, Command: shellSayingDir(), Folder: filepath.Join(t.TempDir(), "no-such-folder")},
 	))
 
 	w := opens(t, a, opened, kept.ID)
@@ -439,7 +442,7 @@ func settleEvents(a *app) {
 func TestLayoutsOpenAtStart(t *testing.T) {
 	a, opened := openingApp(t)
 	first := a.cur
-	shell := settings.SavedPane{Kind: settings.LayoutTerminal, Command: []string{"/bin/sh"}}
+	shell := settings.SavedPane{Kind: settings.LayoutTerminal, Command: plainShell()}
 	for _, name := range []string{"Work", "Play", "Later"} {
 		l := keep(t, a, alone(name, shell, shell))
 		if name != "Later" {
@@ -490,7 +493,7 @@ func TestALayoutThatCannotOpenAtStartLeavesTheTerminal(t *testing.T) {
 // opens a terminal: the layouts open only as kakel starts.
 func TestAKakelStartedAgainOpensNoLayout(t *testing.T) {
 	a, opened := openingApp(t)
-	l := keep(t, a, alone("Work", settings.SavedPane{Kind: settings.LayoutTerminal, Command: []string{"/bin/sh"}}))
+	l := keep(t, a, alone("Work", settings.SavedPane{Kind: settings.LayoutTerminal, Command: plainShell()}))
 	if err := a.settings.PutLayoutAtStart(l.ID, true); err != nil {
 		t.Fatal(err)
 	}
@@ -534,6 +537,11 @@ func TestALatePaneLeavesTheWindowInFront(t *testing.T) {
 // account's own shell by /bin/sh changing there first, and a command
 // with cd. A folder no longer there, looked for over the server's files,
 // starts each in the default folder, and the files at theirs, each said.
+//
+// The test server's files are this machine's, so on Windows it is a
+// server with no /bin/sh, as a Windows server is: nothing can change to
+// the folder before its own shell starts, so the shell starts where the
+// login lands, and says it could not restore the folder.
 func TestServerPanesStartInTheirFolder(t *testing.T) {
 	a, opened := openingApp(t)
 	files := newFakeFiles(t)
@@ -556,7 +564,11 @@ func TestServerPanesStartInTheirFolder(t *testing.T) {
 	waitFor(t, a, "the panes to start", func() bool { answering(a, &asked); return len(waitingIn(a, w)) == 0 })
 
 	ps := a.panesIn(w)
-	if !textIn(t, a, ps[0].ID, `RAN '/bin/sh' '-c' 'cd -- "$1"; exec "${SHELL:-/bin/sh}" -l' 'sh' '`+dir+`'`) {
+	if runtime.GOOS == "windows" {
+		if !textIn(t, a, ps[0].ID, "READY") || !noticed(a, "Couldn't restore the folder") {
+			t.Fatalf("with no /bin/sh, the shell did not start where the login lands, saying so: %+v", a.st.Notices)
+		}
+	} else if !textIn(t, a, ps[0].ID, `RAN '/bin/sh' '-c' 'cd -- "$1"; exec "${SHELL:-/bin/sh}" -l' 'sh' '`+dir+`'`) {
 		t.Fatal("the shell was not started in its folder")
 	}
 	if !textIn(t, a, ps[1].ID, `RAN cd -- '`+dir+`' && 'make' 'it'`) {
@@ -740,5 +752,128 @@ func TestALayoutThatCannotOpenIsSaidFromTheTray(t *testing.T) {
 
 	if opened.Load() != 0 || len(popped) != 1 || !strings.HasPrefix(popped[0], "Couldn't open the layout: Odd") {
 		t.Fatalf("%d windows opened; the tray said %q", opened.Load(), popped)
+	}
+}
+
+// A local terminal's folder is kept as Windows names it, whichever
+// shell said it: the Command Prompt's as it is, PowerShell's C:/ as
+// C:\, WSL's and Git Bash's own paths as the Windows ones. Away from
+// Windows a path is kept as the shell said it. Windows is passed in,
+// so this runs on every system.
+func TestALocalFolderIsKeptAsThisComputerNamesIt(t *testing.T) {
+	wsl := shellfind.Shell{ID: "wsl:Ubuntu", Path: `C:\Windows\system32\wsl.exe`, Args: []string{"-d", "Ubuntu"}, Distro: "Ubuntu"}
+	git := shellfind.Shell{ID: "gitbash", Path: `C:\Program Files\Git\bin\bash.exe`, Args: []string{"--login", "-i"}, MSYS: true}
+	cmd := shellfind.Shell{ID: "cmd", Path: `C:\Windows\system32\cmd.exe`}
+	for _, c := range []struct {
+		sh       shellfind.Shell
+		said     string
+		windows  bool
+		want     string
+		whatSaid string
+	}{
+		{cmd, `C:\Users\me\src`, true, `C:\Users\me\src`, "the Command Prompt"},
+		{cmd, `\\nas\share\src`, true, `\\nas\share\src`, "the Command Prompt on a share"},
+		{shellfind.Shell{}, "C:/Users/me/src", true, `C:\Users\me\src`, "PowerShell"},
+		{wsl, "/home/me/src", true, `\\wsl.localhost\Ubuntu\home\me\src`, "WSL in its own files"},
+		{wsl, "/mnt/d/src", true, `D:\src`, "WSL on a drive"},
+		{git, "/c/Users/me/src", true, `C:\Users\me\src`, "Git Bash on a drive"},
+		{git, "/usr/bin", true, `C:\Program Files\Git\usr\bin`, "Git Bash in its own files"},
+		{git, "/tmp", true, "", "Git Bash in its /tmp"},
+		{shellfind.Shell{}, "/mnt/d/src", true, `D:\src`, "another shell on a WSL drive"},
+		{shellfind.Shell{}, "/home/me", true, "", "another shell of /"},
+		{shellfind.Shell{}, "/home/me/src", false, "/home/me/src", "a shell away from Windows"},
+	} {
+		if got := localPathOf(c.sh, c.said, c.windows); got != c.want {
+			t.Errorf("%s saying %q is kept as %q, want %q", c.whatSaid, c.said, got, c.want)
+		}
+	}
+}
+
+// A layout's terminal here starts as it was kept, told its folder as it
+// takes it: a WSL shell on its command line, in its own words, whether
+// it is the shell kept or the one new terminals start; any other shell
+// as the folder it starts in, so its command line has none.
+func TestALayoutsShellIsToldItsFolder(t *testing.T) {
+	a, _ := layoutApp(t)
+	wsl := shellfind.Shell{ID: "wsl:Ubuntu", Path: `C:\Windows\system32\wsl.exe`, Args: []string{"-d", "Ubuntu"}, Distro: "Ubuntu"}
+	git := shellfind.Shell{ID: "gitbash", Path: `C:\Program Files\Git\bin\bash.exe`, Args: []string{"--login", "-i"}, MSYS: true}
+	a.found, a.scanned = []shellfind.Shell{wsl, git}, true
+	kept := func(id string) settings.SavedPane {
+		return settings.SavedPane{Kind: settings.LayoutTerminal, Profile: id}
+	}
+	for _, c := range []struct {
+		r    settings.SavedPane
+		dir  string
+		want []string
+	}{
+		{kept("wsl:Ubuntu"), `\\wsl.localhost\Ubuntu\home\me`, []string{wsl.Path, "-d", "Ubuntu", "--cd", "/home/me"}},
+		{kept("wsl:Ubuntu"), `D:\src`, []string{wsl.Path, "-d", "Ubuntu", "--cd", "/mnt/d/src"}},
+		{kept("wsl:Ubuntu"), "", []string{wsl.Path, "-d", "Ubuntu"}},
+		{kept("gitbash"), `C:\src`, []string{git.Path, "--login", "-i"}},
+		{settings.SavedPane{Kind: settings.LayoutTerminal, Command: []string{"/bin/odd", "x"}}, `C:\src`, []string{"/bin/odd", "x"}},
+	} {
+		if got := a.slotArgv(c.r, c.dir); !slices.Equal(got, c.want) {
+			t.Errorf("%+v in %q starts %q, want %q", c.r, c.dir, got, c.want)
+		}
+	}
+
+	a.handle(PickShell{ID: "wsl:Ubuntu"})
+	if got, want := a.slotArgv(kept(""), `D:\src`), []string{wsl.Path, "-d", "Ubuntu", "--cd", "/mnt/d/src"}; !slices.Equal(got, want) {
+		t.Fatalf("the default shell, WSL, in D:\\src starts %q, want %q", got, want)
+	}
+	if len(a.st.Notices) != 0 {
+		t.Fatalf("it said %+v", a.st.Notices)
+	}
+}
+
+// A terminal here that cannot be started, as a shell no longer there,
+// turns its waiting pane into one that says so and why, with Retry,
+// which tries it again.
+func TestALocalShellThatCannotStartSaysWhy(t *testing.T) {
+	a, opened := openingApp(t)
+	kept := keep(t, a, alone("Gone", settings.SavedPane{Kind: settings.LayoutTerminal, Command: []string{filepath.Join(t.TempDir(), "no-such-shell")}}))
+
+	w := opens(t, a, opened, kept.ID)
+	settleEvents(a)
+
+	p := waitingIn(a, w)
+	if len(p) != 1 {
+		t.Fatalf("the window holds %+v", a.panesIn(w))
+	}
+	if st := a.st.Waits[p[0].ID]; st.Failed != "Couldn't open a terminal" || st.Why == "" || st.Doing != "" {
+		t.Fatalf("the pane says %+v", st)
+	}
+	said := func() (n int) {
+		for _, x := range a.st.Notices {
+			if x.Title == "Couldn't open a terminal" {
+				n++
+			}
+		}
+		return n
+	}
+	if said() != 1 {
+		t.Fatalf("it said %+v", a.st.Notices)
+	}
+	a.handle(RetryWaiting{Pane: p[0].ID})
+	settleEvents(a)
+	if st := a.st.Waits[p[0].ID]; st.Failed != "Couldn't open a terminal" || said() != 2 {
+		t.Fatalf("retried, the pane says %+v; notices %+v", st, a.st.Notices)
+	}
+}
+
+// A files pane on a server is called by its folder's last part, a
+// Windows server's folder written with either separator.
+func TestAFarFilesPaneIsCalledByItsFolder(t *testing.T) {
+	a, _ := layoutApp(t)
+	for folder, want := range map[string]string{
+		"/srv/app/":         "app",
+		`C:\Users\me\src`:   "src",
+		"/C:/Users/me/src/": "src",
+		"/":                 "Files",
+	} {
+		r := settings.SavedPane{Kind: settings.LayoutFiles, Host: "web", Folder: folder}
+		if got := a.waitTitle(r, machines.Local); got != want {
+			t.Errorf("files at %q are called %q, want %q", folder, got, want)
+		}
 	}
 }

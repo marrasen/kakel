@@ -96,6 +96,15 @@ func shellSaying(word string) []string {
 	return []string{"/bin/sh", "-c", "echo " + word + "; exec /bin/sh"}
 }
 
+// shellSayingDir is a command that starts the local shell, has it print
+// its folder, and leaves it open.
+func shellSayingDir() []string {
+	if runtime.GOOS == "windows" {
+		return []string{"cmd.exe", "/k", "cd"}
+	}
+	return []string{"/bin/sh", "-c", "pwd; exec /bin/sh"}
+}
+
 // echoCommand is a command line, as the Run Command box takes it, that
 // prints word and exits. On Windows echo is part of cmd.exe, so the
 // line starts cmd.exe to run it.
