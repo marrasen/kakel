@@ -312,8 +312,7 @@ var menus = []struct {
 		{id: "conn.terminal", title: "New Terminal"},
 		{id: "conn.files", title: "New File Manager"},
 		{id: "files.manager", title: "Files in a New Window"},
-		{id: "layout.save", title: "Save Layout…", group: true},
-		{id: "layout.manage", title: "Manage Layouts"},
+		{title: "Layouts", sub: "layouts", group: true},
 		{id: "app.settings", title: "Settings", group: true, keyFirst: true},
 		{title: "Close", caption: true}, {id: "pane.close", title: "Pane"},
 		{id: "app.exit", title: "Exit", group: true, keyFirst: true},
@@ -496,6 +495,9 @@ type menuItem struct {
 	// its menu do, for a line whose letters the lines above it would
 	// all take.
 	keyFirst bool
+	// sub names the submenu the line opens, in place of a command: its
+	// lines are made from the window's state, by submenus.
+	sub string
 }
 
 // chordLabel writes a chord the way a desktop menu does, as

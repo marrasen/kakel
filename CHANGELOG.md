@@ -11,22 +11,29 @@ change how something behaves.
 
 ### Added
 
-**Layouts: save a window and open it again.** File › Save Layout…
-saves the window in front under a name: its splits and tabs, its place
-on the screen, and how to start each terminal, command and file
-manager again. Open one from the palette, the launcher or File › Manage
-Layouts, and it opens in a new window in the same shape, each pane
-started afresh. Each server is connected to once; one that cannot be
-reached fails only its own panes, with Retry. Panes through another
-kakel window are kept too: the window is connected to once, and a pane
-the layout opened there that is still open is watched again, its
-program still running; otherwise a new pane opens on its machine or
-the machine it reaches, a terminal on its own machine in the folder it
-was in. Closing such a pane here leaves it open there. Manage Layouts
-has a card for
-each layout with Open, Rename, Remove (with Undo) and an Open at start
+**Layouts: save a window and open it again.** File › Layouts › Save
+Layout… saves the window in front under a name: its splits and tabs,
+its place on the screen, and how to start each terminal, command and
+file manager again. Open one from File › Layouts, the palette, the
+launcher or File › Layouts › Manage Layouts, and it opens in a new
+window in the same shape, each pane started afresh. Each server is
+connected to once; one that cannot be reached fails only its own
+panes, with Retry. Panes through another kakel window are kept too:
+the window is connected to once, and a pane the layout opened there
+that is still open is watched again, its program still running;
+otherwise a new pane opens on its machine or the machine it reaches, a
+terminal on its own machine in the folder it was in. Closing such a
+pane here leaves it open there. Manage Layouts has a card for each
+layout with Open, Rename, Remove (with Undo) and an Open at start
 switch, and Settings › Shortcuts can give each layout a key. Tool panes
 are left out; so are readers and tunnels, and saving names those.
+
+### Fixed
+
+**A window opens at its own size after the display scale changed.**
+kakel now saves the screen's scale with the window's place, so a window
+saved at 100% and opened at 125% (or on another machine) keeps its
+size.
 
 ## v0.12.2-beta.14
 
