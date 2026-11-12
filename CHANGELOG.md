@@ -7,7 +7,7 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
-## Unreleased
+## v0.12.2-beta.15
 
 ### Added
 
@@ -34,6 +34,12 @@ are left out; so are readers and tunnels, and saving names those.
 kakel now saves the screen's scale with the window's place, so a window
 saved at 100% and opened at 125% (or on another machine) keeps its
 size.
+
+### Changed
+
+**A newer gunim.** kakel moves to gunim 8cde45d. Its notices were
+reworked, a click on a tray message is heard on Windows, and a line in
+the menu bar can open a submenu, which File › Layouts uses.
 
 ## v0.12.2-beta.14
 
