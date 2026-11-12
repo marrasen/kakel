@@ -270,6 +270,14 @@ func (t *Terminal) Dir() (dir, host string) {
 	return t.term.Dir()
 }
 
+// FirstDirHost is the host the first OSC 7 from the pane to name one
+// gave: the machine its shell runs on. Empty until one has.
+func (t *Terminal) FirstDirHost() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.term.FirstDirHost()
+}
+
 // Notice is the last message a program in this pane asked to have
 // shown, from OSC 9, and a count that rises with each new one.
 func (t *Terminal) Notice() (string, uint64) {

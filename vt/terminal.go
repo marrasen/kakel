@@ -105,6 +105,10 @@ type Terminal struct {
 	// here.
 	dir     string
 	dirHost string
+	// firstHost is the host the first OSC 7 to name one gave: the machine
+	// the pane's shell runs on, before anything typed there logs in
+	// somewhere else. A reset leaves it, as the shell is the same.
+	firstHost string
 
 	// links are the hyperlinks OSC 8 has named, by the number cells
 	// carry. byURL finds the number one already has, so a listing of
@@ -164,6 +168,13 @@ func (t *Terminal) Title() string { return t.title }
 // rather than this one. A caller that means to use the path locally
 // has to decide whether it believes that name.
 func (t *Terminal) Dir() (dir, host string) { return t.dir, t.dirHost }
+
+// FirstDirHost is the host the first OSC 7 to name one gave, and empty
+// until one has. A shell that logs in to another machine with ssh has
+// the shell there report that machine's folders, under its own name, so
+// a host other than this one says the folder is not on the machine the
+// pane was opened on.
+func (t *Terminal) FirstDirHost() string { return t.firstHost }
 
 // Command returns what the shell's prompt marks say about the command
 // line, all from one moment so the parts cannot disagree.
@@ -774,6 +785,9 @@ func (t *Terminal) setDir(params [][]byte) {
 		return
 	}
 	t.dir, t.dirHost = dir, host
+	if t.firstHost == "" {
+		t.firstHost = host
+	}
 }
 
 // setDirPath takes OSC 9;9, which says where the shell is as a plain

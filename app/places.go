@@ -1,7 +1,6 @@
 package app
 
 import (
-	"errors"
 	"slices"
 	"strings"
 
@@ -205,7 +204,7 @@ func (a *app) placesArranged(_ *filemanager.Window, group string, places []filem
 // pane.
 func (a *app) reorderPlaces(in ReorderPlaces) error {
 	if a.settings == nil {
-		return errors.New("the settings could not be read, so nothing can be saved")
+		return errNoSettings
 	}
 	if err := a.settings.PutLocationOrder(string(in.Machine), in.Keys); err != nil {
 		return err

@@ -224,15 +224,10 @@ func dollarName(s string) (string, int) {
 // machine and has said, for a new shell to start in.
 func (a *app) dirHere() string {
 	id := a.here()
-	t := a.terminal(id)
-	if t == nil || a.machineOf(id) != "" {
+	if a.machineOf(id) != "" {
 		return ""
 	}
-	dir, host := t.Dir()
-	if !isThisMachine(host) {
-		return ""
-	}
-	return a.localDir(id, dir)
+	return folderHere(a.terminalDir(id, machines.Local))
 }
 
 // here is the pane a new shell is like: the focused one, or while a
@@ -268,14 +263,12 @@ func shortHost(host string) string {
 	return short
 }
 
-// localDir is a folder a pane says it is in, as this computer names
+// localPath is a folder a pane says it is in, as this computer names
 // it, or "" when it names none here. A WSL shell says a Linux path, and
 // under the computer's own name, since WSL shares it: /mnt/d/src is
 // D:\src, and its own files are on \\wsl.localhost. Git Bash says /d/src
-// for D:\src. A folder that is not here, as a path from another system,
-// gives "", so a new shell starts where it would have rather than
-// failing to start.
-func (a *app) localDir(pane, dir string) string {
+// for D:\src.
+func (a *app) localPath(pane, dir string) string {
 	if pathSep == `\` && strings.HasPrefix(dir, "/") {
 		if sh := a.shellOf(pane); sh.OwnPaths() {
 			dir = sh.LocalPath(dir)
@@ -283,6 +276,13 @@ func (a *app) localDir(pane, dir string) string {
 			dir = shellfind.DrivePath(dir)
 		}
 	}
+	return dir
+}
+
+// folderHere is dir when it is a folder on this computer, and otherwise "": a path
+// from another system gives "", so a new shell starts where it would
+// have rather than failing to start.
+func folderHere(dir string) string {
 	if dir == "" {
 		return ""
 	}
