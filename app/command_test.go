@@ -163,7 +163,7 @@ func TestACommandWhoseConnectionFailsSaysSo(t *testing.T) {
 	nowhere := a.machines.NewQuick("tester@127.0.0.1:1", false)
 	err := a.startCommand(nowhere, command{argv: []string{"true"}}, commandStart{
 		then:   func(session.Session) { t.Fatal("the command started") },
-		failed: func() { failed = true },
+		failed: func(error) { failed = true },
 	})
 	if err != nil {
 		t.Fatal(err)

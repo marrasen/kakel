@@ -119,6 +119,10 @@ type State struct {
 	// Readers are what the readers show, by pane. Each is replaced
 	// whole, never changed in place.
 	Readers map[string]Reader
+	// Waits are what a layout's waiting panes show, by pane: what each
+	// waits for, or why it failed. The map is replaced whole, never
+	// changed in place.
+	Waits map[string]Waiting
 	// Tunnels are the tunnels open, and those stopped until cleared,
 	// and SavedTunnels those kept for next time, newest first.
 	Tunnels []Tunnel
@@ -388,6 +392,10 @@ type Pane struct {
 	ShellKind shellsetup.Route
 	// SplitFrom is, for a split's chooser, the pane it was split from.
 	SplitFrom string
+	// Becomes is, for a layout's waiting pane, the kind of pane it waits
+	// to be: settings.LayoutTerminal, LayoutCommand or LayoutFiles, for
+	// its icon.
+	Becomes string
 	// Draft says a machine's pane holds a server not saved yet.
 	Draft bool
 	// Row is the row a machine's pane is asked to show, and RowAt
@@ -605,6 +613,18 @@ type app struct {
 	// choosers are the split choosers open, by the pane each was split
 	// from.
 	choosers map[string]string
+	// slots are a layout's waiting panes, by pane, each with what goes
+	// in it; layoutDials the machines a layout started connecting to,
+	// whose dial is given up once no waiting pane wants it.
+	slots       map[string]*slot
+	layoutDials map[machines.ID]bool
+	// layoutJoins counts, by machine, the layouts waiting on a dial that
+	// something else started, to tell them from the other waiters.
+	layoutJoins map[machines.ID]int
+	// hopDialing are the jump hosts being signed in to on the way to
+	// another machine, each with the machine whose dial does it, for a
+	// second dial through the same jump host to wait for.
+	hopDialing map[machines.ID]machines.ID
 	// farLogs are the logs of machines beyond windows on their way here,
 	// so a second ask waits for the first rather than opening another.
 	farLogs map[machines.ID]bool
@@ -880,6 +900,10 @@ func newApp(c gunim.Client, sh *screen.Shells) *app {
 		farLogs:      map[machines.ID]bool{},
 		notRun:       map[string]bool{},
 		choosers:     map[string]string{},
+		slots:        map[string]*slot{},
+		layoutDials:  map[machines.ID]bool{},
+		layoutJoins:  map[machines.ID]int{},
+		hopDialing:   map[machines.ID]machines.ID{},
 		saying:       map[string]string{},
 		openedFor:    map[string]bool{},
 		programTitle: map[string]string{},
@@ -972,17 +996,7 @@ func (a *app) run(ctx context.Context) error {
 	a.startGit()
 	switch {
 	case a.opts.StartsInTray():
-		// Started with the computer, or with nothing to do: into the
-		// tray, the first window, opened hidden, let go unseen. With no
-		// tray to start in, a window of its own, seen.
-		a.showTray()
-		first := a.cur
-		if !a.inTray() {
-			a.newWindow(func() { a.openFirstOrSay() })
-		} else if !a.opts.tray {
-			a.sayInTray()
-		}
-		a.letWindowGo(first)
+		a.startInTray()
 	case a.opts.filesSet:
 		// Started for a folder, as Windows starts it for one opened
 		// anywhere: the first window holds a file manager pane there,
@@ -1096,6 +1110,38 @@ func (a *app) run(ctx context.Context) error {
 	}
 }
 
+// startInTray starts kakel as it starts with the computer, or with
+// nothing to do: the plain start. Into the tray, the first window,
+// opened hidden, let go unseen; with no tray to start in, a window of
+// its own, seen, holding a terminal.
+//
+// The layouts kept to open at start open then, each in a window of its
+// own: the first in place of the window with the terminal, which would
+// stand beside it alone, and in place of the word that kakel is in the
+// tray, as the windows show where it is. One that cannot be opened is
+// said, and the start goes on as with none.
+func (a *app) startInTray() {
+	a.showTray()
+	first := a.cur
+	opened, unopened := a.openAtStart()
+	switch {
+	case opened:
+	case !a.inTray():
+		a.newWindow(func() {
+			a.openFirstOrSay()
+			a.sayUnopened(unopened)
+		})
+	case len(unopened) > 0:
+		// No window to say it in: one pop-up from the tray, which shows
+		// one at a time, in place of the word that kakel is in the tray,
+		// which waits for the next start.
+		a.toast("Couldn't open the layout", strings.Join(unopened, "\n"))
+	case !a.opts.tray:
+		a.sayInTray()
+	}
+	a.letWindowGo(first)
+}
+
 // loadSettings reads kakel's settings, and takes what they keep.
 func (a *app) loadSettings() {
 	if path, err := settings.Path(); err == nil {
@@ -1150,6 +1196,21 @@ func (a *app) loadBook() {
 // cannot read is not one to write over.
 func (a *app) unreadable(what, until string, err error) {
 	a.failed("Couldn't read "+what, err.Error()+"\n\nNothing changed is kept until "+until+".")
+}
+
+// errUnderOtherName is why nothing opens on a machine that was
+// connected to under another name than the one asked for: said, rather
+// than connected to again and again.
+var errUnderOtherName = errors.New("the connection was made under another name. Open a terminal on it from the Machines pane")
+
+// reason is err as a pane or a notice gives the reason for a failure: a
+// sentence, with a capital and a full stop.
+func reason(err error) string {
+	s := strings.TrimSpace(words.UpperFirst(err.Error()))
+	if s != "" && !strings.HasSuffix(s, ".") {
+		s += "."
+	}
+	return s
 }
 
 // errNoSettings refuses a change to what is saved while the settings
@@ -1296,6 +1357,8 @@ func failedTitle(in gunim.Intent) string {
 		return "Couldn't change whether the layout opens at start"
 	case RemoveLayout:
 		return "Couldn't remove the layout"
+	case OpenLayout:
+		return "Couldn't open the layout"
 	}
 	return "That didn't work"
 }
@@ -1802,6 +1865,10 @@ func (a *app) handle(in gunim.Intent) {
 		err = a.setLayoutAtStart(in)
 	case RemoveLayout:
 		err = a.removeLayout(in.ID)
+	case OpenLayout:
+		err = a.openLayout(in.ID)
+	case RetryWaiting:
+		a.retryWaiting(in.Pane)
 	case ReadAgain:
 		if r, ok := a.st.Readers[in.Pane]; ok {
 			// A scrollback is read off its pane again, as it stands now,
@@ -2034,7 +2101,11 @@ func (a *app) open(machine machines.ID, at Placement) error { return a.openThen(
 func (a *app) freeTitle(name string) string {
 	taken := map[string]bool{}
 	for _, p := range a.st.Panes {
-		taken[p.Title] = true
+		// A layout's waiting pane is called what the pane it waits for
+		// will be, which takes its name and not the next number.
+		if p.Kind != KindWaiting {
+			taken[p.Title] = true
+		}
 	}
 	if !taken[name] {
 		return name
@@ -2078,9 +2149,8 @@ func (a *app) openThen(machine machines.ID, at Placement, then func(id string, e
 			if a.machines.Get(machine).Conn == nil && a.machines.Get(machine).Window == nil {
 				// Connected, but by another name than this one: said,
 				// rather than connected to again and again.
-				err := errors.New("the connection was made under another name. Open a terminal on it from the Machines pane")
-				a.failed("Couldn't open a shell on "+a.machines.Name(machine), words.UpperFirst(err.Error())+".")
-				then("", err)
+				a.failed("Couldn't open a shell on "+a.machines.Name(machine), reason(errUnderOtherName))
+				then("", errUnderOtherName)
 				return
 			}
 			a.nextFar[machine] = run
@@ -2125,13 +2195,39 @@ func (a *app) openThen(machine machines.ID, at Placement, then func(id string, e
 	case !ok:
 		return fmt.Errorf("kakel: %s is not connected", a.machines.Name(machine))
 	}
+	a.startFar(machine, conn, run, "", id, at, nil, then)
+	return nil
+}
+
+// startFar starts a shell running run, a profile's ID or LoginShell, on
+// machine over conn, as pane id placed at at, and tells then how it
+// went, on the program's goroutine. dir, when set, is the folder it
+// starts in: a profile's command runs there in place of the profile's
+// own folder, and the account's own shell is started there by /bin/sh,
+// which the caller has seen the server has. still, when set, says
+// whether the pane is still wanted once the shell has started: a shell
+// for a pane no longer wanted is closed, and nothing is said.
+func (a *app) startFar(machine machines.ID, conn *remote.Conn, run, dir, id string, at Placement, still func() bool, then func(id string, err error)) {
 	profile, _ := a.farProfile(machine, run)
 	cfg := a.farConfig(machine, run, screen.Cols, screen.Rows)
+	switch {
+	case dir == "":
+	case len(cfg.Command) > 0:
+		cfg.Dir = dir
+	default:
+		cfg.Command = loginIn(dir)
+	}
 	a.starting++
 	go func() {
 		sess, err := conn.Shell(a.ctx, cfg)
 		a.events <- func() {
 			a.starting--
+			if still != nil && !still() {
+				if err == nil {
+					_ = sess.Close()
+				}
+				return
+			}
 			if err != nil {
 				a.failed("Couldn't open a shell on "+a.machines.Name(machine), err.Error())
 				a.problem()
@@ -2155,7 +2251,17 @@ func (a *app) openThen(machine machines.ID, at Placement, then func(id string, e
 			then(id, nil)
 		}
 	}()
-	return nil
+}
+
+// loginIn is the command that starts the account's own shell on a
+// POSIX server in folder dir: the shell the server would start, as a
+// login shell, with what it was handed on the command line and in its
+// environment as it would have, after changing to dir. The folder goes
+// as an argument, never into the script, so no name can be read as
+// shell. A cd that fails says why in the pane, and the shell starts
+// where the login lands.
+func loginIn(dir string) []string {
+	return []string{"/bin/sh", "-c", `cd -- "$1"; exec "${SHELL:-/bin/sh}" -l`, "sh", dir}
 }
 
 // shellKindOf is the kind of shell pane p runs: on this computer, the
@@ -2185,6 +2291,10 @@ func (a *app) shellKindOf(p Pane) shellsetup.Route {
 func (a *app) addPane(p Pane, sh *screen.Shell, at Placement) {
 	if sh != nil {
 		a.shells.Set(p.ID, sh)
+	}
+	if a.slots[at.Instead] != nil {
+		a.intoSlot(p, at.Instead)
+		return
 	}
 	// Into the window of the pane it goes beside, or the one in front.
 	if w := a.ownerOf(at.Beside); w != nil && !w.gone {
@@ -2442,6 +2552,7 @@ func (a *app) remove(id string) {
 	if a.agents.by[id] != nil {
 		_ = a.unsharePane(id)
 	}
+	a.slotClosed(id)
 	w := a.ownerOf(id)
 	next := a.take(id)
 	a.refocus(w, id, next, i)

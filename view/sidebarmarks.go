@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/marrasen/kakel/app"
+	"github.com/marrasen/kakel/settings"
 	"github.com/marrasen/kakel/words"
 
 	"github.com/marrasen/kakel/look"
@@ -416,6 +417,15 @@ func paneKindIcon(p app.Pane) string {
 		return "tunnel"
 	case app.KindChooser:
 		return "split"
+	case app.KindWaiting:
+		// What it waits to be.
+		switch p.Becomes {
+		case settings.LayoutFiles:
+			return "files"
+		case settings.LayoutCommand:
+			return "command"
+		}
+		return "terminal"
 	}
 	if p.Command {
 		return "command"

@@ -146,10 +146,8 @@ func (a *app) whatIsOpen() []string {
 	if deletes > 0 {
 		out = append(out, words.ManyOf(deletes, "delete running", "deletes running"))
 	}
-	// The tool panes have nothing to lose, but for a new server with
-	// something typed in it, and a connection with nothing on it nothing
-	// to end.
-	panes := slices.DeleteFunc(slices.Clone(a.st.Panes), func(p Pane) bool { return isToolKind(p.Kind) && !a.draftTyped[p.ID] })
+	// A connection with nothing on it has nothing to end.
+	panes := slices.DeleteFunc(slices.Clone(a.st.Panes), a.nothingToLose)
 	if n := len(panes); n > 0 {
 		out = append(out, words.ManyOf(n, "pane", "panes"))
 	}
@@ -163,6 +161,14 @@ func (a *app) whatIsOpen() []string {
 		out = append(out, "this window, served")
 	}
 	return out
+}
+
+// nothingToLose reports whether closing pane p loses nothing, and so is
+// not asked about: a tool pane, but for a new server with something
+// typed in it, and a layout's pane still waiting, which holds nothing
+// yet.
+func (a *app) nothingToLose(p Pane) bool {
+	return isToolKind(p.Kind) && !a.draftTyped[p.ID] || p.Kind == KindWaiting
 }
 
 // listOf writes a few things as a person would say them.

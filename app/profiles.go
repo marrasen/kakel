@@ -278,11 +278,19 @@ func (a *app) farRun(machine machines.ID) string {
 	run, asked := a.nextFar[machine]
 	delete(a.nextFar, machine)
 	if !asked {
-		run = a.st.ServerShells[string(machine)]
-		// Its own shell hidden, the first profile shown runs instead.
-		if ps := a.profilesOn(machine); run == "" && !a.showsLogin(machine) && len(ps) > 0 {
-			run = ps[0].ID
-		}
+		run = a.farDefault(machine)
+	}
+	return run
+}
+
+// farDefault is what a new terminal on machine runs when nothing else
+// is asked for it: the profile the server runs by default, or "" for
+// the account's own shell.
+func (a *app) farDefault(machine machines.ID) string {
+	run := a.st.ServerShells[string(machine)]
+	// Its own shell hidden, the first profile shown runs instead.
+	if ps := a.profilesOn(machine); run == "" && !a.showsLogin(machine) && len(ps) > 0 {
+		run = ps[0].ID
 	}
 	return run
 }

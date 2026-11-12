@@ -144,6 +144,10 @@ func slotted(n *dock.Node, recipes, panes map[string]settings.SavedPane) *settin
 // recipeOf is how pane p is started again, and false for a pane a
 // layout does not keep.
 func (a *app) recipeOf(p Pane) (settings.SavedPane, bool) {
+	if s := a.slots[p.ID]; s != nil {
+		// A layout's pane still waiting: as that layout kept it.
+		return s.recipe, true
+	}
 	if p.On != "" || a.machines.IsWindow(p.Machine) {
 		// Through another kakel window: that window's to start.
 		return settings.SavedPane{}, false

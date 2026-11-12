@@ -167,14 +167,23 @@ func (a *app) sayShellGone(id string) {
 // machine has no such shell. Before the shells have been looked for,
 // a shell is taken as it is named; after, only one that was found.
 func (a *app) shellCommand(id string) []string {
+	if s, ok := a.foundShell(id); ok {
+		return s.Command("")
+	}
+	return nil
+}
+
+// foundShell is shell id, as shellCommand finds it, and whether this
+// machine has it.
+func (a *app) foundShell(id string) (shellfind.Shell, bool) {
 	i := slices.IndexFunc(a.found, func(s shellfind.Shell) bool { return s.ID == id })
 	if i < 0 {
 		if s, ok := shellfind.Named(id); ok && !a.scanned {
-			return s.Command("")
+			return s, true
 		}
-		return nil
+		return shellfind.Shell{}, false
 	}
-	return a.found[i].Command("")
+	return a.found[i], true
 }
 
 // pickShell keeps a shell for new terminals.

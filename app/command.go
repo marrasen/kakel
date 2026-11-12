@@ -53,6 +53,13 @@ func (a *app) runCommand(in RunCommand) error { return a.runCommandThen(in, nil)
 // it could not, once it has; one that fails at once is only returned.
 // then runs on the program's goroutine, and may be nil.
 func (a *app) runCommandThen(in RunCommand, then func(id string, err error)) error {
+	return a.runCommandWith(in, nil, then)
+}
+
+// runCommandWith is runCommandThen, with still, when set, saying whether
+// the pane is still wanted once a command on a server has started: one
+// no longer wanted is closed, and then hears nothing.
+func (a *app) runCommandWith(in RunCommand, still func() bool, then func(id string, err error)) error {
 	if then == nil {
 		then = func(string, error) {}
 	}
@@ -99,7 +106,8 @@ func (a *app) runCommandThen(in RunCommand, then func(id string, err error)) err
 			a.addPane(Pane{ID: id, Title: title, Machine: in.Machine, Command: true}, screen.Open(sess, a.palette, a.withLinks(a.hooks(id), id, in.Machine)), Placement{Beside: in.Beside, Vertical: in.Vertical, Instead: in.Instead})
 			then(id, nil)
 		},
-		failed: func() { then("", errors.New("could not run "+title)) },
+		still:  still,
+		failed: func(err error) { then("", err) },
 	})
 }
 
@@ -160,19 +168,19 @@ func joinLine(argv []string) string {
 
 // commandStart is what is to be done with a command started: then
 // takes its session. still, when set, says whether it is still wanted,
-// looked at once there is a connection, and failed, when set, runs when
+// looked at once there is a connection, and failed, when set, hears why
 // it could not be started after startCommand returned.
 type commandStart struct {
 	then   func(session.Session)
 	still  func() bool
-	failed func()
+	failed func(error)
 }
 
 func (s commandStart) wanted() bool { return s.still == nil || s.still() }
 
-func (s commandStart) fail() {
+func (s commandStart) fail(err error) {
 	if s.failed != nil {
-		s.failed()
+		s.failed(err)
 	}
 }
 
@@ -197,20 +205,20 @@ func (a *app) startCommand(machine machines.ID, cmd command, s commandStart) err
 		// Not connected: connected to first, as a terminal there is.
 		return a.dialAgain(machine, func(err error) {
 			if err != nil {
-				s.fail()
+				s.fail(err)
 				return
 			}
 			if a.machines.Get(machine).Conn == nil {
 				// Connected, but by another name than this one: said,
 				// rather than connected to again and again.
-				a.failed("Couldn't run "+line+" on "+a.machines.Name(machine), "The connection was made under another name. Open a terminal on it from the Machines pane.")
-				s.fail()
+				a.failed("Couldn't run "+line+" on "+a.machines.Name(machine), reason(errUnderOtherName))
+				s.fail(errUnderOtherName)
 				return
 			}
 			if err := a.startCommand(machine, cmd, s); err != nil {
 				a.failed("Couldn't run "+line+" on "+a.machines.Name(machine), err.Error())
 				a.problem()
-				s.fail()
+				s.fail(err)
 			}
 		})
 	}
@@ -233,7 +241,7 @@ func (a *app) startCommand(machine machines.ID, cmd command, s commandStart) err
 				}
 				a.failed("Couldn't run "+line+" on "+a.machines.Name(machine), err.Error())
 				a.problem()
-				s.fail()
+				s.fail(err)
 				a.stayIfEmpty()
 				return
 			}
@@ -284,7 +292,7 @@ func (a *app) runAgain(id string, cmd command) error {
 			}
 		},
 		still: still,
-		failed: func() {
+		failed: func(error) {
 			if still() {
 				notRun()
 			}

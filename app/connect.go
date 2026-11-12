@@ -230,6 +230,23 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 		a.askAboutTheOneOnItsWay(in, name, then)
 		return nil
 	}
+	if by, ok := a.hopOnItsWay(name, names, hops, behind); ok {
+		// A jump host on its way already, for another server: waited for,
+		// and then gone through, so it is signed in to once.
+		m := a.machines.At(by)
+		m.Waiters = append(m.Waiters, func(error) {
+			err := a.connectThen(in, then)
+			switch {
+			case err == nil:
+			case then != nil:
+				then(err)
+			case !in.Quiet:
+				a.failed("Couldn't connect to "+a.machines.Name(name), err.Error())
+				a.problem()
+			}
+		})
+		return nil
+	}
 	dctx, cancel := context.WithCancel(a.ctx)
 	if in.NoAsk {
 		dctx = context.WithValue(dctx, noAsking{}, true)
@@ -272,6 +289,17 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 		// that connection, dialled with nothing counting it, is taken.
 		traffic = nil
 	}
+	// The jump hosts this dial signs in to, for another dial through them
+	// to wait for.
+	var through []machines.ID
+	for k := from; k < len(hops)-1; k++ {
+		if h := names[k]; h != machines.Local {
+			if _, taken := a.hopDialing[h]; !taken {
+				a.hopDialing[h] = name
+				through = append(through, h)
+			}
+		}
+	}
 	// Held while the dial goes through it, so it does not close under
 	// the dial when what else went through it goes.
 	a.machines.Hold(start)
@@ -279,6 +307,11 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 		conn, made, err := machines.DialFromBy(dctx, start, from, hops, shown, first)
 		a.events <- func() {
 			defer a.machines.Release(start)
+			for _, h := range through {
+				if a.hopDialing[h] == name {
+					delete(a.hopDialing, h)
+				}
+			}
 			a.machines.At(name).Dialing = nil
 			cancel()
 			// Whoever asked for it again waits on this one, and hears
@@ -380,6 +413,23 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 		}
 	}()
 	return nil
+}
+
+// hopOnItsWay is the machine whose dial is on its way through a jump
+// host the route hops to name, under names, has yet to sign in to, and
+// whether there is one. behind is the index of a kakel window on the
+// route, -1 for none: the hops up to it are its way in.
+func (a *app) hopOnItsWay(name machines.ID, names []machines.ID, hops []remote.Config, behind int) (machines.ID, bool) {
+	_, from := a.machines.HopConnected(names, hops)
+	if behind >= 0 && from <= behind {
+		from = behind + 1
+	}
+	for k := from; k < len(hops)-1; k++ {
+		if by, ok := a.hopDialing[names[k]]; ok && names[k] != machines.Local && by != name && a.machines.Get(by).Dialing != nil {
+			return by, true
+		}
+	}
+	return "", false
 }
 
 // askAboutTheOneOnItsWay asks what to do about a server already being

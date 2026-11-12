@@ -108,6 +108,10 @@ type Window struct {
 	// readers are the readers, by pane.
 	readers  map[string]*reader
 	choosers map[string]*chooser
+	// waitViews are a layout's waiting panes, by pane, and waits what
+	// each says, as the program last said.
+	waitViews map[string]*waitView
+	waits     map[string]app.Waiting
 	// typeAll says what is typed goes to every terminal showing, as Type
 	// in All Panes asks; lastChips is the state the chips were last shown
 	// from, to show them again as it turns on or off.
@@ -368,6 +372,7 @@ func NewWindow(sh *screen.Shells, keys *ui.Keymap, all []look.Themed) *Window {
 		termPads:     map[string]*termPad{},
 		readers:      map[string]*reader{},
 		choosers:     map[string]*chooser{},
+		waitViews:    map[string]*waitView{},
 		tunnelPanes:  map[string]*tunnelPane{},
 		machinePanes: map[string]*machinePane{},
 		fmHosts:      map[string]*fmHost{},
@@ -2144,6 +2149,8 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 	}
 
 	w.placeFilePanes(st, u)
+	// Before the layout, so a waiting pane made now says it at once.
+	w.waits = st.Waits
 	w.showLayout(st, u)
 	// After the panes are built, so one made now shows the state too.
 	if w.settings != nil && u.Presence(w.settings) != gunim.Exiting {
@@ -2171,6 +2178,13 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 			continue
 		}
 		r.show(st.Readers[id], u)
+	}
+	for id, v := range w.waitViews {
+		if !open[id] {
+			delete(w.waitViews, id)
+			continue
+		}
+		v.show(st.Waits[id], u)
 	}
 	for id, c := range w.choosers {
 		if !open[id] {
@@ -2565,6 +2579,13 @@ func (w *Window) bareNode(id string) gunim.Node {
 			w.choosers[id] = c
 		}
 		return c
+	case app.KindWaiting:
+		v, ok := w.waitViews[id]
+		if !ok {
+			v = newWaitView(w, id)
+			w.waitViews[id] = v
+		}
+		return v
 	}
 	if w.shellGone(id) {
 		return blankPane{}
@@ -2618,6 +2639,9 @@ func (w *Window) focusNode(id string, u *gunim.UI) gunim.Node {
 	}
 	if c, ok := w.choosers[id]; ok {
 		return c.first()
+	}
+	if v, ok := w.waitViews[id]; ok {
+		return v.focusTarget()
 	}
 	if w.kindOf(id) == app.KindServers {
 		return w.serversRow(u)
@@ -2704,6 +2728,12 @@ type stage struct {
 	ids    map[gunim.Node]string
 	// covers are the panes coming in as a tab picked came to the front.
 	covers map[string]*paneCover
+	// at is where each pane on stage was last laid out, and leaving are
+	// the layout's waiting panes that have given their place to the pane
+	// they waited for, or closed, each where it stood: drawn over what
+	// came, as they fade away.
+	at      map[string]geom.Rect
+	leaving map[gunim.Node]geom.Rect
 }
 
 // paneCover is how much of the window's background still lies over a
@@ -2716,7 +2746,8 @@ type paneCover struct {
 }
 
 func newStage(d func() *dock.Dock) *stage {
-	return &stage{dock: d, nodes: map[string]gunim.Node{}, ids: map[gunim.Node]string{}, covers: map[string]*paneCover{}}
+	return &stage{dock: d, nodes: map[string]gunim.Node{}, ids: map[gunim.Node]string{}, covers: map[string]*paneCover{},
+		at: map[string]geom.Rect{}, leaving: map[gunim.Node]geom.Rect{}}
 }
 
 // stageIn is how what comes on stage with another tab clears: quickly,
@@ -2755,6 +2786,14 @@ func (s *stage) show(ids []string, node func(string) gunim.Node, u *gunim.UI) {
 	}
 	for id, n := range s.nodes {
 		if wanted[id] != n {
+			if _, waited := n.(*waitView); waited && !s.arranged(id) {
+				// Gone from the layout, not only off stage: it fades
+				// where it stood, over the pane that took its place.
+				if r, ok := s.at[id]; ok {
+					s.leaving[n] = r
+				}
+			}
+			delete(s.at, id)
 			u.Remove(n)
 			delete(s.nodes, id)
 			delete(s.ids, n)
@@ -2770,6 +2809,13 @@ func (s *stage) show(ids []string, node func(string) gunim.Node, u *gunim.UI) {
 	s.shown = slices.Clone(ids)
 }
 
+// arranged reports whether pane id is still in the dock's layout, off
+// stage or on it.
+func (s *stage) arranged(id string) bool {
+	l := s.dock().Arrangement()
+	return l.Node(id) != nil
+}
+
 // Layout implements [gunim.Node]: each pane on stage where the dock has
 // it, at the size it comes to rest at. What left with the tab before
 // takes no room: its parts that animate their own leaving, as a machine's
@@ -2777,7 +2823,14 @@ func (s *stage) show(ids []string, node func(string) gunim.Node, u *gunim.UI) {
 // show while they are.
 func (s *stage) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children) geom.Size {
 	d := s.dock()
+	here := map[gunim.Node]bool{}
 	for k := range kids.All {
+		here[k.Node()] = true
+		if r, ok := s.leaving[k.Node()]; ok && k.Presence() == gunim.Exiting {
+			k.Layout(gunim.Tight(r.Size()))
+			k.Place(r.Min)
+			continue
+		}
 		id, on := s.ids[k.Node()]
 		if !on || k.Presence() == gunim.Exiting {
 			k.Layout(gunim.Constraints{})
@@ -2791,6 +2844,13 @@ func (s *stage) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children) 
 		}
 		k.Layout(gunim.Tight(final.Size()))
 		k.Place(r.Min.Sub(s.origin))
+		s.at[id] = geom.Rect{Min: r.Min.Sub(s.origin), Max: r.Min.Sub(s.origin).Add(final.Size().Point())}
+	}
+	// Those the engine has let go of are gone for good.
+	for n := range s.leaving {
+		if !here[n] {
+			delete(s.leaving, n)
+		}
 	}
 	return c.Max
 }
@@ -2823,6 +2883,11 @@ func (s *stage) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gunim
 		}
 		if c := s.covers[id]; c != nil {
 			paintCover(p, f, r, c)
+		}
+	}
+	for k := range kids.All {
+		if _, ok := s.leaving[k.Node()]; ok && k.Presence() == gunim.Exiting {
+			k.Paint(p)
 		}
 	}
 }
@@ -3834,6 +3899,10 @@ func (w *Window) madeNode(id string) gunim.Node {
 	case app.KindChooser:
 		if c, ok := w.choosers[id]; ok {
 			n = c
+		}
+	case app.KindWaiting:
+		if v, ok := w.waitViews[id]; ok {
+			n = v
 		}
 	default:
 		if t, ok := w.terms[id]; ok {
