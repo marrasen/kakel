@@ -415,6 +415,29 @@ func (w *Window) Attach(open Open, cols, rows int) (session.Session, error) {
 	}), nil)
 }
 
+// ErrCannotAttachIn is what AttachIn says of a window of an older build.
+var ErrCannotAttachIn = errors.New("serve: that window cannot say before an attach that it has nothing to attach to")
+
+// AttachIn is Attach for a client that opens something new in its
+// place where it is not open: what the other window cannot attach to is
+// an error saying why, rather than a session that says it and ends. A
+// window of an older build says ErrCannotAttachIn.
+func (w *Window) AttachIn(open Open, cols, rows int) (session.Session, error) {
+	sess, err := w.session(AttachInChannel, ssh.Marshal(openSession{
+		Cols: uint32(cols), Rows: uint32(rows),
+		Attach:     open.ID,
+		AttachHost: open.Host, AttachKind: open.Kind,
+	}), nil)
+	var refused *ssh.OpenChannelError
+	switch {
+	case !errors.As(err, &refused):
+		return sess, err
+	case refused.Reason == ssh.UnknownChannelType:
+		return nil, ErrCannotAttachIn
+	}
+	return nil, errors.New(Line(refused.Message))
+}
+
 // Files opens a file session on the machine the other window is on.
 //
 // What comes back is a stream, not a filesystem. What runs on it is the

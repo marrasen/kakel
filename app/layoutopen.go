@@ -539,6 +539,7 @@ func (a *app) slotsFailed(ids []string, title string, err error, said bool) {
 			a.setWait(id, Waiting{Failed: title, Why: why})
 		}
 	}
+	a.settleRecords()
 }
 
 // failure is how a start in a waiting pane says it failed: under title,
@@ -962,6 +963,7 @@ func (a *app) intoSlot(p Pane, id string) {
 		}
 	}
 	a.forgetSlot(id)
+	a.settleRecords()
 	log.Printf("opened %s", a.paneForLog(p))
 	a.stayEmpty = false
 	if had {
@@ -991,6 +993,7 @@ func (a *app) slotClosed(id string) {
 		return
 	}
 	a.forgetSlot(id)
+	a.settleRecords()
 	m := dialOf(s.machine)
 	if m == machines.Local || !a.layoutDials[m] || a.machines.Get(m).Dialing == nil {
 		return

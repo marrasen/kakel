@@ -43,16 +43,25 @@ type LayoutPane struct {
 	Line string `json:"line,omitempty"`
 }
 
-// layoutPaneList is the records as the file holds them, read as the
-// layouts are: a field a later kakel adds must not lock this one out of
-// the settings file.
+// layoutPaneList is the records as the file holds them. They are only a
+// convenience, so nothing in them locks this kakel out of the settings
+// file: a field it does not know is passed over, a record it cannot read
+// is dropped, and so is the whole list where it is no list.
 type layoutPaneList []LayoutPane
 
-// UnmarshalJSON reads the records, passing over fields it does not know.
+// UnmarshalJSON reads the records it can, and never fails.
 func (l *layoutPaneList) UnmarshalJSON(raw []byte) error {
-	var out []LayoutPane
-	if err := json.Unmarshal(raw, &out); err != nil {
-		return err
+	var each []json.RawMessage
+	if err := json.Unmarshal(raw, &each); err != nil {
+		*l = nil
+		return nil
+	}
+	out := make([]LayoutPane, 0, len(each))
+	for _, r := range each {
+		var p LayoutPane
+		if err := json.Unmarshal(r, &p); err == nil {
+			out = append(out, p)
+		}
 	}
 	*l = out
 	return nil

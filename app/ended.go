@@ -458,6 +458,7 @@ func (a *app) bindFar(w *machines.Window, farID, pane string) {
 		}
 	}
 	w.Bound[farID] = pane
+	a.farPaneMoved(w, pane, farID)
 	a.showWindows()
 }
 

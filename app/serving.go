@@ -991,16 +991,25 @@ func (a *app) servedMachine(host string) (machines.ID, error) {
 // working in it, over a connection this window holds. Whether the
 // window asked to have it dialled makes no difference: it never is.
 func (a *app) startAgainFor(want serve.Attached, _ bool) error {
-	type count struct{ restarts, endings int }
+	type count struct {
+		restarts, endings int
+		running           bool
+	}
 	was, err := onApp(a, func() (count, error) {
-		if a.terminal(want.ID) == nil {
+		t := a.terminal(want.ID)
+		if t == nil {
 			// Closed here: the other window opens one of its own.
 			return count{}, serve.ErrNotOpen
+		}
+		if !t.Exited() {
+			// Running already, as when another window asked first:
+			// nothing to start, and nothing to wait for.
+			return count{running: true}, nil
 		}
 		// An end the terminal has not yet told this window of is the
 		// one it starts again from, and counted before, not after.
 		a.countEnding(want.ID)
-		c := count{a.restarts[want.ID], a.endings[want.ID]}
+		c := count{restarts: a.restarts[want.ID], endings: a.endings[want.ID]}
 		// Never dialled for another window, whichever it asked for: a
 		// connection this window makes is for someone at it to make,
 		// where its questions are asked. A window of an older build asks
@@ -1011,7 +1020,7 @@ func (a *app) startAgainFor(want serve.Attached, _ bool) error {
 		}
 		return c, a.startAgainOr(want.ID, false)
 	})
-	if err != nil {
+	if err != nil || was.running {
 		return err
 	}
 	// Answered once it has started again, so what attaches to it next
@@ -1024,7 +1033,7 @@ func (a *app) startAgainFor(want serve.Attached, _ bool) error {
 			if a.terminal(want.ID) == nil {
 				return count{}, serve.ErrNotOpen
 			}
-			return count{a.restarts[want.ID], a.endings[want.ID]}, nil
+			return count{restarts: a.restarts[want.ID], endings: a.endings[want.ID]}, nil
 		})
 		switch {
 		case err != nil:

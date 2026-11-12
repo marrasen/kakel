@@ -551,7 +551,7 @@ type throughHow struct {
 	still func() bool
 	// landed, when set, hears pane id here, once it is open and the
 	// window has said what it calls it, which can come before or after.
-	landed func(id string, far serve.Attached)
+	landed func(id string)
 }
 
 // openThroughHow is openThrough, asking as how says.
@@ -585,8 +585,10 @@ func (a *app) openThroughHow(window machines.ID, key string, cmd command, id, ti
 						return
 					}
 					a.bindFar(w, n.ID, id)
+					a.noteFarPane(window, w, id, n)
+					delete(a.naming, id)
 					if how.landed != nil {
-						how.landed(id, n)
+						how.landed(id)
 					}
 				}
 			}()
@@ -649,12 +651,21 @@ func (a *app) openThroughHow(window machines.ID, key string, cmd command, id, ti
 				then("", err)
 				return
 			}
+			if how.landed != nil {
+				// What a layout writes of it waits for what the window
+				// calls it, which can come a moment after the pane.
+				a.naming[id] = window
+			}
 			a.addPane(a.paneOn(on, Pane{ID: id, Title: title, Command: len(cmd.argv) > 0}), screen.Open(sess, a.palette, a.withLinks(a.hooks(id), id, on)), at)
 			added = true
 			a.bindFar(w, far.ID, id)
 			a.showWindows()
-			if far.ID != "" && how.landed != nil {
-				how.landed(id, far)
+			if far.ID != "" {
+				delete(a.naming, id)
+				a.noteFarPane(window, w, id, far)
+				if how.landed != nil {
+					how.landed(id)
+				}
 			}
 			then(id, nil)
 		}

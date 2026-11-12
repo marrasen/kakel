@@ -615,6 +615,22 @@ type app struct {
 	// are told, so a pane ID one of them kept is known to be this run's.
 	// Made at random as kakel starts, and never logged.
 	runToken string
+	// farPanes are the panes here that watch a pane this kakel opened on
+	// another window, or watches again there, by pane: what a layout
+	// saved from them writes down, connected or not.
+	farPanes map[string]farPane
+	// claimed are the panes on other windows being watched again, as the
+	// attach to each is on its way: see claimOf.
+	claimed map[string]bool
+	// recordEdits are what is waiting to be written of the panes layouts
+	// opened on other windows, and recordWrites how often it was, for a
+	// test.
+	recordEdits  []func([]settings.LayoutPane) []settings.LayoutPane
+	recordWrites int
+	// naming are the panes opened for a layout on another window that
+	// the window has not yet said what it calls, with the window: what
+	// is waiting to be written is written once it has.
+	naming map[string]machines.ID
 	// programTitle is the title each pane's program last gave, as it
 	// gave it, to name the pane again once the shells here are known.
 	programTitle map[string]string
@@ -896,6 +912,9 @@ func (a *app) tellOutput() {
 func newApp(c gunim.Client, sh *screen.Shells) *app {
 	a := &app{
 		runToken:     newRunToken(),
+		farPanes:     map[string]farPane{},
+		claimed:      map[string]bool{},
+		naming:       map[string]machines.ID{},
 		c:            c,
 		shells:       sh,
 		st:           State{FontSize: defaultFontSize, Fonts: []string{bundledFamily, dosFamily}},
@@ -2551,6 +2570,11 @@ func (a *app) remove(id string) {
 	delete(a.notRun, id)
 	delete(a.choosers, id)
 	delete(a.openedFor, id)
+	delete(a.farPanes, id)
+	if _, ok := a.naming[id]; ok {
+		delete(a.naming, id)
+		defer a.settleRecords()
+	}
 	delete(a.programTitle, id)
 	if _, ok := a.st.Readers[id]; ok {
 		m := maps.Clone(a.st.Readers)

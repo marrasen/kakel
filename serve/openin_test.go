@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/marrasen/kakel/session"
+	"golang.org/x/crypto/ssh"
 )
 
 // A layout's pane is asked for in a folder: the folder crosses for a
@@ -177,6 +178,9 @@ func TestWhatWasOpenedForAClientGoneIsClosed(t *testing.T) {
 // A client that takes what it asked for and closes it at once, as a
 // pane closed as soon as it opened, leaves it open there, as any pane
 // closed there does: only a client gone before it took it has it closed.
+// The client here never answers what it is asked, as one that closed
+// the channel before reading it, which is what the window must not take
+// for a client gone.
 func TestWhatAClientTookAndClosedStaysOpen(t *testing.T) {
 	opened := newEchoSession(80, 24)
 	closed := make(chan Attached, 1)
@@ -186,11 +190,11 @@ func TestWhatAClientTookAndClosedStaysOpen(t *testing.T) {
 		},
 		CloseOpened: func(what Attached) error { closed <- what; return nil },
 	})
-	sess, err := w.OpenIn("", "", "", 80, 24, nil)
+	ch, _, err := w.client.OpenChannel(SessionInChannel, ssh.Marshal(openOn{Cols: 80, Rows: 24}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = sess.Close()
+	_ = ch.Close()
 	select {
 	case <-opened.done:
 	case <-time.After(10 * time.Second):
@@ -201,4 +205,25 @@ func TestWhatAClientTookAndClosedStaysOpen(t *testing.T) {
 		t.Fatalf("it closed %+v there", what)
 	default:
 	}
+}
+
+// An attach that has nothing to attach to is refused, saying why,
+// before any session is shown; one that has is carried as Attach's is;
+// and a window that cannot tell first says so.
+func TestAnAttachToWhatIsGoneIsRefused(t *testing.T) {
+	_, w := takenOverServing(t, Config{Attach: func(want Attached, cols, rows int) (session.Session, error) {
+		if want.ID != "p1" {
+			return nil, errors.New("there is no terminal called \"" + want.ID + "\" open here any more")
+		}
+		return newEchoSession(cols, rows), nil
+	}})
+	if _, err := w.AttachIn(Open{ID: "p3", Kind: "Terminal"}, 80, 24); err == nil || err.Error() != `there is no terminal called "p3" open here any more` {
+		t.Fatalf("attached to what is gone, it gave %v", err)
+	}
+	sess, err := w.AttachIn(Open{ID: "p1", Kind: "Terminal"}, 80, 24)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sess.Close()
+	read(t, sess, "started at 80x24")
 }

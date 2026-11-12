@@ -166,8 +166,11 @@ A layout is one window, saved to open again as it is.
   that window's kakel was started again, opens new, as New Terminal
   there does. Closing a pane here, or the layout's window, or quitting,
   leaves the pane open on the other window: close it there to end it.
-  If the layout is open twice at once, the second window gets new
-  panes; opened again later, the layout comes back to the first's.
+  If the layout is open twice at once, each copy has panes of its own
+  there, and each comes back to its own the next time, for up to four
+  copies. A pane the other window's user opened, that you worked in
+  from here, is saved as a terminal there: the layout opens a new one,
+  and leaves theirs alone.
 - **Opening a new pane there.** A terminal runs the shell new
   terminals start on that machine, as the window picks it. On the
   window's own machine it starts in the folder it was in; on a machine

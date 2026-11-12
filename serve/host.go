@@ -207,6 +207,17 @@ func (s *Server) serveChannels(ctx context.Context, c *Client, chans <-chan ssh.
 			running.Go(func() { s.runSessionIn(ctx, nch, want) })
 			continue
 		}
+		if nch.ChannelType() == AttachInChannel {
+			var want openSession
+			if err := ssh.Unmarshal(nch.ExtraData(), &want); err != nil || want.Attach == "" {
+				_ = nch.Reject(ssh.ConnectionFailed,
+					"that is not an attach request this kakel understands: "+
+						"both windows have to be the same build")
+				continue
+			}
+			running.Go(func() { s.runAttachIn(ctx, nch, want) })
+			continue
+		}
 		if nch.ChannelType() != SessionChannel {
 			why := "this is kakel, and it serves " + SessionChannel
 			if nch.ChannelType() == "session" {
@@ -278,6 +289,28 @@ func (s *Server) runSessionIn(ctx context.Context, nch ssh.NewChannel, want open
 	// close: runSession asks the client to say it has the channel.
 	s.runSession(ctx, ch, reqs, want.Cols, want.Rows, true, func(int, int) (session.Session, Attached, error) {
 		return sess, named, nil
+	})
+}
+
+// runAttachIn attaches to what a client named over AttachInChannel, and
+// carries it, or refuses the channel with why it could not: the session
+// is made before the channel is taken.
+func (s *Server) runAttachIn(ctx context.Context, nch ssh.NewChannel, want openSession) {
+	cols := min(max(int(want.Cols), 1), mostCells)
+	rows := min(max(int(want.Rows), 1), mostCells)
+	sess, _, err := s.starter(want)(cols, rows)
+	if err != nil {
+		_ = nch.Reject(ssh.ConnectionFailed, err.Error())
+		return
+	}
+	ch, reqs, err := nch.Accept()
+	if err != nil {
+		_ = sess.Close()
+		s.onError(fmt.Errorf("serve: take a session: %w", err))
+		return
+	}
+	s.runSession(ctx, ch, reqs, want.Cols, want.Rows, false, func(int, int) (session.Session, Attached, error) {
+		return sess, Attached{}, nil
 	})
 }
 

@@ -100,6 +100,15 @@ const (
 	// be restored, rather than having it silently dropped.
 	SessionInChannel = "session-in@gridterm"
 
+	// AttachInChannel is an attach, as SessionChannel's openSession asks
+	// for one, refused with the reason, as a channel's refusal, when
+	// what it names is not open, rather than taken and then said in a
+	// session that ends at once: for a client that opens something new
+	// in its place then, as a layout watching a pane again does. Its
+	// payload is openSession. A window of an older build refuses it by
+	// name.
+	AttachInChannel = "attach-in@gridterm"
+
 	// reqCloseThere, on a session channel, asks the served window to
 	// close the pane it opened for that session: a pane a client asked
 	// for and no longer wants, as a layout's pane closed while it was
