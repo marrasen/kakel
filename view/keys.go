@@ -149,6 +149,8 @@ var commands = []struct{ id, title string }{
 	{"sshkey.forget", "Remove Saved Key"},
 	{"sshkey.add", "Add Saved Key"},
 	{"files.copies", "Saved Copies"},
+	{"layout.save", "Save Layout"},
+	{"layout.manage", "Manage Layouts"},
 	{"view.jobs", "Show Jobs"},
 	{"view.log", "Window Log"},
 	{"conn.tunnel", "Open Tunnel"},
@@ -170,7 +172,7 @@ var commands = []struct{ id, title string }{
 var itemPrefixes = []string{
 	"server.open.", "server.edit.", "server.remove.", "conn.log.",
 	"conn.terminal.", "conn.login.", "conn.files.", "conn.saved.", "conn.savedtunnel.",
-	shellfind.CommandPrefix, "shell.pick.", "font.use.",
+	shellfind.CommandPrefix, "shell.pick.", "font.use.", layoutOpenPrefix,
 }
 
 // isItem reports whether id names a command on one thing of many.
@@ -242,6 +244,8 @@ var commandIcons = map[string]*icon.Icon{
 	"conn.tunnel":            icon.Cable,
 	"conn.socks":             icon.Network,
 	"files.copies":           icon.Bookmark,
+	"layout.save":            icon.Save,
+	"layout.manage":          icon.LayoutPanelLeft,
 	"conn.disconnect":        icon.Unplug,
 	"server.editThis":        icon.Pencil,
 	"server.forget":          icon.Trash2,
@@ -308,9 +312,11 @@ var menus = []struct {
 		{id: "conn.terminal", title: "New Terminal"},
 		{id: "conn.files", title: "New File Manager"},
 		{id: "files.manager", title: "Files in a New Window"},
-		{id: "app.settings", title: "Settings", group: true},
+		{id: "layout.save", title: "Save Layout…", group: true},
+		{id: "layout.manage", title: "Manage Layouts"},
+		{id: "app.settings", title: "Settings", group: true, keyFirst: true},
 		{title: "Close", caption: true}, {id: "pane.close", title: "Pane"},
-		{id: "app.exit", title: "Exit", group: true},
+		{id: "app.exit", title: "Exit", group: true, keyFirst: true},
 	}},
 	{"Edit", []menuItem{
 		{id: "edit.cut", title: "Cut"}, {id: "edit.copy", title: "Copy"}, {id: "edit.paste", title: "Paste"},
@@ -441,6 +447,8 @@ var commandAlso = map[string][]string{
 	"server.import":         {"ssh config", "~/.ssh/config", "openssh", "hosts"},
 	"server.reload":         {"reread"},
 	"files.copies":          {"saved", "file", "again", "repeat"},
+	"layout.save":           {"window", "workspace", "session", "arrangement", "splits", "tabs", "save", "keep"},
+	"layout.manage":         {"layouts", "window", "workspace", "session", "open at start", "rename", "remove"},
 	"serve.window":          {"share", "listen", "remote"},
 	"serve.attach":          {"another", "attach", "take over", "remote", "share panes"},
 	"serve.ssh":             {"ssh", "tunnel", "port forward", "-L", "-J", "jump", "proxycommand", "relay pipe", "openssh"},
@@ -558,6 +566,8 @@ func commandIntent(id string) (gunim.Intent, bool) {
 		return app.ShowJobs{}, true
 	case "files.copies":
 		return app.ShowCopies{}, true
+	case "layout.manage":
+		return app.ShowLayouts{}, true
 	case "server.reload":
 		return app.ReloadServers{}, true
 	case "sshkey.lock":

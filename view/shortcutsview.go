@@ -21,6 +21,7 @@ import (
 	"github.com/marrasen/kakel/input"
 	"github.com/marrasen/kakel/keys"
 	"github.com/marrasen/kakel/look"
+	"github.com/marrasen/kakel/settings"
 	"github.com/marrasen/kakel/ui"
 	"github.com/marrasen/kakel/winkeys"
 	"github.com/marrasen/kakel/words"
@@ -150,6 +151,8 @@ type shortcutsPane struct {
 	undoLauncher string
 	// goingTo is a row waiting to be built, to take the keyboard.
 	goingTo widget.Key
+	// layoutsSeen is the layouts the lines were made for.
+	layoutsSeen string
 }
 
 // chordFlight is a shortcut moved onto another row: from where it stood,
@@ -376,14 +379,19 @@ func (r *groupRow) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gu
 }
 
 // fill makes the lines: the launcher's key, then the commands as the
-// menus group them, then what is bound to a saved thing, then the keys
-// that cannot change.
+// menus group them, then each layout, then what is bound to a saved
+// thing, then the keys that cannot change. A layout's line, and a saved
+// thing's, is keyed by what it opens, so lines coming and going leave
+// the others as they are.
 func (p *shortcutsPane) fill() {
 	clear(p.lines)
 	p.order = p.order[:0]
+	p.layoutsSeen = layoutsSeen(p.w.layouts)
 	var group widget.Key
 	add := func(l *helpLine) {
-		l.key = widget.Key(fmt.Sprintf("%04d", len(p.order)))
+		if l.key == "" {
+			l.key = widget.Key(fmt.Sprintf("%04d", len(p.order)))
+		}
 		if l.kind == lineHead {
 			group = l.key
 		}
@@ -405,6 +413,28 @@ func (p *shortcutsPane) fill() {
 			add(&helpLine{kind: lineCommand, title: l[0], id: l[2], also: commandAlso[l[2]]})
 		}
 	}
+	// Before the keys that cannot change, which close the list.
+	beforeReader := func(at int) {
+		tail := slices.Clone(p.order[at:])
+		for i := len(p.order) - 1; i >= 0; i-- {
+			if l := p.lines[p.order[i]]; l.kind == lineHead && strings.HasPrefix(l.title, "The reader's keys") {
+				rest := slices.Clone(p.order[i:at])
+				p.order = append(append(p.order[:i:i], tail...), rest...)
+				break
+			}
+		}
+	}
+	// Each layout, to open by a key of its own.
+	if len(p.w.layouts) > 0 {
+		at := len(p.order)
+		add(&helpLine{kind: lineHead, title: "Layouts", key: "head:layouts"})
+		for _, l := range p.w.layouts {
+			id := layoutOpenPrefix + l.ID
+			listed[id] = true
+			add(&helpLine{kind: lineCommand, title: "Open " + l.Name, id: id, key: widget.Key("cmd:" + id), also: []string{"layout", l.Name}})
+		}
+		beforeReader(at)
+	}
 	// Bound by a file to one thing of many, such as a saved server,
 	// which no menu lists under a name of its own.
 	var saved []string
@@ -416,20 +446,28 @@ func (p *shortcutsPane) fill() {
 	slices.Sort(saved)
 	if len(saved) > 0 {
 		at := len(p.order)
-		add(&helpLine{kind: lineHead, title: "Saved things"})
+		add(&helpLine{kind: lineHead, title: "Saved things", key: "head:saved"})
 		for _, id := range saved {
-			add(&helpLine{kind: lineCommand, title: id, id: id})
-		}
-		// Before the keys that cannot change, which close the list.
-		tail := slices.Clone(p.order[at:])
-		for i := len(p.order) - 1; i >= 0; i-- {
-			if l := p.lines[p.order[i]]; l.kind == lineHead && strings.HasPrefix(l.title, "The reader's keys") {
-				rest := slices.Clone(p.order[i:at])
-				p.order = append(append(p.order[:i:i], tail...), rest...)
-				break
+			l := &helpLine{kind: lineCommand, title: id, id: id, key: widget.Key("cmd:" + id)}
+			if layout, ok := strings.CutPrefix(id, layoutOpenPrefix); ok {
+				// Its layout was removed: the key stays, to open it
+				// again should it come back by Undo, and can be taken
+				// off here.
+				l.title = "Open Removed Layout " + layout
 			}
+			add(l)
 		}
+		beforeReader(at)
 	}
+}
+
+// layoutsSeen is what the shortcut editor's lines say of layouts.
+func layoutsSeen(layouts []settings.SavedLayout) string {
+	var b strings.Builder
+	for _, l := range layouts {
+		b.WriteString(l.ID + "\x00" + l.Name + "\x00")
+	}
+	return b.String()
 }
 
 // chordsOf says the shortcuts a line has now, as a person reads them.
@@ -530,7 +568,7 @@ func (p *shortcutsPane) filter(u *gunim.UI) {
 
 // show brings the rows up to date with the window's keys.
 func (p *shortcutsPane) show(w *Window, u *gunim.UI) {
-	if p.savedCount() > 0 {
+	if p.savedCount() > 0 || layoutsSeen(w.layouts) != p.layoutsSeen {
 		p.fill()
 	}
 	problem := cmp.Or(w.shortcutsRefused, w.shortcutsProblem)

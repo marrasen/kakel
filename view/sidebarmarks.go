@@ -260,6 +260,7 @@ var kindIcons = map[string]*icon.Icon{
 	"servers":     icon.Server,
 	"settings":    icon.Settings,
 	"theme":       icon.Paintbrush,
+	"layouts":     icon.LayoutPanelLeft,
 }
 
 // paintIcon draws the little image for a kind of row in r.
@@ -413,6 +414,8 @@ func paneKindIcon(p app.Pane) string {
 		return "theme"
 	case app.KindJobs:
 		return "jobs"
+	case app.KindLayouts:
+		return "layouts"
 	case app.KindTunnel:
 		return "tunnel"
 	case app.KindChooser:

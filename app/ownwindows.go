@@ -51,6 +51,9 @@ type ownWin struct {
 	// files says it held file manager panes alone as its last pane
 	// closed, so where it was is kept as a file manager window's.
 	files bool
+	// fromLayout is the ID of the layout it was opened from, or last
+	// saved as.
+	fromLayout string
 }
 
 // windowIn is an intent from one of the windows, or word that it
@@ -414,6 +417,10 @@ func (a *app) leaveEmpty() {
 func (a *app) stateFor(w *ownWin, st State) State {
 	st.Window, st.Behind = w.id, w != a.cur
 	st.Pings, st.Bells = w.pings, w.bells
+	st.SaveWindow, st.SaveFrom = 0, ""
+	if from := a.savesFrom(w); from != nil {
+		st.SaveWindow, st.SaveFrom = from.id, from.fromLayout
+	}
 	st.Panes = a.panesIn(w)
 	st.Focus = a.focusIn(w)
 	st.Asks = slices.DeleteFunc(slices.Clone(st.Asks), func(q Ask) bool { return q.win != w.id || q.alone })

@@ -142,6 +142,41 @@ notices show in the window you last worked in. A
 window whose last pane moves away closes. Its close button asks before
 closing the panes still in it, and the last window's asks as Exit does.
 
+## Layouts
+
+A layout is one window, saved to open again as it is.
+
+- **Save.** Arrange the window, then choose File › Save Layout… and
+  give it a name. A window opened from a layout offers that layout's
+  name, to save over it. A name another layout has replaces that
+  layout, and the dialog says so before you press Save.
+- **What is saved.** The splits and tabs, the window's place and size,
+  and for each terminal, command and file manager the machine, the
+  shell or profile, the folder and the command. Left out are readers,
+  tunnels, panes through another kakel window and panes on a server
+  removed from the list, and saving names them. Settings, the Jobs,
+  the Layouts and the other tool panes are left out too, unsaid, as
+  their own commands open them.
+- **From a window of tools.** Save Layout in a window that holds only
+  tool panes saves the window you last worked in.
+- **Open.** Type the layout's name in the palette (`Ctrl+Shift+K`) or
+  the launcher, or press Open on its card in File › Manage Layouts. It
+  always opens in a new window, so nothing running is closed. Each pane
+  starts afresh.
+- **When a server fails.** Each server is connected to once for all its
+  panes. One that cannot be reached fails only its own panes, which say
+  why and offer Retry. A server removed from the list since fails its
+  panes the same way.
+- **Open at start.** Turn on Open at start on a layout's card, and it
+  opens in its own window each time kakel starts.
+- **Manage.** File › Manage Layouts lists the layouts as cards: Open,
+  Rename, Remove (with Undo on the notice) and Open at start.
+- **A key for a layout.** Settings › Shortcuts lists each layout under
+  Layouts, as Open and its name; give it a key there. Its command is
+  `layout.open.<id>`, which a rename leaves as it was. A layout
+  removed keeps its key, listed as Open Removed Layout, so Undo brings
+  both back.
+
 ## Sharing a pane with an agent
 
 Click into a terminal and choose Share → Share Panes…. The first time,

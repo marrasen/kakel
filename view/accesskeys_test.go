@@ -125,6 +125,25 @@ func TestTheServersMenusOwnLinesKeepTheirLetters(t *testing.T) {
 	}
 }
 
+// Settings and Exit keep S and E in the File menu, whatever lines come
+// above them, so Alt+F, S and Alt+F, E do what they always did.
+func TestFileKeepsSettingsAndExitOnTheirLetters(t *testing.T) {
+	win, _, _ := windowStage(t)
+	file := win.bar.Menus[0]
+	want := map[string]rune{"Settings": 's', "Exit": 'e', "Save Layout…": 'l', "Manage Layouts": 'm'}
+	for _, it := range file.Items {
+		if k, ok := want[shownText(it.Label)]; ok {
+			if got, _ := accessKeyOf(it.Label); got != k {
+				t.Errorf("%s has access key %q, want %q", shownText(it.Label), got, k)
+			}
+			delete(want, shownText(it.Label))
+		}
+	}
+	if len(want) > 0 {
+		t.Fatalf("File has no %v", want)
+	}
+}
+
 // The keyboard coming into a file manager pane, as by a click in its
 // list, makes it the pane in front, as a click in a terminal does: the
 // menus act on it.

@@ -199,6 +199,16 @@ type Window struct {
 	launcherTries    uint64
 	copies           *copiesPane
 	shortcutsRead    uint64
+	// layoutsView is the Layouts pane; layouts are the layouts, and
+	// saveWindow and saveFrom the window Save Layout saves and the layout
+	// it was opened from or last saved as, as last published.
+	// sayReplaces says again, in an open Save Layout dialog, what the
+	// name typed replaces.
+	layoutsView *layoutsPane
+	layouts     []settings.SavedLayout
+	saveWindow  int
+	saveFrom    string
+	sayReplaces func(*gunim.UI)
 	// secretsExist says there are secrets, to keep a new key's passphrase in.
 	secretsExist bool
 	bells        uint64
@@ -539,6 +549,9 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 		return true
 	case "pane.rename":
 		w.rename(u)
+		return true
+	case "layout.save":
+		w.saveLayoutDialog(u)
 		return true
 	case "server.connect":
 		w.connectDialog(u)
@@ -1386,6 +1399,14 @@ func (w *Window) servers(saved []remote.Host) {
 			machineLine(m)
 		}
 	}
+	// The layouts, each to open: a window is opened as one is a
+	// machine.
+	items, ids := w.layoutItems(hint)
+	for i, it := range items {
+		w.palette.Items = append(w.palette.Items, it)
+		w.paletteIDs = append(w.paletteIDs, ids[i])
+		w.paletteChips = append(w.paletteChips, nil)
+	}
 	for _, c := range commands {
 		if notInPalette[c.id] {
 			continue
@@ -1563,6 +1584,8 @@ func (w *Window) runItem(id string, u *gunim.UI) bool {
 		if i, ok := nth(strings.TrimPrefix(id, "conn.savedtunnel.")); ok && i < len(w.savedTunnels) {
 			u.Send(w, app.OpenSavedTunnel{Saved: w.savedTunnels[i]})
 		}
+	case strings.HasPrefix(id, layoutOpenPrefix):
+		u.Send(w, app.OpenLayout{ID: strings.TrimPrefix(id, layoutOpenPrefix)})
 	default:
 		return false
 	}
@@ -2090,6 +2113,8 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 		w.servers(w.saved)
 	}
 	w.setSavedCommands(st.SavedCommands)
+	w.saveWindow, w.saveFrom = st.SaveWindow, st.SaveFrom
+	w.setLayouts(st.Layouts, u)
 	if !slices.Equal(st.Shells, w.shellChoices) || st.ChosenShell != w.chosenShell || st.DefaultShell != w.defaultShell ||
 		!slices.Equal(st.Favourites, w.favourites) {
 		w.shellChoices, w.chosenShell, w.favourites = st.Shells, st.ChosenShell, st.Favourites
@@ -2201,6 +2226,9 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 	}
 	if w.copies != nil && u.Presence(w.copies) != gunim.Exiting {
 		w.copies.show(st.SavedCopies, u)
+	}
+	if w.layoutsView != nil && u.Presence(w.layoutsView) != gunim.Exiting {
+		w.layoutsView.show(st.Layouts, u)
 	}
 	if w.shortcuts != nil && u.Presence(w.shortcuts) != gunim.Exiting {
 		w.shortcuts.show(w, u)
@@ -2527,6 +2555,11 @@ func (w *Window) bareNode(id string) gunim.Node {
 			w.copies = newCopiesPane(w)
 		}
 		return w.copies
+	case app.KindLayouts:
+		if w.layoutsView == nil {
+			w.layoutsView = newLayoutsPane(w)
+		}
+		return w.layoutsView
 	case app.KindSecrets:
 		if w.secrets == nil {
 			w.secrets = newSecretsPane(w)
@@ -2657,6 +2690,9 @@ func (w *Window) focusNode(id string, u *gunim.UI) gunim.Node {
 	}
 	if w.kindOf(id) == app.KindCopies && w.copies != nil {
 		return w.copies.table
+	}
+	if w.kindOf(id) == app.KindLayouts && w.layoutsView != nil {
+		return w.layoutsView.focusTarget(u)
 	}
 	if mp, ok := w.machinePanes[id]; ok {
 		return mp.list
@@ -3867,6 +3903,10 @@ func (w *Window) madeNode(id string) gunim.Node {
 	case app.KindCopies:
 		if w.copies != nil {
 			n = w.copies
+		}
+	case app.KindLayouts:
+		if w.layoutsView != nil {
+			n = w.layoutsView
 		}
 	case app.KindSecrets:
 		if w.secrets != nil {

@@ -76,6 +76,8 @@ var errNothingToOpen = errors.New("the layout has no panes")
 // new names, the waiting panes it holds, in order, and the pane in
 // front.
 type layoutPlan struct {
+	// from is the layout's ID.
+	from  string
 	root  *dock.Node
 	slots []plannedSlot
 	front string
@@ -179,6 +181,7 @@ func (a *app) planLayout(l settings.SavedLayout) (layoutPlan, error) {
 	}
 	plan.root = root
 	plan.front = frontOf(root)
+	plan.from = l.ID
 	return plan, nil
 }
 
@@ -196,6 +199,7 @@ func opensAs(kind string) bool {
 // the one in front with the keyboard, and starts what each waits for.
 func (a *app) fillLayout(plan layoutPlan, w *ownWin) {
 	a.keepWindow(w.id)
+	w.fromLayout = plan.from
 	a.layout.Window(w.id).Root = plan.root
 	ids := make([]string, 0, len(plan.slots))
 	for _, s := range plan.slots {
