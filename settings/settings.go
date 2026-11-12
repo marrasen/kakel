@@ -226,7 +226,7 @@ type stored struct {
 
 	// FontSize is the size the text is drawn at, in points.
 	FontSize *float64 `json:"fontSize,omitempty"`
-	// FontFamily is the typeface picked from the Font menu, empty for
+	// FontFamily is the typeface picked in Settings or the palette, empty for
 	// the one that comes with kakel.
 	FontFamily *string `json:"fontFamily,omitempty"`
 	// Window is where the window was, and how big, as it last closed.
@@ -234,6 +234,13 @@ type stored struct {
 	// FilesWindow is where a window of file manager panes alone was,
 	// and how big, as it last closed.
 	FilesWindow *WindowPlace `json:"filesWindow,omitempty"`
+	// WindowScale and FilesWindowScale are the scale of Window and
+	// FilesWindow. They are settings of their own, beside the places
+	// and never in them, because a kakel before them reads a place
+	// strictly and would turn the whole file away for a field it does
+	// not know; a setting it does not know it keeps and writes back.
+	WindowScale      *placeScale `json:"windowScale,omitempty"`
+	FilesWindowScale *placeScale `json:"filesWindowScale,omitempty"`
 }
 
 // Relay is how the window is served through a relay.
@@ -1315,7 +1322,7 @@ func (s *Settings) FontSize() (float64, bool) {
 	return *s.have.FontSize, true
 }
 
-// FontFamily is the typeface picked from the Font menu, and whether one
+// FontFamily is the typeface picked in Settings or the palette, and whether one
 // was ever picked.
 func (s *Settings) FontFamily() (string, bool) {
 	s.mu.Lock()
@@ -1362,57 +1369,111 @@ func (s *Settings) PutFontSize(pt float64) error {
 // WindowPlace is where a window was on the screen, and whether it was
 // maximized: X and Y its top left corner, W and H its size, all in the
 // screen's own coordinates, as gunim reads them. A maximized window's
-// are where it goes back to when it is no longer maximized.
+// are where it goes back to when it is no longer maximized. Scale is
+// the screen's coordinates per logical pixel there, so a window opened
+// after the scale changed keeps its size; 0 where it was not known.
 type WindowPlace struct {
 	X         float32 `json:"x"`
 	Y         float32 `json:"y"`
 	W         float32 `json:"width"`
 	H         float32 `json:"height"`
 	Maximized bool    `json:"maximized,omitempty"`
+	Scale     float32 `json:"scale,omitempty"`
 }
+
+// UnmarshalJSON reads a place, passing over fields it does not know, so
+// a field a later kakel adds does not lock this one out of the file.
+func (p *WindowPlace) UnmarshalJSON(raw []byte) error {
+	type plain WindowPlace
+	var out plain
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return err
+	}
+	*p = WindowPlace(out)
+	return nil
+}
+
+// placeScale is the scale of a window's place, kept beside the place
+// with the place's bounds: a kakel that knows no scale rewrites the
+// place and keeps this as it was, and then the bounds tell the scale is
+// another place's.
+type placeScale struct {
+	X     float32 `json:"x"`
+	Y     float32 `json:"y"`
+	W     float32 `json:"width"`
+	H     float32 `json:"height"`
+	Scale float32 `json:"scale"`
+}
+
+// UnmarshalJSON reads a scale, passing over fields it does not know.
+func (sc *placeScale) UnmarshalJSON(raw []byte) error {
+	type plain placeScale
+	var out plain
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return err
+	}
+	*sc = placeScale(out)
+	return nil
+}
+
+// of reports whether the scale is place p's.
+func (sc *placeScale) of(p WindowPlace) bool {
+	return sc != nil && sc.X == p.X && sc.Y == p.Y && sc.W == p.W && sc.H == p.H
+}
+
+// placeField picks a window's place and its scale in the file.
+type placeField func(f *stored) (**WindowPlace, **placeScale)
+
+func mainWindow(f *stored) (**WindowPlace, **placeScale)  { return &f.Window, &f.WindowScale }
+func filesWindow(f *stored) (**WindowPlace, **placeScale) { return &f.FilesWindow, &f.FilesWindowScale }
 
 // Window is where the window was as it last closed, and whether that
 // was ever written down.
-func (s *Settings) Window() (WindowPlace, bool) {
-	return s.place(func(f *stored) **WindowPlace { return &f.Window })
-}
+func (s *Settings) Window() (WindowPlace, bool) { return s.place(mainWindow) }
 
 // PutWindow remembers where the window is, and saves.
-func (s *Settings) PutWindow(p WindowPlace) error {
-	return s.putPlace(func(f *stored) **WindowPlace { return &f.Window }, p)
-}
+func (s *Settings) PutWindow(p WindowPlace) error { return s.putPlace(mainWindow, p) }
 
 // FilesWindow is where a window of file manager panes alone was as it
 // last closed, and whether that was ever written down.
-func (s *Settings) FilesWindow() (WindowPlace, bool) {
-	return s.place(func(f *stored) **WindowPlace { return &f.FilesWindow })
-}
+func (s *Settings) FilesWindow() (WindowPlace, bool) { return s.place(filesWindow) }
 
 // PutFilesWindow remembers where a window of file manager panes alone
 // is, and saves.
-func (s *Settings) PutFilesWindow(p WindowPlace) error {
-	return s.putPlace(func(f *stored) **WindowPlace { return &f.FilesWindow }, p)
-}
+func (s *Settings) PutFilesWindow(p WindowPlace) error { return s.putPlace(filesWindow, p) }
 
-// place returns the place field picks, and whether one was written down.
-func (s *Settings) place(field func(f *stored) **WindowPlace) (WindowPlace, bool) {
+// place returns the place field picks, with its scale where the scale
+// kept is that place's, and whether one was written down.
+func (s *Settings) place(field placeField) (WindowPlace, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if p := *field(&s.have); p != nil {
-		return *p, true
+	at, scale := field(&s.have)
+	if *at == nil {
+		return WindowPlace{}, false
 	}
-	return WindowPlace{}, false
+	p := **at
+	if p.Scale == 0 && (*scale).of(p) {
+		p.Scale = (*scale).Scale
+	}
+	return p, true
 }
 
-// putPlace remembers p in the place field picks, and saves.
-func (s *Settings) putPlace(field func(f *stored) **WindowPlace, p WindowPlace) error {
+// putPlace remembers p in the place field picks, its scale beside it,
+// and saves.
+func (s *Settings) putPlace(field placeField, p WindowPlace) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.rereadLocked(); err != nil {
 		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
 	}
 	before := s.have
-	*field(&s.have) = &p
+	at, scale := field(&s.have)
+	place := p
+	place.Scale = 0
+	*at, *scale = &place, nil
+	if p.Scale > 0 {
+		*scale = &placeScale{X: p.X, Y: p.Y, W: p.W, H: p.H, Scale: p.Scale}
+	}
 	if err := s.saveLocked(); err != nil {
 		s.have = before
 		return err

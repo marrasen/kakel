@@ -130,7 +130,7 @@ func TestTheServersMenusOwnLinesKeepTheirLetters(t *testing.T) {
 func TestFileKeepsSettingsAndExitOnTheirLetters(t *testing.T) {
 	win, _, _ := windowStage(t)
 	file := win.bar.Menus[0]
-	want := map[string]rune{"Settings": 's', "Exit": 'e', "Save Layout…": 'l', "Manage Layouts": 'm'}
+	want := map[string]rune{"Settings": 's', "Exit": 'e', "Layouts": 'l'}
 	for _, it := range file.Items {
 		if k, ok := want[shownText(it.Label)]; ok {
 			if got, _ := accessKeyOf(it.Label); got != k {

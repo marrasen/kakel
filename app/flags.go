@@ -342,10 +342,10 @@ func (o Options) WindowPlace() *driver.Placement {
 	if f, kept := s.FilesWindow(); o.filesSet && kept {
 		w, ok = f, true
 	}
-	if !ok || w.W <= 0 || w.H <= 0 {
+	if !ok {
 		return nil
 	}
-	return &driver.Placement{Bounds: geom.Rc(w.X, w.Y, w.W, w.H), Maximized: w.Maximized}
+	return placementOf(&w)
 }
 
 // SystemTitleBar reports whether the settings give windows the system's

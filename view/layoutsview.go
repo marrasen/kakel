@@ -37,7 +37,8 @@ func (w *Window) setLayouts(layouts []settings.SavedLayout, u *gunim.UI) {
 	if same {
 		return
 	}
-	w.servers(w.saved)
+	// File's Layouts, and with it the Machines menu and the palette.
+	w.buildBar(true)
 	if w.sayReplaces != nil {
 		w.sayReplaces(u)
 	}
@@ -212,7 +213,7 @@ func newLayoutsPane(w *Window) *layoutsPane {
 		w.run("layout.save", u)
 		return nil
 	}
-	none := widget.NewLabel("Arrange a window, then choose Save Layout… from the ☰ menu.")
+	none := widget.NewLabel("Arrange a window, then choose Save Layout… in File › Layouts.")
 	none.Color = look.Faint
 	pad := widget.NewPad(none)
 	pad.Padding = layoutsEmptyPad
