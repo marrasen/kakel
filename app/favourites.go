@@ -395,7 +395,7 @@ func (a *app) editFavourites(edit func([]settings.Favourite) ([]settings.Favouri
 // locations, and has the windows and the file manager show them.
 func (a *app) editFolders(locations bool, edit func([]settings.Favourite) ([]settings.Favourite, error)) error {
 	if a.settings == nil {
-		return errors.New("the settings could not be read, so nothing can be kept")
+		return errNoSettings
 	}
 	if err := a.settings.Err(); err != nil {
 		return err

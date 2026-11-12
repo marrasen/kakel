@@ -1,7 +1,6 @@
 package app
 
 import (
-	"errors"
 	"slices"
 	"strings"
 
@@ -66,7 +65,7 @@ func (a *app) hidden(m machines.ID, id string) bool {
 // the one they started is hidden, as when it is removed.
 func (a *app) saveFound(f settings.FoundProfile) error {
 	if a.settings == nil {
-		return errors.New("the settings could not be read, so nothing can be kept")
+		return errNoSettings
 	}
 	f.Name = strings.TrimSpace(f.Name)
 	f.Folder = strings.TrimSpace(f.Folder)

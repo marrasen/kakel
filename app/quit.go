@@ -198,17 +198,26 @@ func (a *app) keepPlaceOf(w *ownWin) {
 	if a.settings == nil || w == nil {
 		return
 	}
-	p, ok := a.placement(w)
-	if !ok || p.Bounds.Empty() {
+	place, ok := a.placeOf(w)
+	if !ok {
 		return
 	}
-	b := p.Bounds
-	place := settings.WindowPlace{X: b.Min.X, Y: b.Min.Y, W: b.Size().W, H: b.Size().H, Maximized: p.Maximized}
 	if a.filesWin(w) {
 		a.keep("where the file manager window is", a.settings.PutFilesWindow(place))
 		return
 	}
 	a.keep("where the window is", a.settings.PutWindow(place))
+}
+
+// placeOf is where w is on the screen, and how big, as the settings
+// keep it, and false where its window has not said.
+func (a *app) placeOf(w *ownWin) (settings.WindowPlace, bool) {
+	p, ok := a.placement(w)
+	if !ok || p.Bounds.Empty() {
+		return settings.WindowPlace{}, false
+	}
+	b := p.Bounds
+	return settings.WindowPlace{X: b.Min.X, Y: b.Min.Y, W: b.Size().W, H: b.Size().H, Maximized: p.Maximized}, true
 }
 
 // placement is where w is on the screen, as its window says.

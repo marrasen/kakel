@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os/exec"
 	"slices"
-	"strconv"
 	"strings"
 	"unicode"
 
@@ -128,42 +127,20 @@ func ParseEnv(env string) ([]string, error) {
 	return out, nil
 }
 
-// profileID is the ID a new profile called name is given: its name in
-// lower case, with a dash for each run of anything but letters and
-// digits, and a number on the end when another profile has it.
+// profileID is the ID a new profile called name is given, after the
+// profiles' own prefix, and a number on the end when another profile
+// has it.
 func profileID(name string, have []settings.Profile) string {
-	var b strings.Builder
-	dash := false
-	for _, r := range strings.ToLower(name) {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) {
-			if dash && b.Len() > 0 {
-				b.WriteByte('-')
-			}
-			b.WriteRune(r)
-			dash = false
-			continue
-		}
-		dash = true
-	}
-	slug := b.String()
-	if slug == "" {
-		slug = "profile"
-	}
-	taken := func(id string) bool {
+	return settings.NewID(shellfind.ProfilePrefix, name, "profile", func(id string) bool {
 		return slices.ContainsFunc(have, func(p settings.Profile) bool { return p.ID == id })
-	}
-	id := shellfind.ProfilePrefix + slug
-	for n := 2; taken(id); n++ {
-		id = shellfind.ProfilePrefix + slug + "-" + strconv.Itoa(n)
-	}
-	return id
+	})
 }
 
 // saveProfile saves a profile, giving a new one its ID, and offers it
 // with the shells.
 func (a *app) saveProfile(p settings.Profile) error {
 	if a.settings == nil {
-		return errors.New("the settings could not be read, so nothing can be kept")
+		return errNoSettings
 	}
 	// The dialog checked p against the profiles this window last read,
 	// and another kakel may have saved one since.
@@ -191,7 +168,7 @@ func (a *app) saveProfile(p settings.Profile) error {
 // whose new terminal ran it goes back to the account's own shell.
 func (a *app) removeProfile(id string) error {
 	if a.settings == nil {
-		return errors.New("the settings could not be read, so nothing can be kept")
+		return errNoSettings
 	}
 	if err := a.settings.DropProfile(id); err != nil {
 		return err

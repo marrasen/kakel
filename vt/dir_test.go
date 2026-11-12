@@ -133,3 +133,21 @@ func TestAShellThatSaysNothingLeavesNoDirectory(t *testing.T) {
 		t.Errorf("it says %q on %q, want nothing", dir, host)
 	}
 }
+
+// The first machine a shell names is kept past a reset and past the
+// machine an ssh inside it names: that is the machine the pane runs on.
+func TestTheFirstHostOSC7NamesIsKept(t *testing.T) {
+	term := New(20, 5, DefaultPalette(), 10, Callbacks{})
+	feedOSC(t, term, "7;file:///tmp")
+	if got := term.FirstDirHost(); got != "" {
+		t.Fatalf("no host named yet, it says %q", got)
+	}
+
+	feedOSC(t, term, "7;file://kettle/home/marcus")
+	feedOSC(t, term, "7;file://teapot/srv")
+	feed(t, term, "\x1bc")
+
+	if got := term.FirstDirHost(); got != "kettle" {
+		t.Errorf("the first host is %q, want kettle", got)
+	}
+}

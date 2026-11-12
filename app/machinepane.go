@@ -193,7 +193,7 @@ func (a *app) closeMachinePanes(m machines.ID) {
 // runs.
 func (a *app) setDefaultProfile(in SetDefaultProfile) error {
 	if a.settings == nil {
-		return errors.New("the settings could not be read, so nothing can be kept")
+		return errNoSettings
 	}
 	if in.Machine == machines.Local {
 		if in.ID == a.ownShell {
@@ -224,7 +224,7 @@ func (a *app) connectMachine(m machines.ID) error {
 // reorderProfiles keeps the order of a machine's profiles.
 func (a *app) reorderProfiles(in ReorderProfiles) error {
 	if a.settings == nil {
-		return errors.New("the settings could not be read, so nothing can be saved")
+		return errNoSettings
 	}
 	err := a.settings.PutProfileOrder(string(in.Machine), in.IDs)
 	a.st.ProfileOrder = a.settings.ProfileOrder()
@@ -260,7 +260,7 @@ func InOrder[T any](items []T, id func(T) string, order []string) []T {
 // setDisconnectAsk saves whether Disconnect on a machine asks first.
 func (a *app) setDisconnectAsk(in SetDisconnectAsk) error {
 	if a.settings == nil {
-		return errors.New("the settings could not be read, so nothing can be kept")
+		return errNoSettings
 	}
 	err := a.settings.PutDisconnectAsk(string(in.Machine), in.Ask)
 	a.st.NoDisconnectAsk = noAskOf(a.settings)
@@ -366,7 +366,7 @@ type (
 // forgetCommand takes a saved command off the list.
 func (a *app) forgetCommand(c settings.SavedCommand) error {
 	if a.settings == nil {
-		return errors.New("the settings could not be read, so nothing can be kept")
+		return errNoSettings
 	}
 	if err := a.settings.DropCommand(c.Line); err != nil {
 		return err
@@ -378,7 +378,7 @@ func (a *app) forgetCommand(c settings.SavedCommand) error {
 // forgetTunnel takes a saved tunnel off the list.
 func (a *app) forgetTunnel(t settings.SavedTunnel) error {
 	if a.settings == nil {
-		return errors.New("the settings could not be read, so nothing can be kept")
+		return errNoSettings
 	}
 	if err := a.settings.DropTunnel(t); err != nil {
 		return err

@@ -216,7 +216,10 @@ type State struct {
 	// the themes' colours for the panes, when the themes were read
 	// again.
 	// SavedCopies are the copies kept, newest first.
-	SavedCopies   []settings.SavedCopy
+	SavedCopies []settings.SavedCopy
+	// Layouts are the windows saved to open again, in the order they
+	// were saved.
+	Layouts       []settings.SavedLayout
 	Shortcuts     []keys.Change
 	ShortcutsRead uint64
 	// SettingsTab is the Settings tab last asked for, by its title, or ""
@@ -1113,6 +1116,7 @@ func (a *app) loadSettings() {
 			a.st.PasteCheck = s.PasteCheck()
 			a.st.TermProgram = s.TermProgram()
 			a.st.SavedCopies = s.Copies()
+			a.st.Layouts = s.Layouts()
 			a.st.KeyFiles = s.Keys()
 			if size, ok := s.FontSize(); ok && !a.opts.sizeSet {
 				a.st.FontSize = fontSizeIn(float32(size))
@@ -1147,6 +1151,10 @@ func (a *app) loadBook() {
 func (a *app) unreadable(what, until string, err error) {
 	a.failed("Couldn't read "+what, err.Error()+"\n\nNothing changed is kept until "+until+".")
 }
+
+// errNoSettings refuses a change to what is saved while the settings
+// could not be read: a file kakel cannot read is not one to write over.
+var errNoSettings = errors.New("the settings could not be read, so nothing can be saved")
 
 // keep says when something could not be kept for next time.
 func (a *app) keep(what string, err error) {
@@ -1280,6 +1288,14 @@ func failedTitle(in gunim.Intent) string {
 		return "Couldn't add the saved key"
 	case RunSavedCopy, RepeatJob:
 		return "Couldn't copy"
+	case SaveLayout:
+		return "Couldn't save the layout"
+	case RenameLayout:
+		return "Couldn't rename the layout"
+	case SetLayoutAtStart:
+		return "Couldn't change whether the layout opens at start"
+	case RemoveLayout:
+		return "Couldn't remove the layout"
 	}
 	return "That didn't work"
 }
@@ -1391,6 +1407,7 @@ func (a *app) publish() {
 	st.HereMachine, st.HereShell = a.filesKey(a.st.Focus), a.shellHere()
 	st.MachinesUsed = slices.Clone(a.lastOn)
 	st.SavedCopies = slices.Clone(a.st.SavedCopies)
+	st.Layouts = slices.Clone(a.st.Layouts)
 	st.Connected = a.machines.Connected()
 	st.Dialing = a.machines.Dialing()
 	st.Dropped = a.machines.Dropped()
@@ -1775,6 +1792,16 @@ func (a *app) handle(in gunim.Intent) {
 		err = a.forgetCopy(in.Saved)
 	case ShowCopies:
 		a.showCopies()
+	case SaveLayout:
+		// How many panes it left out goes unsaid until a window asks
+		// for it, and says it.
+		_, _, err = a.saveLayout(in)
+	case RenameLayout:
+		err = a.renameLayout(in)
+	case SetLayoutAtStart:
+		err = a.setLayoutAtStart(in)
+	case RemoveLayout:
+		err = a.removeLayout(in.ID)
 	case ReadAgain:
 		if r, ok := a.st.Readers[in.Pane]; ok {
 			// A scrollback is read off its pane again, as it stands now,

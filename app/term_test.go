@@ -16,10 +16,10 @@ func TestANewShellStartsOnlyInAFolderThatIsHere(t *testing.T) {
 	w := gunimtest.New(t, geom.Sz(400, 300), nil)
 	a := newApp(w.Client(), screen.NewShells())
 	dir := t.TempDir()
-	if got := a.localDir("p1", dir); got != dir {
+	if got := folderHere(a.localPath("p1", dir)); got != dir {
 		t.Fatalf("a folder here gave %q", got)
 	}
-	if got := a.localDir("p1", "/mnt/d/no/such/folder"); got != "" {
+	if got := folderHere(a.localPath("p1", "/mnt/d/no/such/folder")); got != "" {
 		t.Fatalf("a folder from elsewhere gave %q", got)
 	}
 }

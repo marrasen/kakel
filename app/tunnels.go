@@ -422,7 +422,7 @@ func (a *app) addTunnel(in AddTunnel) error {
 		return err
 	}
 	if a.settings == nil {
-		return errors.New("the settings could not be read, so nothing can be saved")
+		return errNoSettings
 	}
 	saved := tunnel.Saved(a.keptAs(in.Machine), a.serverID(in.Machine), in.Tunnel)
 	saved.Auto = in.Auto
@@ -441,7 +441,7 @@ func (a *app) editTunnel(in EditTunnel) error {
 		return err
 	}
 	if a.settings == nil {
-		return errors.New("the settings could not be read, so nothing can be saved")
+		return errNoSettings
 	}
 	now := tunnel.Saved(a.keptAs(in.Machine), a.serverID(in.Machine), in.Tunnel)
 	now.Auto = in.Auto
@@ -498,7 +498,7 @@ func (a *app) openAutoTunnels(m machines.ID) {
 // saveTunnel puts saved on the saved list.
 func (a *app) saveTunnel(saved settings.SavedTunnel) error {
 	if a.settings == nil {
-		return errors.New("the settings could not be read, so nothing can be saved")
+		return errNoSettings
 	}
 	err := a.settings.KeepTunnel(saved, mostSavedTunnels)
 	a.st.SavedTunnels = a.settings.Tunnels()

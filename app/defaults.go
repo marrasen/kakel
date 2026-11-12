@@ -1,7 +1,6 @@
 package app
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -162,7 +161,7 @@ func (a *app) machineDefaults() map[machines.ID]MachineDefaults {
 // setDefaultFiles makes a folder where files on a machine open.
 func (a *app) setDefaultFiles(in SetDefaultFiles) error {
 	if a.settings == nil {
-		return errors.New("the settings could not be read, so nothing can be saved")
+		return errNoSettings
 	}
 	err := a.settings.PutFilesDefault(string(in.Machine), in.Key)
 	a.st.FilesDefault = a.settings.FilesDefault()

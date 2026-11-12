@@ -213,6 +213,10 @@ type stored struct {
 	// Copies are the file copies the user asked to keep, newest first.
 	Copies []SavedCopy `json:"copies,omitempty"`
 
+	// Layouts are the windows the user saved to open again, in the order
+	// they were saved.
+	Layouts layoutList `json:"layouts,omitempty"`
+
 	// Keys are the private key files the user keeps, newest first, to
 	// pick from when making a connection.
 	Keys []string `json:"keys,omitempty"`
@@ -2137,7 +2141,7 @@ func check(file stored) error {
 			return fmt.Errorf("saved copy %d, %q, is in the list twice", i+1, saved.Names[0])
 		}
 	}
-	return nil
+	return checkLayouts(file.Layouts)
 }
 
 // saveLocked writes the settings out.
