@@ -20,17 +20,30 @@ import (
 type Slip struct {
 	Line, Col, End int
 	Message        string
+	// Only names the shell the slip is written for where the shell it
+	// goes to has no way of writing it, as a PowerShell cmdlet, and is
+	// empty where Message says how to write it there. The paste dialog
+	// says to run it in that shell; where the shell is fixed, as a
+	// layout's terminal's, it is said what the line is.
+	Only string
 }
 
 // rule is one shell's way of writing something that is wrong in
 // another: where it matches a line, the part in its first group, or the
 // whole match without one, is the slip.
 type rule struct {
-	re  *regexp.Regexp
-	msg string
+	re   *regexp.Regexp
+	msg  string
+	only string
 }
 
 func r(expr, msg string) rule { return rule{re: regexp.MustCompile(expr), msg: msg} }
+
+// only is a rule for what only shell writes, which the paste dialog
+// says to run there.
+func only(expr, shell string) rule {
+	return rule{re: regexp.MustCompile(expr), msg: shell + ": run it in " + shell, only: shell}
+}
 
 // The ways each shell writes things, as rules to check a paste for when
 // it goes to another shell.
@@ -88,7 +101,7 @@ var rules = map[shellsetup.Route][]rule{
 		r(psEnvSet, "PowerShell: write set NAME=value"),
 		r(psEnv, "PowerShell: write %NAME%"),
 		r(psAssign, "PowerShell: write set name=value"),
-		r(cmdlet, "PowerShell: run it in PowerShell"),
+		only(cmdlet, "PowerShell"),
 		r("(`)\\s*$", "PowerShell: end the line with ^ instead"),
 		r(bashContinue, "bash: end the line with ^ instead"),
 		r(bashExport, "bash: write set NAME=value"),
@@ -104,7 +117,7 @@ var rules = map[shellsetup.Route][]rule{
 	shellsetup.Posix: {
 		r(psEnvSet, "PowerShell: write export NAME=value"),
 		r(psEnv, "PowerShell: write $NAME"),
-		r(cmdlet, "PowerShell: run it in PowerShell"),
+		only(cmdlet, "PowerShell"),
 		r(`^\s*(\$[A-Za-z_]\w*\s+=)\s`, "PowerShell: write name=value, with no spaces"),
 		r("(`)\\s*$", "PowerShell: end the line with \\ instead"),
 		r(cmdVar, "Command Prompt: write $NAME"),
@@ -152,7 +165,7 @@ func Find(text string, to shellsetup.Route) []Slip {
 		}
 		col := utf8.RuneCountInString(line[:bestAt]) + 1
 		out = append(out, Slip{Line: i + 1, Col: col, End: col + utf8.RuneCountInString(line[bestAt:bestEnd]),
-			Message: rs[best].msg})
+			Message: rs[best].msg, Only: rs[best].only})
 	}
 	return out
 }

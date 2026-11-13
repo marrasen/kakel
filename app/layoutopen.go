@@ -735,6 +735,20 @@ func profileName(id string) string {
 	return id
 }
 
+// farSlotRun is what a layout's terminal on a server, kept as running
+// kept, starts: kept, where that is the server's own shell or one of its
+// profiles, as known says; or else def, what a new terminal there runs.
+// missing says kept named a profile no longer there.
+func farSlotRun(kept string, known bool, def string) (run string, missing bool) {
+	switch {
+	case kept == LoginShell, known:
+		return kept, false
+	case kept == "":
+		return def, false
+	}
+	return def, true
+}
+
 // errClosed is why nothing starts on a machine whose connection closed
 // on the way.
 var errClosed = errors.New("the connection has closed")
@@ -746,14 +760,10 @@ var errClosed = errors.New("the connection has closed")
 func (a *app) startFarSlot(id string, m machines.ID, r settings.SavedPane, still func() bool, fail failure) {
 	name := a.machines.Name(m)
 	title := "Couldn't open a shell on " + name
-	run := r.Profile
-	switch _, known := a.farProfile(m, run); {
-	case run == LoginShell, known:
-	case run == "":
-		run = a.farDefault(m)
-	default:
-		a.failed("Profile not found", profileName(run)+" is no longer saved on "+name+". The terminal starts the default shell.")
-		run = a.farDefault(m)
+	_, known := a.farProfile(m, r.Profile)
+	run, missing := farSlotRun(r.Profile, known, a.farDefault(m))
+	if missing {
+		a.failed("Profile not found", profileName(r.Profile)+" is no longer saved on "+name+". The terminal starts the default shell.")
 	}
 	p, _ := a.farProfile(m, run)
 	login := len(p.Command) == 0
@@ -1034,10 +1044,14 @@ func (a *app) intoSlot(p Pane, id string) {
 			g.Front = p.ID
 		}
 	}
-	if s := a.slots[id]; s != nil && s.recipe.Kind == settings.LayoutTerminal && len(s.recipe.Start) > 0 {
+	if s := a.slots[id]; s != nil && s.recipe.Kind == settings.LayoutTerminal {
 		// Kept whether they are typed or not, as through another window,
-		// for a layout saved from this window to keep them too.
-		a.startLines[p.ID] = slices.Clone(s.recipe.Start)
+		// for a layout saved from this window to keep them too, and with
+		// them the slot, for lines given it since to reach the pane.
+		if len(s.recipe.Start) > 0 {
+			a.startLines[p.ID] = slices.Clone(s.recipe.Start)
+		}
+		a.linesFrom[p.ID] = layoutSlot{layout: s.layout, slot: s.name}
 	}
 	a.forgetSlot(id)
 	a.settleRecords()

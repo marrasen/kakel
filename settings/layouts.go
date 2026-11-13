@@ -263,33 +263,68 @@ func (s *Settings) ReplaceLayout(l SavedLayout) error {
 // hold other panes now.
 var ErrLayoutSavedOver = errors.New("layout saved over")
 
-// PutStartLines gives each terminal of the layout with was's ID the
-// start lines lines holds for its slot, and none to one lines leaves
-// out, and saves. was is the layout as the lines were written for it:
-// where the file holds it with other splits or panes now, as when
-// another window saved over it, it is refused with ErrLayoutSavedOver,
-// and one no longer in the list with ErrNoLayout. A name or Open at
-// start changed since stays as it is now.
+// PutStartLines gives each slot lines names the start lines it holds
+// for it, none for nil, and saves: lines holds the slots whose lines
+// were changed, and the others keep theirs, so two windows giving lines
+// to two terminals of one layout both stand. Only a terminal takes
+// lines. was is the layout as the lines were written for it, and
+// StartLinesFit says whether they still fit the layout as the file holds
+// it now; one no longer in the list is refused with ErrNoLayout. A name
+// or Open at start changed since stays as it is now.
 func (s *Settings) PutStartLines(was SavedLayout, lines map[string][]string) error {
 	return s.putLayouts(func(have []SavedLayout) ([]SavedLayout, error) {
 		i := slices.IndexFunc(have, func(at SavedLayout) bool { return at.ID == was.ID })
 		if i < 0 {
 			return nil, ErrNoLayout
 		}
-		if !reflect.DeepEqual(have[i].Root, was.Root) || !maps.EqualFunc(have[i].Panes, was.Panes, sameRecipe) {
-			return nil, ErrLayoutSavedOver
+		if err := StartLinesFit(have[i], was, lines); err != nil {
+			return nil, err
 		}
 		l := have[i].Clone()
-		for slot, p := range l.Panes {
-			p.Start = nil
-			if p.Kind == LayoutTerminal {
-				p.Start = StartLines(lines[slot])
+		for slot, start := range lines {
+			if p, ok := l.Panes[slot]; ok && p.Kind == LayoutTerminal {
+				p.Start = StartLines(start)
+				l.Panes[slot] = p
 			}
-			l.Panes[slot] = p
 		}
 		have[i] = l
 		return have, nil
 	})
+}
+
+// StartLinesFit reports whether lines, start lines written for the
+// layout as was held it, fit it as now holds it: ErrLayoutSavedOver
+// where now has other splits or tabs, or a pane started another way, or
+// other lines on a slot lines changes, as when another window saved over
+// it or gave that terminal lines of its own; nil where they fit. Both are
+// compared as the settings file carries them, so words the file cannot
+// hold exactly, as a folder named in bytes that are not UTF-8, read the
+// same on both sides.
+func StartLinesFit(now, was SavedLayout, lines map[string][]string) error {
+	now, was = asFiled(now), asFiled(was)
+	if !reflect.DeepEqual(now.Root, was.Root) || !maps.EqualFunc(now.Panes, was.Panes, sameRecipe) {
+		return ErrLayoutSavedOver
+	}
+	for slot := range lines {
+		if !slices.Equal(now.Panes[slot].Start, was.Panes[slot].Start) {
+			return ErrLayoutSavedOver
+		}
+	}
+	return nil
+}
+
+// asFiled is l as it reads back from the settings file: written out and
+// read in again, its start lines tidied as the file's are.
+func asFiled(l SavedLayout) SavedLayout {
+	raw, err := json.Marshal(l)
+	if err != nil {
+		return l.tidy()
+	}
+	var out SavedLayout
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return l.tidy()
+	}
+	return out.tidy()
 }
 
 // sameRecipe reports whether a and b start the same pane, whatever start

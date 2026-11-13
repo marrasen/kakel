@@ -409,3 +409,87 @@ func TestStartLinesWrittenByHandAreTidied(t *testing.T) {
 		t.Fatalf("the layout reads %+v", got)
 	}
 }
+
+// Start lines are written to the slots they are given for and to no
+// other, so two saves of one layout, each giving lines to another
+// terminal, both stand; a slot the second changes, whose lines the first
+// changed meanwhile, is refused as saved over.
+func TestStartLinesAreWrittenOnlyWhereChanged(t *testing.T) {
+	s, err := Load(at(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.SaveLayout(aLayout("Work"), false); err != nil {
+		t.Fatal(err)
+	}
+	was := s.Layouts()[0]
+	if err := s.PutStartLines(was, map[string][]string{"p1": {"one"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.PutStartLines(was, map[string][]string{"p3": {"two"}}); err != nil {
+		t.Fatal(err)
+	}
+	got := s.Layouts()[0]
+	if !slices.Equal(got.Panes["p1"].Start, []string{"one"}) || !slices.Equal(got.Panes["p3"].Start, []string{"two"}) {
+		t.Fatalf("after two saves, the panes hold %+v", got.Panes)
+	}
+	if err := s.PutStartLines(was, map[string][]string{"p1": {"three"}}); !errors.Is(err, ErrLayoutSavedOver) {
+		t.Fatalf("lines changed since were written over: %v", err)
+	}
+	if err := s.PutStartLines(was, map[string][]string{"p3": nil}); !errors.Is(err, ErrLayoutSavedOver) {
+		t.Fatalf("lines changed since were taken out: %v", err)
+	}
+	now := s.Layouts()[0]
+	if err := s.PutStartLines(now, map[string][]string{"p1": nil}); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Layouts()[0]; got.Panes["p1"].Start != nil || !slices.Equal(got.Panes["p3"].Start, []string{"two"}) {
+		t.Fatalf("taking p1's lines out left %+v", got.Panes)
+	}
+}
+
+// A layout changed in its splits alone, in a pane's recipe alone, or in
+// the start lines of a slot the lines are for alone, is saved over; one
+// whose words do not carry through the file exactly, as a folder named
+// in bytes that are not UTF-8, is the same layout read back.
+func TestStartLinesSeeALayoutSavedOver(t *testing.T) {
+	base := aLayout("Work")
+	base.ID = "work"
+	lines := map[string][]string{"p1": {"make"}}
+	for _, c := range []struct {
+		name   string
+		change func(*SavedLayout)
+		over   bool
+	}{
+		{"the tree", func(l *SavedLayout) { l.Root.Share = 0.5 }, true},
+		{"a tab in front", func(l *SavedLayout) { l.Root.Kids[1].Front = "p2" }, true},
+		{"a pane's folder", func(l *SavedLayout) { p := l.Panes["p3"]; p.Folder = "/tmp"; l.Panes["p3"] = p }, true},
+		{"a pane's kind", func(l *SavedLayout) { p := l.Panes["p2"]; p.Kind = LayoutTerminal; l.Panes["p2"] = p }, true},
+		{"the lines changed", func(l *SavedLayout) { p := l.Panes["p1"]; p.Start = []string{"other"}; l.Panes["p1"] = p }, true},
+		{"another slot's lines", func(l *SavedLayout) { p := l.Panes["p3"]; p.Start = []string{"other"}; l.Panes["p3"] = p }, false},
+		{"the name", func(l *SavedLayout) { l.Name = "Play" }, false},
+		{"where it stands", func(l *SavedLayout) { l.Place.X = 400 }, false},
+	} {
+		now := base.Clone()
+		c.change(&now)
+		if err := StartLinesFit(now, base, lines); errors.Is(err, ErrLayoutSavedOver) != c.over {
+			t.Errorf("with %s changed, the lines fit: %v", c.name, err)
+		}
+	}
+
+	s, err := Load(at(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	odd := aLayout("Odd")
+	p := odd.Panes["p1"]
+	p.Folder = "/srv/caf\xe9"
+	odd.Panes["p1"] = p
+	kept, _, err := s.SaveLayout(odd, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.PutStartLines(kept, lines); err != nil {
+		t.Fatalf("a folder in bytes that are not UTF-8 refused the lines: %v", err)
+	}
+}

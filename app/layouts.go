@@ -43,9 +43,10 @@ type (
 	}
 	// RenameLayout gives the layout with ID another name.
 	RenameLayout struct{ ID, Name string }
-	// SaveStartLines gives each terminal of Layout, as it was when the
-	// lines were written for it, the start lines Lines holds for its
-	// slot, and none to one Lines leaves out.
+	// SaveStartLines gives each slot of Layout, as it was when the lines
+	// were written for it, that Lines names, the start lines Lines holds
+	// for it, none for nil: the slots whose lines were changed. The other
+	// slots keep theirs.
 	SaveStartLines struct {
 		Layout settings.SavedLayout
 		Lines  map[string][]string
@@ -104,6 +105,9 @@ func (a *app) saveLayout(in SaveLayout) (settings.SavedLayout, leftOut, bool, er
 		// Saved as it, the window is offered it to save over next time.
 		w.fromLayout = kept.ID
 		a.recordSaved(kept.ID, kept, names)
+		for id, slot := range names {
+			a.linesFrom[id] = layoutSlot{layout: kept.ID, slot: slot}
+		}
 	}
 	return kept, left, replaced, err
 }
@@ -408,15 +412,39 @@ func (a *app) renameLayout(in RenameLayout) error {
 	return err
 }
 
-// saveStartLines gives a layout's terminals their start lines.
+// saveStartLines gives a layout's terminals their start lines, and the
+// panes open from those slots, or waiting to open, the same lines to
+// keep, so the layout saved again from their window keeps them. They are
+// not typed into a shell running already.
 func (a *app) saveStartLines(in SaveStartLines) error {
 	if a.settings == nil {
 		return errNoSettings
 	}
 	err := a.settings.PutStartLines(in.Layout, in.Lines)
 	a.st.Layouts = a.settings.Layouts()
-	return err
+	if err != nil {
+		return err
+	}
+	for id, from := range a.linesFrom {
+		if lines, ok := in.Lines[from.slot]; ok && from.layout == in.Layout.ID {
+			if lines = settings.StartLines(lines); lines != nil {
+				a.startLines[id] = lines
+			} else {
+				delete(a.startLines, id)
+			}
+		}
+	}
+	for _, s := range a.slots {
+		if lines, ok := in.Lines[s.name]; ok && s.layout == in.Layout.ID && s.recipe.Kind == settings.LayoutTerminal {
+			s.recipe.Start = settings.StartLines(lines)
+		}
+	}
+	return nil
 }
+
+// layoutSlot is a slot of a layout: the layout's ID, and the slot's name
+// in it.
+type layoutSlot struct{ layout, slot string }
 
 // setLayoutAtStart has a layout open as kakel starts, or not.
 func (a *app) setLayoutAtStart(in SetLayoutAtStart) error {
@@ -528,6 +556,18 @@ func LayoutHolds(l settings.SavedLayout) string {
 	return listOf(parts)
 }
 
+// LayoutStartLines counts the start lines layout l's terminals type as
+// it opens.
+func LayoutStartLines(l settings.SavedLayout) int {
+	n := 0
+	for _, p := range l.Panes {
+		if p.Kind == settings.LayoutTerminal {
+			n += len(p.Start)
+		}
+	}
+	return n
+}
+
 // LayoutMachines are the names of the machines layout l opens panes on,
 // as LayoutHosts gives them.
 func LayoutMachines(l settings.SavedLayout, named func(id string) (string, bool)) []string {
@@ -606,24 +646,23 @@ func LayoutPaneHost(p settings.SavedPane, named func(id string) (string, bool)) 
 // what LayoutShell names a layout's terminal by. Profiles are those on
 // every machine, Shells those here by the names the user gave them,
 // Found those found here, hidden ones too, with the command line each
-// runs, Default the ID of the one new terminals here start, ServerShells
-// the profile each saved server's new terminal runs, and Defaults what
-// opens on each machine, by name.
+// runs, Default the ID of the one new terminals here start, and Defaults
+// what opens on each machine.
 type KnownShells struct {
-	Profiles     []settings.Profile
-	Shells       []ShellChoice
-	Found        []ShellChoice
-	Default      string
-	ServerShells map[string]string
-	Defaults     map[machines.ID]MachineDefaults
+	Profiles []settings.Profile
+	Shells   []ShellChoice
+	Found    []ShellChoice
+	Default  string
+	Defaults map[machines.ID]MachineDefaults
 }
 
 // LayoutShell is the shell a layout's terminal kept as r starts, as
 // the shells known tell it: its name, and its kind, as shellKindOf has
 // an open pane's. Here, it is the profile or shell kept, or the program
-// kept, or else the one new terminals start; on a server, the profile
-// kept, or else the one the server runs by default, or its own shell,
-// taken to be POSIX. A profile's program the setup is not written for
+// kept, or else the one new terminals start; on a server, what opening
+// it starts there, as startFarSlot picks it: the profile kept, or else
+// what a new terminal there runs, or its own shell by the name the
+// server shows it under, taken to be POSIX. A profile's program the setup is not written for
 // is of no kind known. Through another kakel window the shell is that
 // window's to pick: the name is "" and the kind unknown, as is a shell
 // no longer known.
@@ -645,20 +684,19 @@ func LayoutShell(r settings.SavedPane, known KnownShells) (string, shellsetup.Ro
 	case r.Window:
 		return "", shellsetup.NoRoute
 	case r.Host != "" || r.HostID != "":
-		run := r.Profile
-		if run == "" {
-			run = known.ServerShells[r.HostID]
+		var d MachineDefaults
+		if r.HostID != "" {
+			d = known.Defaults[machines.ID(r.HostID)]
 		}
+		_, kept := profile(r.Profile, r.HostID)
+		run, _ := farSlotRun(r.Profile, kept, d.Runs)
 		if p, ok := profile(run, r.HostID); ok && run != LoginShell {
 			return ofProfile(p)
 		}
-		name := "Login Shell"
-		for _, e := range known.Defaults[machines.ID(r.HostID)].Shells {
-			if e.Action == "login" {
-				name = e.Name
-			}
+		if d.Login != "" {
+			return d.Login, shellsetup.Posix
 		}
-		return name, shellsetup.Posix
+		return "Login Shell", shellsetup.Posix
 	case r.Profile == "" && len(r.Command) > 0:
 		line := joinLine(r.Command)
 		for _, s := range known.Found {

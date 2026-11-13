@@ -777,6 +777,11 @@ type app struct {
 	// startLines are the start lines of each terminal a layout opened,
 	// typed or not, so a layout saved from its window keeps them.
 	startLines map[string][]string
+	// linesFrom are the layout and the slot each terminal opened from a
+	// layout, or saved into one, stands for, so start lines given to that
+	// slot since reach the pane, and a layout saved from its window
+	// keeps them.
+	linesFrom map[string]layoutSlot
 	// farHost is the machine a pane attached from another window runs
 	// on, when that is a machine the window reached rather than its own.
 	farHost map[string]string
@@ -950,6 +955,7 @@ func newApp(c gunim.Client, sh *screen.Shells) *app {
 		linksAt:      map[string]*atomic.Pointer[machines.ID]{},
 		argvs:        map[string][]string{},
 		startLines:   map[string][]string{},
+		linesFrom:    map[string]layoutSlot{},
 		farHost:      map[string]string{},
 		nextFar:      map[machines.ID]string{},
 		farRuns:      map[string]string{},
@@ -2598,6 +2604,7 @@ func (a *app) remove(id string) {
 	delete(a.commands, id)
 	delete(a.argvs, id)
 	delete(a.startLines, id)
+	delete(a.linesFrom, id)
 	delete(a.farRuns, id)
 	delete(a.noticed, id)
 	delete(a.paneAt, id)

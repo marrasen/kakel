@@ -321,3 +321,38 @@ func TestAStartLineAskingForAPasswordIsAnswered(t *testing.T) {
 	_, _ = tm.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyEnter})
 	linesOf(t, a, p.ID, "GOT-pw")
 }
+
+// Lines given in Start Lines… to a layout open in a window are the
+// lines its terminal keeps: saved over the layout from that window, they
+// stand, and so do lines given after a window was saved as a layout.
+func TestLinesGivenInTheDialogAreKeptBySavingOver(t *testing.T) {
+	a, opened := openingApp(t)
+	a.st.ShellSetup = false
+	kept := keep(t, a, alone("Shop",
+		settings.SavedPane{Kind: settings.LayoutTerminal, Command: plainShell()},
+		settings.SavedPane{Kind: settings.LayoutTerminal, Command: plainShell(), Start: []string{"echo KEEP"}}))
+	w := opens(t, a, opened, kept.ID)
+	waitFor(t, a, "the panes to start", func() bool { return len(waitingIn(a, w)) == 0 })
+
+	saveOver := func(want map[string][]string) {
+		t.Helper()
+		// As the dialog sends it, with the layout as it stood when opened.
+		again, _, _, err := a.saveLayout(SaveLayout{Window: w.id, Name: "Shop", Replace: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for slot, lines := range want {
+			if got := again.Panes[slot].Start; !slices.Equal(got, lines) {
+				t.Fatalf("saved over, %s keeps the lines %q, want %q", slot, got, lines)
+			}
+		}
+	}
+	a.handle(SaveStartLines{Layout: a.st.Layouts[0], Lines: map[string][]string{"p1": {"npm run dev"}}})
+	if len(a.st.Notices) != 0 {
+		t.Fatalf("saving the lines said %+v", a.st.Notices)
+	}
+	saveOver(map[string][]string{"p1": {"npm run dev"}, "p2": {"echo KEEP"}})
+
+	a.handle(SaveStartLines{Layout: a.st.Layouts[0], Lines: map[string][]string{"p1": {"npm test"}, "p2": nil}})
+	saveOver(map[string][]string{"p1": {"npm test"}, "p2": nil})
+}

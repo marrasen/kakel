@@ -246,12 +246,20 @@ func TestALayoutsTerminalIsSaidByItsShell(t *testing.T) {
 			{ID: "profile:ps", Name: "Admin PowerShell", Command: []string{"pwsh", "-NoLogo"}},
 			{ID: "profile:zsh", Name: "Zsh", HostID: "s1", Command: []string{"zsh"}},
 		},
-		Shells:       []ShellChoice{{ID: "cmd", Title: "Command Prompt (mine)"}},
-		Found:        []ShellChoice{{ID: "bash", Title: "Bash", Line: "/bin/bash"}, {ID: "cmd", Title: "Command Prompt", Line: `C:\Windows\System32\cmd.exe`}},
-		Default:      "bash",
-		ServerShells: map[string]string{"s2": "profile:zsh"},
-		Defaults:     map[machines.ID]MachineDefaults{"s3": {Shells: []ShellEntry{{Action: "login", Name: "Own Shell"}}}},
+		Shells:  []ShellChoice{{ID: "cmd", Title: "Command Prompt (mine)"}},
+		Found:   []ShellChoice{{ID: "bash", Title: "Bash", Line: "/bin/bash"}, {ID: "cmd", Title: "Command Prompt", Line: `C:\Windows\System32\cmd.exe`}},
+		Default: "bash",
+		Defaults: map[machines.ID]MachineDefaults{
+			"s3": {Shells: []ShellEntry{{Action: "login", Name: "Own Shell"}}, Login: "Own Shell"},
+			"s5": {Runs: "profile:pwsh7", Login: "Login Shell"},
+			"s6": {Runs: "profile:zsh6", Login: "Login Shell"},
+			// Renamed, on a server of no profiles.
+			"s7": {Shells: []ShellEntry{{Action: "terminal", Name: "My Login", Default: true}}, Login: "My Login"},
+		},
 	}
+	known.Profiles = append(known.Profiles,
+		settings.Profile{ID: "profile:pwsh7", Name: "PowerShell 7", HostID: "s5", Command: []string{"pwsh"}},
+		settings.Profile{ID: "profile:zsh6", Name: "Zsh 6", HostID: "s6", Command: []string{"zsh"}})
 	for _, c := range []struct {
 		r    settings.SavedPane
 		name string
@@ -268,6 +276,13 @@ func TestALayoutsTerminalIsSaidByItsShell(t *testing.T) {
 		{settings.SavedPane{Host: "web", HostID: "s1", Profile: LoginShell}, "Login Shell", shellsetup.Posix},
 		{settings.SavedPane{Host: "db", HostID: "s3", Profile: LoginShell}, "Own Shell", shellsetup.Posix},
 		{settings.SavedPane{Host: "desk", HostID: "s4", Window: true}, "", shellsetup.NoRoute},
+		// A profile removed since starts what the server runs by default,
+		// as opening does: its default profile, or with its own shell
+		// hidden, the first shown, or its own shell by the name it shows.
+		{settings.SavedPane{Host: "win", HostID: "s5", Profile: "profile:gone"}, "PowerShell 7", shellsetup.PowerShell},
+		{settings.SavedPane{Host: "win", HostID: "s5"}, "PowerShell 7", shellsetup.PowerShell},
+		{settings.SavedPane{Host: "hid", HostID: "s6"}, "Zsh 6", shellsetup.Posix},
+		{settings.SavedPane{Host: "own", HostID: "s7", Profile: "profile:gone"}, "My Login", shellsetup.Posix},
 	} {
 		if name, kind := LayoutShell(c.r, known); name != c.name || kind != c.kind {
 			t.Errorf("%+v starts %q, %v; want %q, %v", c.r, name, kind, c.name, c.kind)

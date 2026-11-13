@@ -18,6 +18,7 @@ import (
 	"github.com/marrasen/kakel/app"
 	"github.com/marrasen/kakel/look"
 	"github.com/marrasen/kakel/settings"
+	"github.com/marrasen/kakel/words"
 )
 
 // Layouts: the Save Layout dialog, the palette's line for each layout,
@@ -396,11 +397,11 @@ func newLayoutCard(p *layoutsPane, l settings.SavedLayout) *layoutCard {
 	c := &layoutCard{
 		pane: p, id: l.ID, badge: newJobBadge(),
 		open: iconButton(icon.SquareArrowOutUpRight, "Open"), rename: iconButton(icon.Pencil, "Rename"),
-		lines: iconButton(icon.SquareChevronRight, "Start Lines…"), remove: iconButton(icon.Trash2, "Remove"),
+		lines: iconButton(icon.ListStart, "Start Lines…"), remove: iconButton(icon.Trash2, "Remove"),
 		start: widget.NewSwitch("Open at start"), hosts: map[app.LayoutHost]*widget.Fold{}, at: map[gunim.Node]*anim.Point{},
 	}
 	c.badge.icon.Icon, c.badge.icon.Color = icon.LayoutPanelLeft, widget.Accent
-	c.nameText, c.holdsText = l.Name, app.LayoutHolds(l)
+	c.nameText, c.holdsText = l.Name, cardHolds(l)
 	c.name, c.holds = widget.NewPages(nameLabel(c.nameText)), widget.NewPages(holdsLabel(c.holdsText))
 	c.open.Kind = widget.ButtonPrimary
 	c.rename.Ghost, c.lines.Ghost, c.remove.Ghost = true, true, true
@@ -445,6 +446,16 @@ func newLayoutCard(p *layoutsPane, l settings.SavedLayout) *layoutCard {
 	return c
 }
 
+// cardHolds is what a card says layout l opens, and how many start
+// lines its terminals type: "4 terminals, 3 start lines".
+func cardHolds(l settings.SavedLayout) string {
+	holds := app.LayoutHolds(l)
+	if n := app.LayoutStartLines(l); n > 0 {
+		holds += ", " + words.ManyOf(n, "start line", "start lines")
+	}
+	return holds
+}
+
 // nameLabel and holdsLabel are a card's name, and what it opens, as the
 // card shows them.
 func nameLabel(s string) *widget.Label {
@@ -486,7 +497,7 @@ func (c *layoutCard) show(l settings.SavedLayout, u *gunim.UI) {
 		c.nameText = l.Name
 		c.name.Show(nameLabel(l.Name), geom.Point{}, u)
 	}
-	if holds := app.LayoutHolds(l); holds != c.holdsText {
+	if holds := cardHolds(l); holds != c.holdsText {
 		c.holdsText = holds
 		c.holds.Show(holdsLabel(holds), geom.Point{}, u)
 	}
