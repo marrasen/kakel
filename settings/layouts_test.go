@@ -358,14 +358,16 @@ func TestStartLinesComeBackFromTheFile(t *testing.T) {
 	}
 	l := aLayout("Work")
 	p1, p2 := l.Panes["p1"], l.Panes["p2"]
-	p1.Start = []string{"  ", " cd /srv", "tmux attach\r\nhtop", ""}
+	p1.Start = []string{"  ", " cd /srv", "tmux attach\r\nhtop\t", "", "\tgit log\t\t--oneline \t-5"}
 	p2.Start = []string{"make"}
 	l.Panes["p1"], l.Panes["p2"] = p1, p2
 	kept, _, err := s.SaveLayout(l, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{" cd /srv", "tmux attach", "htop"}
+	// Trimmed, and a tab, which would start the shell's completion, is a
+	// space.
+	want := []string{"cd /srv", "tmux attach", "htop", "git log --oneline  -5"}
 	if got := kept.Panes["p1"].Start; !slices.Equal(got, want) {
 		t.Fatalf("kept the lines %q, want %q", got, want)
 	}
@@ -382,7 +384,7 @@ func TestStartLinesComeBackFromTheFile(t *testing.T) {
 		t.Fatalf("read back %+v, want %+v", got, kept)
 	}
 	got[0].Panes["p1"].Start[0] = "changed"
-	if line := again.Layouts()[0].Panes["p1"].Start[0]; line != " cd /srv" {
+	if line := again.Layouts()[0].Panes["p1"].Start[0]; line != "cd /srv" {
 		t.Fatalf("a change to the copy reached the settings: %q", line)
 	}
 }

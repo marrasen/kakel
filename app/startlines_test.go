@@ -1,12 +1,16 @@
 package app
 
 import (
+	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/marrasen/kakel/input"
 	"github.com/marrasen/kakel/remote"
 	"github.com/marrasen/kakel/settings"
 )
@@ -24,6 +28,44 @@ func markingShell(t *testing.T) []string {
 		t.Skip("no bash here")
 	}
 	return []string{bash, "--norc", "--noprofile"}
+}
+
+// bashWith is bash reading rc as its startup file, which Shell Setup
+// teaches as it teaches any bash. A test of one skips where there is no
+// bash, and on Windows, where bash is not the shell a user starts.
+func bashWith(t *testing.T, rc string) []string {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("bash is not the Windows shell")
+	}
+	bash, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("no bash here")
+	}
+	file := filepath.Join(t.TempDir(), "rc")
+	if err := os.WriteFile(file, []byte(rc+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return []string{bash, "--rcfile", file, "--noprofile"}
+}
+
+// holds runs what the app's goroutines send it for d, as its loop
+// would, and fails if ok stops holding in that time.
+func holds(t *testing.T, a *app, what string, d time.Duration, ok func() bool) {
+	t.Helper()
+	end := time.After(d)
+	for {
+		if !ok() {
+			t.Fatalf("%s stopped holding", what)
+		}
+		select {
+		case f := <-a.events:
+			f()
+		case <-time.After(10 * time.Millisecond):
+		case <-end:
+			return
+		}
+	}
 }
 
 // linesOf waits for pane id's terminal to show each of lines on a line
@@ -210,4 +252,63 @@ func TestStartLinesThroughAWindowAreKept(t *testing.T) {
 		t.Fatalf("watches %v, want %v again", got, first)
 	}
 	check("watched again", w)
+}
+
+// A bash with a PROMPT_COMMAND of its own, as starship, direnv and
+// history -a give it, gets its start lines too, and stands at its prompt
+// as one running nothing.
+func TestStartLinesWithAPromptCommandOfTheShellsOwn(t *testing.T) {
+	a, opened := openingApp(t)
+	a.st.ShellSetup = true
+	kept := keep(t, a, alone("Own", settings.SavedPane{Kind: settings.LayoutTerminal,
+		Command: bashWith(t, "PROMPT_COMMAND='history -a'"), Start: []string{"echo ONE", "echo TWO"}}))
+
+	p := onlyPane(t, a, opens(t, a, opened, kept.ID))
+	if at := linesOf(t, a, p.ID, "ONE", "TWO"); at[0] >= at[1] {
+		t.Fatalf("TWO ran on row %d, before ONE on row %d", at[1], at[0])
+	}
+	tm := a.terminal(p.ID)
+	waitFor(t, a, "the shell to stand at its prompt", func() bool { return tm.LinesLeft() == 0 && !tm.RunningAProgram() })
+}
+
+// A line still running holds back the next, however long the shell's
+// prompt takes to work out: the second line is not typed into cat.
+func TestARunningStartLineHoldsBackTheNext(t *testing.T) {
+	for name, rc := range map[string]string{
+		"a prompt at once": "",
+		"a slow prompt":    `PS1='$(sleep 0.4)\$ '`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			a, opened := openingApp(t)
+			a.st.ShellSetup = true
+			kept := keep(t, a, alone("Cat", settings.SavedPane{Kind: settings.LayoutTerminal,
+				Command: bashWith(t, rc), Start: []string{"cat", "echo TWO"}}))
+
+			p := onlyPane(t, a, opens(t, a, opened, kept.ID))
+			tm := a.terminal(p.ID)
+			waitFor(t, a, "cat to run", func() bool { return tm.RunningAProgram() && strings.Contains(tm.AllText(), "cat") })
+			holds(t, a, "one line left while cat runs", 1500*time.Millisecond, func() bool {
+				return tm.LinesLeft() == 1 && !strings.Contains(tm.AllText(), "TWO")
+			})
+		})
+	}
+}
+
+// A start line that asks for a password, in a shell that marks its
+// prompts, is answered by the user, and the line after it is typed once
+// the shell is back.
+func TestAStartLineAskingForAPasswordIsAnswered(t *testing.T) {
+	a, opened := openingApp(t)
+	a.st.ShellSetup = true
+	kept := keep(t, a, alone("Ask", settings.SavedPane{Kind: settings.LayoutTerminal,
+		Command: bashWith(t, ""), Start: []string{"read -rsp 'Password: ' x", "echo GOT-$x"}}))
+
+	p := onlyPane(t, a, opens(t, a, opened, kept.ID))
+	tm := a.terminal(p.ID)
+	waitFor(t, a, "the question", func() bool { return strings.HasSuffix(strings.TrimSpace(tm.AllText()), "Password:") })
+	for _, r := range "pw" {
+		_, _ = tm.HandleKey(input.Event{Kind: input.Text, Rune: r, NormalText: true})
+	}
+	_, _ = tm.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyEnter})
+	linesOf(t, a, p.ID, "GOT-pw")
 }

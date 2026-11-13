@@ -187,8 +187,9 @@ The whole list. The [README](README.md) has the short version.
   are; otherwise a new one opens, in the same folder on the window's own
   machine. Closing it here leaves it open there. A terminal can hold
   start lines, which kakel types into its shell as the layout opens it,
-  one at each prompt, so they land in the shell's history; a key or a
-  paste in the pane cancels the lines left. A layout can open as
+  one at each prompt, so they land in the shell's history; anything
+  typed or pasted into the pane cancels the lines left, except the
+  answer to a password question. A layout can open as
   kakel starts, and be given a key in Settings › Shortcuts. Tool panes
   such as Settings are left out; so are readers and tunnels, and saving
   names those.

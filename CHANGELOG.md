@@ -18,13 +18,25 @@ log/app.log` in another, `tmux attach` on a server. The first is typed
 at the shell's first prompt and each after it at the next prompt, so
 they go into the shell's history and Ctrl+C, Up, Enter runs one again.
 A shell that does not say when it is at its prompt is typed into once
-it has been quiet for a moment. A key or a paste in the pane cancels
-the lines left. Nothing is typed into a password question, a pane
-through another kakel window, or a shell started again. Saving the
-window again keeps them. They are saved in the settings file as plain
+it has been quiet for a moment, and then a line still running does not
+hold back the next. Anything typed or pasted into the pane cancels the
+lines left, except the answer to a password question. Nothing is typed
+into a password question, a pane through another kakel window, or a
+shell started again. Saving the window again keeps them. They are saved in the settings file as plain
 text, so keep passwords out of them. A kakel from v0.12.2-beta.15
 opens these layouts without the lines, and drops the lines from the
 file the next time it saves its settings.
+
+### Fixed
+
+**bash with a `PROMPT_COMMAND` of its own stood at its prompt as if a
+command ran.** With Shell Setup on, bash marked a command started at
+each prompt when its `PROMPT_COMMAND` ran something of its own, as
+starship, direnv, zoxide, atuin or `history -a` add. kakel then took
+the shell to be running a program while it sat at its prompt. Shell
+Setup now marks the prompt once the whole `PROMPT_COMMAND` has run, a
+`PROMPT_COMMAND` array too. What the `PROMPT_COMMAND` runs now sees the
+last command's status, where before it saw 0.
 
 ## v0.12.2-beta.15
 

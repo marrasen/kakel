@@ -593,6 +593,6 @@ func (t *Terminal) Said() uint64 { return t.said.Load() }
 // that is running on this one, which takes the pane over from its start
 // lines as typing here does.
 func (t *Terminal) Send(b []byte) {
-	t.start.took()
+	t.start.took(b)
 	t.send(b)
 }

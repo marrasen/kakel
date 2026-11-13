@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"reflect"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -121,19 +122,23 @@ type SavedPane struct {
 }
 
 // StartLines are lines as a layout keeps them as start lines: a line
-// holding line breaks is the lines it holds, and blank lines are dropped.
-// None is nil.
+// holding line breaks is the lines it holds, each is trimmed, a tab or a
+// run of them inside one is a space, as a tab typed into a shell starts
+// its completion, and blank lines are dropped. None is nil.
 func StartLines(lines []string) []string {
 	var out []string
 	for _, l := range lines {
 		for _, one := range strings.FieldsFunc(l, func(r rune) bool { return r == '\r' || r == '\n' }) {
-			if strings.TrimSpace(one) != "" {
+			if one = strings.TrimSpace(tabs.ReplaceAllString(one, " ")); one != "" {
 				out = append(out, one)
 			}
 		}
 	}
 	return out
 }
+
+// tabs is a run of tabs.
+var tabs = regexp.MustCompile("\t+")
 
 // tidy is l with each pane's start lines as a layout keeps them, and
 // none on a pane other than a terminal. The panes are copied where one

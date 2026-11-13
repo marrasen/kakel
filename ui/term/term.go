@@ -363,7 +363,7 @@ func New(cfg Config) (*Terminal, error) {
 		pal: pal,
 		out: make(chan []byte, outQueue),
 	}
-	t.start = newStarter(t.send, func() bool { return asksForSecret(t.cursorLine()) })
+	t.start = newStarter(t.send, t.cursorLine, t.hasText)
 	r := t.adopt(cfg.Session)
 	// At least one cell: an emulator with no columns has nowhere to put
 	// the cursor.
@@ -464,7 +464,7 @@ func (t *Terminal) Close() error {
 	if t.closed.Swap(true) {
 		return nil
 	}
-	t.start.drop()
+	t.start.end()
 	r := t.current()
 	r.halt()
 	if r.letGo {
@@ -531,6 +531,9 @@ func (t *Terminal) Restart(sess session.Session) error {
 	// half a line of it at its own prompt.
 	t.drain()
 
+	// Lines handed over for the program that ended are not for this one,
+	// which starts with nothing heard from it.
+	t.start.renew()
 	t.exited.Store(false)
 	t.end.Store(nil)
 	t.revive()
@@ -1187,7 +1190,7 @@ func (t *Terminal) HandleKey(ev input.Event) (bool, error) {
 
 	// Typing replaces a selection, as it does everywhere else.
 	t.ClearSelection()
-	t.start.took()
+	t.start.took(t.encBuf)
 	t.send(t.encBuf)
 	return true, nil
 }
@@ -1698,8 +1701,9 @@ func (t *Terminal) Paste(text string) {
 	t.mu.Lock()
 	bracketed := t.term.Screen().Bracketed()
 	t.mu.Unlock()
-	t.start.took()
-	t.send(input.EncodePaste(text, bracketed, nil))
+	pasted := input.EncodePaste(text, bracketed, nil)
+	t.start.took(pasted)
+	t.send(pasted)
 	// A password out of a password manager arrives this way, and answers
 	// an ask as typing one does.
 	t.pastedSecret(text)
@@ -1967,7 +1971,7 @@ func (t *Terminal) finish(r *run) {
 	}
 	// Start lines have no program left to type into, and the one started
 	// in its place next is not the one they were for.
-	t.start.drop()
+	t.start.end()
 	// Whoever is watching from elsewhere, before the window is told:
 	// their pane is drawing this program and has no other way to learn
 	// it has gone.
@@ -2043,7 +2047,7 @@ func (t *Terminal) SetPalette(pal vt.Palette) {
 // somewhere else: the program reads that clipboard itself, so what it
 // needs is the keystroke rather than any text.
 func (t *Terminal) PressPaste() {
-	t.start.took()
-	t.send(input.EncodeMode(
-		input.Event{Kind: input.KeyPress, Key: input.KeyV, Mods: input.ModCtrl}, t.mode(), nil))
+	b := input.EncodeMode(input.Event{Kind: input.KeyPress, Key: input.KeyV, Mods: input.ModCtrl}, t.mode(), nil)
+	t.start.took(b)
+	t.send(b)
 }

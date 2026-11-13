@@ -196,17 +196,33 @@ func Lines(r Route) []string {
 	return nil
 }
 
+// Prompts is how many prompts a shell taught as r shows, marked, while
+// it runs the lines: one after each line, as the first prompt comes
+// before the first line has taught it to mark one. The last of them is
+// the first prompt at which the shell is ready for what the user types.
+func Prompts(r Route) int { return len(Lines(r)) }
+
 // posixLine tells bash and zsh to mark the directory and each command.
 //
 // __gt_d runs before each prompt: it reports how the last command went,
 // says where the shell is, and marks the prompt. __gt_c runs before a
-// command and marks where its output starts. bash has no hook for that,
-// so the debug trap stands in, skipping the calls this makes itself and
-// firing once per command line.
-const posixLine = `__gt_d(){ local c=$?; __gt_r=; printf '\033]133;D;%s\a\033]7;file://%s%s\a\033]133;A\a' "$c" "${HOSTNAME:-${HOST:-localhost}}" "$PWD"; }; ` +
+// command and marks where its output starts, once per command line;
+// __gt_r says it has. zsh has hooks for both.
+//
+// bash has no hook before a command, so the debug trap stands in, and
+// it fires for every command bash runs, those in PROMPT_COMMAND too. So
+// __gt_s, first in PROMPT_COMMAND, keeps the last command's status and
+// sets __gt_r, and __gt_d, last, sends the marks and clears it: what the
+// user's own PROMPT_COMMAND runs between them marks nothing, and sees
+// the status as it was. PROMPT_COMMAND is joined with line breaks, which
+// $'\n' writes, as a user's may end with a semicolon. An array of them,
+// which bash 5.1 runs one after another, gets the two at its ends.
+const posixLine = `__gt_s(){ __gt_x=$?; __gt_r=1; return $__gt_x; }; ` +
+	`__gt_d(){ local c=${__gt_x:-$?}; __gt_r=; printf '\033]133;D;%s\a\033]7;file://%s%s\a\033]133;A\a' "$c" "${HOSTNAME:-${HOST:-localhost}}" "$PWD"; }; ` +
 	`__gt_c(){ case "$BASH_COMMAND" in __gt_*) return;; esac; [ -n "$__gt_r" ] || { __gt_r=1; printf '\033]133;C\a'; }; }; ` +
 	`if [ -n "$ZSH_VERSION" ]; then autoload -Uz add-zsh-hook; add-zsh-hook precmd __gt_d; add-zsh-hook preexec __gt_c; ` +
-	`else PROMPT_COMMAND="__gt_d${PROMPT_COMMAND:+;$PROMPT_COMMAND}"; trap __gt_c DEBUG; fi`
+	`else if [ "${#PROMPT_COMMAND[@]}" -gt 1 ] && ((BASH_VERSINFO[0]*100+BASH_VERSINFO[1]>=501)); then eval 'PROMPT_COMMAND=(__gt_s "${PROMPT_COMMAND[@]}" __gt_d)'; ` +
+	`else PROMPT_COMMAND="__gt_s"$'\n'"$PROMPT_COMMAND"$'\n'"__gt_d"; fi; trap __gt_c DEBUG; fi`
 
 // powerShellLine wraps the prompt that is already there rather than
 // replacing it, so a profile that sets one keeps it.

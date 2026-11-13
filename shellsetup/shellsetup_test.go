@@ -1,8 +1,15 @@
 package shellsetup
 
 import (
+	"os/exec"
+	"regexp"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"time"
+
+	"github.com/marrasen/kakel/session"
 )
 
 // The shell an argv runs decides what is typed into it.
@@ -179,4 +186,150 @@ func TestTheCommandPromptSaysWhereItIsAsAPath(t *testing.T) {
 	if strings.Contains(setup, "file://") {
 		t.Errorf("%q tries to send a URL, which cmd.exe cannot build", setup)
 	}
+}
+
+// marksOf runs a shell, argv, with env added to its own, types before
+// into it, then Shell Setup's lines, then each of commands, each once
+// the prompt before it is marked, and exit. It gives back the marks the
+// shell sent from the first, in order, as "A", "C" and "D;status", and
+// all it wrote.
+func marksOf(t *testing.T, argv, env []string, before string, commands ...string) ([]string, string) {
+	t.Helper()
+	sess, err := session.StartLocal(session.LocalConfig{Command: argv, Env: env, Cols: 200, Rows: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sess.Close() })
+	var (
+		mu  sync.Mutex
+		out []byte
+	)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		buf := make([]byte, 4096)
+		for {
+			n, err := sess.Read(buf)
+			mu.Lock()
+			out = append(out, buf[:n]...)
+			mu.Unlock()
+			if err != nil {
+				return
+			}
+		}
+	}()
+	mark := regexp.MustCompile("\x1b\\]133;([ACD](?:;-?[0-9]+)?)\a")
+	marks := func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		var got []string
+		for _, m := range mark.FindAllSubmatch(out, -1) {
+			got = append(got, string(m[1]))
+		}
+		return got
+	}
+	prompts := func() int { return strings.Count(strings.Join(marks(), " "), "A") }
+	waitPrompts := func(n int) {
+		t.Helper()
+		deadline := time.Now().Add(10 * time.Second)
+		for prompts() < n {
+			if time.Now().After(deadline) {
+				mu.Lock()
+				defer mu.Unlock()
+				t.Fatalf("waited for prompt %d; the shell wrote %q", n, out)
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+	write := func(s string) {
+		t.Helper()
+		if _, err := sess.Write([]byte(s)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if before != "" {
+		write(before + "\r")
+	}
+	write(string(Typed(Posix)))
+	waitPrompts(Prompts(Posix))
+	for i, c := range commands {
+		write(c + "\r")
+		waitPrompts(Prompts(Posix) + i + 1)
+	}
+	write("exit\r")
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the shell did not exit")
+	}
+	got := marks()
+	mu.Lock()
+	defer mu.Unlock()
+	return got, string(out)
+}
+
+// marksInOrder checks the marks a shell sent, got, and all it wrote,
+// out: from Shell Setup's last prompt on, each prompt is D then A, each
+// command C, and the D after a command has its status, as false, sh -c
+// 'exit 3' and echo hi give them. And a C comes only once the line typed
+// at the prompt before it has been echoed and ended: no C comes while
+// the shell stands at its prompt.
+func marksInOrder(t *testing.T, got []string, out string) {
+	t.Helper()
+	want := []string{"D;0", "A", "C", "D;1", "A", "C", "D;3", "A", "C", "D;0", "A", "C"}
+	if len(got) < len(want) || !slices.Equal(got[len(got)-len(want):], want) {
+		t.Fatalf("marks %q, want them to end %q", got, want)
+	}
+	if n := strings.Count(strings.Join(got, " "), "C"); n != 5 {
+		t.Fatalf("marks %q: %d C, want one for clear, each command and exit", got, n)
+	}
+	const a, c = "\x1b]133;A\a", "\x1b]133;C\a"
+	for i, part := range strings.Split(out, a)[1:] {
+		at := strings.Index(part, c)
+		if at >= 0 && !strings.Contains(part[:at], "\r\n") {
+			t.Fatalf("prompt %d was marked C before a line was typed at it: %q", i+1, part)
+		}
+	}
+}
+
+// Taught by Shell Setup, bash marks each prompt D then A, and each
+// command C before its output, with the command's own status in the D
+// after it, whatever the user's own PROMPT_COMMAND runs.
+func TestBashMarksEachPromptAndEachCommand(t *testing.T) {
+	bash, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("no bash here")
+	}
+	for name, tc := range map[string]struct {
+		env    []string
+		before string
+	}{
+		"plain":                   {},
+		"history -a":              {env: []string{"PROMPT_COMMAND=history -a"}},
+		"ending in a semicolon":   {env: []string{"PROMPT_COMMAND=history -a;"}},
+		"failing":                 {env: []string{"PROMPT_COMMAND=false"}},
+		"reading the status":      {env: []string{"PROMPT_COMMAND=printf '<%s>' $?"}},
+		"an array, as bash 5.1's": {before: "PROMPT_COMMAND=('history -a' 'printf \"<%s>\" $?' false)"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, out := marksOf(t, []string{bash, "--norc", "--noprofile"}, tc.env, tc.before, "false", "sh -c 'exit 3'", "echo hi")
+			marksInOrder(t, got, out)
+			if strings.Contains(name, "status") || strings.Contains(name, "array") {
+				// The user's PROMPT_COMMAND sees the command's status too.
+				if !strings.Contains(out, "<1>") || !strings.Contains(out, "<3>") {
+					t.Fatalf("the user's PROMPT_COMMAND was not shown the status: %q", out)
+				}
+			}
+		})
+	}
+}
+
+// zsh, taught by the same line, marks the same way.
+func TestZshMarksEachPromptAndEachCommand(t *testing.T) {
+	zsh, err := exec.LookPath("zsh")
+	if err != nil {
+		t.Skip("no zsh here")
+	}
+	got, out := marksOf(t, []string{zsh, "-f"}, nil, "", "false", "sh -c 'exit 3'", "echo hi")
+	marksInOrder(t, got, out)
 }

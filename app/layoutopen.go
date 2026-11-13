@@ -678,9 +678,9 @@ func (a *app) startLocalSlot(id string, r settings.SavedPane, still func() bool,
 
 // typeStart types the start lines r keeps into terminal pane id, which a
 // layout has just opened, its shell taught by Shell Setup as route, or
-// as shellsetup.NoRoute when it was not: one at each prompt, where the
-// shell taught says when it is at one, and otherwise each once it has
-// been quiet a moment. Only a terminal started here or on a server is
+// as shellsetup.NoRoute when it was not: one at each prompt from the
+// one Shell Setup's own lines leave it at, where the shell taught says
+// when it is at one, and otherwise each once it has been quiet a moment. Only a terminal started here or on a server is
 // typed into, and only as the layout opens it: one through another kakel
 // window, or started again in its pane, is not.
 func (a *app) typeStart(id string, r settings.SavedPane, route shellsetup.Route) {
@@ -688,7 +688,7 @@ func (a *app) typeStart(id string, r settings.SavedPane, route shellsetup.Route)
 	if t == nil || r.Kind != settings.LayoutTerminal || len(r.Start) == 0 {
 		return
 	}
-	t.TypeAtPrompts(r.Start, promptSign(route))
+	t.TypeAtPrompts(r.Start, promptSign(route), shellsetup.Prompts(route))
 }
 
 // promptSign is how a shell taught as route says it is at its prompt.
