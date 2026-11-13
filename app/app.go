@@ -1393,6 +1393,8 @@ func failedTitle(in gunim.Intent) string {
 		return "Couldn't save the layout"
 	case RenameLayout:
 		return "Couldn't rename the layout"
+	case SaveStartLines:
+		return "Couldn't save the start lines"
 	case SetLayoutAtStart:
 		return "Couldn't change whether the layout opens at start"
 	case RemoveLayout:
@@ -1906,6 +1908,8 @@ func (a *app) handle(in gunim.Intent) {
 		}
 	case RenameLayout:
 		err = a.renameLayout(in)
+	case SaveStartLines:
+		err = a.saveStartLines(in)
 	case SetLayoutAtStart:
 		err = a.setLayoutAtStart(in)
 	case RemoveLayout:

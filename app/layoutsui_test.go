@@ -1,13 +1,19 @@
 package app
 
 import (
+	"log"
+	"os"
+	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/gunimtest"
 
+	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/settings"
+	"github.com/marrasen/kakel/shellsetup"
 )
 
 // Saving says so, and what of the window's panes it left out that the
@@ -166,5 +172,105 @@ func TestALayoutIsSaidInWords(t *testing.T) {
 	named := func(id string) (string, bool) { return map[string]string{"s1": "new"}[id], id == "s1" }
 	if got := LayoutMachines(l, named); !slices.Equal(got, []string{"new", "This computer", "gone", "quick.example"}) {
 		t.Errorf("it opens on %q", got)
+	}
+}
+
+// Start lines saved reach the settings file, cleaned, on terminals
+// alone, and are read back from it; a name given since is kept. Saved
+// to a layout removed since, or saved over with other panes, they are
+// refused, said and written to the Window Log, and nothing changes.
+func TestStartLinesSavedReachTheSettings(t *testing.T) {
+	a, _ := layoutApp(t)
+	kept := keep(t, a, alone("Shop",
+		settings.SavedPane{Kind: settings.LayoutTerminal, Command: []string{"/bin/sh"}},
+		settings.SavedPane{Kind: settings.LayoutFiles, Folder: "/srv"}))
+	was := a.st.Layouts[0]
+	a.handle(RenameLayout{ID: kept.ID, Name: "Shop front"})
+
+	a.handle(SaveStartLines{Layout: was, Lines: map[string][]string{"p1": {"  npm install\t--quiet ", "", "npm run dev\nnpm test"}, "p2": {"ls"}}})
+	if n := a.st.Notices; len(n) != 0 {
+		t.Fatalf("saved, it said %+v", n)
+	}
+	again, err := settings.Load(a.settings.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := again.Layouts()[0]
+	if !slices.Equal(got.Panes["p1"].Start, []string{"npm install --quiet", "npm run dev", "npm test"}) || got.Panes["p2"].Start != nil || got.Name != "Shop front" {
+		t.Fatalf("read back, the layout is %q with %+v", got.Name, got.Panes)
+	}
+
+	var logged strings.Builder
+	log.SetOutput(&logged)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	for _, c := range []struct {
+		change func()
+		body   string
+	}{
+		{func() {
+			l := settings.SavedLayout{Name: "Shop front", Root: item("p1"), Panes: map[string]settings.SavedPane{"p1": {Kind: settings.LayoutTerminal}}}
+			if _, _, err := a.settings.SaveLayout(l, true); err != nil {
+				t.Fatal(err)
+			}
+		}, "layout saved over"},
+		{func() { a.handle(RemoveLayout{ID: kept.ID}) }, "layout not found"},
+	} {
+		if _, _, err := a.settings.SaveLayout(settings.SavedLayout{Name: "Shop front", Root: was.Root, Panes: was.Panes}, true); err != nil {
+			t.Fatal(err)
+		}
+		c.change()
+		before := a.settings.Layouts()
+		a.st.Notices = nil
+		a.handle(SaveStartLines{Layout: was, Lines: map[string][]string{"p1": {"make"}}})
+		n := a.st.Notices
+		if len(n) != 1 || n[0].Title != "Couldn't save the start lines" || n[0].Body != c.body {
+			t.Fatalf("refused, it said %+v", n)
+		}
+		if !reflect.DeepEqual(a.settings.Layouts(), before) {
+			t.Fatalf("refused, the layouts changed to %+v", a.settings.Layouts())
+		}
+		if !strings.Contains(logged.String(), "Couldn't save the start lines: "+c.body) {
+			t.Fatalf("%q is not in the Window Log", c.body)
+		}
+	}
+}
+
+// A layout's terminal is said by the shell it starts, and that shell's
+// kind found, from what the window was told of the shells: the one kept,
+// or else the default, here; the profile kept, or the server's default,
+// or its own shell, on a server; none through another kakel window.
+func TestALayoutsTerminalIsSaidByItsShell(t *testing.T) {
+	known := KnownShells{
+		Profiles: []settings.Profile{
+			{ID: "profile:py", Name: "Python", Command: []string{"python3"}},
+			{ID: "profile:ps", Name: "Admin PowerShell", Command: []string{"pwsh", "-NoLogo"}},
+			{ID: "profile:zsh", Name: "Zsh", HostID: "s1", Command: []string{"zsh"}},
+		},
+		Shells:       []ShellChoice{{ID: "cmd", Title: "Command Prompt (mine)"}},
+		Found:        []ShellChoice{{ID: "bash", Title: "Bash", Line: "/bin/bash"}, {ID: "cmd", Title: "Command Prompt", Line: `C:\Windows\System32\cmd.exe`}},
+		Default:      "bash",
+		ServerShells: map[string]string{"s2": "profile:zsh"},
+		Defaults:     map[machines.ID]MachineDefaults{"s3": {Shells: []ShellEntry{{Action: "login", Name: "Own Shell"}}}},
+	}
+	for _, c := range []struct {
+		r    settings.SavedPane
+		name string
+		kind shellsetup.Route
+	}{
+		{settings.SavedPane{}, "Bash", shellsetup.Posix},
+		{settings.SavedPane{Profile: "cmd"}, "Command Prompt (mine)", shellsetup.Cmd},
+		{settings.SavedPane{Profile: "gone"}, "Bash", shellsetup.Posix},
+		{settings.SavedPane{Profile: "profile:ps"}, "Admin PowerShell", shellsetup.PowerShell},
+		{settings.SavedPane{Profile: "profile:py"}, "Python", shellsetup.NoRoute},
+		{settings.SavedPane{Command: []string{`C:\Windows\System32\cmd.exe`}}, "Command Prompt (mine)", shellsetup.Cmd},
+		{settings.SavedPane{Command: []string{"/usr/bin/fish"}}, "fish", shellsetup.Posix},
+		{settings.SavedPane{Host: "web", HostID: "s1", Profile: "profile:zsh"}, "Zsh", shellsetup.Posix},
+		{settings.SavedPane{Host: "web", HostID: "s1", Profile: LoginShell}, "Login Shell", shellsetup.Posix},
+		{settings.SavedPane{Host: "db", HostID: "s3", Profile: LoginShell}, "Own Shell", shellsetup.Posix},
+		{settings.SavedPane{Host: "desk", HostID: "s4", Window: true}, "", shellsetup.NoRoute},
+	} {
+		if name, kind := LayoutShell(c.r, known); name != c.name || kind != c.kind {
+			t.Errorf("%+v starts %q, %v; want %q, %v", c.r, name, kind, c.name, c.kind)
+		}
 	}
 }

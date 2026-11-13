@@ -256,6 +256,47 @@ func (s *Settings) ReplaceLayout(l SavedLayout) error {
 	return s.editLayout(l.ID, func(at *SavedLayout) { *at = l })
 }
 
+// ErrLayoutSavedOver is returned when start lines are put on a layout
+// that was saved over since they were written for it: its slots may
+// hold other panes now.
+var ErrLayoutSavedOver = errors.New("layout saved over")
+
+// PutStartLines gives each terminal of the layout with was's ID the
+// start lines lines holds for its slot, and none to one lines leaves
+// out, and saves. was is the layout as the lines were written for it:
+// where the file holds it with other splits or panes now, as when
+// another window saved over it, it is refused with ErrLayoutSavedOver,
+// and one no longer in the list with ErrNoLayout. A name or Open at
+// start changed since stays as it is now.
+func (s *Settings) PutStartLines(was SavedLayout, lines map[string][]string) error {
+	return s.putLayouts(func(have []SavedLayout) ([]SavedLayout, error) {
+		i := slices.IndexFunc(have, func(at SavedLayout) bool { return at.ID == was.ID })
+		if i < 0 {
+			return nil, ErrNoLayout
+		}
+		if !reflect.DeepEqual(have[i].Root, was.Root) || !maps.EqualFunc(have[i].Panes, was.Panes, sameRecipe) {
+			return nil, ErrLayoutSavedOver
+		}
+		l := have[i].Clone()
+		for slot, p := range l.Panes {
+			p.Start = nil
+			if p.Kind == LayoutTerminal {
+				p.Start = StartLines(lines[slot])
+			}
+			l.Panes[slot] = p
+		}
+		have[i] = l
+		return have, nil
+	})
+}
+
+// sameRecipe reports whether a and b start the same pane, whatever start
+// lines each holds.
+func sameRecipe(a, b SavedPane) bool {
+	a.Start, b.Start = nil, nil
+	return reflect.DeepEqual(a, b)
+}
+
 // RenameLayout gives the layout with id another name, and saves. Its ID
 // stays, so whatever names the layout by it goes on finding it.
 func (s *Settings) RenameLayout(id, name string) error {

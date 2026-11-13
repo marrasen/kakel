@@ -185,6 +185,24 @@ A layout is one window, saved to open again as it is.
   started again in its pane, is typed nothing into. Saving the window
   again keeps each terminal's start lines. They are saved in the
   settings file as plain text, so keep passwords out of them.
+- **Giving a terminal start lines.** Press Start Lines… on the layout's
+  card in File › Layouts › Manage Layouts. The dialog draws the window
+  small: each pane is a box where it stands, its name, its machine when
+  that is not this computer, and the lines it holds. A group of tabs is
+  one box with its tabs along its top. Click a pane or a tab, or move
+  with the arrow keys: Left and Right go along a box's tabs first, then
+  on to the box beside. Home and End pick the first pane and the last.
+  Under the map is the pane picked: where it starts, as its shell, its
+  machine and its folder, so no `cd` is needed, and an editor for its
+  lines, one per line. The editor is coloured for that shell, and marks
+  a line written for another, as the paste editor does. Tab moves from
+  the map to the editor and on to the buttons, and a tab typed in the
+  editor is a space. Save keeps every terminal's lines, trimmed, blank
+  lines dropped; Cancel keeps none of what was typed. A command pane
+  and a file manager are on the map, quieter, and take no lines. A
+  terminal through another kakel window takes lines, which are saved
+  but not typed yet. Save fails, and says so, where the layout was
+  removed meanwhile, or saved over with other panes.
 - **Panes through another kakel window.** These are kept by the
   window, and by the machine beyond it when the pane ran on one the
   window reaches. Opening the layout connects to the window once for
@@ -223,8 +241,8 @@ A layout is one window, saved to open again as it is.
 - **Open at start.** Turn on Open at start on a layout's card, and it
   opens in its own window each time kakel starts.
 - **Manage.** File › Layouts › Manage Layouts lists the layouts as
-  cards: Open, Rename, Remove (with Undo on the notice) and Open at
-  start.
+  cards: Open, Rename, Start Lines…, Remove (with Undo on the notice)
+  and Open at start.
 - **A key for a layout.** Settings › Shortcuts lists each layout under
   Layouts, as Open and its name; give it a key there. Its command is
   `layout.open.<id>`, which a rename leaves as it was. A layout

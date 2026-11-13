@@ -11,6 +11,7 @@ import (
 	"github.com/marrasen/kakel/relay"
 	"github.com/marrasen/kakel/settings"
 	shellfind "github.com/marrasen/kakel/shells"
+	"github.com/marrasen/kakel/shellsetup"
 	"github.com/marrasen/kakel/words"
 )
 
@@ -42,6 +43,13 @@ type (
 	}
 	// RenameLayout gives the layout with ID another name.
 	RenameLayout struct{ ID, Name string }
+	// SaveStartLines gives each terminal of Layout, as it was when the
+	// lines were written for it, the start lines Lines holds for its
+	// slot, and none to one Lines leaves out.
+	SaveStartLines struct {
+		Layout settings.SavedLayout
+		Lines  map[string][]string
+	}
 	// SetLayoutAtStart has the layout with ID open as kakel starts, or
 	// not.
 	SetLayoutAtStart struct {
@@ -400,6 +408,16 @@ func (a *app) renameLayout(in RenameLayout) error {
 	return err
 }
 
+// saveStartLines gives a layout's terminals their start lines.
+func (a *app) saveStartLines(in SaveStartLines) error {
+	if a.settings == nil {
+		return errNoSettings
+	}
+	err := a.settings.PutStartLines(in.Layout, in.Lines)
+	a.st.Layouts = a.settings.Layouts()
+	return err
+}
+
 // setLayoutAtStart has a layout open as kakel starts, or not.
 func (a *app) setLayoutAtStart(in SetLayoutAtStart) error {
 	if a.settings == nil {
@@ -547,25 +565,7 @@ func LayoutHosts(l settings.SavedLayout, named func(id string) (string, bool)) [
 			if !ok {
 				return
 			}
-			h := LayoutHost{Name: p.Host, Here: p.Host == "" && p.HostID == ""}
-			switch {
-			case h.Here:
-				h.Name = "This computer"
-			case p.HostID != "" && named != nil:
-				if now, ok := named(p.HostID); ok {
-					h.Name = now
-				}
-			case p.Window:
-				h.Name = relay.Shown(p.Host)
-			}
-			if p.Window {
-				if p.On != "" {
-					h.Name = p.On + " through " + h.Name
-				} else {
-					h.Window = true
-				}
-			}
-			if !slices.Contains(out, h) {
+			if h := LayoutPaneHost(p, named); !slices.Contains(out, h) {
 				out = append(out, h)
 			}
 			return
@@ -576,4 +576,120 @@ func LayoutHosts(l settings.SavedLayout, named func(id string) (string, bool)) [
 	}
 	walk(l.Root)
 	return out
+}
+
+// LayoutPaneHost is the machine a layout's pane kept as p opens on, named
+// as LayoutHosts names it.
+func LayoutPaneHost(p settings.SavedPane, named func(id string) (string, bool)) LayoutHost {
+	h := LayoutHost{Name: p.Host, Here: p.Host == "" && p.HostID == ""}
+	switch {
+	case h.Here:
+		h.Name = "This computer"
+	case p.HostID != "" && named != nil:
+		if now, ok := named(p.HostID); ok {
+			h.Name = now
+		}
+	case p.Window:
+		h.Name = relay.Shown(p.Host)
+	}
+	if p.Window {
+		if p.On != "" {
+			h.Name = p.On + " through " + h.Name
+		} else {
+			h.Window = true
+		}
+	}
+	return h
+}
+
+// KnownShells are the shells a window knows of, as it was last told:
+// what LayoutShell names a layout's terminal by. Profiles are those on
+// every machine, Shells those here by the names the user gave them,
+// Found those found here, hidden ones too, with the command line each
+// runs, Default the ID of the one new terminals here start, ServerShells
+// the profile each saved server's new terminal runs, and Defaults what
+// opens on each machine, by name.
+type KnownShells struct {
+	Profiles     []settings.Profile
+	Shells       []ShellChoice
+	Found        []ShellChoice
+	Default      string
+	ServerShells map[string]string
+	Defaults     map[machines.ID]MachineDefaults
+}
+
+// LayoutShell is the shell a layout's terminal kept as r starts, as
+// the shells known tell it: its name, and its kind, as shellKindOf has
+// an open pane's. Here, it is the profile or shell kept, or the program
+// kept, or else the one new terminals start; on a server, the profile
+// kept, or else the one the server runs by default, or its own shell,
+// taken to be POSIX. A profile's program the setup is not written for
+// is of no kind known. Through another kakel window the shell is that
+// window's to pick: the name is "" and the kind unknown, as is a shell
+// no longer known.
+func LayoutShell(r settings.SavedPane, known KnownShells) (string, shellsetup.Route) {
+	profile := func(id, host string) (settings.Profile, bool) {
+		i := slices.IndexFunc(known.Profiles, func(p settings.Profile) bool { return p.ID == id && p.HostID == host })
+		if i < 0 {
+			return settings.Profile{}, false
+		}
+		return known.Profiles[i], true
+	}
+	ofProfile := func(p settings.Profile) (string, shellsetup.Route) {
+		if !shellsetup.Knows(p.Command) && len(p.Command) > 0 {
+			return p.Name, shellsetup.NoRoute
+		}
+		return p.Name, shellsetup.RouteFor(p.Command)
+	}
+	switch {
+	case r.Window:
+		return "", shellsetup.NoRoute
+	case r.Host != "" || r.HostID != "":
+		run := r.Profile
+		if run == "" {
+			run = known.ServerShells[r.HostID]
+		}
+		if p, ok := profile(run, r.HostID); ok && run != LoginShell {
+			return ofProfile(p)
+		}
+		name := "Login Shell"
+		for _, e := range known.Defaults[machines.ID(r.HostID)].Shells {
+			if e.Action == "login" {
+				name = e.Name
+			}
+		}
+		return name, shellsetup.Posix
+	case r.Profile == "" && len(r.Command) > 0:
+		line := joinLine(r.Command)
+		for _, s := range known.Found {
+			if strings.EqualFold(s.Line, line) {
+				return shellTitle(s, known), shellsetup.RouteFor(r.Command)
+			}
+		}
+		base := strings.TrimSuffix(strings.TrimSuffix(shellfind.CommandBase(r.Command[0]), ".exe"), ".EXE")
+		return base, shellsetup.RouteFor(r.Command)
+	}
+	// A profile no longer here starts the default, as it opens.
+	for _, id := range []string{r.Profile, known.Default} {
+		if p, ok := profile(id, ""); ok && id != "" {
+			return ofProfile(p)
+		}
+		for _, s := range known.Found {
+			if s.ID == id && id != "" {
+				return shellTitle(s, known), shellsetup.RouteFor(splitLine(s.Line))
+			}
+		}
+	}
+	return known.Defaults[machines.Local].Shell, shellsetup.NoRoute
+}
+
+// shellTitle is what shell s, found here, is called: as the user renamed
+// it, or as it was found.
+func shellTitle(s ShellChoice, known KnownShells) string {
+	for _, named := range known.Shells {
+		if named.ID == s.ID && named.Title != "" {
+			return named.Title
+		}
+	}
+	return s.Title
 }

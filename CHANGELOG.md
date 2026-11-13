@@ -27,6 +27,18 @@ text, so keep passwords out of them. A kakel from v0.12.2-beta.15
 opens these layouts without the lines, and drops the lines from the
 file the next time it saves its settings.
 
+To give a terminal its lines, press Start Lines… on the layout's card
+in File › Layouts › Manage Layouts. The dialog draws the window small,
+each pane where it stands and each group of tabs as one box with its
+tabs. Pick a pane with a click or the arrow keys, and type its lines,
+one per line, in the editor under the map. The editor says where the
+pane starts, its shell, machine and folder, so no `cd` is needed. It is
+coloured for that shell, and marks a line written for another shell.
+Save keeps the lines, trimmed and with blank lines dropped. A file
+manager or a command pane is on the map too, and takes no lines. Save
+fails, and says so, where another window removed the layout or saved
+over it with other panes meanwhile.
+
 ### Fixed
 
 **bash with a `PROMPT_COMMAND` of its own stood at its prompt as if a
