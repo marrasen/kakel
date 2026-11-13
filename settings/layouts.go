@@ -122,14 +122,16 @@ type SavedPane struct {
 }
 
 // StartLines are lines as a layout keeps them as start lines: a line
-// holding line breaks is the lines it holds, each is trimmed, a tab or a
-// run of them inside one is a space, as a tab typed into a shell starts
-// its completion, and blank lines are dropped. None is nil.
+// holding line breaks is the lines it holds, each is trimmed on the
+// right, a tab or a run of them is a space, as a tab typed into a shell
+// starts its completion, and blank lines are dropped. A space at the
+// start stays: it keeps the line out of a shell's history where the
+// shell is set to ignore lines that start with one. None is nil.
 func StartLines(lines []string) []string {
 	var out []string
 	for _, l := range lines {
 		for _, one := range strings.FieldsFunc(l, func(r rune) bool { return r == '\r' || r == '\n' }) {
-			if one = strings.TrimSpace(tabs.ReplaceAllString(one, " ")); one != "" {
+			if one = strings.TrimRightFunc(tabs.ReplaceAllString(one, " "), unicode.IsSpace); strings.TrimSpace(one) != "" {
 				out = append(out, one)
 			}
 		}

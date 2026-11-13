@@ -363,7 +363,7 @@ func TestAServersShellStartedAgainIsTaughtAgain(t *testing.T) {
 	a.handle(OpenOn{Machine: "srv"})
 	waitFor(t, a, "a shell", func() bool { answering(); return oneShell(a) })
 	id := a.st.Panes[0].ID
-	taught := func() int { return strings.Count(a.terminal(id).Text(), "__gt_d(){") }
+	taught := func() int { return strings.Count(a.terminal(id).AllText(), "__gt_d(){") }
 	waitFor(t, a, "the setup typed", func() bool { return taught() == 1 })
 	a.terminal(id).Send([]byte("bye\n"))
 	waitFor(t, a, "the shell to end", func() bool { return a.terminal(id).Exited() })

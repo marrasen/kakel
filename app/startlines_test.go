@@ -13,6 +13,7 @@ import (
 	"github.com/marrasen/kakel/input"
 	"github.com/marrasen/kakel/remote"
 	"github.com/marrasen/kakel/settings"
+	"github.com/marrasen/kakel/ui/term"
 )
 
 // markingShell is a shell Shell Setup teaches to mark its prompts: bash,
@@ -272,11 +273,19 @@ func TestStartLinesWithAPromptCommandOfTheShellsOwn(t *testing.T) {
 }
 
 // A line still running holds back the next, however long the shell's
-// prompt takes to work out: the second line is not typed into cat.
+// prompt takes to work out, longer than the net under the lines waits
+// too, and when the prompt marks itself as well: the first line is typed
+// at the prompt after Shell Setup's, and the second is not typed into
+// cat. The net's waits are cut short here, so it would act while this
+// watches.
 func TestARunningStartLineHoldsBackTheNext(t *testing.T) {
+	defer term.SetStartLineNets(250*time.Millisecond, 250*time.Millisecond)()
 	for name, rc := range map[string]string{
-		"a prompt at once": "",
-		"a slow prompt":    `PS1='$(sleep 0.4)\$ '`,
+		"a prompt at once":                    "",
+		"a slow prompt":                       `PS1='$(sleep 0.4)\$ '`,
+		"a prompt slower than the net":        `PS1='$(sleep 0.6)\$ '`,
+		"a prompt that marks itself":          `PS1='\[\e]133;A\a\]$(sleep 0.4)\$ '`,
+		"a marked prompt slower than the net": `PS1='\[\e]133;A\a\]$(sleep 0.6)\$ '`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			a, opened := openingApp(t)

@@ -160,24 +160,31 @@ A layout is one window, saved to open again as it is.
 - **Start lines.** A terminal can hold start lines: lines kakel types
   into its shell as the layout opens it, as the keyboard would, each
   followed by Enter. One terminal might type `vite dev`, another
-  `tail -f log/app.log`, one on a server `tmux attach`. Each line is
-  trimmed, and a tab in one is typed as a space. They go through the
-  shell, so they are in its history: Ctrl+C, Up and Enter runs one
-  again.
+  `tail -f log/app.log`, one on a server `tmux attach`. Spaces at the
+  end of a line are dropped, and a tab in one is typed as a space. A
+  space at the start stays, so a shell set to ignore such lines keeps
+  that line out of its history. The others go into it: Ctrl+C, Up and
+  Enter runs one again.
   With Shell Setup on, the shell says when it is at its prompt. The
   first line is typed at the first prompt after Shell Setup's own
   lines, and each line after it at the next prompt, so a line that
-  keeps running, as a dev server does, holds back the lines after it. A
-  shell that has said nothing five seconds after it first printed, and
-  one that stands quiet for three seconds at a prompt with a line not
-  typed, is typed into as a shell without Shell Setup is.
+  keeps running, as a dev server does, holds back the lines after it.
+  Only Shell Setup's own marks count, so a prompt that marks itself
+  as well is counted once. A shell that has said nothing five seconds
+  after it first printed is typed into as a shell without Shell Setup
+  is. A shell that shows fewer prompts while it is set up than kakel
+  expects gets the next line once it stands quiet at a prompt, with
+  text before the cursor and no command started, for ten seconds, or
+  three once Shell Setup's prompts are past; then it waits for the next
+  prompt as before.
   Without Shell Setup, each line is typed once the shell has printed
   something and been quiet for half a second. A line still running
   then does not hold back the next, so keep to one line, or turn Shell
   Setup on.
   Nothing is typed into a question for a password, a passphrase, a
   one-time code or a host key, and what is typed to answer it cancels
-  nothing. Ctrl+C or Ctrl+D cancels the lines left, and so does
+  nothing. A prompt Shell Setup marked is never taken for such a
+  question, whatever it reads. Ctrl+C or Ctrl+D cancels the lines left, and so does
   anything else typed or pasted into the pane before the last line is
   typed, by you, by someone watching it, or by an agent, and the shell
   ending. A server that fails at first gets its lines when Retry opens
@@ -197,8 +204,8 @@ A layout is one window, saved to open again as it is.
   lines, one per line. The editor is coloured for that shell, and marks
   a line written for another, as the paste editor does. Tab moves from
   the map to the editor and on to the buttons, and a tab typed in the
-  editor is a space. Save keeps every terminal's lines, trimmed, blank
-  lines dropped; Cancel keeps none of what was typed. A command pane
+  editor is a space. Save keeps every terminal's lines, with spaces at
+  the end dropped and blank lines dropped; Cancel keeps none of what was typed. A command pane
   and a file manager are on the map, quieter, and take no lines. A
   terminal through another kakel window takes lines, which are saved
   but not typed yet. Save fails, and says so, where the layout was

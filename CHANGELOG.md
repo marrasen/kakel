@@ -34,7 +34,8 @@ tabs. Pick a pane with a click or the arrow keys, and type its lines,
 one per line, in the editor under the map. The editor says where the
 pane starts, its shell, machine and folder, so no `cd` is needed. It is
 coloured for that shell, and marks a line written for another shell.
-Save keeps the lines, trimmed and with blank lines dropped. A file
+Save keeps the lines, with spaces at the end and blank lines dropped; a
+space at the start stays, to keep a line out of the shell's history. A file
 manager or a command pane is on the map too, and takes no lines. Save
 fails, and says so, where another window removed the layout or saved
 over it with other panes meanwhile.
@@ -44,11 +45,28 @@ over it with other panes meanwhile.
 **bash with a `PROMPT_COMMAND` of its own stood at its prompt as if a
 command ran.** With Shell Setup on, bash marked a command started at
 each prompt when its `PROMPT_COMMAND` ran something of its own, as
-starship, direnv, zoxide, atuin or `history -a` add. kakel then took
-the shell to be running a program while it sat at its prompt. Shell
-Setup now marks the prompt once the whole `PROMPT_COMMAND` has run, a
-`PROMPT_COMMAND` array too. What the `PROMPT_COMMAND` runs now sees the
-last command's status, where before it saw 0.
+starship, direnv, zoxide, atuin or `history -a` add, and at a key bound
+with `bind -x`, as fzf's Ctrl+R. kakel then took the shell to be
+running a program while it sat at its prompt. On bash 4.4 and later
+Shell Setup now marks a command from `PS0`, once per command line and
+never at an empty prompt, and sets no debug trap. So a debug trap of
+the user's own stays, and the preexec hooks of bash-preexec, atuin and
+starship run again. What the `PROMPT_COMMAND` runs sees the last
+command's status, and from bash 5.1 its `PIPESTATUS` too.
+
+Shell Setup's bash line no longer fails where `set -e` or an `ERR` trap
+sees it. With `set -e`, Ctrl+C at an empty prompt ended the shell; an
+`ERR` trap fired again at every prompt; and with `extdebug` on, a
+failed command was followed by no prompt mark at all. A bash started
+inside the pane with an exported `PROMPT_COMMAND` said `__gt_d: command
+not found` at each prompt; it says nothing now.
+
+Bash before 4.4, as macOS has, has no `PS0`, so Shell Setup keeps a
+debug trap there. It now runs the trap that was there before after its
+own, rather than replacing it. There a `bind -x` key, and a hook added
+to `PROMPT_COMMAND` after Shell Setup ran, still mark a command at the
+prompt, and `PIPESTATUS` is not shown to the `PROMPT_COMMAND` before
+bash 5.1.
 
 ## v0.12.2-beta.15
 

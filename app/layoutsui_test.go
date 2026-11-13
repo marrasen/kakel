@@ -196,7 +196,7 @@ func TestStartLinesSavedReachTheSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := again.Layouts()[0]
-	if !slices.Equal(got.Panes["p1"].Start, []string{"npm install --quiet", "npm run dev", "npm test"}) || got.Panes["p2"].Start != nil || got.Name != "Shop front" {
+	if !slices.Equal(got.Panes["p1"].Start, []string{"  npm install --quiet", "npm run dev", "npm test"}) || got.Panes["p2"].Start != nil || got.Name != "Shop front" {
 		t.Fatalf("read back, the layout is %q with %+v", got.Name, got.Panes)
 	}
 

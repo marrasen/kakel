@@ -422,7 +422,7 @@ func TestLinesTypedAreSaved(t *testing.T) {
 	if !ok || in.Layout.ID != "shop" {
 		t.Fatalf("Save sent %#v", in)
 	}
-	want := map[string][]string{"p1": {"go run ./cmd/api", "make watch"}, "p3": {"tail -f app.log"}}
+	want := map[string][]string{"p1": {"  go run ./cmd/api", " make watch"}, "p3": {"tail -f app.log"}}
 	if len(in.Lines) != len(want) || !slices.Equal(in.Lines["p1"], want["p1"]) || !slices.Equal(in.Lines["p3"], want["p3"]) {
 		t.Fatalf("Save sent the lines %q", in.Lines)
 	}

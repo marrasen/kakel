@@ -22,6 +22,7 @@ import (
 	"github.com/marrasen/kakel/grid"
 	"github.com/marrasen/kakel/input"
 	"github.com/marrasen/kakel/session"
+	"github.com/marrasen/kakel/shellsetup"
 	"github.com/marrasen/kakel/ui"
 	"github.com/marrasen/kakel/vt"
 )
@@ -407,7 +408,10 @@ func New(cfg Config) (*Terminal, error) {
 			t.commandFrom = time.Now()
 			t.later(t.start.started)
 		},
-		Prompt: func(sign vt.PromptSign) { t.later(func() { t.start.prompt(sign) }) },
+		Prompt: func(sign vt.PromptSign, options []string) {
+			own := slices.Contains(options, shellsetup.OwnPrompt)
+			t.later(func() { t.start.prompt(sign, own) })
+		},
 		CommandDone: func(status int, ok bool) {
 			if cfg.OnCommandDone != nil && !t.commandFrom.IsZero() {
 				took := time.Since(t.commandFrom)

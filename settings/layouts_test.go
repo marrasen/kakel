@@ -365,9 +365,10 @@ func TestStartLinesComeBackFromTheFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Trimmed, and a tab, which would start the shell's completion, is a
-	// space.
-	want := []string{"cd /srv", "tmux attach", "htop", "git log --oneline  -5"}
+	// Trimmed on the right, and a tab, which would start the shell's
+	// completion, is a space. A space at the start, which keeps a line
+	// out of the history, stays.
+	want := []string{" cd /srv", "tmux attach", "htop", " git log --oneline  -5"}
 	if got := kept.Panes["p1"].Start; !slices.Equal(got, want) {
 		t.Fatalf("kept the lines %q, want %q", got, want)
 	}
@@ -384,7 +385,7 @@ func TestStartLinesComeBackFromTheFile(t *testing.T) {
 		t.Fatalf("read back %+v, want %+v", got, kept)
 	}
 	got[0].Panes["p1"].Start[0] = "changed"
-	if line := again.Layouts()[0].Panes["p1"].Start[0]; line != "cd /srv" {
+	if line := again.Layouts()[0].Panes["p1"].Start[0]; line != " cd /srv" {
 		t.Fatalf("a change to the copy reached the settings: %q", line)
 	}
 }
@@ -395,7 +396,7 @@ func TestStartLinesWrittenByHandAreTidied(t *testing.T) {
 	path := at(t)
 	body := `{"version": 1, "layouts": [{"id": "a", "name": "A", "root": {"id": "#1", "kind": "group", "front": "p1", "kids": [` +
 		`{"id": "p1", "kind": "item"}, {"id": "p2", "kind": "item"}]}, "panes": {` +
-		`"p1": {"kind": "terminal", "start": ["", "vite dev", "   "]}, "p2": {"kind": "files", "start": ["ls"]}}}]}`
+		`"p1": {"kind": "terminal", "start": ["", "vite dev  ", "   "]}, "p2": {"kind": "files", "start": ["ls"]}}}]}`
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}

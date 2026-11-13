@@ -36,8 +36,9 @@ type Callbacks struct {
 	CommandStart func()
 	CommandDone  func(status int, ok bool)
 	// Prompt fires when the shell says it is at its prompt, and sign
-	// says how it said so.
-	Prompt func(sign PromptSign)
+	// says how it said so. options are those after an A mark, as
+	// "aid=12" or Shell Setup's own, and none for the folder.
+	Prompt func(sign PromptSign, options []string)
 }
 
 // PromptSign is how a shell says it is at its prompt.
@@ -833,7 +834,7 @@ func (t *Terminal) setDirPath(params [][]byte) {
 	}
 	t.dir, t.dirHost = raw, ""
 	if t.cb.Prompt != nil {
-		t.cb.Prompt(PromptFolder)
+		t.cb.Prompt(PromptFolder, nil)
 	}
 }
 
@@ -870,8 +871,8 @@ func parseFileURL(raw string) (dir, host string, ok bool) {
 
 // semanticPrompt handles OSC 133 and VS Code's OSC 633: A is a prompt
 // starting, B its end, C the start of the command's output, and D the
-// command finishing. Extra parameters are ignored, as are marks sent on
-// the alternate screen.
+// command finishing. An A's options are handed to the Prompt callback,
+// and others are ignored, as are marks sent on the alternate screen.
 func (t *Terminal) semanticPrompt(params [][]byte) {
 	if len(params) < 2 || t.scr.OnAltBuffer() {
 		return
@@ -890,7 +891,11 @@ func (t *Terminal) semanticPrompt(params [][]byte) {
 		}
 		// B ends the prompt A began, so only A is told: one prompt, once.
 		if mark == "A" && t.cb.Prompt != nil {
-			t.cb.Prompt(PromptMark)
+			options := make([]string, 0, len(params)-2)
+			for _, p := range params[2:] {
+				options = append(options, string(p))
+			}
+			t.cb.Prompt(PromptMark, options)
 		}
 	case "C":
 		t.cmd.Integrated = true

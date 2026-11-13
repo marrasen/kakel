@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/marrasen/kakel/input"
+	"github.com/marrasen/kakel/shellsetup"
 	"github.com/marrasen/kakel/vt"
 )
 
@@ -102,11 +103,14 @@ func (tp *typist) want(t *testing.T, when string, want ...string) {
 	}
 }
 
-// The marks a POSIX shell taught by Shell Setup sends.
+// The marks a POSIX shell taught by Shell Setup sends, and markOwn, a
+// prompt mark a shell's own prompt sends as well.
 const (
-	markPrompt = "\x1b]133;A\x07$ "
+	markA      = "\x1b]133;A;" + shellsetup.OwnPrompt + "\x07"
+	markPrompt = markA + "$ "
 	markStart  = "\x1b]133;C\x07"
 	markDone   = "\x1b]133;D;0\x07"
+	markOwn    = "\x1b]133;A\x07"
 )
 
 // Lines are typed one at each prompt, the first at the first, each once
@@ -150,13 +154,13 @@ func TestStartLinesWaitForTheSetupToFinish(t *testing.T) {
 	tp.term.TypeAtPrompts([]string{"cat", "echo TWO"}, vt.PromptMark, 2)
 	tp.says(t, "$ setup\r\n")
 	// After Shell Setup's line: the mark, then a prompt slow to draw.
-	tp.says(t, markDone+"\x1b]133;A\x07")
+	tp.says(t, markDone+markA)
 	tp.clock.advance(time.Second)
 	tp.says(t, "$ ")
 	tp.clock.advance(time.Second)
 	tp.want(t, "at Shell Setup's first prompt")
 	tp.says(t, "clear\r\n"+markStart+"\x1b[H\x1b[2J")
-	tp.says(t, markDone+"\x1b]133;A\x07")
+	tp.says(t, markDone+markA)
 	tp.clock.advance(promptSettle)
 	tp.want(t, "once the prompt after clear stood", "cat\r")
 	// cat runs, quiet, for as long as it likes.
@@ -171,6 +175,36 @@ func TestStartLinesWaitForTheSetupToFinish(t *testing.T) {
 	tp.want(t, "once cat ended", "cat\r", "echo TWO\r")
 }
 
+// A prompt Shell Setup marked asks nothing, whatever it reads as: the
+// lines are typed at it, and a key typed at it takes over.
+func TestAMarkedPromptIsNoQuestion(t *testing.T) {
+	tp := newTypist(t)
+	tp.term.TypeAtPrompts([]string{"ls", "pwd"}, vt.PromptMark, 1)
+	tp.says(t, markA+"Enter PIN: ")
+	tp.clock.advance(promptSettle)
+	tp.want(t, "at the prompt", "ls\r")
+	tp.says(t, "ls\r\n"+markStart+markDone+markA+"Enter PIN: ")
+	key(tp.term, 'x')
+	if n := tp.term.LinesLeft(); n != 0 {
+		t.Fatalf("%d lines left after typing at the prompt", n)
+	}
+}
+
+// A shell with no marks whose prompt names a word for a secret inside
+// another word is no question, and typing at it takes over.
+func TestAPromptWithASecretWordInsideAnotherIsNoQuestion(t *testing.T) {
+	tp := newTypist(t)
+	tp.term.TypeAtPrompts([]string{"ls", "pwd"}, vt.NoSign, 0)
+	tp.says(t, "root@hotplug:")
+	tp.clock.advance(quietFor)
+	tp.want(t, "at the prompt", "ls\r")
+	tp.says(t, "ls\r\nroot@hotplug:")
+	key(tp.term, 'x')
+	if n := tp.term.LinesLeft(); n != 0 {
+		t.Fatalf("%d lines left after typing at the prompt", n)
+	}
+}
+
 // A prompt that came before the lines were handed over counts: the pane
 // is placed a moment after its shell starts.
 func TestAPromptBeforeTheLinesCounts(t *testing.T) {
@@ -181,37 +215,85 @@ func TestAPromptBeforeTheLinesCounts(t *testing.T) {
 	tp.want(t, "at the prompt that came first", "ls\r")
 }
 
-// A shell whose marks say a command started at each prompt, as bash did
-// with a PROMPT_COMMAND of the user's own, has its line typed once it
-// has been quiet some seconds at a prompt the line was not typed at; a
-// line typed and running holds the next back all the same.
-func TestASignNotAnsweredIsTypedAtOnceQuiet(t *testing.T) {
+// A shell that marks its prompt again as Enter is taken, before the
+// command starts, as PowerShell does with a transient prompt, holds the
+// next line back while the command runs, however quiet it is.
+func TestAPromptRedrawnAsACommandStartsHoldsTheNextLine(t *testing.T) {
+	tp := newTypist(t)
+	tp.term.TypeAtPrompts([]string{"vite dev", "echo TWO"}, vt.PromptMark, 1)
+	tp.says(t, markPrompt)
+	tp.clock.advance(promptSettle)
+	tp.want(t, "at the prompt", "vite dev\r")
+	tp.says(t, "vite dev\r\n"+markDone+markPrompt+markStart+"ready\r\n")
+	tp.clock.advance(time.Hour)
+	tp.want(t, "while vite runs", "vite dev\r")
+}
+
+// A shell whose prompt marks itself as well as Shell Setup marks it has
+// only Shell Setup's marks counted: the first line waits for the prompt
+// after clear, and the second for the first line's program to end.
+func TestAShellsOwnPromptMarksAreNotCounted(t *testing.T) {
 	tp := newTypist(t)
 	tp.term.TypeAtPrompts([]string{"cat", "echo TWO"}, vt.PromptMark, 2)
-	tp.says(t, markDone+markPrompt+markStart)
-	tp.says(t, "clear\r\n"+markDone+markPrompt+markStart)
-	tp.clock.advance(netWait - time.Millisecond)
-	tp.want(t, "before the shell was quiet long enough")
-	tp.clock.advance(time.Millisecond)
-	tp.want(t, "once quiet at the prompt", "cat\r")
-	tp.says(t, "cat\r\n")
+	tp.says(t, markOwn+"$ ")
+	tp.clock.advance(time.Second)
+	tp.says(t, "setup\r\n"+markDone+markA+markOwn)
+	tp.clock.advance(time.Second)
+	tp.says(t, "$ ")
+	tp.clock.advance(time.Second)
+	tp.want(t, "at Shell Setup's first prompt")
+	tp.says(t, "clear\r\n"+markStart+"\x1b[H\x1b[2J"+markDone+markA+markOwn)
+	tp.clock.advance(time.Second)
+	tp.says(t, "$ ")
+	tp.clock.advance(promptSettle)
+	tp.want(t, "at the prompt after clear", "cat\r")
+	tp.says(t, "cat\r\n"+markStart)
 	tp.clock.advance(time.Hour)
 	tp.want(t, "while cat runs", "cat\r")
-	tp.says(t, "^C\r\n"+markDone+markPrompt+markStart)
-	tp.clock.advance(netWait)
-	tp.want(t, "once quiet at the prompt after cat", "cat\r", "echo TWO\r")
+}
+
+// A prompt slower to work out than the net's wait, while Shell Setup's
+// prompts are not all seen, gets no line typed at it: the line waits for
+// the prompt after clear, and the next for cat to end, however long the
+// prompts take.
+func TestASlowPromptWhileSetUpIsNotTypedAt(t *testing.T) {
+	tp := newTypist(t)
+	tp.term.TypeAtPrompts([]string{"cat", "echo TWO"}, vt.PromptMark, 2)
+	tp.says(t, "setup\r\n"+markDone+markA)
+	tp.clock.advance(setupNetWait + time.Second)
+	tp.want(t, "while the first prompt is worked out")
+	tp.says(t, "$ ")
+	tp.says(t, "clear\r\n"+markStart+"\x1b[H\x1b[2J"+markDone+markA)
+	tp.clock.advance(promptSettle)
+	tp.want(t, "at the prompt after clear, which the shell reads once it is drawn", "cat\r")
+	tp.clock.advance(setupNetWait + time.Second)
+	tp.says(t, "$ cat\r\n"+markStart)
+	tp.clock.advance(time.Hour)
+	tp.want(t, "while cat runs", "cat\r")
 }
 
 // A shell that shows fewer prompts while it is set up than it was taken
-// to has its lines typed all the same, once quiet at its last.
+// to has its lines typed all the same, once quiet a while at its last.
 func TestTooFewSetupPromptsLoseNoLines(t *testing.T) {
 	tp := newTypist(t)
 	tp.term.TypeAtPrompts([]string{"ls"}, vt.PromptMark, 3)
 	tp.says(t, markDone+markPrompt)
 	tp.clock.advance(time.Second)
 	tp.says(t, "x")
-	tp.clock.advance(netWait)
+	tp.clock.advance(setupNetWait - time.Millisecond)
+	tp.want(t, "before the shell was quiet long enough")
+	tp.clock.advance(time.Millisecond)
 	tp.want(t, "once quiet at the prompt", "ls\r")
+}
+
+// A shell that marks its prompts itself and was not set up, as fish
+// set up as a POSIX shell, is typed into once quiet.
+func TestOnlyAShellsOwnMarksFallBackToQuiet(t *testing.T) {
+	tp := newTypist(t)
+	tp.term.TypeAtPrompts([]string{"one"}, vt.PromptMark, 2)
+	tp.says(t, "fish: Unknown command: __gt_d\r\n"+markOwn+"> ")
+	tp.clock.advance(marksWait + quietFor)
+	tp.want(t, "once marks were given up on", "one\r")
 }
 
 // A shell that gives no sign is typed into once it has printed something
@@ -456,21 +538,33 @@ func TestAsksForSecret(t *testing.T) {
 		"Enter PIN for 'yubikey':":        true,
 		"Are you sure you want to continue connecting (yes/no/[fingerprint])? ": true,
 		"Please type 'yes', 'no' or the fingerprint: ":                          true,
-		"Verification code: ":          true,
-		"[sudo] lösenord för me: ":     true,
-		"Passwort: ":                   true,
-		"Mot de passe : ":              true,
-		"Contraseña: ":                 true,
-		"Passord: ":                    true,
-		"Adgangskode: ":                true,
-		"Salasana: ":                   true,
-		"Wachtwoord: ":                 true,
-		"Senha: ":                      true,
-		"me@far:~/passwords$ ":         false,
-		"PS C:\\passwords> ":           false,
-		"":                             false,
-		"Type a password into the box": false,
-		"Spinning up:":                 false,
+		"Verification code: ":                   true,
+		"[sudo] lösenord för me: ":              true,
+		"Passwort: ":                            true,
+		"Mot de passe : ":                       true,
+		"Contraseña: ":                          true,
+		"Passord: ":                             true,
+		"Adgangskode: ":                         true,
+		"Salasana: ":                            true,
+		"Wachtwoord: ":                          true,
+		"Senha: ":                               true,
+		"Enter OTP:":                            true,
+		"2FA code:":                             true,
+		"Ange PIN-kod:":                         true,
+		"Password for 'https://me@github.com':": true,
+		"Passcode or option (1-3): ":            true,
+		"me@far:~/passwords$ ":                  false,
+		"PS C:\\passwords> ":                    false,
+		"":                                      false,
+		"Type a password into the box":          false,
+		"Spinning up:":                          false,
+		"me@box ~/src/otp-service: ":            false,
+		"root@hotplug:":                         false,
+		"Reset footprint cache?":                false,
+		"ping:":                                 false,
+		"vscode:":                               false,
+		"me@box ~/2fa_tools:":                   false,
+		"Save passwords?":                       false,
 	} {
 		if got := asksForSecret(line); got != want {
 			t.Errorf("asksForSecret(%q) = %v, want %v", line, got, want)

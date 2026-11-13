@@ -529,6 +529,22 @@ func TestSemanticPromptSaysAPromptCame(t *testing.T) {
 	}
 }
 
+// A prompt's options are told with it, so Shell Setup's own A mark is
+// known from one the shell's own prompt sends.
+func TestAPromptsOptionsAreTold(t *testing.T) {
+	h := newHarness(t, 20, 4)
+	h.write("\x1b]133;A;kakel=1\x07$ \x1b]133;A\x07$ \x1b]133;A;cl=line;aid=7\x07")
+	want := [][]string{{"kakel=1"}, {}, {"cl=line", "aid=7"}}
+	if len(h.options) != len(want) {
+		t.Fatalf("prompts told with %q, want %q", h.options, want)
+	}
+	for i := range want {
+		if !slices.Equal(h.options[i], want[i]) {
+			t.Fatalf("prompts told with %q, want %q", h.options, want)
+		}
+	}
+}
+
 // The Command Prompt's folder, which its prompt sends, is told as a
 // prompt of its own kind; an empty one, which says nothing, is not.
 func TestAFolderSaidIsToldAsAPrompt(t *testing.T) {

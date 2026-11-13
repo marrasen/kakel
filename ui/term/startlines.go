@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/marrasen/kakel/vt"
 )
@@ -20,12 +22,17 @@ import (
 // OSC 133 A marks, or OSC 9;9 from the Command Prompt, as Shell Setup
 // teaches them. Shell Setup's own lines show prompts of their own first,
 // and the caller says how many: the first line waits for the last of
-// them. Each sign after a line was typed is the shell back from it.
+// them. Only the A marks Shell Setup taught, which carry its option,
+// count for those, as a shell's own prompt may mark itself as well. Each
+// sign after a line was typed is the shell back from it.
 //
 // A shell that gives no sign, or none in time, is typed into once it has
-// printed something and then been quiet for a moment. So is a shell that
-// gave a sign and has been quiet for some seconds with the line not
-// typed, whatever its marks said since: lines are never lost to marks.
+// printed something and then been quiet for a moment. A shell that gave
+// a sign, with no command started since, and has been quiet for some
+// seconds with the cursor after text and the line not typed, gets the
+// line too: one that shows fewer prompts while it is set up than it was
+// taken to. Until Shell Setup's prompts are all seen, that takes longer,
+// and its first prompt must have come.
 //
 // Anything typed or pasted into the pane ends the typing: the user, or
 // whoever else types there, has taken over, and the lines left are
@@ -53,10 +60,27 @@ var (
 
 	// netWait is how long a shell that gave a sign, with a line waiting
 	// that was not typed at it, has to be quiet before the line is typed
-	// all the same: one whose marks say a command started at its prompt,
-	// or that shows fewer prompts while it is set up than it was taken to.
-	netWait = 3 * time.Second
+	// all the same, once Shell Setup's prompts are past, and setupNetWait
+	// how long while they are not all seen: one that shows fewer prompts
+	// while it is set up than it was taken to. Longer, as a prompt slow to
+	// work out stands quiet while it is set up too.
+	netWait      = 3 * time.Second
+	setupNetWait = 10 * time.Second
 )
+
+// shortNets, when set, are the net's two waits in place of netWait and
+// setupNetWait, for a test of the whole app; see SetStartLineNets.
+var shortNets atomic.Pointer[[2]time.Duration]
+
+// SetStartLineNets has the net under start lines wait net once Shell
+// Setup's prompts are past, and setup while they are not all seen, and
+// gives back what puts the usual waits back. It is for a test of a whole
+// app with real shells, which has to see the net act, or not act, in
+// less than the seconds it waits.
+func SetStartLineNets(net, setup time.Duration) (restore func()) {
+	shortNets.Store(&[2]time.Duration{net, setup})
+	return func() { shortNets.Store(nil) }
+}
 
 // starter types a terminal's start lines. It hears what the terminal
 // sees from the moment the terminal starts, so lines handed to it a
@@ -81,10 +105,14 @@ type starter struct {
 
 	// signs counts the signs of each kind that have come. fresh says one
 	// has come since the last line was typed, and stands that it has and
-	// no command has started since.
-	signs  [3]int
-	fresh  [3]bool
-	stands [3]bool
+	// no command has started since. own counts the A marks Shell Setup
+	// taught, and ownStands says one has come and no command has started
+	// since: the shell stands at the prompt kakel's own lines marked.
+	signs     [3]int
+	fresh     [3]bool
+	stands    [3]bool
+	own       int
+	ownStands bool
 
 	// lines are the lines still to type, and sign the sign a prompt is
 	// known by, NoSign for none. setup is how many prompts Shell Setup's
@@ -168,25 +196,42 @@ func (s *starter) begin(lines []string, sign vt.PromptSign, setup int) {
 		return
 	}
 	s.considerLocked()
-	if s.said && s.signs[sign] == 0 {
+	if s.said && s.countLocked() == 0 {
 		s.waitLocked()
 	}
 }
+
+// countLocked is how many of the signs the lines wait for have come:
+// for marks, only those Shell Setup taught.
+func (s *starter) countLocked() int {
+	if s.sign == vt.PromptMark {
+		return s.own
+	}
+	return s.signs[s.sign]
+}
+
+// readyLocked says Shell Setup's prompts are past: a line may be typed at
+// the next that stands.
+func (s *starter) readyLocked() bool { return s.typed || s.countLocked() >= s.setup }
 
 // considerLocked sets the timers for a shell known by its signs, as the
 // sign last heard left it: a line typed once a prompt it is ready at has
 // stood, and the net under any sign not answered.
 func (s *starter) considerLocked() {
-	if s.stands[s.sign] && (s.typed || s.signs[s.sign] >= s.setup) {
+	if !s.stands[s.sign] {
+		return
+	}
+	if s.readyLocked() {
 		s.settleLocked(promptSettle)
 	}
-	if s.fresh[s.sign] {
+	if s.fresh[s.sign] && s.countLocked() > 0 {
 		s.netLocked()
 	}
 }
 
-// prompt hears that the shell gave sign: it is at its prompt.
-func (s *starter) prompt(sign vt.PromptSign) {
+// prompt hears that the shell gave sign: it is at its prompt. own says
+// it is an A mark Shell Setup taught.
+func (s *starter) prompt(sign vt.PromptSign, own bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if int(sign) <= 0 || int(sign) >= len(s.signs) {
@@ -194,7 +239,17 @@ func (s *starter) prompt(sign vt.PromptSign) {
 	}
 	s.signs[sign]++
 	s.fresh[sign], s.stands[sign] = true, true
+	own = own && sign == vt.PromptMark
+	if own {
+		s.own++
+		s.ownStands = true
+	}
 	if len(s.lines) == 0 || sign != s.sign {
+		return
+	}
+	if sign == vt.PromptMark && !own && s.countLocked() == 0 {
+		// A shell's own marks, with none of Shell Setup's, are no sign
+		// that it was set up: as fish, which marks its prompts itself.
 		return
 	}
 	// A sign late is a sign all the same, and a surer one than quiet.
@@ -210,8 +265,10 @@ func (s *starter) started() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.stands[vt.PromptMark] = false
+	s.ownStands = false
 	if len(s.lines) > 0 && !s.quiet && s.sign == vt.PromptMark {
 		s.stopLocked()
+		s.stopNetLocked()
 	}
 }
 
@@ -238,7 +295,7 @@ func (s *starter) wrote() {
 		// The prompt is still being drawn, or the shell is busy: each
 		// wait starts again.
 		s.considerLocked()
-		if s.said && s.signs[s.sign] == 0 && s.stopWait == nil {
+		if s.said && s.countLocked() == 0 && s.stopWait == nil {
 			s.waitLocked()
 		}
 	}
@@ -265,9 +322,12 @@ func (s *starter) took(b []byte) {
 		s.mu.Unlock()
 		return
 	}
+	// A shell at the prompt Shell Setup marked asks nothing, whatever the
+	// prompt says.
+	marked := s.ownStands
 	s.mu.Unlock()
 	// Read without the lock: it takes the emulator's.
-	asked := asksForSecret(s.line())
+	asked := !marked && asksForSecret(s.line())
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if asked {
@@ -294,6 +354,7 @@ func (s *starter) renew() {
 	s.dropLocked()
 	s.said, s.ended = false, false
 	s.signs, s.fresh, s.stands = [3]int{}, [3]bool{}, [3]bool{}
+	s.own, s.ownStands = 0, false
 }
 
 func (s *starter) dropLocked() {
@@ -323,13 +384,24 @@ func (s *starter) stopLocked() {
 }
 
 // netLocked types the next line once the shell has been quiet for
-// netWait since a sign it was not typed at, as long as no line is typed
-// in between.
+// netWait since a sign it was not typed at, or setupNetWait while Shell
+// Setup's prompts are not all seen, as long as no line is typed and no
+// command started in between.
 func (s *starter) netLocked() {
 	s.stopNetLocked()
-	s.stopNet = s.after(netWait, func() {
+	wait := netWait
+	if !s.readyLocked() {
+		wait = setupNetWait
+	}
+	if short := shortNets.Load(); short != nil {
+		wait = short[0]
+		if !s.readyLocked() {
+			wait = short[1]
+		}
+	}
+	s.stopNet = s.after(wait, func() {
 		s.mu.Lock()
-		if len(s.lines) == 0 || s.quiet || !s.fresh[s.sign] {
+		if len(s.lines) == 0 || s.quiet || !s.fresh[s.sign] || !s.stands[s.sign] {
 			s.mu.Unlock()
 			return
 		}
@@ -354,7 +426,7 @@ func (s *starter) waitLocked() {
 	s.stopWait = s.after(marksWait, func() {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		if len(s.lines) == 0 || s.signs[s.sign] > 0 || s.quiet {
+		if len(s.lines) == 0 || s.countLocked() > 0 || s.quiet {
 			return
 		}
 		s.quiet = true
@@ -372,7 +444,9 @@ func (s *starter) stopWaitLocked() {
 // fire types the next line, for the timer set as gen, unless the shell
 // asks for a secret, or, for the Command Prompt, the cursor stands
 // elsewhere than after its prompt: then it waits for what the shell
-// writes next. net says the net fired it.
+// writes next. net says the net fired it, which types only with the
+// cursor after text, as a prompt leaves it: a cursor at the start of a
+// line is a prompt not yet drawn, or a program's output.
 func (s *starter) fire(gen int, net bool) {
 	s.mu.Lock()
 	if gen != s.gen || len(s.lines) == 0 {
@@ -389,7 +463,12 @@ func (s *starter) fire(gen int, net bool) {
 		return
 	}
 	s.stop = nil
-	if asksForSecret(line) {
+	if net && strings.TrimSpace(line) == "" {
+		return
+	}
+	if !(s.sign == vt.PromptMark && s.ownStands) && asksForSecret(line) {
+		// A shell at the prompt Shell Setup marked asks nothing, whatever
+		// the prompt says.
 		return
 	}
 	if !s.quiet && s.sign == vt.PromptFolder && !strings.HasSuffix(strings.TrimRight(line, " "), ">") {
@@ -415,7 +494,7 @@ func (s *starter) fire(gen int, net bool) {
 }
 
 // secretWords are what a question for a secret names, as ssh, sudo, su,
-// gpg, a one-time code and the languages they are asked in put it: in
+// gpg, a PIN, a one-time code and the languages they are asked in put it: in
 // English, Swedish, German, French, Spanish, Norwegian, Danish, Finnish,
 // Dutch, Italian, Portuguese, Polish, Czech and Russian.
 var secretWords = []string{
@@ -426,27 +505,31 @@ var secretWords = []string{
 	"lösenord", "lösenfras", "passwort", "kennwort", "mot de passe",
 	"phrase secrète", "phrase de passe", "contraseña", "passord",
 	"adgangskode", "kodeord", "salasana", "tunnuslause", "wachtwoord",
-	"senha", "palavra-passe", "hasło", "heslo", "пароль",
+	"senha", "palavra-passe", "hasło", "heslo", "пароль", "pin",
 }
 
 // asksForSecret reports whether line, the text before the cursor, is a
 // question asking for a password, a passphrase, a PIN, a one-time code
 // or whether to trust a host key, as ssh, sudo and the like ask them:
-// one that ends in a colon or a question mark, and names one of them.
+// one that ends in a colon or a question mark, and names one of them as
+// a word of its own, so a host called hotplug or a folder called
+// otp-service in a prompt asks nothing.
 func asksForSecret(line string) bool {
 	l := strings.ToLower(strings.TrimSpace(line))
 	if !strings.HasSuffix(l, ":") && !strings.HasSuffix(l, "?") && !strings.HasSuffix(l, "：") {
 		return false
 	}
 	for _, word := range secretWords {
-		if strings.Contains(l, word) {
+		if hasWord(l, word) {
 			return true
 		}
 	}
-	return hasWord(l, "pin")
+	return false
 }
 
-// hasWord reports whether s holds word with no letter either side.
+// hasWord reports whether s holds word with nothing either side that is
+// part of a word or a name: a letter, a digit, or one of _ . / \. A
+// hyphen parts words, as in PIN-kod.
 func hasWord(s, word string) bool {
 	for i := 0; ; {
 		at := strings.Index(s[i:], word)
@@ -455,13 +538,19 @@ func hasWord(s, word string) bool {
 		}
 		at += i
 		end := at + len(word)
-		before := at == 0 || !unicode.IsLetter(rune(s[at-1]))
-		after := end == len(s) || !unicode.IsLetter(rune(s[end]))
-		if before && after {
+		before, _ := utf8.DecodeLastRuneInString(s[:at])
+		after, _ := utf8.DecodeRuneInString(s[end:])
+		if (at == 0 || !inName(before)) && (end == len(s) || !inName(after)) {
 			return true
 		}
 		i = at + 1
 	}
+}
+
+// inName says r is part of a word or a name: a letter, a digit, or one
+// of _ . / \.
+func inName(r rune) bool {
+	return unicode.IsLetter(r) || unicode.IsDigit(r) || strings.ContainsRune(`_./\`, r)
 }
 
 // cursorLine is the text before the cursor on the live screen, the
