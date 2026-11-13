@@ -672,23 +672,27 @@ func (a *app) startLocalSlot(id string, r settings.SavedPane, still func() bool,
 		sh := screen.Open(sess, a.palette, a.withLinks(a.hooks(pane), pane, machines.Local))
 		a.argvs[pane] = withoutFolder(argv)
 		a.addPane(Pane{ID: pane, Title: a.freeTitle(a.localShellName(argv))}, sh, Placement{Instead: id})
-		a.typeStart(pane, r, a.taughtRoute(argv))
+		a.typeStart(pane, a.taughtRoute(argv))
 	})
 }
 
-// typeStart types the start lines r keeps into terminal pane id, which a
-// layout has just opened, its shell taught by Shell Setup as route, or
+// typeStart types the start lines terminal pane id keeps into it, which
+// a layout has just opened, its shell taught by Shell Setup as route, or
 // as shellsetup.NoRoute when it was not: one at each prompt from the
 // one Shell Setup's own lines leave it at, where the shell taught says
-// when it is at one, and otherwise each once it has been quiet a moment. Only a terminal started here or on a server is
-// typed into, and only as the layout opens it: one through another kakel
-// window, or started again in its pane, is not.
-func (a *app) typeStart(id string, r settings.SavedPane, route shellsetup.Route) {
+// when it is at one, and otherwise each once it has been quiet a
+// moment. The lines are those the pane took from its slot as it went
+// in, so lines saved in Start Lines while it started are the ones
+// typed. Only a terminal started here or on a server is typed into, and
+// only as the layout opens it: one through another kakel window, or
+// started again in its pane, is not.
+func (a *app) typeStart(id string, route shellsetup.Route) {
 	t := a.terminal(id)
-	if t == nil || r.Kind != settings.LayoutTerminal || len(r.Start) == 0 {
+	lines := a.startLines[id]
+	if t == nil || len(lines) == 0 {
 		return
 	}
-	t.TypeAtPrompts(r.Start, promptSign(route), shellsetup.Prompts(route))
+	t.TypeAtPrompts(slices.Clone(lines), promptSign(route), shellsetup.Prompts(route))
 }
 
 // promptSign is how a shell taught as route says it is at its prompt.
@@ -791,7 +795,7 @@ func (a *app) startFarSlot(id string, m machines.ID, r settings.SavedPane, still
 				fail(title, err, true)
 				return
 			}
-			a.typeStart(pane, r, a.farTaughtRoute(m, p))
+			a.typeStart(pane, a.farTaughtRoute(m, p))
 		})
 	})
 }
@@ -1051,7 +1055,9 @@ func (a *app) intoSlot(p Pane, id string) {
 		if len(s.recipe.Start) > 0 {
 			a.startLines[p.ID] = slices.Clone(s.recipe.Start)
 		}
-		a.linesFrom[p.ID] = layoutSlot{layout: s.layout, slot: s.name}
+		if s.layout != "" {
+			a.linesFrom[p.ID] = layoutSlot{layout: s.layout, slot: s.name}
+		}
 	}
 	a.forgetSlot(id)
 	a.settleRecords()

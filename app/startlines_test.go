@@ -356,3 +356,147 @@ func TestLinesGivenInTheDialogAreKeptBySavingOver(t *testing.T) {
 	a.handle(SaveStartLines{Layout: a.st.Layouts[0], Lines: map[string][]string{"p1": {"npm test"}, "p2": nil}})
 	saveOver(map[string][]string{"p1": {"npm test"}, "p2": nil})
 }
+
+// slotPanes are the panes of window w by the slot of the layout each
+// was opened from, or saved into.
+func slotPanes(t *testing.T, a *app, w *ownWin) map[string]string {
+	t.Helper()
+	waitFor(t, a, "the panes to start", func() bool { return len(waitingIn(a, w)) == 0 })
+	out := map[string]string{}
+	for _, p := range a.panesIn(w) {
+		if from, ok := a.linesFrom[p.ID]; ok {
+			out[from.slot] = p.ID
+		}
+	}
+	return out
+}
+
+// Lines given in the dialog reach the pane of the slot as the layout
+// has it now. Another window saved over the layout, its first terminal
+// closed, names the second one p1; a window still open from the layout
+// as it was gives p1's lines to its second terminal, and its first,
+// whose slot is no longer in the layout, gets none.
+func TestDialogLinesFollowTheLayoutSavedFromAnotherWindow(t *testing.T) {
+	a, opened := openingApp(t)
+	a.st.ShellSetup = false
+	term := settings.SavedPane{Kind: settings.LayoutTerminal, Command: plainShell()}
+	kept := keep(t, a, alone("Shop", term, term))
+	w1 := opens(t, a, opened, kept.ID)
+	one := slotPanes(t, a, w1)
+	w2 := opens(t, a, opened, kept.ID)
+	two := slotPanes(t, a, w2)
+
+	a.remove(two["p1"])
+	if _, _, _, err := a.saveLayout(SaveLayout{Window: w2.id, Name: "Shop", Replace: true}); err != nil {
+		t.Fatal(err)
+	}
+	a.handle(SaveStartLines{Layout: a.st.Layouts[0], Lines: map[string][]string{"p1": {"run-b"}}})
+	if got := a.startLines[one["p1"]]; got != nil {
+		t.Fatalf("the first terminal, gone from the layout, was given %q", got)
+	}
+	if got := a.startLines[one["p2"]]; !slices.Equal(got, []string{"run-b"}) {
+		t.Fatalf("the second terminal was given %q", got)
+	}
+	again, _, _, err := a.saveLayout(SaveLayout{Window: w1.id, Name: "Shop", Replace: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a1, b1 := again.Panes["p1"].Start, again.Panes["p2"].Start; a1 != nil || !slices.Equal(b1, []string{"run-b"}) {
+		t.Fatalf("saved over, the terminals keep %q and %q", a1, b1)
+	}
+}
+
+// A layout removed lets go of the windows opened from it: another layout
+// given its name, and so its ID, gives its lines to its own panes alone,
+// and a window of the one removed keeps the lines it had. Undo of the
+// removal links the window again, as nothing else linked it meanwhile.
+func TestARemovedLayoutsIDLinksNoPane(t *testing.T) {
+	a, opened := openingApp(t)
+	a.st.ShellSetup = false
+	term := settings.SavedPane{Kind: settings.LayoutTerminal, Command: plainShell()}
+	shop := keep(t, a, alone("Shop", settings.SavedPane{Kind: settings.LayoutTerminal, Command: plainShell(), Start: []string{"echo OLD"}}))
+	other := keep(t, a, alone("Other", term))
+	old := slotPanes(t, a, opens(t, a, opened, shop.ID))["p1"]
+
+	// Removed and brought back: the window is the layout's again.
+	a.handle(RemoveLayout{ID: shop.ID})
+	a.handle(a.st.Notices[len(a.st.Notices)-1].On.(RestoreLayout))
+	a.handle(SaveStartLines{Layout: layoutNamed(t, a, "Shop"), Lines: map[string][]string{"p1": {"echo BACK"}}})
+	if got := a.startLines[old]; !slices.Equal(got, []string{"echo BACK"}) {
+		t.Fatalf("brought back by Undo, the window's terminal was given %q", got)
+	}
+
+	// Removed, and its ID given to another layout.
+	a.handle(RemoveLayout{ID: shop.ID})
+	a.st.Notices = nil
+	w := opens(t, a, opened, other.ID)
+	mine := slotPanes(t, a, w)["p1"]
+	again, _, _, err := a.saveLayout(SaveLayout{Window: w.id, Name: "Shop"})
+	if err != nil || again.ID != shop.ID {
+		t.Fatalf("saved as %q: %v", again.ID, err)
+	}
+	a.handle(SaveStartLines{Layout: again, Lines: map[string][]string{"p1": {"echo NEW"}}})
+	if got := a.startLines[old]; !slices.Equal(got, []string{"echo BACK"}) {
+		t.Fatalf("the removed layout's terminal was given %q", got)
+	}
+	if got := a.startLines[mine]; !slices.Equal(got, []string{"echo NEW"}) {
+		t.Fatalf("the new layout's own terminal was given %q", got)
+	}
+	if _, linked := a.linesFrom[old]; linked {
+		t.Fatalf("the removed layout's terminal is linked to %+v", a.linesFrom[old])
+	}
+}
+
+// layoutNamed is the layout called name, as the app has it now.
+func layoutNamed(t *testing.T, a *app, name string) settings.SavedLayout {
+	t.Helper()
+	for _, l := range a.st.Layouts {
+		if l.Name == name {
+			return l
+		}
+	}
+	t.Fatalf("no layout is called %s", name)
+	return settings.SavedLayout{}
+}
+
+// Lines saved in the dialog while a terminal is still starting, its
+// folder being looked for, are the lines typed into it, not those the
+// layout had as it opened.
+func TestLinesSavedWhileStartingAreTyped(t *testing.T) {
+	a, opened := openingApp(t)
+	a.st.ShellSetup = false
+	kept := keep(t, a, alone("Slow", settings.SavedPane{Kind: settings.LayoutTerminal, Command: plainShell(),
+		Folder: t.TempDir(), Start: []string{"echo OLD-LINE"}}))
+	a.handle(OpenLayout{ID: kept.ID})
+	waitFor(t, a, "the waiting pane", func() bool {
+		for _, s := range a.slots {
+			if s.layout == kept.ID {
+				return true
+			}
+		}
+		return false
+	})
+	a.handle(SaveStartLines{Layout: a.st.Layouts[0], Lines: map[string][]string{"p1": {"echo NEW-LINE"}}})
+	w := layoutWindow(a)
+	waitFor(t, a, "the layout's window", func() bool { return opened.Load() == 1 })
+	p := onlyPane(t, a, w)
+	linesOf(t, a, p.ID, "NEW-LINE")
+	if strings.Contains(a.terminal(p.ID).AllText(), "OLD-LINE") {
+		t.Fatalf("the old line was typed: %q", a.terminal(p.ID).AllText())
+	}
+	if got := a.startLines[p.ID]; !slices.Equal(got, []string{"echo NEW-LINE"}) {
+		t.Fatalf("the pane keeps %q", got)
+	}
+}
+
+// The card counts only the lines a terminal types: not those of a
+// terminal through another kakel window, which the dialog does not show.
+func TestTheCountLeavesOutTerminalsThroughAWindow(t *testing.T) {
+	l := alone("Mixed",
+		settings.SavedPane{Kind: settings.LayoutTerminal, Start: []string{"make"}},
+		settings.SavedPane{Kind: settings.LayoutTerminal, Host: "desk", HostID: "s3", Window: true, Start: []string{"htop", "top"}},
+		settings.SavedPane{Kind: settings.LayoutCommand, Line: "htop", Start: []string{"no"}})
+	if n := LayoutStartLines(l); n != 1 {
+		t.Fatalf("counted %d start lines, want 1", n)
+	}
+}
