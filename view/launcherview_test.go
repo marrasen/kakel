@@ -17,6 +17,8 @@ import (
 func launcherStage(t *testing.T) (*Launcher, *gunim.Window) {
 	t.Helper()
 	w := gunimtest.New(t, LauncherSize, nil)
+	// Painted each frame, for UI.Bounds; see windowStageOf.
+	w.PaintWhenLooked(false)
 	var l *Launcher
 	gunim.RegisterView(w, "launcher", func(app.LaunchState) *Launcher { l = NewLauncher(); return l },
 		func(l *Launcher, st app.LaunchState, u *gunim.UI) { l.Update(st, u) })

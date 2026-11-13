@@ -22,6 +22,8 @@ import (
 func promptStage(t *testing.T, q app.Ask, th look.Themed) (*Prompt, *gunim.Window, *gunim.UI) {
 	t.Helper()
 	w := gunimtest.New(t, PromptSize(q, th.Theme), nil)
+	// Painted each frame, for UI.Bounds; see windowStageOf.
+	w.PaintWhenLooked(false)
 	if th.Name != "" {
 		look.Register(w, []look.Themed{th})
 		if err := w.Client().SetTheme(th.Name); err != nil {
