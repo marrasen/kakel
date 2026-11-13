@@ -14,6 +14,7 @@ import (
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/gunimtest"
 	gi "github.com/marrasen/gunim/input"
+	"github.com/marrasen/gunim/text"
 	"github.com/marrasen/gunim/widget"
 
 	"github.com/marrasen/kakel/app"
@@ -195,7 +196,16 @@ func TestShotsStartLines(t *testing.T) {
 	shot := func(name string) {
 		gunimtest.WritePNG(t, filepath.Join(dir, name+".png"), gunimtest.Pixels(t, lastWindow))
 	}
-	all := []settings.SavedLayout{shopLayout(), mixedLayout(), devLayout(), manyTabsLayout("eight", 8), quietLayout()}
+	// run shoots n frames, each every frames apart, named name-1 on.
+	run := func(name string, n, every int) {
+		for i := 1; i <= n; i++ {
+			frames(every)
+			shot(name + "-" + strconv.Itoa(i))
+		}
+	}
+	all := []settings.SavedLayout{shopLayout(), mixedLayout(), devLayout(), manyTabsLayout("eight", 8), quietLayout(),
+		manyTabsLayout("many", 14), shortTabs("two", 0.7, "bash", "zsh"),
+		shortTabs("seven", 0.7, "api", "web", "db", "client", "tests", "logs", "server")}
 	for _, th := range []string{"Dark", "Paper"} {
 		pre := "startlines-" + th + "-"
 		win, _, publish := themedStage(t, geom.Sz(1100, 820), th)
@@ -203,10 +213,7 @@ func TestShotsStartLines(t *testing.T) {
 		settle()
 		shot(pre + "01-cards")
 		b := openStartLines(t, win, "shop")
-		for i := 1; i <= 3; i++ {
-			frames(3)
-			shot(pre + "02-opening-" + strconv.Itoa(i))
-		}
+		run(pre+"02-opening", 3, 3)
 		settle()
 		shot(pre + "03-shop")
 		// The pointer over a box lights it.
@@ -214,96 +221,124 @@ func TestShotsStartLines(t *testing.T) {
 		settle()
 		shot(pre + "04-hover")
 		lastWindow.Input(gi.PointerLeave{Time: time.Now()})
-		// Picked to the right: the mark glides, the page slides in.
+		// Picked to the right, from one terminal to another: the mark
+		// glides as the old page goes out and the new one comes in.
 		lastUI.Focus(b.m)
 		press(gi.KeyRight, 0)
-		for i := 1; i <= 4; i++ {
-			frames(2)
-			shot(pre + "05-gliding-" + strconv.Itoa(i))
-		}
+		run(pre+"05-gliding", 8, 2)
 		settle()
 		shot(pre + "06-log-tail")
-		// Enter puts the keyboard in its lines; a line typed for another
-		// shell is marked.
+		// Enter puts the keyboard in its lines; the placeholder fades as
+		// the first letter is typed, and a line typed for another shell
+		// is marked.
 		press(gi.KeyEnter, 0)
-		lastWindow.Input(gi.TextInput{Text: "Get-Content app.log -Wait", Time: time.Now()})
-		for i := 1; i <= 2; i++ {
-			frames(3)
-			shot(pre + "07-typed-" + strconv.Itoa(i))
-		}
 		settle()
-		shot(pre + "08-wrong-shell")
+		shot(pre + "07-placeholder")
+		lastWindow.Input(gi.TextInput{Text: "G", Time: time.Now()})
+		run(pre+"08-first-letter", 3, 2)
+		lastWindow.Input(gi.TextInput{Text: "et-Content app.log -Wait", Time: time.Now()})
+		settle()
+		shot(pre + "09-wrong-shell")
 		// A second line, coming in on the box.
 		lastWindow.Input(gi.KeyPress{Key: gi.KeyEnter, Time: time.Now()})
 		lastWindow.Input(gi.TextInput{Text: "tail -f app.log", Time: time.Now()})
-		for i := 1; i <= 2; i++ {
-			frames(3)
-			shot(pre + "09-second-line-" + strconv.Itoa(i))
+		run(pre+"10-second-line", 2, 3)
+		settle()
+		// The client, its box holding as many lines as fit, then one more:
+		// the last line fades out as the count fades in on its row, and
+		// back.
+		b.m.pick("p2", lastUI)
+		settle()
+		face := b.m.faces["p2"]
+		typed := func(n int) {
+			lines := []string{"npm install", "npm run lint", "npm run build", "npm run test", "npm run dev", "npm run e2e"}
+			joined := strings.Join(lines[:n], "\n")
+			b.ed.SetText(joined, lastUI)
+			b.ed.OnChange(joined, lastUI)
 		}
+		typed(face.fit)
+		settle()
+		shot(pre + "11-as-many-as-fit")
+		typed(face.fit + 1)
+		run(pre+"12-one-more", 5, 2)
+		settle()
+		shot(pre + "13-one-more")
+		typed(face.fit)
+		run(pre+"14-one-fewer", 5, 2)
 		settle()
 		win.dialog.Close(lastUI)
 		settle()
 
-		// The group of tabs: a command picked, then a file manager, then a
-		// terminal through a window.
+		// The group of tabs: a terminal, a command, a file manager, then
+		// a terminal through a window.
 		b = openStartLines(t, win, "mixed")
 		settle()
-		shot(pre + "10-mixed")
+		shot(pre + "15-mixed")
 		b.m.pick("p2", lastUI)
-		for i := 1; i <= 3; i++ {
-			frames(2)
-			shot(pre + "11-into-tabs-" + strconv.Itoa(i))
-		}
+		run(pre+"16-into-tabs", 3, 2)
 		settle()
+		// From a terminal to a command along the tabs: the tab mark and
+		// the page together.
 		b.m.pick("p3", lastUI)
-		for i := 1; i <= 3; i++ {
-			frames(2)
-			shot(pre + "12-to-command-" + strconv.Itoa(i))
-		}
+		run(pre+"17-to-command", 8, 2)
 		settle()
-		shot(pre + "13-command")
+		shot(pre + "18-command")
 		b.m.pick("p4", lastUI)
 		settle()
-		shot(pre + "14-files")
+		shot(pre + "19-files")
 		b.m.pick("p5", lastUI)
 		settle()
-		shot(pre + "15-through-window")
+		shot(pre + "20-through-window")
 		win.dialog.Close(lastUI)
 		settle()
 
 		// As the user lays a window out, with a long name and many lines.
 		openStartLines(t, win, "dev")
 		settle()
-		shot(pre + "16-dev")
+		shot(pre + "21-dev")
 		win.dialog.Close(lastUI)
 		settle()
-		b = openStartLines(t, win, "eight")
-		settle()
-		b.m.pick("p5", lastUI)
-		settle()
-		shot(pre + "17-eight-tabs")
-		win.dialog.Close(lastUI)
-		settle()
+		for _, c := range []struct{ id, pick, name string }{
+			{"eight", "p5", "22-eight-tabs"}, {"many", "p5", "23-fourteen-tabs"},
+			{"two", "p1", "24-two-short-tabs"}, {"seven", "p2", "25-seven-short-tabs"},
+		} {
+			b = openStartLines(t, win, c.id)
+			settle()
+			b.m.pick(c.pick, lastUI)
+			settle()
+			shot(pre + c.name)
+			win.dialog.Close(lastUI)
+			settle()
+		}
 		b = openStartLines(t, win, "quiet")
 		settle()
 		b.m.pick("p2", lastUI)
 		settle()
-		shot(pre + "18-quiet-alone")
+		shot(pre + "26-quiet-alone")
 		win.dialog.Close(lastUI)
 		settle()
 	}
 	// Narrow and short.
-	for _, size := range []geom.Size{geom.Sz(420, 760), geom.Sz(640, 560)} {
-		name := "startlines-narrow-" + strconv.Itoa(int(size.W)) + "x" + strconv.Itoa(int(size.H))
-		win, _, publish := windowStageOf(t, size)
-		publish(startState(all...))
-		settle()
-		for _, id := range []string{"shop", "mixed", "dev", "eight"} {
-			openStartLines(t, win, id)
+	for _, th := range []string{"Dark", "Paper"} {
+		for _, size := range []geom.Size{geom.Sz(420, 760), geom.Sz(640, 560)} {
+			name := "startlines-narrow-" + th + "-" + strconv.Itoa(int(size.W)) + "x" + strconv.Itoa(int(size.H))
+			win, _, publish := themedStage(t, size, th)
+			publish(startState(all...))
 			settle()
-			shot(name + "-" + id)
-			win.dialog.Close(lastUI)
-			settle()
+			for _, id := range []string{"shop", "mixed", "dev", "eight", "many", "two"} {
+				b := openStartLines(t, win, id)
+				settle()
+				shot(name + "-" + id)
+				if id == "shop" {
+					// The log tail's empty editor, its placeholder cut to
+					// the width.
+					b.m.pick("p3", lastUI)
+					settle()
+					shot(name + "-placeholder")
+				}
+				win.dialog.Close(lastUI)
+				settle()
+			}
 		}
 	}
 }
@@ -754,7 +789,8 @@ func TestALineForAnotherShellIsSaid(t *testing.T) {
 }
 
 // Fourteen tabs in half the dialog each keep a place of their own, the
-// one picked as wide as its name, the rest narrowed to their icons, and
+// one picked naming itself as far as its room goes, the rest narrowed to
+// their icons, and
 // each says its name in a tooltip over the whole tab where its name is
 // cut. As another comes to the front, the two change widths over frames,
 // and the mark on the tab picked glides along the tabs with it.
@@ -770,6 +806,10 @@ func TestManyTabsKeepTheirPlace(t *testing.T) {
 	}
 	if w := box.tabs[4].Size().W; w < startTabLeast.Default() {
 		t.Fatalf("the tab picked is %v wide", w)
+	}
+	// The tab in front names itself, as far as its room goes.
+	if named, room := tabName(lastUI.Theme(), box.tabs[4], b.m.faces["p5"]); named < 1 || room < 12 {
+		t.Fatalf("the tab picked shows %v of its name, in %v px", named, room)
 	}
 	lastWindow.Paint()
 	for i, slot := range box.slots {
@@ -851,16 +891,159 @@ func TestTheCountFadesAcross(t *testing.T) {
 	b.ed.SetText(strings.Repeat("make\n", 30), lastUI)
 	b.ed.OnChange(strings.Repeat("make\n", 30), lastUI)
 	settle()
-	was := face.more.now
+	was := face.more.now()
 	b.ed.SetText(strings.Repeat("make\n", 31), lastUI)
 	b.ed.OnChange(strings.Repeat("make\n", 31), lastUI)
 	var ts []float32
 	for range 30 {
 		lastWindow.Frame(time.Second / 60)
-		ts = append(ts, face.more.t.Value())
+		ts = append(ts, face.more.on(face.more.now()))
 	}
-	if was == "" || face.more.now == was || ts[0] > 0.5 || ts[len(ts)-1] != 1 {
-		t.Fatalf("the count went from %q to %q over %v", was, face.more.now, ts)
+	if was == "" || face.more.now() == was || ts[0] > 0.5 || ts[len(ts)-1] != 1 {
+		t.Fatalf("the count went from %q to %q over %v", was, face.more.now(), ts)
 	}
 	noJumps(t, "the count", ts)
+}
+
+// shortTabs is a terminal beside a group of terminals named names, the
+// group taking share of the width.
+func shortTabs(id string, share float32, names ...string) settings.SavedLayout {
+	l := settings.SavedLayout{ID: id, Name: id, Panes: map[string]settings.SavedPane{"p0": {Kind: settings.LayoutTerminal}}}
+	var ids []string
+	for i, name := range names {
+		slot := "p" + strconv.Itoa(i+1)
+		ids = append(ids, slot)
+		l.Panes[slot] = settings.SavedPane{Kind: settings.LayoutTerminal, Title: name}
+	}
+	l.Root = splitOf("#r", "row", 1-share, one("p0"), tabsOf(ids...))
+	return l
+}
+
+// A tab's name shows whole or not at all: a tab behind is as wide as its
+// name or narrowed to its icon, never between, and the tab in front
+// shows as much of its name as fits, faded where it is cut, never none.
+// So two short names in a wide box both show, as do seven, and in a box
+// of fourteen the tab in front still names itself.
+func TestTabNamesShowWholeOrNotAtAll(t *testing.T) {
+	for _, l := range []settings.SavedLayout{
+		shortTabs("two", 0.7, "bash", "zsh"),
+		shortTabs("seven", 0.7, "api", "web", "db", "client", "tests", "logs", "server"),
+		manyTabsLayout("eight", 8), manyTabsLayout("many", 14),
+	} {
+		win, b, _ := startStage(t, l)
+		b.m.pick("p1", lastUI)
+		settle()
+		lastWindow.Paint()
+		th := lastUI.Theme()
+		box := b.m.boxOf("p1")
+		for i, slot := range box.slots {
+			f := b.m.faces[slot]
+			named, room := tabName(th, box.tabs[i], f)
+			whole := text.Default().Shape(f.name, startTabSize.Get(th)).Advance
+			switch {
+			case slot == "p1" && (named < 1 || room < min(whole, 12)):
+				t.Errorf("in %s, the tab in front shows %v of its name in %v px", l.Name, named, room)
+			case slot != "p1" && named > 0 && (named < 1 || room < whole):
+				t.Errorf("in %s, tab %s shows %v of its name in %v px of the %v it needs", l.Name, slot, named, room, whole)
+			case l.ID == "two" || l.ID == "seven":
+				if named < 1 || b.m.cutAt(box.tabs[i].Center()) != "" {
+					t.Errorf("in %s, the short name %q is not whole", l.Name, f.name)
+				}
+			}
+		}
+		win.dialog.Close(lastUI)
+		settle()
+	}
+}
+
+// Up and Down across a T, two panes over one, take the user back where
+// they came from.
+func TestUpAndDownAcrossATGoBack(t *testing.T) {
+	term := settings.SavedPane{Kind: settings.LayoutTerminal}
+	l := settings.SavedLayout{ID: "tee", Name: "Tee", Panes: map[string]settings.SavedPane{"p1": term, "p2": term, "p3": term},
+		Root: splitOf("#1", "column", 0.5, splitOf("#2", "row", 0.5, one("p1"), one("p2")), one("p3"))}
+	_, b, _ := startStage(t, l)
+	lastUI.Focus(b.m)
+	for _, from := range []string{"p2", "p1", "p2"} {
+		b.m.pick(from, lastUI)
+		press(gi.KeyDown, 0)
+		press(gi.KeyUp, 0)
+		if b.m.Picked() != from {
+			t.Fatalf("Down and Up from %s went to %s", from, b.m.Picked())
+		}
+	}
+}
+
+// A line on a box gives way to the count of the lines past its room,
+// fading out on its row before the count fades in, and comes back once
+// the count has gone, the two never drawn on the row at once. Typed fast, the
+// count and a line coming in carry on from where they stand.
+func TestALineGivesWayToTheCount(t *testing.T) {
+	_, b, _ := startStage(t, shopLayout())
+	face := b.m.faces["p2"]
+	b.m.pick("p2", lastUI)
+	settle()
+	lines := func(n int) {
+		s := strings.Repeat("make\n", n)
+		b.ed.SetText(s, lastUI)
+		b.ed.OnChange(s, lastUI)
+	}
+	lines(1)
+	settle()
+	fit := face.fit
+	if fit < 3 {
+		t.Fatalf("the box has room for %d lines", fit)
+	}
+	watch := func(what string, n int, lineFrom, lineTo, countTo float32) {
+		t.Helper()
+		lines(n)
+		var ls, cs []float32
+		for range 30 {
+			lastWindow.Frame(time.Second / 60)
+			l, c := face.lineShown(fit-1), face.countShown()
+			ls, cs = append(ls, l), append(cs, c)
+			if drawn := face.countDrawn(); l > 0.01 && drawn > 0.01 {
+				t.Fatalf("%s, the line shows %v and the count %v on one row", what, l, drawn)
+			}
+		}
+		if abs32(ls[0]-lineFrom) > 0.5 || ls[len(ls)-1] != lineTo || cs[len(cs)-1] != countTo {
+			t.Fatalf("%s, the line went %v and the count %v", what, ls, cs)
+		}
+		noJumps(t, what+", the line", ls)
+		noJumps(t, what+", the count", cs)
+	}
+	lines(fit)
+	settle()
+	watch("one line too many", fit+1, 1, 0, 1)
+	watch("back to as many as fit", fit, 0, 1, 0)
+
+	// Fast: a line every few frames, past the room and back.
+	var cs, ls []float32
+	for _, n := range []int{fit + 1, fit + 2, fit + 3, fit + 2, fit + 1, fit} {
+		lines(n)
+		for range 4 {
+			lastWindow.Frame(time.Second / 60)
+			cs = append(cs, face.countShown())
+		}
+	}
+	settle()
+	for i := 1; i < len(cs); i++ {
+		if abs32(cs[i]-cs[i-1]) > 0.4 {
+			t.Fatalf("typed fast, the count jumped %v", cs)
+		}
+	}
+	lines(1)
+	settle()
+	lines(2)
+	frames(3)
+	lines(3)
+	for range 20 {
+		lastWindow.Frame(time.Second / 60)
+		ls = append(ls, face.lineShown(1))
+	}
+	for i := 1; i < len(ls); i++ {
+		if ls[i] < ls[i-1]-0.01 {
+			t.Fatalf("typed fast, the second line went back %v", ls)
+		}
+	}
 }

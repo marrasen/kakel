@@ -1,9 +1,12 @@
 package view
 
 import (
+	"cmp"
 	"image/color"
+	"math"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/access"
@@ -48,9 +51,8 @@ var (
 	startMapGap    = theme.Length("kakel.startlines.map.gap", 6)
 	startMapRadius = theme.Length("kakel.startlines.map.radius", 8)
 	// startTabHeight is how tall a tab is, in a box of tabs, and
-	// startTabLeast how wide one is before it shows its name whole
-	// beside its icon: narrower, its name fades out, and its icon alone
-	// is left.
+	// startTabLeast how wide the tab in front is kept, where the box is
+	// crowded, for some of its name to show beside its icon.
 	startTabHeight = theme.Length("kakel.startlines.tab.height", 24)
 	startTabLeast  = theme.Length("kakel.startlines.tab.least", 64)
 	// startPageHeight is how tall the part under the map is: where the
@@ -64,6 +66,15 @@ var (
 	startNameSize = theme.Length("kakel.startlines.name", 13)
 	startTabSize  = theme.Length("kakel.startlines.tab", 12)
 )
+
+// startPick is the motion of a pane being picked on the map: the mark
+// gliding to it, its tab coming to the front of its box, and its name
+// lit. The page under the map turns in two halves on widget.PageTurn,
+// the old page fading out before the new comes in; on this spring the
+// pick is half way as the old page goes and comes to rest as the new
+// one does, with no overshoot to land before it, so the two read as one
+// movement.
+var startPick = theme.Spring("kakel.startlines.pick", anim.Spring{Response: 0.25, Damping: 1})
 
 // startLinesDialog opens the editor for layout l's start lines. Save
 // keeps the lines of each terminal whose lines were changed, cleaned as a
@@ -147,6 +158,9 @@ func newStartLines(w *Window, l settings.SavedLayout, u *gunim.UI) *startLines {
 	s.shown = s.m.firstEditable()
 	s.m.SetPicked(s.shown, nil)
 	s.pages = widget.NewPages(s.page(s.shown, u))
+	// Each page lays out its name and its lines in the same places, so
+	// the old one leaves before the new one comes, never read over it.
+	s.pages.InTurn = true
 	s.noteOn.Jump(anim.OnOff(s.ed != nil))
 	s.note = widget.NewLabel("kakel types these lines as the layout opens, one at each prompt. " +
 		"Put a line that keeps running, such as a dev server, last. The lines are saved as plain text, so keep passwords out.")
@@ -189,7 +203,7 @@ func (s *startLines) faceOf(slot string, p settings.SavedPane, known bool) *pane
 	f.name = s.paneName(p, known)
 	if f.editable {
 		f.lines = slices.Clone(p.Start)
-		f.drawn, f.keep = f.lines, len(f.lines)
+		f.rows.set(f.lines, anim.Spring{}, false)
 	}
 	f.sign.Jump(anim.OnOff(len(f.lines) > 0))
 	return f
@@ -335,6 +349,8 @@ func startEditor(label string, kind shellsetup.Route) *widget.CodeEditor {
 	ed := widget.NewCodeEditor()
 	ed.TabMovesOn, ed.Numbers = true, false
 	ed.Label = label
+	// A command every shell runs, so no shell is shown another's.
+	ed.Placeholder = "such as npm run dev, one a line"
 	ed.Highlight = pasteColours(kind, false)
 	return ed
 }
@@ -367,7 +383,7 @@ func (s *startLines) show(slot string, from geom.Point, u *gunim.UI) {
 	s.shown = slot
 	s.pages.Show(s.page(slot, u), from, u)
 	if on := anim.OnOff(s.ed != nil); s.noteOn.Target() != on {
-		s.noteOn.Animate(on, widget.Quick.Get(u.Theme()))
+		s.noteOn.Animate(on, startPick.Get(u.Theme()))
 	}
 }
 
@@ -539,56 +555,178 @@ func (s *startWell) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids g
 	kids.At(0).Paint(p)
 }
 
-// fadeText is words that cross-fade to new ones as they change: the
-// count of a pane's lines, and how many more it holds than are drawn.
+// fadeWords are words on the map and how far they show.
+type fadeWords struct {
+	s  string
+	on *anim.Float
+}
+
+// shown is how far the words show, from 0 to 1.
+func (w fadeWords) shown() float32 { return min(max(w.on.Value(), 0), 1) }
+
+// inTurn is how far words that have come on as far as on are drawn,
+// where words in the same place take turns: going, they are gone half
+// way, and coming, they show from half way on, so the two never stand
+// on each other.
+func inTurn(on float32) float32 { return min(max(2*on-1, 0), 1) }
+
+// fadeText is words that fade across to new ones as they change, the
+// old going out before the new come in: the count of a pane's lines,
+// and how many more it holds than are drawn. Each change fades from
+// where the words stand, so words changed again while they fade carry
+// on from there.
 type fadeText struct {
-	now, was string
-	t        *anim.Float
+	// shown are the words now, last, and the words before fading out.
+	shown []fadeWords
 }
 
-// set changes the words to s, fading across once laid out.
+// now is the words shown now, or "" for none.
+func (f *fadeText) now() string {
+	if n := len(f.shown); n > 0 && f.shown[n-1].on.Target() == 1 {
+		return f.shown[n-1].s
+	}
+	return ""
+}
+
+// set changes the words to s, "" for none, fading across once laid out.
 func (f *fadeText) set(s string, th *theme.Live, laid bool) {
-	if s == f.now {
+	if s == f.now() {
 		return
 	}
-	f.was, f.now = f.now, s
 	if !laid {
-		f.t.Jump(1)
+		f.shown = nil
+		if s != "" {
+			f.shown = []fadeWords{{s: s, on: anim.NewFloat(1)}}
+		}
 		return
 	}
-	f.t.Jump(0)
-	f.t.Animate(1, widget.Quick.Get(th))
+	q := widget.Quick.Get(th)
+	// Words fading out that come back turn from where they stand.
+	back := fadeWords{s: s, on: anim.NewFloat(0)}
+	f.shown = slices.DeleteFunc(f.shown, func(w fadeWords) bool {
+		if w.s == s {
+			back = w
+			return true
+		}
+		if w.on.Target() != 0 {
+			w.on.Animate(0, q)
+		}
+		return false
+	})
+	if s != "" {
+		back.on.Animate(1, q)
+		f.shown = append(f.shown, back)
+	}
 }
 
-// shaped are the words now and before, shaped at size, and how far each
-// shows.
-func (f *fadeText) shaped(size float32) (now, was text.Run, on float32) {
-	on = min(max(f.t.Value(), 0), 1)
-	if f.now != "" {
-		now = text.Default().Shape(f.now, size)
+// Step implements [anim.Stepper]: words faded out are let go.
+func (f *fadeText) Step(dt time.Duration) bool {
+	moving := false
+	for _, w := range f.shown {
+		if w.on.Step(dt) {
+			moving = true
+		}
 	}
-	if f.was != "" && on < 0.999 {
-		was = text.Default().Shape(f.was, size)
-	}
-	return now, was, on
+	f.shown = slices.DeleteFunc(f.shown, func(w fadeWords) bool { return w.on.Target() == 0 && !w.on.Active() })
+	return moving
 }
 
-// width is how wide the words are drawn, from the old width to the new.
+// on is how far words s show.
+func (f *fadeText) on(s string) float32 {
+	for _, w := range f.shown {
+		if w.s == s {
+			return w.shown()
+		}
+	}
+	return 0
+}
+
+// showing is how far any words show, from 0 to 1.
+func (f *fadeText) showing() float32 {
+	t := float32(0)
+	for _, w := range f.shown {
+		t += w.shown()
+	}
+	return min(t, 1)
+}
+
+// width is how wide the words are drawn: between the old width and the
+// new as they fade across.
 func (f *fadeText) width(size float32) float32 {
-	now, was, on := f.shaped(size)
-	return was.Advance + (now.Advance-was.Advance)*on
+	var sum, total float32
+	for _, w := range f.shown {
+		on := w.shown()
+		sum += text.Default().Shape(w.s, size).Advance * on
+		total += on
+	}
+	if total < 0.001 {
+		return 0
+	}
+	return sum / total
 }
 
-// paint draws the words at at in c, the old fading out as the new fade
-// in, faded out past room.
+// drawn is how far any words are drawn, from 0 to 1.
+func (f *fadeText) drawn() float32 {
+	t := float32(0)
+	for _, w := range f.shown {
+		t += inTurn(w.shown())
+	}
+	return min(t, 1)
+}
+
+// paint draws the words at at in c, the old fading out before the new
+// fade in, faded out past room.
 func (f *fadeText) paint(p *paint.Painter, th *theme.Live, at geom.Point, size float32, c color.NRGBA, room float32) {
-	now, was, on := f.shaped(size)
-	if was.Face != nil {
-		was.PaintFaded(p, at, fade(c, 1-on), room, widget.TextFade.Get(th))
+	for _, w := range f.shown {
+		if on := inTurn(w.shown()); on > 0.001 {
+			text.Default().Shape(w.s, size).PaintFaded(p, at, fade(c, on), room, widget.TextFade.Get(th))
+		}
 	}
-	if now.Face != nil {
-		now.PaintFaded(p, at, fade(c, on), room, widget.TextFade.Get(th))
+}
+
+// fadeRows are the lines drawn on a pane's box, by row: each fades in
+// as it is typed, from where it stands, and out as it is taken out,
+// drawn until it has gone.
+type fadeRows struct{ rows []fadeWords }
+
+// set has the rows show lines, fading on spring where animate says.
+func (r *fadeRows) set(lines []string, spring anim.Spring, animate bool) {
+	want := func(on *anim.Float, to float32) {
+		switch {
+		case !animate:
+			on.Jump(to)
+		case on.Target() != to:
+			on.Animate(to, spring)
+		}
 	}
+	for i, s := range lines {
+		if i == len(r.rows) {
+			r.rows = append(r.rows, fadeWords{on: anim.NewFloat(0)})
+		}
+		// A line changed in place is drawn as it is now.
+		r.rows[i].s = s
+		want(r.rows[i].on, 1)
+	}
+	for _, w := range r.rows[len(lines):] {
+		want(w.on, 0)
+	}
+	if !animate {
+		r.rows = r.rows[:len(lines)]
+	}
+}
+
+// Step implements [anim.Stepper]: rows faded out are let go.
+func (r *fadeRows) Step(dt time.Duration) bool {
+	moving := false
+	for _, w := range r.rows {
+		if w.on.Step(dt) {
+			moving = true
+		}
+	}
+	for n := len(r.rows); n > 0 && r.rows[n-1].on.Target() == 0 && !r.rows[n-1].on.Active(); n-- {
+		r.rows = r.rows[:n-1]
+	}
+	return moving
 }
 
 // paneFace is what the map says of one pane: its icon and name, the
@@ -602,34 +740,29 @@ type paneFace struct {
 	// reached directly.
 	editable bool
 	lines    []string
-	// drawn are the lines drawn: lines, or while a line fades out, the
-	// lines before; the first keep of them are drawn whole, and the rest
-	// with rowIn, coming in or going out.
-	drawn []string
-	keep  int
-	// rows is how many lines the box has room for, as last laid out, and
-	// more says how many lines the box has no room for.
-	rows int
+	// rows are the lines drawn, coming in and going out.
+	rows fadeRows
+	// fit is how many rows of lines the box has room for, as last laid
+	// out. Where it has fewer than the lines, the last row gives way to
+	// more, which says how many lines are not drawn.
+	fit  int
 	more fadeText
 	// sign shows that it holds lines, coming as the first is typed and
 	// going as the last is taken out; hover lights it under the pointer;
 	// front is how far it is the tab its box shows, for a box of tabs; on
-	// how far it is the pane picked; rowIn how far the line coming or
-	// going shows; and countOn how far the count of its lines shows by
-	// its name, in a box with no room for a line.
-	sign, hover, front, on, rowIn, countOn *anim.Float
+	// how far it is the pane picked; and countOn how far the count of its
+	// lines shows by its name, in a box with no room for a line.
+	sign, hover, front, on, countOn *anim.Float
 }
 
 func newPaneFace(slot string) *paneFace {
-	f := &paneFace{slot: slot, sign: anim.NewFloat(0), hover: anim.NewFloat(0), front: anim.NewFloat(1), on: anim.NewFloat(0),
-		rowIn: anim.NewFloat(1), countOn: anim.NewFloat(0)}
-	f.more.t = anim.NewFloat(1)
-	return f
+	return &paneFace{slot: slot, sign: anim.NewFloat(0), hover: anim.NewFloat(0), front: anim.NewFloat(1), on: anim.NewFloat(0),
+		countOn: anim.NewFloat(0)}
 }
 
 // springs are the face's moving values.
 func (f *paneFace) springs() []anim.Stepper {
-	return []anim.Stepper{f.sign, f.hover, f.front, f.on, f.rowIn, f.countOn, f.more.t}
+	return []anim.Stepper{f.sign, f.hover, f.front, f.on, f.countOn, &f.rows, &f.more}
 }
 
 // mapBox is a box on the map, as last laid out: one pane, or a group's
@@ -663,6 +796,9 @@ type paneMap struct {
 	order  []string
 	aspect float32
 	picked string
+	// came is the pane picked before, which an arrow back to where the
+	// user came from goes to among boxes as near and as in line.
+	came string
 	// OnPick runs as a pane is picked, with from pointing from the box
 	// picked before toward the one picked now, along the way it went
 	// most: (1, 0) for one to the right.
@@ -760,6 +896,9 @@ func (m *paneMap) SetPicked(slot string, u *gunim.UI) {
 	if !slices.Contains(m.order, slot) {
 		return
 	}
+	if slot != m.picked {
+		m.came = m.picked
+	}
 	m.picked = slot
 	if b := m.boxOf(slot); b != nil && b.tabbed() {
 		m.shows[b.key] = slot
@@ -777,22 +916,12 @@ func (m *paneMap) SetLines(slot string, lines []string, u *gunim.UI) {
 	if !ok {
 		return
 	}
-	was := f.lines
 	f.lines = lines
-	switch {
-	case u == nil:
-		f.drawn, f.keep = lines, len(lines)
-		f.rowIn.Jump(1)
-	case len(lines) > len(was):
-		f.drawn, f.keep = lines, min(f.keep, len(was))
-		f.rowIn.Jump(0)
-		f.rowIn.Animate(1, widget.Quick.Get(u.Theme()))
-	case len(lines) < len(was):
-		f.drawn, f.keep = was, len(lines)
-		f.rowIn.Animate(0, widget.Quick.Get(u.Theme()))
-	default:
-		f.drawn = lines
+	var quick anim.Spring
+	if u != nil {
+		quick = widget.Quick.Get(u.Theme())
 	}
+	f.rows.set(lines, quick, u != nil)
 	on := anim.OnOff(len(lines) > 0)
 	if u == nil {
 		f.sign.Jump(on)
@@ -804,12 +933,14 @@ func (m *paneMap) SetLines(slot string, lines []string, u *gunim.UI) {
 	u.Invalidate()
 }
 
-// line is the line drawn in row i of face f, and how far it shows.
+// line is the line drawn in row i of face f, and how far it has come
+// in.
 func (f *paneFace) line(i int) (string, float32) {
-	if i < f.keep && i < len(f.lines) {
-		return f.lines[i], 1
+	if i >= len(f.rows.rows) {
+		return "", 0
 	}
-	return f.drawn[i], min(max(f.rowIn.Value(), 0), 1)
+	w := f.rows.rows[i]
+	return w.s, w.shown()
 }
 
 // pick picks the pane in slot as the user asked for it, and says so.
@@ -913,7 +1044,9 @@ func (m *paneMap) showing(b mapBox) string {
 // along a box's tabs first, then to a box on that side. Of the boxes
 // beside the picked one, across from some part of it, the nearest is
 // taken, and of those as near, the one most in line with it; with none
-// across from it, the box nearest on that side.
+// across from it, the box nearest on that side. Of two as near and as
+// in line, as the two panes over one across a T, the one the user came
+// from is taken, so an arrow and its opposite go back and forth.
 func (m *paneMap) beside(d geom.Point) string {
 	cur := m.boxOf(m.picked)
 	if cur == nil {
@@ -948,6 +1081,9 @@ func (m *paneMap) beside(d geom.Point) string {
 			continue
 		}
 		better := false
+		// tie is whether b is as good as the best so far, where the box
+		// the user came from is taken.
+		tie := abs32(off-bestOff) < near && slices.Contains(b.slots, m.came)
 		switch {
 		case best < 0:
 			better = true
@@ -956,9 +1092,9 @@ func (m *paneMap) beside(d geom.Point) string {
 		case facing:
 			// Across from the picked box: the nearest, then the most in
 			// line.
-			better = away < bestAway-near || away <= bestAway+near && off < bestOff
+			better = away < bestAway-near || away <= bestAway+near && (off < bestOff-near || tie)
 		default:
-			better = off < bestOff || off == bestOff && away < bestAway
+			better = off < bestOff-near || abs32(off-bestOff) < near && (away < bestAway-near || abs32(away-bestAway) <= near && tie)
 		}
 		if better {
 			best, bestAway, bestOff, bestFacing = i, away, off, facing
@@ -1182,7 +1318,7 @@ func (m *paneMap) Layout(c gunim.Constraints, f gunim.Frame, _ gunim.Children) g
 		}
 	}
 	walk(m.root, geom.Rect{Max: size.Point()})
-	quick := widget.Quick.Get(th)
+	glide := startPick.Get(th)
 	ease := func(v *anim.Float, want float32, spring anim.Spring) {
 		if !m.laid {
 			v.Jump(want)
@@ -1197,27 +1333,18 @@ func (m *paneMap) Layout(c gunim.Constraints, f gunim.Frame, _ gunim.Children) g
 		b := &m.boxes[i]
 		shown := m.showing(*b)
 		for _, slot := range b.slots {
-			ease(m.faces[slot].front, anim.OnOff(slot == shown), widget.Crossfade.Get(th))
-			ease(m.faces[slot].on, anim.OnOff(slot == m.picked), quick)
+			ease(m.faces[slot].front, anim.OnOff(slot == shown), glide)
+			ease(m.faces[slot].on, anim.OnOff(slot == m.picked), glide)
 		}
 		if b.tabbed() {
 			m.layTabs(b, th)
 		}
 		for _, slot := range b.slots {
-			fc := m.faces[slot]
-			if !fc.rowIn.Active() {
-				// A line come in is drawn whole from now on, and one gone
-				// out is no longer drawn.
-				if fc.rowIn.Target() == 0 {
-					fc.rowIn.Jump(1)
-				}
-				fc.drawn, fc.keep = fc.lines, len(fc.lines)
-			}
-			m.layFace(b.body, fc, th)
+			m.layFace(b.body, m.faces[slot], th)
 		}
 	}
-	// The mark glides on the spring the page coming in moves on, so the
-	// two come to rest together.
+	// The mark glides over the whole turn of the page, so the two come to
+	// rest together.
 	box := geom.Rect{}
 	if b := m.boxOf(m.picked); b != nil {
 		box = b.r
@@ -1225,55 +1352,74 @@ func (m *paneMap) Layout(c gunim.Constraints, f gunim.Frame, _ gunim.Children) g
 	if !m.laid {
 		m.mark.Jump(box)
 	} else if m.mark.Target() != box {
-		m.mark.Animate(box, quick)
+		m.mark.Animate(box, glide)
 	}
 	// The tab's mark fades in on a box of tabs picked anew, and out of
 	// the one left; along one box's tabs it glides with the tab shown.
 	for key, on := range m.tabOn {
 		b := m.boxOf(key)
-		ease(on, anim.OnOff(b != nil && b.tabbed() && slices.Contains(b.slots, m.picked)), quick)
+		ease(on, anim.OnOff(b != nil && b.tabbed() && slices.Contains(b.slots, m.picked)), glide)
 	}
 	m.laid = true
 	return size
 }
 
 // The parts of a tab: the room at its sides, its icon's size, and the
-// room between its icon and its name.
-const tabPad, tabIcon, tabIconGap = 6, 12, 5
+// room between its icon and its name; and the least room a tab is given,
+// where it is drawn as a dot.
+const tabPad, tabIcon, tabIconGap, tabDot = 6, 12, 5, 6
 
-// tabFade is over how many pixels past its room a tab's name fades in.
-const tabFade = 10
+// tabNeed is how wide a tab is with name whole beside its icon, in
+// whole pixels, so a tab given it has room for every letter.
+func tabNeed(th *theme.Live, name string) float32 {
+	run := text.Default().Shape(name, startTabSize.Get(th))
+	return float32(math.Ceil(float64(2*tabPad + tabIcon + tabIconGap + run.Advance + 0.5)))
+}
 
 // layTabs lays out the tabs of box b along its top. The tab shown takes
 // the room its name needs, as far as leaves the rest room for their
-// icons, and the rest share what is left, each up to what its name
-// needs; as another tab comes to the front, the two change widths
-// together.
+// icons. The rest are each as wide as their names, the shortest first,
+// as far as the room left holds, and the others narrowed to their
+// icons: never between, where a name would show cut. As another tab
+// comes to the front, the two change widths together, and only then is a
+// name seen cut, fading as its tab narrows.
 func (m *paneMap) layTabs(b *mapBox, th *theme.Live) {
 	const inset, gap = 4, 2
 	n := len(b.slots)
 	avail := max(b.r.Size().W-2*inset-gap*float32(n-1), 0)
 	iconOnly := float32(2*tabPad + tabIcon)
-	size := startTabSize.Get(th)
 	need := make([]float32, n)
 	for i, slot := range b.slots {
-		need[i] = iconOnly + tabIconGap + text.Default().Shape(m.faces[slot].name, size).Advance
+		need[i] = tabNeed(th, m.faces[slot].name)
 	}
 	least := startTabLeast.Get(th)
 	widthsIf := func(j int) []float32 {
 		out := make([]float32, n)
 		// As wide as its name, or where the rest would have no room for
-		// their icons, as wide as shows a name at all; and never so wide
-		// as squeezes the rest past their icons, nor narrower than the
-		// rest.
+		// their icons, as wide as shows some of it; and never so wide as
+		// squeezes the rest past their icons. In a box too narrow for
+		// every icon, it keeps its own, and the rest are dots.
 		w := min(need[j], max(avail-float32(n-1)*iconOnly, min(need[j], least)))
-		w = min(w, avail-float32(n-1)*(tabIcon+4))
-		out[j] = max(w, avail/float32(n))
-		each := (avail - out[j]) / float32(n-1)
+		w = max(min(w, avail-float32(n-1)*(tabIcon+4)), min(iconOnly, avail-float32(n-1)*tabDot), 0)
+		rest := avail - w
+		icons := min(iconOnly, rest/float32(n-1))
+		var others []int
 		for i := range out {
 			if i != j {
-				out[i] = min(need[i], each)
+				out[i] = icons
+				others = append(others, i)
 			}
+		}
+		out[j] = w
+		left := rest - icons*float32(n-1)
+		slices.SortStableFunc(others, func(x, y int) int { return cmp.Compare(need[x], need[y]) })
+		for _, i := range others {
+			more := need[i] - icons
+			if more > left {
+				break
+			}
+			out[i] = need[i]
+			left -= more
 		}
 		return out
 	}
@@ -1331,24 +1477,23 @@ func (m *paneMap) layFace(r geom.Rect, f *paneFace, th *theme.Live) {
 		fit = int(room / row)
 	}
 	n := len(f.lines)
-	f.rows = n
+	f.fit = fit
 	switch {
 	case n <= fit:
 		f.more.set("", th, m.laid)
 	case fit > 1:
-		f.rows = fit - 1
-		f.more.set(words.ManyOf(n-f.rows, "more line", "more lines"), th, m.laid)
+		// The last row says how many more there are.
+		f.more.set(words.ManyOf(n-(fit-1), "more line", "more lines"), th, m.laid)
 	default:
-		f.rows = 0
 		f.more.set(words.ManyOf(n, "line", "lines"), th, m.laid)
 	}
-	// With no room for a line, the count stands by the name, where it
-	// leaves the name whole.
+	// With room for one line at most, the count stands by the name, where
+	// it leaves the name whole.
 	count := false
-	if fit <= 1 && n > 0 {
+	if fit <= 1 && n > fit {
 		name := text.GoSans(true, false).Shape(f.name, startNameSize.Get(th))
 		x := r.Min.X + facePad + faceIcon + 7
-		count = x+name.Advance+12+text.Default().Shape(f.more.now, small).Advance <= r.Max.X-facePad
+		count = x+name.Advance+12+text.Default().Shape(f.more.now(), small).Advance <= r.Max.X-facePad
 	}
 	want := anim.OnOff(count)
 	if !m.laid {
@@ -1479,17 +1624,28 @@ func (m *paneMap) paintTab(p *paint.Painter, th *theme.Live, r geom.Rect, f *pan
 	ink, faint := widget.Ink.Get(th), look.Faint.Get(th)
 	words := mix(faint, ink, max(min(f.front.Value(), 1), picked))
 	run := text.Default().Shape(f.name, startTabSize.Get(th))
-	// The name shows only where the tab has room for it whole, or for as
-	// much of a long one as the tab's least width holds, fading in over
-	// a few pixels more, so no letters are cut to crumbs.
-	iconOnly := float32(2*tabPad + tabIcon)
-	enough := min(run.Advance, startTabLeast.Get(th)-iconOnly-tabIconGap)
-	named := min(max((r.Size().W-iconOnly-tabIconGap-enough)/tabFade, 0), 1)
+	named, room := tabName(th, r, f)
 	left := r.Min.X + tabPad
 	middle := r.Min.X + (r.Size().W-tabIcon)/2
 	at := geom.Rc(middle+(left-middle)*named, r.Min.Y+(r.Size().H-tabIcon)/2, tabIcon, tabIcon)
-	m.paintIcon(p, th, f, at, words, fill, 1.4)
-	room := max(r.Max.X-tabPad-at.Max.X-tabIconGap, 0)
+	// A tab too narrow for its icon, in a box of more tabs than it has
+	// room for, is a dot, in the accent while it holds lines; widening,
+	// it fades to its icon.
+	iconOn := min(max((r.Size().W-tabIcon-2)/4, 0), 1)
+	if iconOn < 0.99 {
+		const dot = 4
+		c := mix(words, widget.Accent.Get(th), min(max(f.sign.Value(), 0), 1))
+		mid := r.Center()
+		p.RRect(geom.Rc(mid.X-dot/2, mid.Y-dot/2, dot, dot), dot/2, paint.Solid(fade(c, 1-iconOn)))
+	}
+	switch {
+	case iconOn > 0.999:
+		m.paintIcon(p, th, f, at, words, fill, 1.4)
+	case iconOn > 0.01:
+		end := p.Layer(paint.LayerOpts{Bounds: r.Inset(geom.Uniform(-4)), Opacity: iconOn})
+		m.paintIcon(p, th, f, at, words, fill, 1.4)
+		end()
+	}
 	if named > 0.01 {
 		run.PaintFaded(p, geom.Pt(at.Max.X+tabIconGap, r.Min.Y+(r.Size().H-run.Height())/2), fade(words, named), room, widget.TextFade.Get(th))
 	}
@@ -1497,6 +1653,42 @@ func (m *paneMap) paintTab(p *paint.Painter, th *theme.Live, r geom.Rect, f *pan
 		m.cuts = append(m.cuts, mapCut{r: r, words: f.name})
 	}
 }
+
+// tabName is how far a tab drawn at r for face f shows its name, and
+// the room the name has beside the icon. The tab in front shows as much
+// of its name as fits; one behind shows its name as far as its tab is
+// widened from its icon toward the width that holds the name whole,
+// which layTabs gives it or not, so it is seen cut only as it changes.
+func tabName(th *theme.Live, r geom.Rect, f *paneFace) (named, room float32) {
+	iconOnly := float32(2*tabPad + tabIcon)
+	grown := min(max((r.Size().W-iconOnly)/max(tabNeed(th, f.name)-0.5-iconOnly, 1), 0), 1)
+	named = max(min(max(f.front.Value(), 0), 1), grown)
+	left := r.Min.X + tabPad
+	middle := r.Min.X + (r.Size().W-tabIcon)/2
+	iconEnd := middle + (left-middle)*named + tabIcon
+	return named, max(r.Max.X-tabPad-iconEnd-tabIconGap, 0)
+}
+
+// lineShown is how far row i of face f shows its line: as far as the
+// line has come in, and on the last row the box has room for, as far as
+// the count of the lines past it leaves it. The two take turns there,
+// the line gone before the count comes, and back.
+func (f *paneFace) lineShown(i int) float32 {
+	if i >= f.fit {
+		return 0
+	}
+	_, on := f.line(i)
+	if i == f.fit-1 {
+		on *= inTurn(1 - f.countShown())
+	}
+	return on
+}
+
+// countShown is how far the count of a face's lines has come in, and
+// countDrawn how far it is drawn, taking turns with the line it gives
+// way to.
+func (f *paneFace) countShown() float32 { return f.more.showing() }
+func (f *paneFace) countDrawn() float32 { return f.more.drawn() }
 
 // paintIcon draws face f's icon in r, in words' colour for a pane that
 // takes lines and quieter for one that takes none, with a dot on its
@@ -1551,34 +1743,36 @@ func (m *paneMap) paintFace(p *paint.Painter, th *theme.Live, r geom.Rect, f *pa
 		y += where.Height() + 4
 	}
 	sign := min(f.sign.Value(), 1)
-	if sign < 0.01 || len(f.drawn) == 0 {
+	count := f.countShown()
+	if sign < 0.01 || len(f.rows.rows) == 0 && count < 0.01 {
 		return
 	}
 	// The lines, as the shell will see them, as many as there is room
-	// for, and how many more under them.
+	// for, the last row giving way to how many more there are.
 	mono := monoFace(th)
 	room = max(r.Max.X-facePad-x, 0)
+	bottom := r.Max.Y - facePad/2
+	row := mono.Shape("›", small).Height() + 2
 	end := p.Layer(paint.LayerOpts{Bounds: r, Opacity: sign})
 	defer end()
-	rows := min(f.rows, len(f.drawn))
-	if f.rows >= len(f.lines) {
-		// Room for every line: the one going out too, while it fades.
-		rows = len(f.drawn)
-	}
-	for i := range rows {
-		line, in := f.line(i)
+	for i := range min(f.fit, len(f.rows.rows)) {
+		line, _ := f.line(i)
 		run := mono.Shape("› "+line, small)
-		if y+run.Height() > r.Max.Y-facePad/2 {
-			return
+		at := y + float32(i)*row
+		if at+run.Height() > bottom {
+			break
 		}
-		if in > 0.01 {
-			m.drawWords(p, th, run, line, geom.Pt(x, y), fade(ink, in), room)
+		if on := f.lineShown(i); on > 0.01 {
+			m.drawWords(p, th, run, line, geom.Pt(x, at), fade(ink, on), room)
 		}
-		y += run.Height() + 2
 	}
-	if f.countOn.Target() == 0 && (f.more.now != "" || f.more.was != "") {
-		if h := text.Default().Shape("1", small).Height(); y+h <= r.Max.Y-facePad/2 {
-			f.more.paint(p, th, geom.Pt(x, y), small, quiet, room)
+	// The count on the last row, fading out as it moves by the name.
+	if inRow := 1 - min(max(f.countOn.Value(), 0), 1); count > 0.01 && inRow > 0.01 {
+		at := y + float32(max(f.fit-1, 0))*row
+		if h := text.Default().Shape("1", small).Height(); at+h <= bottom {
+			layer := p.Layer(paint.LayerOpts{Bounds: r, Opacity: inRow})
+			f.more.paint(p, th, geom.Pt(x, at), small, quiet, room)
+			layer()
 		}
 	}
 }
