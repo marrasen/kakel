@@ -1097,6 +1097,8 @@ func TestALineGivesWayToTheCount(t *testing.T) {
 func TestThePickedTabsNameReadsOnItsPill(t *testing.T) {
 	for _, name := range []string{"Dark", "Paper"} {
 		themedStage(t, geom.Sz(400, 300), name)
+		// The theme's colours fade in over frames.
+		settle()
 		th := lastUI.Theme()
 		ink, accent := widget.Ink.Get(th), widget.Accent.Get(th)
 		for _, fill := range []color.NRGBA{widget.FieldFill.Get(th), widget.CardFill.Get(th)} {
@@ -1104,8 +1106,28 @@ func TestThePickedTabsNameReadsOnItsPill(t *testing.T) {
 			if c := contrast(ink, pill); c < 5 {
 				t.Errorf("in %s, the name reads at %.2f:1 on the pill %v", name, c, pill)
 			}
-			if c := contrast(over(pill, fade(ink, 0.7)), pill); c < 3 {
+			if c := contrast(over(pill, dimmed(ink, pill)), pill); c < 3 {
 				t.Errorf("in %s, a dimmed icon reads at %.2f:1 on the pill %v", name, c, pill)
+			}
+		}
+	}
+}
+
+// A dimmed icon on a tab behind, on a box not picked, where the icon is
+// all the tab shows, reads at 3:1 or better in the light theme and the
+// dark, on a terminal's box and on a quiet one.
+func TestADimmedIconReadsOnABoxAtRest(t *testing.T) {
+	for _, name := range []string{"Dark", "Paper"} {
+		themedStage(t, geom.Sz(400, 300), name)
+		settle()
+		th := lastUI.Theme()
+		faint := look.Faint.Get(th)
+		for _, fill := range []color.NRGBA{widget.FieldFill.Get(th), widget.CardFill.Get(th)} {
+			if c := contrast(over(fill, dimmed(faint, fill)), fill); c < 3 {
+				t.Errorf("in %s, a dimmed icon reads at %.2f:1 on %v", name, c, fill)
+			}
+			if d := dimmed(faint, fill); d == faint && contrast(over(fill, fade(faint, 0.7)), fill) >= 3 {
+				t.Errorf("in %s, an icon that reads dimmed on %v is not dimmed", name, fill)
 			}
 		}
 	}
@@ -1201,13 +1223,13 @@ func TestTheCaptionWrapsWhenNarrow(t *testing.T) {
 		settle()
 		b := openStartLines(t, win, "shop")
 		settle()
-		pg := b.pages.Page().(*startPage)
+		pg := b.pages.Page().(*startPage).caption
 		if two := pg.whereAt.Min.Y > 0; two != c.two || pg.nameAt.Min.Y != 0 {
 			t.Errorf("at %v, the name stands at %v and where at %v", c.size, pg.nameAt, pg.whereAt)
 		}
 		b.m.pick("p4", lastUI)
 		settle()
-		if pg := b.pages.Page().(*startPage); pg.name != "Login Shell" || pg.where != "on db-primary" || !pg.follows {
+		if pg := b.pages.Page().(*startPage).caption; pg.name != "Login Shell" || pg.where != "on db-primary" || !pg.follows {
 			t.Errorf("the server's shell says %q %q", pg.name, pg.where)
 		}
 		win.dialog.Close(lastUI)
@@ -1236,4 +1258,73 @@ func TestAPaneWithoutLinesSaysWhatItIs(t *testing.T) {
 			t.Errorf("%s says %q", slot, got)
 		}
 	}
+}
+
+// The well stays under the page's body on every frame as the window is
+// resized, at once or dragged a step a frame: only a pick moves it.
+func TestTheWellKeepsToThePageAsTheWindowResizes(t *testing.T) {
+	_, b, _ := startStage(t, mixedLayout())
+	check := func(when string) {
+		t.Helper()
+		at, ok := lastUI.Bounds(b)
+		body, ok2 := lastUI.Bounds(b.pages.Page().(*startPage).body)
+		if !ok || !ok2 {
+			t.Fatalf("%s: the dialog is not drawn", when)
+		}
+		want := body.Add(geom.Pt(-at.Min.X, -at.Min.Y))
+		got := b.well.Value()
+		if d := max(abs32(got.Min.X-want.Min.X), abs32(got.Min.Y-want.Min.Y), abs32(got.Max.X-want.Max.X), abs32(got.Max.Y-want.Max.Y)); d > 0.5 {
+			t.Fatalf("%s: the well stands at %v, the page's body at %v", when, got, want)
+		}
+	}
+	lastWindow.Offscreen().Resize(geom.Sz(700, 560))
+	for i := range 30 {
+		lastWindow.Frame(time.Second / 60)
+		check("frame " + strconv.Itoa(i) + " after a resize")
+	}
+	for i := range 30 {
+		lastWindow.Offscreen().Resize(geom.Sz(700+float32(i)*12, 560+float32(i)*8))
+		lastWindow.Frame(time.Second / 60)
+		check("frame " + strconv.Itoa(i) + " of a drag")
+	}
+}
+
+// A screen reader reads the page's caption beside its editor, or beside
+// the sentence of a pane that takes no lines, never round it.
+func TestTheCaptionIsBesideTheEditor(t *testing.T) {
+	_, b, _ := startStage(t, mixedLayout())
+	// parentOf is the node holding the node named name of role, and that
+	// node.
+	parentOf := func(role access.Role, name string) (*access.Node, *access.Node) {
+		var walk func(n *access.Node) (*access.Node, *access.Node)
+		walk = func(n *access.Node) (*access.Node, *access.Node) {
+			for _, k := range n.Children {
+				if k.Role == role && k.Name == name {
+					return n, k
+				}
+				if p, at := walk(k); at != nil {
+					return p, at
+				}
+			}
+			return nil, nil
+		}
+		return walk(lastWindow.Access().Root)
+	}
+	besides := func(caption string, role access.Role, name string) {
+		t.Helper()
+		capParent, capNode := parentOf(access.RoleLabel, caption)
+		if capNode == nil {
+			t.Fatalf("no caption %q", caption)
+		}
+		if len(capNode.Children) != 0 {
+			t.Fatalf("the caption %q holds %d nodes", caption, len(capNode.Children))
+		}
+		if p, at := parentOf(role, name); at == nil || p.ID != capParent.ID {
+			t.Fatalf("%q is not beside the caption %q", name, caption)
+		}
+	}
+	besides("Bash on this computer", access.RoleTextField, "Start lines for Bash")
+	b.m.pick("p3", lastUI)
+	settle()
+	besides("tail -f /var/log/syslog, Command on db-primary", access.RoleLabel, "Start lines are for terminals. This pane runs a command.")
 }

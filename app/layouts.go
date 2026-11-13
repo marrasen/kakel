@@ -427,8 +427,8 @@ func (a *app) renameLayout(in RenameLayout) error {
 // pane linked to the layout as the file holds it now, by its Rev, is
 // given them: one linked to it before it was saved over, from another
 // window or another kakel, or before it was removed and another layout
-// took its ID, keeps the lines it has. They are not typed into a shell
-// running already.
+// took its ID, keeps the lines it has, and a notice says so. They are
+// not typed into a shell running already.
 func (a *app) saveStartLines(in SaveStartLines) error {
 	if a.settings == nil {
 		return errNoSettings
@@ -450,17 +450,32 @@ func (a *app) saveStartLines(in SaveStartLines) error {
 		lines, ok := in.Lines[link.slot]
 		return settings.StartLines(lines), ok
 	}
+	// earlier says a terminal is linked to the layout as it was before it
+	// was saved over, which the lines do not reach.
+	earlier := func(link layoutSlot) bool { return link.layout == now.ID && link.rev != now.Rev }
+	missed := false
 	for id, from := range a.linesFrom {
 		if lines, ok := given(from); ok && lines != nil {
 			a.startLines[id] = lines
 		} else if ok {
 			delete(a.startLines, id)
 		}
+		if earlier(from) && slices.ContainsFunc(a.st.Panes, func(p Pane) bool { return p.ID == id && !p.Command }) {
+			missed = true
+		}
 	}
 	for _, s := range a.slots {
-		if lines, ok := given(s.link); ok && s.recipe.Kind == settings.LayoutTerminal {
+		if s.recipe.Kind != settings.LayoutTerminal {
+			continue
+		}
+		if lines, ok := given(s.link); ok {
 			s.recipe.Start = lines
 		}
+		missed = missed || earlier(s.link)
+	}
+	if missed {
+		a.notify("Saved "+now.Name+"'s start lines",
+			"Terminals opened from an earlier save of "+now.Name+" keep the lines they have.", "")
 	}
 	return nil
 }

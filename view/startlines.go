@@ -137,6 +137,9 @@ type startLines struct {
 	well *anim.Rect
 	code *anim.Float
 	laid bool
+	// wellRoom is the room the pages had as the well was last laid out:
+	// the well glides to a page picked, and moves with the room at once.
+	wellRoom geom.Rect
 }
 
 func newStartLines(w *Window, l settings.SavedLayout, u *gunim.UI) *startLines {
@@ -327,16 +330,16 @@ func (s *startLines) why(slot string) string {
 func (s *startLines) page(slot string, u *gunim.UI) gunim.Node {
 	s.ed = nil
 	f := s.m.faces[slot]
-	pg := &startPage{}
-	if f != nil {
-		pg.name = f.name
+	pg := &startPage{caption: &startCaption{}}
+	if c := pg.caption; f != nil {
+		c.name = f.name
 		if p, ok := s.l.Panes[slot]; ok {
-			pg.where = s.where(p)
+			c.where = s.where(p)
 			// "Bash on this computer": a pane named for its shell, in
 			// any case, is said once, the rest following on from its
 			// name.
-			if n := len(f.name); n > 0 && len(pg.where) > n && pg.where[n] == ' ' && strings.EqualFold(pg.where[:n], f.name) {
-				pg.where, pg.follows = pg.where[n+1:], true
+			if n := len(f.name); n > 0 && len(c.where) > n && c.where[n] == ' ' && strings.EqualFold(c.where[:n], f.name) {
+				c.where, c.follows = c.where[n+1:], true
 			}
 		}
 	}
@@ -488,17 +491,21 @@ func (s *startLines) Layout(c gunim.Constraints, f gunim.Frame, kids gunim.Child
 	pages.Layout(gunim.Tight(geom.Sz(w, ph)))
 	pages.Place(geom.Pt(room, y))
 	// The well stands under the body of the page shown, whichever page
-	// is drawn over it as they turn.
-	well := geom.Rc(room, y, w, ph)
+	// is drawn over it as they turn. It glides only as another page is
+	// picked; the dialog resized, it keeps to the page on every frame.
+	pageRoom := geom.Rc(room, y, w, ph)
+	well := pageRoom
 	if pg, ok := s.pages.Page().(*startPage); ok {
 		well = geom.Rc(room, y+pg.bodyY, w, max(ph-pg.bodyY, 0))
 	}
-	if !s.laid {
+	switch {
+	case !s.laid || pageRoom != s.wellRoom:
 		s.well.Jump(well)
-	} else if s.well.Target() != well {
+	case s.well.Target() != well:
+		// In the same room, only the page picked moves it.
 		s.well.Animate(well, startPick.Get(th))
 	}
-	s.laid = true
+	s.laid, s.wellRoom = true, pageRoom
 	y += ph + gap
 	note.Place(geom.Pt(room, y))
 	s.noteAt = geom.Rc(room, y, w, ns.H)
@@ -528,95 +535,122 @@ func (s *startLines) Paint(p *paint.Painter, f gunim.Frame, _ geom.Size, kids gu
 	}
 }
 
-// startPage is a pane's page: its name and where it starts along the
-// top, and under them its lines, or why it has none. Where the two do not
-// fit on one line, where it starts goes on a second; words still too
-// long fade out where they are cut, and say themselves whole in a
-// tooltip.
+// startPage is a pane's page: its caption, the pane's name and where it
+// starts, along the top, and under it its lines, or why it has none. The
+// two stand side by side, for a screen reader too.
 type startPage struct {
-	// name is the pane's name, and where where it starts; follows says
-	// where reads on from the name, as "Bash" "on this computer".
-	name, where string
-	follows     bool
-	body        gunim.Node
+	caption *startCaption
+	body    gunim.Node
 	// bodyY is how far down the body stands, as last laid out, under
 	// one line of words or two.
 	bodyY float32
-	// nameAt and whereAt are where the words stand, as last laid out.
-	nameAt, whereAt geom.Rect
-	cuts            []mapCut
-	tip             widget.PartTip
-}
-
-// runs are the page's words shaped: its name, bold, and where it
-// starts.
-func (p *startPage) runs(th *theme.Live) (name, where text.Run) {
-	size := smallText.Get(th)
-	return text.GoSans(true, false).Shape(p.name, size), text.Default().Shape(p.where, size)
 }
 
 // Children implements [gunim.Composite].
-func (p *startPage) Children() []gunim.Node { return []gunim.Node{p.body} }
+func (p *startPage) Children() []gunim.Node { return []gunim.Node{p.caption, p.body} }
 
-// Layout implements [gunim.Node]: the name and where along the top, on
-// one line or two, the body in the room left under them.
-func (p *startPage) Layout(c gunim.Constraints, f gunim.Frame, kids gunim.Children) geom.Size {
-	const gap, apart = 8, 10
+// Layout implements [gunim.Node]: the caption along the top, on one
+// line or two, the body in the room left under it.
+func (p *startPage) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children) geom.Size {
+	const gap = 8
 	w := c.Max.W
-	y := float32(0)
-	p.nameAt, p.whereAt = geom.Rect{}, geom.Rect{}
-	if p.name != "" {
-		name, where := p.runs(f.Theme)
-		h := max(name.Height(), where.Height())
-		p.nameAt = geom.Rc(0, 0, min(name.Advance, w), h)
-		y = h
-		if p.where != "" {
-			space := float32(apart)
-			if p.follows {
-				space = text.Default().Shape(" ", smallText.Get(f.Theme)).Advance
-			}
-			if x := name.Advance + space; x+where.Advance <= w {
-				p.whereAt = geom.Rc(x, 0, where.Advance, h)
-			} else {
-				p.whereAt = geom.Rc(0, h+2, min(where.Advance, w), h)
-				y = 2*h + 2
-			}
-		}
+	caption, body := kids.At(0), kids.At(1)
+	y := caption.Layout(gunim.Constraints{Max: geom.Sz(w, 0)}).H
+	caption.Place(geom.Point{})
+	if y > 0 {
 		y += gap
 	}
 	p.bodyY = y
-	body := kids.At(0)
 	body.Layout(gunim.Tight(geom.Sz(w, max(c.Max.H-y, 0))))
 	body.Place(geom.Pt(0, y))
 	return c.Max
 }
 
-// Paint implements [gunim.Node]: the name in the text's colour and where
-// quieter, each faded out where it is cut.
-func (p *startPage) Paint(pt *paint.Painter, f gunim.Frame, box geom.Size, kids gunim.Children) {
-	th := f.Theme
-	p.cuts = p.cuts[:0]
-	if p.name != "" {
-		name, where := p.runs(th)
-		fadeAt := widget.TextFade.Get(th)
-		draw := func(run text.Run, at geom.Rect, c color.NRGBA, words string) {
-			room := max(box.W-at.Min.X, 0)
-			run.PaintFaded(pt, at.Min, c, room, fadeAt)
-			if run.Advance > room {
-				p.cuts = append(p.cuts, mapCut{r: geom.Rc(at.Min.X, at.Min.Y, room, at.Size().H), words: words})
-			}
+// Paint implements [gunim.Node].
+func (p *startPage) Paint(pt *paint.Painter, _ gunim.Frame, _ geom.Size, kids gunim.Children) {
+	kids.At(0).Paint(pt)
+	kids.At(1).Paint(pt)
+}
+
+// startCaption is a page's caption: the pane's name and where it starts.
+// Where the two do not fit on one line, where it starts goes on a second;
+// words still too long fade out where they are cut, and say themselves
+// whole in a tooltip.
+type startCaption struct {
+	// name is the pane's name, and where where it starts; follows says
+	// where reads on from the name, as "Bash" "on this computer".
+	name, where string
+	follows     bool
+	// width is the room it was given, and nameAt and whereAt are where
+	// the words stand, as last laid out.
+	width           float32
+	nameAt, whereAt geom.Rect
+	cuts            []mapCut
+	tip             widget.PartTip
+}
+
+// runs are the caption's words shaped: the name, bold, and where it
+// starts.
+func (p *startCaption) runs(th *theme.Live) (name, where text.Run) {
+	size := smallText.Get(th)
+	return text.GoSans(true, false).Shape(p.name, size), text.Default().Shape(p.where, size)
+}
+
+// Layout implements [gunim.Node]: the name and where on one line, or
+// two, across the width given; no height for a page with no name.
+func (p *startCaption) Layout(c gunim.Constraints, f gunim.Frame, _ gunim.Children) geom.Size {
+	const apart = 10
+	w := c.Max.W
+	p.width = w
+	p.nameAt, p.whereAt = geom.Rect{}, geom.Rect{}
+	if p.name == "" {
+		return geom.Sz(w, 0)
+	}
+	name, where := p.runs(f.Theme)
+	h := max(name.Height(), where.Height())
+	p.nameAt = geom.Rc(0, 0, min(name.Advance, w), h)
+	y := h
+	if p.where != "" {
+		space := float32(apart)
+		if p.follows {
+			space = text.Default().Shape(" ", smallText.Get(f.Theme)).Advance
 		}
-		draw(name, p.nameAt, widget.Ink.Get(th), p.name)
-		if p.where != "" {
-			draw(where, p.whereAt, look.Faint.Get(th), p.where)
+		if x := name.Advance + space; x+where.Advance <= w {
+			p.whereAt = geom.Rc(x, 0, where.Advance, h)
+		} else {
+			p.whereAt = geom.Rc(0, h+2, min(where.Advance, w), h)
+			y = 2*h + 2
 		}
 	}
-	kids.At(0).Paint(pt)
+	return geom.Sz(w, y)
+}
+
+// Paint implements [gunim.Node]: the name in the text's colour and where
+// quieter, each faded out where it is cut.
+func (p *startCaption) Paint(pt *paint.Painter, f gunim.Frame, _ geom.Size, _ gunim.Children) {
+	th := f.Theme
+	p.cuts = p.cuts[:0]
+	if p.name == "" {
+		return
+	}
+	name, where := p.runs(th)
+	fadeAt := widget.TextFade.Get(th)
+	draw := func(run text.Run, at geom.Rect, c color.NRGBA, words string) {
+		room := max(p.width-at.Min.X, 0)
+		run.PaintFaded(pt, at.Min, c, room, fadeAt)
+		if run.Advance > room {
+			p.cuts = append(p.cuts, mapCut{r: geom.Rc(at.Min.X, at.Min.Y, room, at.Size().H), words: words})
+		}
+	}
+	draw(name, p.nameAt, widget.Ink.Get(th), p.name)
+	if p.where != "" {
+		draw(where, p.whereAt, look.Faint.Get(th), p.where)
+	}
 }
 
 // Handle implements [gunim.Handler]: words cut short say themselves
 // whole in a tooltip.
-func (p *startPage) Handle(e gi.Event, u *gunim.UI) bool {
+func (p *startCaption) Handle(e gi.Event, u *gunim.UI) bool {
 	switch e := e.(type) {
 	case gi.PointerMove:
 		words := ""
@@ -632,8 +666,8 @@ func (p *startPage) Handle(e gi.Event, u *gunim.UI) bool {
 	return false
 }
 
-// Access implements [gunim.Accessible]: the page's words, as one line.
-func (p *startPage) Access() access.Info {
+// Access implements [gunim.Accessible]: the caption's words, as one line.
+func (p *startCaption) Access() access.Info {
 	said := p.name
 	if p.where != "" {
 		sep := ", "
@@ -1751,6 +1785,18 @@ func tabPill(under, accent, ink color.NRGBA) color.NRGBA {
 	return under
 }
 
+// dimmed is words' colour at part strength, for the icon of a pane that
+// takes no lines, on under: seven tenths, or as much more as it takes to
+// read at 3:1 on under, as an icon must.
+func dimmed(words, under color.NRGBA) color.NRGBA {
+	for a := float32(0.7); a < 1; a += 0.02 {
+		if c := fade(words, a); contrast(over(under, c), under) >= 3 {
+			return c
+		}
+	}
+	return words
+}
+
 // over is top laid over base, as paint lays a colour of some alpha over
 // a solid one.
 func over(base, top color.NRGBA) color.NRGBA {
@@ -1899,13 +1945,13 @@ func (f *paneFace) countShown() float32 { return f.more.showing() }
 func (f *paneFace) countDrawn() float32 { return f.more.drawn() }
 
 // paintIcon draws face f's icon in r, in words' colour for a pane that
-// takes lines, and for one that takes none, in words' colour at part
-// strength, so it reads on whatever it stands on; with a dot on its
-// corner, ringed in fill, the colour under it, while it holds lines.
+// takes lines, and for one that takes none, dimmed on fill, the colour
+// under it; with a dot on its corner, ringed in fill, while it holds
+// lines.
 func (m *paneMap) paintIcon(p *paint.Painter, th *theme.Live, f *paneFace, r geom.Rect, words, fill color.NRGBA, thick float32) {
 	c := words
 	if !f.editable {
-		c = fade(words, 0.7)
+		c = dimmed(words, fill)
 	}
 	drawIcon(p, f.icon, r, c, thick)
 	if sign := min(f.sign.Value(), 1); sign > 0.01 {

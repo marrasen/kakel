@@ -588,7 +588,7 @@ func TestALayoutWithNoRevLinksItsPanes(t *testing.T) {
 
 // Another kakel saving over the layout leaves the panes opened here from
 // it as they are: the dialog's lines, saved here after, go to the
-// layout and not to them.
+// layout and not to them, and Save says so.
 func TestASaveFromAnotherKakelLeavesThePanes(t *testing.T) {
 	a, opened := openingApp(t)
 	a.st.ShellSetup = false
@@ -602,7 +602,7 @@ func TestASaveFromAnotherKakelLeavesThePanes(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.handle(SaveStartLines{Layout: a.st.Layouts[0], Lines: map[string][]string{"p1": {"echo THERE"}}})
-	if len(a.st.Notices) != 0 {
+	if !noticed(a, "Saved Shop's start lines") {
 		t.Fatalf("saving the lines said %+v", a.st.Notices)
 	}
 	if got := a.st.Layouts[0].Panes["p1"].Start; !slices.Equal(got, []string{"echo THERE"}) {
@@ -686,5 +686,77 @@ func TestTheCountLeavesOutTerminalsThroughAWindow(t *testing.T) {
 		settings.SavedPane{Kind: settings.LayoutCommand, Line: "htop", Start: []string{"no"}})
 	if n := LayoutStartLines(l); n != 1 {
 		t.Fatalf("counted %d start lines, want 1", n)
+	}
+}
+
+// One layout open in two windows, never saved over: the dialog's lines
+// reach the terminals of both, and Save says nothing.
+func TestTheLinesReachBothWindowsOfALayout(t *testing.T) {
+	a, opened := openingApp(t)
+	a.st.ShellSetup = false
+	kept := keep(t, a, alone("Shop", settings.SavedPane{Kind: settings.LayoutTerminal, Command: plainShell()}))
+	one := slotPanes(t, a, opens(t, a, opened, kept.ID))["p1"]
+	two := slotPanes(t, a, opens(t, a, opened, kept.ID))["p1"]
+	a.handle(SaveStartLines{Layout: a.st.Layouts[0], Lines: map[string][]string{"p1": {"echo BOTH"}}})
+	if len(a.st.Notices) != 0 {
+		t.Fatalf("saving the lines said %+v", a.st.Notices)
+	}
+	for _, id := range []string{one, two} {
+		if got := a.startLines[id]; !slices.Equal(got, []string{"echo BOTH"}) {
+			t.Fatalf("terminal %s was given %q", id, got)
+		}
+	}
+}
+
+// Layout Shop open in two windows, the second saved over it just as it
+// was: a line removed in the dialog then leaves the first window's
+// terminal its line, and Save says so.
+func TestASaveOverFromAnotherWindowIsSaid(t *testing.T) {
+	a, opened := openingApp(t)
+	a.st.ShellSetup = false
+	kept := keep(t, a, alone("Shop", settings.SavedPane{Kind: settings.LayoutTerminal, Command: plainShell(), Start: []string{"echo KEEP"}}))
+	one := slotPanes(t, a, opens(t, a, opened, kept.ID))["p1"]
+	w2 := opens(t, a, opened, kept.ID)
+	two := slotPanes(t, a, w2)["p1"]
+	if _, _, _, err := a.saveLayout(SaveLayout{Window: w2.id, Name: "Shop", Replace: true}); err != nil {
+		t.Fatal(err)
+	}
+	a.handle(SaveStartLines{Layout: a.st.Layouts[0], Lines: map[string][]string{"p1": nil}})
+	if len(a.st.Notices) != 1 || !noticed(a, "Saved Shop's start lines") ||
+		a.st.Notices[0].Body != "Terminals opened from an earlier save of Shop keep the lines they have." {
+		t.Fatalf("saving the lines said %+v", a.st.Notices)
+	}
+	if got := a.st.Layouts[0].Panes["p1"].Start; got != nil {
+		t.Fatalf("the layout holds %q", got)
+	}
+	if got := a.startLines[one]; !slices.Equal(got, []string{"echo KEEP"}) {
+		t.Fatalf("the first window's terminal keeps %q", got)
+	}
+	if got := a.startLines[two]; got != nil {
+		t.Fatalf("the saved window's terminal keeps %q", got)
+	}
+}
+
+// A layout whose terminal is still starting, saved over meanwhile by
+// another kakel just as it was: a line removed in the dialog then is
+// still typed, and Save says so.
+func TestASaveOverWhileStartingIsSaid(t *testing.T) {
+	a, _ := openingApp(t)
+	a.st.ShellSetup = false
+	kept := keep(t, a, slowLayout(t, "Slow", "echo OLD-LINE"))
+	waitingSlow(t, a, kept.ID)
+	other, err := settings.Load(a.settings.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := other.SaveLayout(kept, true); err != nil {
+		t.Fatal(err)
+	}
+	a.handle(SaveStartLines{Layout: a.st.Layouts[0], Lines: map[string][]string{"p1": nil}})
+	if !noticed(a, "Saved Slow's start lines") {
+		t.Fatalf("saving the lines said %+v", a.st.Notices)
+	}
+	if got := a.st.Layouts[0].Panes["p1"].Start; got != nil {
+		t.Fatalf("the layout holds %q", got)
 	}
 }

@@ -240,8 +240,11 @@ A layout is one window, saved to open again as it is.
   was typed. A command pane, a file manager and a terminal through
   another kakel window have no start lines yet; lines such a terminal
   already holds stay as they are. Where the layout was removed
-  meanwhile, saved over, or the same terminal given other lines in
-  another window, Save says so and the dialog stays open. A window
+  meanwhile, saved over with other splits, tabs or panes, or the same
+  terminal given other lines in another window, Save says so and the
+  dialog stays open. Where it was saved over with nothing changed, Save
+  saves, and where a window opened before that save is still open, a
+  notice says its terminals keep the lines they have. A window
   opened from the layout, or saved as it, keeps the lines given here
   when it is saved over the layout again. Lines saved while that
   window's terminal is still starting are the ones typed into it.

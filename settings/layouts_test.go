@@ -337,6 +337,37 @@ func TestALayoutIsPutBack(t *testing.T) {
 	}
 }
 
+// A layout removed and then saved again just as it was, from a window
+// opened from it, is back already: Undo leaves it as it is, though the
+// save gave it a new Rev.
+func TestALayoutSavedAgainAsItWasIsBackAlready(t *testing.T) {
+	s, err := Load(at(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	desk, _, err := s.SaveLayout(aLayout("Desk"), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DropLayout(desk.ID); err != nil {
+		t.Fatal(err)
+	}
+	again, _, err := s.SaveLayout(aLayout("Desk"), false)
+	if err != nil || again.ID != desk.ID || again.Rev == desk.Rev {
+		t.Fatalf("saved again: %+v, %v", again, err)
+	}
+	back, err := s.PutLayoutBack(desk, 0)
+	if err != nil {
+		t.Fatalf("Undo after the layout was saved again as it was: %v", err)
+	}
+	if back.ID != desk.ID || back.Rev != again.Rev {
+		t.Fatalf("put back as %+v, want the layout as the file holds it, Rev %q", back, again.Rev)
+	}
+	if got := s.Layouts(); len(got) != 1 || got[0].Rev != again.Rev {
+		t.Fatalf("the layouts are %+v", got)
+	}
+}
+
 // layoutNames are the names of the layouts s holds, in order.
 func layoutNames(s *Settings) []string {
 	var out []string

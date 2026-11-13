@@ -48,9 +48,11 @@ a command pane and a terminal through another kakel window are on the
 map too, quieter, and their page says what they are in place of an
 editor; lines such a terminal
 holds in the file stay as they are. Where another window removed the
-layout, saved over it or changed the same terminal's lines meanwhile,
-Save says so under the dialog and the dialog stays open with what you
-typed. Lines given to a layout open in a window are kept when that
+layout, saved over it with other splits, tabs or panes, or changed the
+same terminal's lines meanwhile, Save says so under the dialog and the
+dialog stays open with what you typed. Where it was saved over with
+nothing changed, Save saves, and a notice says the terminals opened
+from an earlier save keep the lines they have. Lines given to a layout open in a window are kept when that
 window is saved over the layout again. When the same layout is open
 in two windows and one is saved over it, the other window's terminals
 keep the lines they have and no longer follow the dialog. Lines saved

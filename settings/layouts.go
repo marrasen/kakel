@@ -380,13 +380,24 @@ func (s *Settings) DropLayout(id string) error {
 // was given that ID since, when it is given one of its own as a new
 // layout is. A name another layout took since is refused with
 // ErrLayoutNameUsed, as a layout saved under it would be. A layout back
-// in the list already, just as it was, is left as it is. It keeps the
-// Rev it had, so what was linked to it holds again.
+// in the list already, just as it was but for its Rev, as after a second
+// Undo or after a window opened from it was saved as it again, is left as
+// it is, and returned as the file holds it.
+//
+// It keeps the Rev it had. Put back under its own ID, it is the layout
+// panes were linked to, so their links hold again. Given a new ID, it is
+// linked to by nothing: the panes linked to its old ID are another
+// layout's now, or none.
 func (s *Settings) PutLayoutBack(l SavedLayout, at int) (SavedLayout, error) {
 	l = l.Clone().tidy()
 	err := s.putLayouts(func(have []SavedLayout) ([]SavedLayout, error) {
-		if slices.ContainsFunc(have, func(o SavedLayout) bool { return reflect.DeepEqual(o, l) }) {
-			// Back already, as after a second Undo: nothing to do.
+		sameButRev := func(o SavedLayout) bool {
+			o.Rev = l.Rev
+			return reflect.DeepEqual(o, l)
+		}
+		if i := slices.IndexFunc(have, sameButRev); i >= 0 {
+			// Back already: nothing to do.
+			l = have[i].Clone()
 			return have, nil
 		}
 		// Checked against every layout: one given its ID since is
