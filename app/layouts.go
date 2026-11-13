@@ -291,6 +291,8 @@ func (a *app) recipeOf(p Pane) (settings.SavedPane, bool) {
 			// one is not told which it ran.
 			r.Profile, r.Command = a.runsOf(p)
 		}
+		// As the layout that opened it kept them.
+		r.Start = slices.Clone(a.startLines[p.ID])
 	}
 	return r, true
 }

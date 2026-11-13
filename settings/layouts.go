@@ -112,6 +112,50 @@ type SavedPane struct {
 	// Title is the name the user gave the pane, and empty for one they
 	// did not name.
 	Title string `json:"title,omitempty"`
+
+	// Start are a terminal's start lines: what is typed into its shell as
+	// the layout opens it, one line at each prompt, as the keyboard types
+	// it, each followed by a return. Only a terminal has them, and none
+	// is blank.
+	Start []string `json:"start,omitempty"`
+}
+
+// StartLines are lines as a layout keeps them as start lines: a line
+// holding line breaks is the lines it holds, and blank lines are dropped.
+// None is nil.
+func StartLines(lines []string) []string {
+	var out []string
+	for _, l := range lines {
+		for _, one := range strings.FieldsFunc(l, func(r rune) bool { return r == '\r' || r == '\n' }) {
+			if strings.TrimSpace(one) != "" {
+				out = append(out, one)
+			}
+		}
+	}
+	return out
+}
+
+// tidy is l with each pane's start lines as a layout keeps them, and
+// none on a pane other than a terminal. The panes are copied where one
+// changes, so a layout shared with another list is left as it is.
+func (l SavedLayout) tidy() SavedLayout {
+	copied := false
+	for slot, p := range l.Panes {
+		start := StartLines(p.Start)
+		if p.Kind != LayoutTerminal {
+			start = nil
+		}
+		if slices.Equal(start, p.Start) && (start == nil) == (p.Start == nil) {
+			continue
+		}
+		if !copied {
+			l.Panes = maps.Clone(l.Panes)
+			copied = true
+		}
+		p.Start = start
+		l.Panes[slot] = p
+	}
+	return l
 }
 
 // ErrLayoutNameUsed is returned when a layout is given a name another
@@ -137,6 +181,10 @@ func (l *layoutList) UnmarshalJSON(raw []byte) error {
 	var out []SavedLayout
 	if err := json.Unmarshal(raw, &out); err != nil {
 		return err
+	}
+	// Start lines written by hand are read as they are kept.
+	for i := range out {
+		out[i] = out[i].tidy()
 	}
 	*l = out
 	return nil
@@ -164,7 +212,7 @@ func (s *Settings) Layouts() []SavedLayout {
 // All of it is decided on the list as the file holds it now, so a
 // layout another kakel saved or removed since is seen.
 func (s *Settings) SaveLayout(l SavedLayout, replace bool) (SavedLayout, bool, error) {
-	l = l.Clone()
+	l = l.Clone().tidy()
 	l.Name = strings.TrimSpace(l.Name)
 	replaced := false
 	err := s.putLayouts(func(have []SavedLayout) ([]SavedLayout, error) {
@@ -198,7 +246,7 @@ func (s *Settings) SaveLayout(l SavedLayout, replace bool) (SavedLayout, bool, e
 // has is refused with ErrLayoutNameUsed, and an ID no layout has with
 // ErrNoLayout.
 func (s *Settings) ReplaceLayout(l SavedLayout) error {
-	l = l.Clone()
+	l = l.Clone().tidy()
 	l.Name = strings.TrimSpace(l.Name)
 	return s.editLayout(l.ID, func(at *SavedLayout) { *at = l })
 }
@@ -231,7 +279,7 @@ func (s *Settings) DropLayout(id string) error {
 // ErrLayoutNameUsed, as a layout saved under it would be. A layout back
 // in the list already, just as it was, is left as it is.
 func (s *Settings) PutLayoutBack(l SavedLayout, at int) (SavedLayout, error) {
-	l = l.Clone()
+	l = l.Clone().tidy()
 	err := s.putLayouts(func(have []SavedLayout) ([]SavedLayout, error) {
 		if slices.ContainsFunc(have, func(o SavedLayout) bool { return reflect.DeepEqual(o, l) }) {
 			// Back already, as after a second Undo: nothing to do.
@@ -286,6 +334,9 @@ func (s *Settings) putLayouts(edit func([]SavedLayout) ([]SavedLayout, error)) e
 	layouts, err := edit(slices.Clone(s.have.Layouts))
 	if err != nil {
 		return err
+	}
+	for i := range layouts {
+		layouts[i] = layouts[i].tidy()
 	}
 	before := s.have
 	s.have.Layouts = layouts
@@ -344,6 +395,7 @@ func (l SavedLayout) Clone() SavedLayout {
 	l.Panes = maps.Clone(l.Panes)
 	for slot, p := range l.Panes {
 		p.Command = slices.Clone(p.Command)
+		p.Start = slices.Clone(p.Start)
 		l.Panes[slot] = p
 	}
 	if l.Place != nil {

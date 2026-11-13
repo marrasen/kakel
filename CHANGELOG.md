@@ -7,6 +7,25 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
+## Unreleased
+
+### Added
+
+**Start lines for a layout's terminals.** A terminal in a layout can
+hold start lines, which kakel types into its shell as the layout opens
+it, each followed by Enter: `vite dev` in one pane, `tail -f
+log/app.log` in another, `tmux attach` on a server. The first is typed
+at the shell's first prompt and each after it at the next prompt, so
+they go into the shell's history and Ctrl+C, Up, Enter runs one again.
+A shell that does not say when it is at its prompt is typed into once
+it has been quiet for a moment. A key or a paste in the pane cancels
+the lines left. Nothing is typed into a password question, a pane
+through another kakel window, or a shell started again. Saving the
+window again keeps them. They are saved in the settings file as plain
+text, so keep passwords out of them. A kakel from v0.12.2-beta.15
+opens these layouts without the lines, and drops the lines from the
+file the next time it saves its settings.
+
 ## v0.12.2-beta.15
 
 ### Added

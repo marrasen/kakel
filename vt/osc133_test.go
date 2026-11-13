@@ -1,6 +1,9 @@
 package vt
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 // wantCommand checks the whole command state in one go, so a test reads
 // as the answer a caller would get rather than four separate questions.
@@ -505,5 +508,34 @@ func TestSemanticPromptSaysACommandStarted(t *testing.T) {
 	h.write("\x1b]133;D;0\x07\x1b]133;C\x07")
 	if h.starts != 2 {
 		t.Fatalf("CommandStart fired %d times for the next command, want twice", h.starts)
+	}
+}
+
+// Prompt fires once for each prompt, at its A mark: B ends the same
+// prompt, and a full-screen program's marks are not the shell's.
+func TestSemanticPromptSaysAPromptCame(t *testing.T) {
+	h := newHarness(t, 20, 4)
+	h.write("\x1b]133;A\x07$ \x1b]133;B\x07ls\r\n\x1b]133;C\x07one\r\n\x1b]133;D;0\x07")
+	if !slices.Equal(h.prompts, []PromptSign{PromptMark}) {
+		t.Fatalf("one prompt was told as %v", h.prompts)
+	}
+	h.write("\x1b]633;A\x07$ ")
+	if !slices.Equal(h.prompts, []PromptSign{PromptMark, PromptMark}) {
+		t.Fatalf("an OSC 633 prompt was told as %v", h.prompts)
+	}
+	h.write("\x1b[?1049h\x1b]133;A\x07\x1b[?1049l")
+	if len(h.prompts) != 2 {
+		t.Fatalf("a mark on the alternate screen was told as a prompt: %v", h.prompts)
+	}
+}
+
+// The Command Prompt's folder, which its prompt sends, is told as a
+// prompt of its own kind; an empty one, which says nothing, is not.
+func TestAFolderSaidIsToldAsAPrompt(t *testing.T) {
+	h := newHarness(t, 20, 4)
+	h.write("\x1b]9;9;C:\\Users\x1b\\C:\\Users>")
+	h.write("\x1b]9;9;\x07")
+	if !slices.Equal(h.prompts, []PromptSign{PromptFolder}) {
+		t.Fatalf("the folder was told as %v", h.prompts)
 	}
 }

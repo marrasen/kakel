@@ -47,8 +47,22 @@ func (a *app) startLocalSession(argv []string, dir string, cols, rows int, shell
 	sess, err := session.StartLocal(session.LocalConfig{
 		Command: argv, Dir: dir, Env: paneEnv(argv, called, env), Cols: cols, Rows: rows,
 	})
-	if err != nil || !shell || !a.teaches(argv) {
+	if err != nil || !shell {
 		return sess, err
+	}
+	if typed := shellsetup.Typed(a.taughtRoute(argv)); len(typed) > 0 {
+		if _, err := sess.Write(typed); err != nil {
+			a.failed("Couldn't set up the shell", err.Error())
+		}
+	}
+	return sess, nil
+}
+
+// taughtRoute is the kind of shell a shell started here with argv is
+// taught as, and shellsetup.NoRoute for one that is not taught.
+func (a *app) taughtRoute(argv []string) shellsetup.Route {
+	if !a.teaches(argv) {
+		return shellsetup.NoRoute
 	}
 	route := argv
 	if len(route) == 0 {
@@ -56,12 +70,7 @@ func (a *app) startLocalSession(argv []string, dir string, cols, rows int, shell
 			route = got
 		}
 	}
-	if typed := shellsetup.Typed(shellsetup.RouteFor(route)); len(typed) > 0 {
-		if _, err := sess.Write(typed); err != nil {
-			a.failed("Couldn't set up the shell", err.Error())
-		}
-	}
-	return sess, nil
+	return shellsetup.RouteFor(route)
 }
 
 // teaches reports whether a shell started with argv is taught to say
@@ -89,14 +98,21 @@ func (a *app) teaches(argv []string) bool {
 // profile, or else its saved server, says to. p is the profile it runs,
 // empty for the account's own shell (see teachesFar).
 func (a *app) teachFar(machine machines.ID, sess session.Session, p settings.Profile) {
-	if !a.teachesFar(machine, p) {
-		return
-	}
-	if typed := shellsetup.Typed(shellsetup.RouteFor(p.Command)); len(typed) > 0 {
+	if typed := shellsetup.Typed(a.farTaughtRoute(machine, p)); len(typed) > 0 {
 		if _, err := sess.Write(typed); err != nil {
 			a.failed("Couldn't set up the shell on "+a.machines.Name(machine), err.Error())
 		}
 	}
+}
+
+// farTaughtRoute is the kind of shell a server's shell running profile
+// p, empty for the account's own, is taught as, and shellsetup.NoRoute
+// for one that is not taught.
+func (a *app) farTaughtRoute(machine machines.ID, p settings.Profile) shellsetup.Route {
+	if !a.teachesFar(machine, p) {
+		return shellsetup.NoRoute
+	}
+	return shellsetup.RouteFor(p.Command)
 }
 
 // paneEnv is what a shell here is told about the terminal it runs in,

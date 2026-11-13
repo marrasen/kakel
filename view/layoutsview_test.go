@@ -634,3 +634,19 @@ func TestALayoutCanBeGivenAKey(t *testing.T) {
 		t.Fatalf("back, Work's line is %+v", l)
 	}
 }
+
+// Two layouts that differ only in a pane's start lines are not the same:
+// what shows the lines is built again.
+func TestStartLinesMakeALayoutAnother(t *testing.T) {
+	a := threeLayouts()[0]
+	b := a.Clone()
+	if !sameLayout(a, b) {
+		t.Fatal("a layout and its copy differ")
+	}
+	p := b.Panes["p1"]
+	p.Start = []string{"vite dev"}
+	b.Panes["p1"] = p
+	if sameLayout(a, b) {
+		t.Fatal("start lines added left the layout the same")
+	}
+}

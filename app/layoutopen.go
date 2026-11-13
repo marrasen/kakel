@@ -21,7 +21,9 @@ import (
 	"github.com/marrasen/kakel/serve"
 	"github.com/marrasen/kakel/settings"
 	shellfind "github.com/marrasen/kakel/shells"
+	"github.com/marrasen/kakel/shellsetup"
 	"github.com/marrasen/kakel/vfs"
+	"github.com/marrasen/kakel/vt"
 )
 
 // Opening a layout. It always opens in a new window, so no shell that
@@ -670,7 +672,35 @@ func (a *app) startLocalSlot(id string, r settings.SavedPane, still func() bool,
 		sh := screen.Open(sess, a.palette, a.withLinks(a.hooks(pane), pane, machines.Local))
 		a.argvs[pane] = withoutFolder(argv)
 		a.addPane(Pane{ID: pane, Title: a.freeTitle(a.localShellName(argv))}, sh, Placement{Instead: id})
+		a.typeStart(pane, r, a.taughtRoute(argv))
 	})
+}
+
+// typeStart types the start lines r keeps into terminal pane id, which a
+// layout has just opened, its shell taught by Shell Setup as route, or
+// as shellsetup.NoRoute when it was not: one at each prompt, where the
+// shell taught says when it is at one, and otherwise each once it has
+// been quiet a moment. Only a terminal started here or on a server is
+// typed into, and only as the layout opens it: one through another kakel
+// window, or started again in its pane, is not.
+func (a *app) typeStart(id string, r settings.SavedPane, route shellsetup.Route) {
+	t := a.terminal(id)
+	if t == nil || r.Kind != settings.LayoutTerminal || len(r.Start) == 0 {
+		return
+	}
+	t.TypeAtPrompts(r.Start, promptSign(route))
+}
+
+// promptSign is how a shell taught as route says it is at its prompt.
+func promptSign(route shellsetup.Route) vt.PromptSign {
+	switch route {
+	case shellsetup.Posix, shellsetup.PowerShell:
+		return vt.PromptMark
+	case shellsetup.Cmd:
+		// The Command Prompt has no marks: its prompt says its folder.
+		return vt.PromptFolder
+	}
+	return vt.NoSign
 }
 
 // slotArgv is what a layout's terminal kept as r runs on this computer,
@@ -745,11 +775,13 @@ func (a *app) startFarSlot(id string, m machines.ID, r settings.SavedPane, still
 			return
 		}
 		a.next++
-		a.startFar(m, conn, run, dir, "p"+strconv.Itoa(a.next), Placement{Instead: id}, still, func(_ string, err error) {
+		a.startFar(m, conn, run, dir, "p"+strconv.Itoa(a.next), Placement{Instead: id}, still, func(pane string, err error) {
 			if err != nil {
 				// The start said it in a toast already.
 				fail(title, err, true)
+				return
 			}
+			a.typeStart(pane, r, a.farTaughtRoute(m, p))
 		})
 	})
 }
@@ -1001,6 +1033,11 @@ func (a *app) intoSlot(p Pane, id string) {
 		if g := a.layout.GroupOf(p.ID); g != nil && g.Front == id {
 			g.Front = p.ID
 		}
+	}
+	if s := a.slots[id]; s != nil && s.recipe.Kind == settings.LayoutTerminal && len(s.recipe.Start) > 0 {
+		// Kept whether they are typed or not, as through another window,
+		// for a layout saved from this window to keep them too.
+		a.startLines[p.ID] = slices.Clone(s.recipe.Start)
 	}
 	a.forgetSlot(id)
 	a.settleRecords()

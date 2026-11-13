@@ -176,6 +176,10 @@ type Terminal struct {
 	// hands them to a goroutine that may be waiting for mu itself.
 	toTell []func()
 
+	// start types the start lines, and hears what it needs to from the
+	// moment the terminal starts.
+	start *starter
+
 	// secret is the ask the pane is waiting on, and is nil when nobody is
 	// waiting. Its own lock, because the goroutine waiting is not the one
 	// that draws.
@@ -359,6 +363,7 @@ func New(cfg Config) (*Terminal, error) {
 		pal: pal,
 		out: make(chan []byte, outQueue),
 	}
+	t.start = newStarter(t.send, func() bool { return asksForSecret(t.cursorLine()) })
 	r := t.adopt(cfg.Session)
 	// At least one cell: an emulator with no columns has nowhere to put
 	// the cursor.
@@ -398,7 +403,11 @@ func New(cfg Config) (*Terminal, error) {
 				t.later(func() { cfg.OnClipboard(text) })
 			}
 		},
-		CommandStart: func() { t.commandFrom = time.Now() },
+		CommandStart: func() {
+			t.commandFrom = time.Now()
+			t.later(t.start.started)
+		},
+		Prompt: func(sign vt.PromptSign) { t.later(func() { t.start.prompt(sign) }) },
 		CommandDone: func(status int, ok bool) {
 			if cfg.OnCommandDone != nil && !t.commandFrom.IsZero() {
 				took := time.Since(t.commandFrom)
@@ -455,6 +464,7 @@ func (t *Terminal) Close() error {
 	if t.closed.Swap(true) {
 		return nil
 	}
+	t.start.drop()
 	r := t.current()
 	r.halt()
 	if r.letGo {
@@ -1177,6 +1187,7 @@ func (t *Terminal) HandleKey(ev input.Event) (bool, error) {
 
 	// Typing replaces a selection, as it does everywhere else.
 	t.ClearSelection()
+	t.start.took()
 	t.send(t.encBuf)
 	return true, nil
 }
@@ -1687,6 +1698,7 @@ func (t *Terminal) Paste(text string) {
 	t.mu.Lock()
 	bracketed := t.term.Screen().Bracketed()
 	t.mu.Unlock()
+	t.start.took()
 	t.send(input.EncodePaste(text, bracketed, nil))
 	// A password out of a password manager arrives this way, and answers
 	// an ask as typing one does.
@@ -1920,6 +1932,9 @@ func logRead(b []byte, last *time.Time) {
 
 // outputArrived says the screen has taken something new to draw.
 func (t *Terminal) outputArrived() {
+	// Told before the screen says it has something new, which a caller
+	// may wait on to know the output was taken.
+	t.start.wrote()
 	t.pending.Store(true)
 	if t.cfg.OnOutput != nil {
 		t.cfg.OnOutput()
@@ -1950,6 +1965,9 @@ func (t *Terminal) finish(r *run) {
 	if t.exited.Swap(true) {
 		return
 	}
+	// Start lines have no program left to type into, and the one started
+	// in its place next is not the one they were for.
+	t.start.drop()
 	// Whoever is watching from elsewhere, before the window is told:
 	// their pane is drawing this program and has no other way to learn
 	// it has gone.
@@ -2025,6 +2043,7 @@ func (t *Terminal) SetPalette(pal vt.Palette) {
 // somewhere else: the program reads that clipboard itself, so what it
 // needs is the keystroke rather than any text.
 func (t *Terminal) PressPaste() {
+	t.start.took()
 	t.send(input.EncodeMode(
 		input.Event{Kind: input.KeyPress, Key: input.KeyV, Mods: input.ModCtrl}, t.mode(), nil))
 }

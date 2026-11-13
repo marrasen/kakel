@@ -1,6 +1,7 @@
 package view
 
 import (
+	"maps"
 	"slices"
 	"strings"
 
@@ -45,10 +46,12 @@ func (w *Window) setLayouts(layouts []settings.SavedLayout, u *gunim.UI) {
 }
 
 // sameLayout reports whether a and b say the same in the palette, the
-// shortcut editor and on their cards.
+// shortcut editor and on their cards, and hold the same start lines, so
+// what shows them is built again when they change.
 func sameLayout(a, b settings.SavedLayout) bool {
 	return a.ID == b.ID && a.Name == b.Name && a.AtStart == b.AtStart && app.LayoutNote(a) == app.LayoutNote(b) &&
-		app.LayoutHolds(a) == app.LayoutHolds(b) && slices.Equal(app.LayoutMachines(a, nil), app.LayoutMachines(b, nil))
+		app.LayoutHolds(a) == app.LayoutHolds(b) && slices.Equal(app.LayoutMachines(a, nil), app.LayoutMachines(b, nil)) &&
+		maps.EqualFunc(a.Panes, b.Panes, func(x, y settings.SavedPane) bool { return slices.Equal(x.Start, y.Start) })
 }
 
 // layoutNamed is the layout called name, as the settings tell names

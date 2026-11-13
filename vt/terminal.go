@@ -35,7 +35,29 @@ type Callbacks struct {
 	// whether the shell gave one.
 	CommandStart func()
 	CommandDone  func(status int, ok bool)
+	// Prompt fires when the shell says it is at its prompt, and sign
+	// says how it said so.
+	Prompt func(sign PromptSign)
 }
+
+// PromptSign is how a shell says it is at its prompt.
+type PromptSign int
+
+const (
+	// NoSign is a shell that says nothing of its prompt.
+	NoSign PromptSign = iota
+
+	// PromptMark is the A mark of OSC 133 or OSC 633, which a shell sends
+	// as its prompt starts.
+	PromptMark
+
+	// PromptFolder is OSC 9;9, which says where the shell is. The Command
+	// Prompt has no marks, and sends this from its prompt, as Shell Setup
+	// teaches it, so for it this is the prompt. Other shells may send it
+	// as well as their marks, so it means a prompt only where the caller
+	// knows the shell is the Command Prompt.
+	PromptFolder
+)
 
 // Command is what the shell's OSC 133 and OSC 633 marks say about the
 // command line. The zero value is a shell that has never sent one.
@@ -810,6 +832,9 @@ func (t *Terminal) setDirPath(params [][]byte) {
 		return
 	}
 	t.dir, t.dirHost = raw, ""
+	if t.cb.Prompt != nil {
+		t.cb.Prompt(PromptFolder)
+	}
 }
 
 // parseFileURL reads the "file://host/path" a shell sends for OSC 7
@@ -851,7 +876,7 @@ func (t *Terminal) semanticPrompt(params [][]byte) {
 	if len(params) < 2 || t.scr.OnAltBuffer() {
 		return
 	}
-	switch string(params[1]) {
+	switch mark := string(params[1]); mark {
 	case "A", "B":
 		// A prompt ends a running command, and says nothing about how it went. It
 		// counts as finished all the same: a shell printing its next prompt is a
@@ -862,6 +887,10 @@ func (t *Terminal) semanticPrompt(params [][]byte) {
 			t.cmd.Running = false
 			t.cmd.status, t.cmd.hasStatus = 0, false
 			t.cmd.Done++
+		}
+		// B ends the prompt A began, so only A is told: one prompt, once.
+		if mark == "A" && t.cb.Prompt != nil {
+			t.cb.Prompt(PromptMark)
 		}
 	case "C":
 		t.cmd.Integrated = true

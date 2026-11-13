@@ -157,6 +157,24 @@ A layout is one window, saved to open again as it is.
   from the list, and saving names them. Settings, the Jobs, the
   Layouts and the other tool panes are left out too, unsaid, as their
   own commands open them.
+- **Start lines.** A terminal can hold start lines: lines kakel types
+  into its shell as the layout opens it, as the keyboard would, each
+  followed by Enter. One terminal might type `vite dev`, another
+  `tail -f log/app.log`, one on a server `tmux attach`. The first line
+  is typed at the shell's first prompt, and each line after it at the
+  next prompt, so a line that keeps running, as a dev server does, holds
+  back the lines after it. They go through the shell, so they are in its
+  history: Ctrl+C, Up and Enter runs one again. With Shell Setup on, the
+  shell says when it is at its prompt. A shell that says nothing, or has
+  said nothing five seconds after it first wrote, is typed into once it
+  has been quiet for half a second. Nothing is typed into a question for
+  a password, a passphrase or a host key. A key pressed or a paste in
+  the pane before the last line is typed cancels the lines left, and so
+  does the shell ending. A server that fails at first gets its lines
+  when Retry opens its shell. A terminal through another kakel window,
+  and a shell started again in its pane, is typed nothing into. Saving
+  the window again keeps each terminal's start lines. They are saved in
+  the settings file as plain text, so keep passwords out of them.
 - **Panes through another kakel window.** These are kept by the
   window, and by the machine beyond it when the pane ran on one the
   window reaches. Opening the layout connects to the window once for

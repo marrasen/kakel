@@ -590,5 +590,9 @@ func (t *Terminal) Said() uint64 { return t.said.Load() }
 // Send puts input into the terminal as though it had been typed here.
 //
 // It is how somebody watching from another machine types into a pane
-// that is running on this one.
-func (t *Terminal) Send(b []byte) { t.send(b) }
+// that is running on this one, which takes the pane over from its start
+// lines as typing here does.
+func (t *Terminal) Send(b []byte) {
+	t.start.took()
+	t.send(b)
+}

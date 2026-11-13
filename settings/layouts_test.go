@@ -345,3 +345,64 @@ func layoutNames(s *Settings) []string {
 	}
 	return out
 }
+
+// A terminal's start lines come back from the file as they went in, but
+// for blank lines, which are dropped, and a line holding a line break,
+// which is the lines it holds. A pane other than a terminal keeps none.
+// A copy handed out is the caller's own.
+func TestStartLinesComeBackFromTheFile(t *testing.T) {
+	path := at(t)
+	s, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l := aLayout("Work")
+	p1, p2 := l.Panes["p1"], l.Panes["p2"]
+	p1.Start = []string{"  ", " cd /srv", "tmux attach\r\nhtop", ""}
+	p2.Start = []string{"make"}
+	l.Panes["p1"], l.Panes["p2"] = p1, p2
+	kept, _, err := s.SaveLayout(l, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{" cd /srv", "tmux attach", "htop"}
+	if got := kept.Panes["p1"].Start; !slices.Equal(got, want) {
+		t.Fatalf("kept the lines %q, want %q", got, want)
+	}
+	if got := kept.Panes["p2"].Start; got != nil {
+		t.Fatalf("a command pane kept the lines %q", got)
+	}
+
+	again, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := again.Layouts()
+	if len(got) != 1 || !reflect.DeepEqual(got[0], kept) {
+		t.Fatalf("read back %+v, want %+v", got, kept)
+	}
+	got[0].Panes["p1"].Start[0] = "changed"
+	if line := again.Layouts()[0].Panes["p1"].Start[0]; line != " cd /srv" {
+		t.Fatalf("a change to the copy reached the settings: %q", line)
+	}
+}
+
+// Start lines written into the file by hand are read as a layout keeps
+// them.
+func TestStartLinesWrittenByHandAreTidied(t *testing.T) {
+	path := at(t)
+	body := `{"version": 1, "layouts": [{"id": "a", "name": "A", "root": {"id": "#1", "kind": "group", "front": "p1", "kids": [` +
+		`{"id": "p1", "kind": "item"}, {"id": "p2", "kind": "item"}]}, "panes": {` +
+		`"p1": {"kind": "terminal", "start": ["", "vite dev", "   "]}, "p2": {"kind": "files", "start": ["ls"]}}}]}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := s.Layouts()
+	if len(got) != 1 || !slices.Equal(got[0].Panes["p1"].Start, []string{"vite dev"}) || got[0].Panes["p2"].Start != nil {
+		t.Fatalf("the layout reads %+v", got)
+	}
+}
