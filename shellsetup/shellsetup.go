@@ -218,52 +218,58 @@ const OwnPrompt = "kakel=1"
 //
 // __gt_d runs before each prompt: it reports how the last command went,
 // from $? or the status it is handed, says where the shell is, and marks
-// the prompt. __gt_c marks where a command's output starts, once per
-// command line; __gt_r says it has. zsh has hooks for both. sh, dash and
-// ksh get the functions and nothing calls them, and only parse the rest,
-// so nothing in it is bash's own syntax outside eval.
+// the prompt. __gt_c marks where a command's output starts, once until
+// the next prompt; __gt_r says it has. zsh has hooks for both. sh, dash
+// and ksh get the functions and nothing calls them, and only parse the
+// rest, so nothing in it is bash's own syntax outside eval.
 //
-// A bash with bash-preexec loaded has hooks for both too, and they are
-// used: bash-preexec tells its own commands from the user's by the
-// pieces of PROMPT_COMMAND, and an entry of kakel's there would make it
-// take the user's last command for a new one at every empty prompt.
+// A bash where bash-preexec hooked the prompt, with __bp_precmd in
+// PROMPT_COMMAND, has hooks for both too, and they are used: bash-preexec
+// tells its own commands from the user's by the pieces of PROMPT_COMMAND,
+// and an entry of kakel's there would make it take the user's last
+// command for a new one at every empty prompt. bash-preexec loaded but
+// not hooked, as when a later line sets PROMPT_COMMAND afresh, calls no
+// hooks, so that bash gets kakel's own entry.
 //
-// Otherwise __gt_p goes first in PROMPT_COMMAND, which stays a string,
-// or an array when the user made it one, with the entry at the front of
-// its first element: a tool that checks whether it is in PROMPT_COMMAND
+// That entry is __gt_p, first in PROMPT_COMMAND, which stays a string, or
+// an array when the user made it one, with the entry at the front of its
+// first element: a tool that checks whether it is in PROMPT_COMMAND
 // already still finds itself, and a child bash, which an exported
-// PROMPT_COMMAND reaches, still gets it. __gt_p hands back the status
-// for what follows, and $_ as it was. It is called through ${__gt_k-}, so
-// a child bash, which has none of these functions, runs $(exit $?) in its
-// place, which keeps the status for the user's part. A semicolon parts
-// it from the user's part, so a tool looking for ;its_hook; finds it,
-// and none follows it alone, so one that adds ;its_hook makes no ;;.
+// PROMPT_COMMAND reaches, still gets it. __gt_p hands back the status for
+// what follows, and $_ as it was. It is called through ${__gt_k-}, so a
+// child bash, which has none of these functions, runs $(exit $?) in its
+// place, which keeps the status for the user's part. A semicolon parts it
+// from the user's part, so a tool looking for ;its_hook; finds it, and
+// none follows it alone, so one that adds ;its_hook makes no ;;.
 //
-// __gt_h says the prompt was hooked, and how: 2 through bash-preexec, 1
-// through PROMPT_COMMAND. It stays empty where PROMPT_COMMAND is read
-// only, and then nothing marks a command either, as a command marked with
-// no prompt after it would be taken to run for good.
+// __gt_h says the prompt is hooked, and how: 2 through bash-preexec, 1
+// through PROMPT_COMMAND. A prompt hooked already is left as it is, so the
+// lines typed twice mark each prompt once. __gt_h stays empty where
+// PROMPT_COMMAND is read only, and then nothing marks a command either, as
+// a command marked with no prompt after it would be taken to run for good.
 //
 // No command here leaves a failing status where set -e or an ERR trap
 // sees it: a status handed back is the first of an && list. __gt_v is
 // bash's version as major*100+minor, and a test sets it to try older ones.
-const posixLine = `__gt_d(){ local c=${1:-$?}; __gt_r=; __gt_q=1; printf '\033]133;D;%s\a\033]7;file://%s%s\a\033]133;A;` + OwnPrompt + `\a' "$c" "${HOSTNAME:-${HOST:-localhost}}" "$PWD"; }; ` +
+const posixLine = `__gt_d(){ local c=${1:-$?}; __gt_r=; printf '\033]133;D;%s\a\033]7;file://%s%s\a\033]133;A;` + OwnPrompt + `\a' "$c" "${HOSTNAME:-${HOST:-localhost}}" "$PWD"; }; ` +
 	`__gt_c(){ [ -n "${__gt_r-}" ] || { __gt_r=1; printf '\033]133;C\a'; }; }; ` +
 	`if [ -n "${ZSH_VERSION-}" ]; then autoload -Uz add-zsh-hook; add-zsh-hook precmd __gt_d; add-zsh-hook preexec __gt_c; ` +
-	`elif [ -n "${BASH_VERSION-}" ]; then __gt_v=${__gt_v:-$((BASH_VERSINFO[0]*100+BASH_VERSINFO[1]))}; __gt_q=0; __gt_h=; ` +
-	`if [ -n "${bash_preexec_imported-}${__bp_imported-}" ]; then eval 'precmd_functions+=(__gt_d)'; case ${PROMPT_COMMAND-} in *__bp_precmd*) __gt_h=2;; esac; ` +
-	`else __gt_p(){ local c=$?; __gt_d "$c"; __gt_r=1; return $c; }; __gt_k=__gt_p; ` +
-	`PROMPT_COMMAND='${__gt_k-$(exit $?)} ${__gt_k+"$_"} && : __gt_ "$_"'"${PROMPT_COMMAND:+;$PROMPT_COMMAND}" && __gt_h=1; fi; fi`
+	`elif [ -n "${BASH_VERSION-}" ]; then __gt_v=${__gt_v:-$((BASH_VERSINFO[0]*100+BASH_VERSINFO[1]))}; __gt_h=; ` +
+	`case ${bash_preexec_imported:+y}${__bp_imported:+y}:${__gt_k-}${PROMPT_COMMAND-} in *:__gt_p*__gt_k*) __gt_h=1;; ` +
+	`y*:*__bp_precmd*) eval '[[ ${precmd_functions[*]-} = *__gt_d* ]] || precmd_functions+=(__gt_d)'; __gt_h=2;; ` +
+	`*) __gt_p(){ local c=$?; __gt_d "$c"; __gt_r=1; return $c; }; __gt_k=__gt_p; ` +
+	`PROMPT_COMMAND='${__gt_k-$(exit $?)} ${__gt_k+"$_"} && : __gt_ "$_"'"${PROMPT_COMMAND:+;$PROMPT_COMMAND}" && __gt_h=1;; esac; fi`
 
 // posixCommandLine tells bash to mark each command, once posixLine has
 // hooked its prompt.
 //
-// bash 4.4 and later print PS0 once for each command line they read, and
-// never at an empty one, so the C mark goes at the front of it. It is
-// the C mark only if a prompt was marked since the last: __gt_d sets
-// __gt_q, and PS0 clears it. A prompt that lost kakel's hook, as when
-// .bashrc is read again and sets PROMPT_COMMAND afresh, gets a D mark
-// instead, which ends the command marked last.
+// bash 4.4 and later print PS0 before each command they read from the
+// prompt, and never at an empty one, so the C mark goes at the front of
+// it, as the bytes themselves: they mean the same whether promptvars is
+// on or off. A block of lines pasted at once, or an alias holding more
+// than one line, is read as one line and gets one PROMPT_COMMAND after
+// it, so each of its commands is marked C and one D ends them all. A PS0
+// that marks C already is left as it is.
 //
 // There is no hook before a command in older bash, and the debug trap
 // stands in: it fires for every command bash runs, those in
@@ -272,14 +278,14 @@ const posixLine = `__gt_d(){ local c=${1:-$?}; __gt_r=; __gt_q=1; printf '\033]1
 // after __gt_c, with $_ as it was, and neither runs for kakel's own
 // commands or, with extdebug, for those inside kakel's functions. The
 // trap is one call, to __gt_t, so a tool that keeps a trap it finds by
-// running its first word, or all of it, keeps this one. With
-// bash-preexec, its preexec hook stands in.
-const posixCommandLine = `if [ -n "${__gt_h-}" ]; then if [ "$__gt_v" -ge 404 ]; then __gt_m[0]=$'\033]133;D\a'; __gt_m[1]=$'\033]133;C\a'; ` +
-	`if shopt -q promptvars; then PS0='${__gt_m[__gt_q&&__gt_q--]}'"${PS0-}"; else PS0=${__gt_m[1]}${PS0-}; fi; ` +
+// running its first word, or all of it, keeps this one. A trap that is
+// kakel's already is left as it is. With bash-preexec, its preexec hook
+// stands in.
+const posixCommandLine = `if [ -n "${__gt_h-}" ]; then if [ "$__gt_v" -ge 404 ]; then case ${PS0-} in *'133;C'*) ;; *) PS0=$'\033]133;C\a'${PS0-};; esac; ` +
 	`elif [ "$__gt_h" = 2 ]; then eval 'preexec_functions+=(__gt_c)'; ` +
-	`else __gt_o=$(trap -p DEBUG); __gt_o=${__gt_o#trap -- }; eval "__gt_o=${__gt_o% DEBUG}"; case $__gt_o in *__gt_*) __gt_o=;; esac; ` +
+	`else __gt_x=$(trap -p DEBUG); __gt_x=${__gt_x#trap -- }; eval "__gt_x=${__gt_x% DEBUG}"; case $__gt_x in *__gt_*) ;; *) __gt_o=$__gt_x; ` +
 	`__gt_t(){ case $BASH_COMMAND${FUNCNAME[1]-} in *__gt_*) return 0;; esac; __gt_c; : "$1"; eval "$__gt_o"; }; trap '__gt_t "$_"' DEBUG; ` +
-	`PROMPT_COMMAND="$PROMPT_COMMAND"$'\n''__gt_r='; fi; fi`
+	`PROMPT_COMMAND="$PROMPT_COMMAND"$'\n''__gt_r=';; esac; fi; fi`
 
 // powerShellLine wraps the prompt that is already there rather than
 // replacing it, so a profile that sets one keeps it.

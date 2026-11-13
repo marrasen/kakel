@@ -313,6 +313,7 @@ func TestBashWithBashPreexec(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("bash is not the Windows shell")
 	}
+	_, here := bashHere(t)
 	for _, v := range bashPreexecs {
 		for kind, b := range bashes(t) {
 			t.Run(v+"/"+kind, func(t *testing.T) {
@@ -345,8 +346,12 @@ func TestBashWithBashPreexec(t *testing.T) {
 				noCAtAPrompt(t, out)
 				after := afterSetup(sh.marks())
 				// echo hi, (true) where PS0 marks it, false, echo bye and exit.
+				// The real bash-preexec master on a real bash 5.3 or later
+				// calls its preexec hooks from PS0, whatever version the line
+				// is told, so __gt_c marks (true) there too. The stand-in
+				// leaves that hook out.
 				want := 4
-				if b.version >= 404 {
+				if b.version >= 404 || v == "master" && os.Getenv("KAKEL_TEST_BASH_PREEXEC") != "" && here >= 503 {
 					want = 5
 				}
 				if n := countOf(after, "C"); n != want {
@@ -360,19 +365,52 @@ func TestBashWithBashPreexec(t *testing.T) {
 	}
 }
 
+// bash-preexec loaded but never hooked, as when a later line of the
+// .bashrc sets PROMPT_COMMAND afresh, calls no hooks: Shell Setup hooks
+// the prompt itself, and marks as it does without bash-preexec, folder
+// included.
+func TestBashWithBashPreexecNotHooked(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("bash is not the Windows shell")
+	}
+	for _, v := range bashPreexecs {
+		for kind, b := range bashes(t) {
+			t.Run(v+"/"+kind, func(t *testing.T) {
+				rc := writeFile(t, "bashrc", "source "+bashPreexecFile(t, v)+"\nPROMPT_COMMAND='history -a'\n")
+				got, out := marksOf(t, plainBash(t), b.env, "source "+rc, "false", "sh -c 'exit 3'", "echo hi")
+				marksInOrder(t, got, out)
+				if n := strings.Count(out, "\x1b]7;file://"); n < Prompts(Posix)+3 {
+					t.Fatalf("the folder was said %d times, want it at every prompt: %q", n, out)
+				}
+			})
+		}
+	}
+}
+
 // A PROMPT_COMMAND that is read only, as a server that logs each command
 // sets it, cannot be hooked, and then nothing marks a command either: a
 // command marked with no prompt after it would be taken to run for good.
-// With bash-preexec loaded, which refuses to install, the same.
+// The same for an array, and with bash-preexec loaded, which refuses to
+// install.
 func TestBashWithAReadOnlyPromptCommandMarksNothing(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("bash is not the Windows shell")
 	}
 	for kind, b := range bashes(t) {
-		for name, before := range map[string]string{
-			"alone":             "readonly PROMPT_COMMAND='history -a'",
-			"with bash-preexec": "readonly PROMPT_COMMAND='history -a'; source " + bashPreexecFile(t, "master") + " 2>/dev/null",
-		} {
+		befores := map[string]string{
+			"alone": "readonly PROMPT_COMMAND='history -a'",
+		}
+		if b.version >= 501 {
+			befores["an array"] = "PROMPT_COMMAND=('history -a' true); readonly PROMPT_COMMAND"
+		}
+		for _, v := range bashPreexecs {
+			bp := "; source " + bashPreexecFile(t, v) + " 2>/dev/null"
+			befores["with bash-preexec "+v] = befores["alone"] + bp
+			if b.version >= 501 {
+				befores["an array with bash-preexec "+v] = befores["an array"] + bp
+			}
+		}
+		for name, before := range befores {
 			t.Run(kind+"/"+name, func(t *testing.T) {
 				sh := startShell(t, plainBash(t), b.env)
 				sh.write(before + "\r")
@@ -393,47 +431,86 @@ func TestBashWithAReadOnlyPromptCommandMarksNothing(t *testing.T) {
 // Tools' prompt hooks as their bash init texts set them, each with a
 // function in place of its program that says it ran.
 const (
-	// starship init bash, without bash-preexec: its DEBUG trap, which
-	// runs a trap that was there before from its own, and its
-	// PROMPT_COMMAND, which keeps the one that was there to run itself.
+	// starship init bash, without bash-preexec: from bash 4.4 its PS0,
+	// which it puts in front of the PS0 there was, and before 4.4 its
+	// DEBUG trap, which runs a trap that was there before from its own,
+	// each picked by the bash it runs in; and its PROMPT_COMMAND, which
+	// keeps the one that was there in STARSHIP_PROMPT_COMMAND to run
+	// itself.
 	starshipInit = `
-starship() { case $1 in prompt) printf '<sp:%s>' "$2" >&2; printf '$ ';; esac; }
+starship() {
+    case $1 in
+    prompt)
+        local a; for a; do case $a in --status=*) printf '<sp:%s>' "${a#--status=}" >&2;; --continuation) printf '> '; return;; esac; done
+        printf '$ ';;
+    time) echo 1;;
+    esac
+}
+function _starship_set_return() { return "${1:-0}"; }
 starship_preexec() {
     local PREV_LAST_ARG=$1
-    if [[ "${STARSHIP_PREEXEC_READY:-}" == "true" ]]; then
+    if [ "${STARSHIP_PREEXEC_READY:-}" = "true" ]; then
         STARSHIP_PREEXEC_READY=false
-        STARSHIP_START_TIME=1
+        STARSHIP_START_TIME=$(starship time)
     fi
     : "$PREV_LAST_ARG"
 }
 starship_precmd() {
-    STARSHIP_CMD_STATUS=$? STARSHIP_PIPE_STATUS=(${PIPESTATUS[@]})
-    local NUM_JOBS=0
-    eval "$_PRESERVED_PROMPT_COMMAND"
-    PS1="$(starship prompt "$STARSHIP_CMD_STATUS")"
-    unset STARSHIP_START_TIME
+    STARSHIP_CMD_STATUS=$? STARSHIP_PIPE_STATUS=("${PIPESTATUS[@]}")
+    if [[ -n "${BP_PIPESTATUS-}" ]] && [[ "${#BP_PIPESTATUS[@]}" -gt 0 ]]; then
+        STARSHIP_PIPE_STATUS=("${BP_PIPESTATUS[@]}")
+    fi
+    jobs &>/dev/null
+    local job NUM_JOBS=0 IFS=$' \t\n'
+    for job in $(jobs -p); do [[ $job ]] && ((NUM_JOBS++)); done
+    "${starship_precmd_user_func-:}"
+    _starship_set_return "$STARSHIP_CMD_STATUS"
+    if [[ -n "${STARSHIP_PROMPT_COMMAND-}" ]]; then
+        eval "$STARSHIP_PROMPT_COMMAND"
+    fi
+    local -a ARGS=(--terminal-width="${COLUMNS}" --status="${STARSHIP_CMD_STATUS}" --pipestatus="${STARSHIP_PIPE_STATUS[*]}" --jobs="${NUM_JOBS}" --shlvl="${SHLVL}")
+    if [[ -n "${STARSHIP_START_TIME-}" ]]; then
+        STARSHIP_END_TIME=$(starship time)
+        STARSHIP_DURATION=$((STARSHIP_END_TIME - STARSHIP_START_TIME))
+        ARGS+=( --cmd-duration="${STARSHIP_DURATION}")
+        STARSHIP_START_TIME=""
+    fi
+    PS1="$(starship prompt "${ARGS[@]}")"
     STARSHIP_PREEXEC_READY=true
 }
-if [[ "${__bp_imported:-}" == "defined" || -n "${preexec_functions-}" || -n "${precmd_functions-}" ]]; then
+if [[ -n "${bash_preexec_imported:-}" || -n "${__bp_imported:-}" || -n "${preexec_functions-}" || -n "${precmd_functions-}" ]]; then
+    starship_preexec_all(){ starship_preexec "$_"; }
+    preexec_functions+=(starship_preexec_all)
     precmd_functions+=(starship_precmd)
-    preexec_functions+=(starship_preexec)
 else
-    dbg_trap="$(trap -p DEBUG)"; dbg_trap=${dbg_trap#*\'}; dbg_trap=${dbg_trap%\'*}
-    if [[ -z "$dbg_trap" ]]; then
-        trap 'starship_preexec "$_"' DEBUG
-    elif [[ "$dbg_trap" != 'starship_preexec "$_"' && "$dbg_trap" != 'starship_preexec_all "$_"' ]]; then
-        starship_preexec_all() {
-            local PREV_LAST_ARG=$1 ; eval -- "$dbg_trap" ; starship_preexec; : "$PREV_LAST_ARG";
+    if [[ -n "${BASH_VERSION-}" ]] && [[ "${BASH_VERSINFO[0]}" -gt 4 || ( "${BASH_VERSINFO[0]}" -eq 4 && "${BASH_VERSINFO[1]}" -ge 4 ) ]]; then
+        starship_preexec_ps0() {
+            starship time
         }
-        trap 'starship_preexec_all "$_"' DEBUG
+        if [[ "${PS0-}" != *"starship_preexec_ps0"* ]]; then
+            PS0='${STARSHIP_START_TIME:$((STARSHIP_START_TIME="$(starship_preexec_ps0)",STARSHIP_PREEXEC_READY=0,0)):0}'"${PS0-}"
+        fi
+    else
+        eval "STARSHIP_DEBUG_TRAP=($(trap -p DEBUG))"
+        STARSHIP_DEBUG_TRAP=("${STARSHIP_DEBUG_TRAP[2]}")
+        if [[ -z "$STARSHIP_DEBUG_TRAP" ]]; then
+            trap 'starship_preexec "$_"' DEBUG
+        elif [[ "$STARSHIP_DEBUG_TRAP" != 'starship_preexec "$_"' && "$STARSHIP_DEBUG_TRAP" != 'starship_preexec_all "$_"' ]]; then
+            starship_preexec_all() {
+                local PREV_LAST_ARG=$1 ; eval -- "$STARSHIP_DEBUG_TRAP"; starship_preexec; : "$PREV_LAST_ARG";
+            }
+            trap 'starship_preexec_all "$_"' DEBUG
+        fi
     fi
     if [[ -z "${PROMPT_COMMAND-}" ]]; then
         PROMPT_COMMAND="starship_precmd"
     elif [[ "$PROMPT_COMMAND" != *"starship_precmd"* ]]; then
-        _PRESERVED_PROMPT_COMMAND="$PROMPT_COMMAND"
+        STARSHIP_PROMPT_COMMAND="$PROMPT_COMMAND"
         PROMPT_COMMAND="starship_precmd"
     fi
 fi
+shopt -s checkwinsize
+STARSHIP_START_TIME=$(starship time)
 `
 
 	// direnv hook bash.
@@ -441,9 +518,11 @@ fi
 direnv() { printf '<dv>' >&2; }
 _direnv_hook() {
   local previous_exit_status=$?;
+  local previous_sigint_trap="$(trap -p SIGINT)";
+  vars="$(direnv export bash)";
   trap -- '' SIGINT;
-  eval "$(direnv export bash)";
-  trap - SIGINT;
+  eval "$vars";
+  eval "${previous_sigint_trap:-trap - SIGINT}";
   return $previous_exit_status;
 };
 if [[ ";${PROMPT_COMMAND[*]:-};" != *";_direnv_hook;"* ]]; then
@@ -455,17 +534,29 @@ if [[ ";${PROMPT_COMMAND[*]:-};" != *";_direnv_hook;"* ]]; then
 fi
 `
 
-	// zoxide init bash, its default hook. Its program is a script, as
-	// the hook calls it through command.
+	// zoxide init bash, its default hook, which it adds at the end of
+	// PROMPT_COMMAND. Its program is a script, as the hook calls it
+	// through command.
 	zoxideInit = `
 PATH=$KAKEL_TEST_BIN:$PATH
+function __zoxide_pwd() {
+    \builtin pwd -L
+}
 function __zoxide_hook() {
     \builtin local -r retval="$?"
-    \command zoxide add -- "$PWD"
+    __zoxide_hook_ok=1
+    if [[ -o history ]]; then
+        \command zoxide add -- "$(__zoxide_pwd)"
+    fi
     return "${retval}"
 }
 if [[ ${PROMPT_COMMAND:=} != *'__zoxide_hook'* ]]; then
-    PROMPT_COMMAND="__zoxide_hook;${PROMPT_COMMAND#;}"
+    if [[ "$(declare -p PROMPT_COMMAND 2>&1)" == "declare -a"* ]]; then
+        PROMPT_COMMAND=("${PROMPT_COMMAND[@]}" '__zoxide_hook || \builtin true')
+    else
+        PROMPT_COMMAND="${PROMPT_COMMAND%"${PROMPT_COMMAND##*[![:space:];]}"}"
+        PROMPT_COMMAND="${PROMPT_COMMAND:+${PROMPT_COMMAND};}__zoxide_hook"
+    fi
 fi
 `
 )
@@ -522,12 +613,7 @@ func TestBashAfterABashrcWithToolsIsReadAgain(t *testing.T) {
 				}
 				got := afterSetup(sh.marks())
 				want := []string{"C", "D;1", "A", "C", "D;0", "A", "C", "D;1", "A", "D;1", "A", "C", "D;0", "A", "C"}
-				// Before 4.4, starship read again sets its own debug trap in
-				// place of Shell Setup's where bash 4 and later cannot show it
-				// the trap from inside .bashrc, and commands are no longer
-				// marked. Prompts still are.
-				lost := []string{"C", "D;1", "A", "C", "D;0", "A", "D;1", "A", "D;1", "A", "D;0", "A"}
-				if !slices.Equal(got, want) && !(name == "starship" && b.version < 404 && slices.Equal(got, lost)) {
+				if !slices.Equal(got, want) {
 					t.Fatalf("marks %q after setup, want %q", got, want)
 				}
 			})
@@ -536,10 +622,10 @@ func TestBashAfterABashrcWithToolsIsReadAgain(t *testing.T) {
 }
 
 // A .bashrc read again that sets PROMPT_COMMAND afresh takes Shell
-// Setup's hook away. The command that read it is the last marked as
-// one: from 4.4 the next ends it with a D mark, so it is not taken to run
-// for good, and before 4.4 nothing more is marked.
-func TestBashThatLostItsHookMarksNoMoreCommands(t *testing.T) {
+// Setup's hook away: no prompt is marked after it, and no D, so kakel
+// takes the command marked last to run on. From 4.4 PS0 still marks each
+// command C, and before 4.4 nothing more is marked.
+func TestBashThatLostItsHookMarksNoMorePrompts(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("bash is not the Windows shell")
 	}
@@ -559,16 +645,16 @@ func TestBashThatLostItsHookMarksNoMoreCommands(t *testing.T) {
 			out := sh.since(from)
 			sh.exit()
 
-			if n := cMarks(out); n != 1 {
-				t.Fatalf("%d C marks once the hook was lost, want only source's: %q", n, out)
+			// source, and from 4.4 true, false and echo DONE.
+			want := 1
+			if b.version >= 404 {
+				want = 4
 			}
-			if strings.Contains(out, ownA) {
-				t.Fatalf("a prompt was marked with no hook: %q", out)
+			if n := cMarks(out); n != want {
+				t.Fatalf("%d C marks once the hook was lost, want %d: %q", n, want, out)
 			}
-			got := sh.marks()
-			last := got[len(got)-1]
-			if b.version >= 404 && last != "D" {
-				t.Fatalf("marks %q, want them to end with a D for source", got)
+			if got := marksIn(out); slices.Contains(got, "A") || slices.ContainsFunc(got, func(m string) bool { return strings.HasPrefix(m, "D") }) {
+				t.Fatalf("marks %q: a prompt was marked with no hook: %q", got, out)
 			}
 		})
 	}

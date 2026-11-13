@@ -258,12 +258,13 @@ var mark = regexp.MustCompile("\x1b\\]133;([ACD])(;[^\a]*)?\a")
 
 // marks are the marks the shell has sent, in order, as "A", "C" and
 // "D;status", and A* for an A that is not Shell Setup's.
-func (sh *shell) marks() []string {
-	sh.mu.Lock()
-	defer sh.mu.Unlock()
+func (sh *shell) marks() []string { return marksIn(sh.written()) }
+
+// marksIn are the marks in what a shell wrote, out, as marks gives them.
+func marksIn(out string) []string {
 	var got []string
-	for _, m := range mark.FindAllSubmatch(sh.out, -1) {
-		kind, opt := string(m[1]), string(m[2])
+	for _, m := range mark.FindAllStringSubmatch(out, -1) {
+		kind, opt := m[1], m[2]
 		switch {
 		case kind == "A" && opt != ";"+OwnPrompt:
 			got = append(got, "A*")
@@ -385,12 +386,16 @@ func marksOf(t *testing.T, argv, env []string, before string, commands ...string
 // no C comes while the shell stands at its prompt.
 func marksInOrder(t *testing.T, got []string, out string) {
 	t.Helper()
-	want := []string{"C", "D;1", "A", "C", "D;3", "A", "C", "D;0", "A", "C"}
+	want := inOrder
 	if after := afterSetup(got); !slices.Equal(after, want) {
 		t.Fatalf("marks %q, want them to be %q after Shell Setup's last prompt", got, want)
 	}
 	noCAtAPrompt(t, out)
 }
+
+// inOrder are the marks for false, sh -c 'exit 3', echo hi and exit,
+// typed after Shell Setup's last prompt.
+var inOrder = []string{"C", "D;1", "A", "C", "D;3", "A", "C", "D;0", "A", "C"}
 
 // afterSetup is the marks after the last prompt Shell Setup's own lines
 // show, nil if it never came.
@@ -667,6 +672,114 @@ func TestBashReportsNoStaleStatus(t *testing.T) {
 			want := []string{"D;1", "A", "C", "D;0", "A"}
 			if len(got) < len(want) || !slices.Equal(got[len(got)-len(want)-1:len(got)-1], want) {
 				t.Fatalf("marks %q, want them to end %q and exit's C", got, want)
+			}
+		})
+	}
+}
+
+// A block of lines pasted at once, and an alias holding more than one
+// line, are one command line to bash, with one prompt after it. Each of
+// its commands is marked C, and one D, with the last one's status, ends
+// them all, so kakel takes the block for one command running till the
+// end. Before 4.4 the first command alone is marked C.
+func TestBashMarksAPastedBlockAsOneRun(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("bash is not the Windows shell")
+	}
+	_, here := bashHere(t)
+	for kind, b := range bashes(t) {
+		ways := map[string]struct{ before, typed string }{}
+		if here >= 404 {
+			// bash 3.2 runs only an alias's first line at the prompt.
+			ways["an alias"] = struct{ before, typed string }{`alias three=$'echo p1\nsleep 0.1\nfalse'`, "three"}
+		}
+		if kind == "as it is" && b.version >= 501 {
+			// From 5.1 readline takes a bracketed paste whole, newlines
+			// and all, into the one line.
+			ways["a bracketed paste"] = struct{ before, typed string }{"", "\x1b[200~echo p1\rsleep 0.1\rfalse\x1b[201~"}
+		}
+		for name, way := range ways {
+			t.Run(kind+"/"+name, func(t *testing.T) {
+				got, out := marksOf(t, plainBash(t), b.env, way.before, way.typed)
+				want := []string{"C", "D;1", "A", "C"}
+				if b.version >= 404 {
+					want = []string{"C", "C", "C", "D;1", "A", "C"}
+				}
+				if after := afterSetup(got); !slices.Equal(after, want) {
+					t.Fatalf("marks %q, want them to be %q after Shell Setup's last prompt: %q", got, want, out)
+				}
+				if !strings.Contains(out, "p1\r\n") {
+					t.Fatalf("the block did not run: %q", out)
+				}
+			})
+		}
+	}
+}
+
+// Shell Setup's lines typed a second time into a shell they set up
+// already leave its hooks as they were: each prompt is still marked once,
+// and each command once, with its own status. With bash-preexec too.
+func TestBashSetUpTwiceMarksAsOnce(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("bash is not the Windows shell")
+	}
+	for kind, b := range bashes(t) {
+		befores := map[string]string{"plain": "", "a debug trap": `trap ': trap-ran' DEBUG`}
+		for _, v := range bashPreexecs {
+			befores["bash-preexec "+v] = "source " + bashPreexecFile(t, v)
+		}
+		for name, before := range befores {
+			t.Run(kind+"/"+name, func(t *testing.T) {
+				sh := startShell(t, plainBash(t), b.env)
+				sh.setUp(before)
+				sh.drawn()
+				n, typed := sh.prompts(), len(sh.written())
+				sh.write(string(Typed(Posix)))
+				sh.waitPrompts(n + Prompts(Posix))
+				sh.drawn()
+				from := len(sh.written())
+				// The lines typed again are commands like any other, with one
+				// prompt marked after each.
+				if got := marksIn(sh.written()[typed:from]); countOf(got, "A") != Prompts(Posix) || countOf(got, "D;0") != Prompts(Posix) {
+					t.Fatalf("marks %q for the lines typed again, want a D;0 and an A after each", got)
+				}
+				for _, c := range []string{"false", "sh -c 'exit 3'", "echo hi"} {
+					sh.run(c)
+				}
+				sh.exit()
+				if got := marksIn(sh.since(from)); !slices.Equal(got, inOrder) {
+					t.Fatalf("marks %q after the lines were typed twice, want %q", got, inOrder)
+				}
+			})
+		}
+	}
+}
+
+// With promptvars turned off after Shell Setup ran, bash prints PS0 as it
+// is: the C mark still goes out, and nothing shows.
+func TestBashMarksCommandsWithPromptvarsOff(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("bash is not the Windows shell")
+	}
+	for kind, b := range bashes(t) {
+		t.Run(kind, func(t *testing.T) {
+			sh := startShell(t, plainBash(t), b.env)
+			sh.setUp("")
+			sh.run("shopt -u promptvars")
+			sh.drawn()
+			from := len(sh.written())
+			for _, c := range []string{"false", "sh -c 'exit 3'", "echo hi"} {
+				sh.run(c)
+			}
+			sh.exit()
+			out := sh.since(from)
+			if got := marksIn(out); !slices.Equal(got, inOrder) {
+				t.Fatalf("marks %q with promptvars off, want %q", got, inOrder)
+			}
+			for _, shown := range []string{"__gt", "${", `\e`, `\033`, `\a`} {
+				if strings.Contains(out, shown) {
+					t.Fatalf("%s shows before a command with promptvars off: %q", shown, out)
+				}
 			}
 		})
 	}
