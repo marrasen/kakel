@@ -193,23 +193,35 @@ A layout is one window, saved to open again as it is.
   again keeps each terminal's start lines. They are saved in the
   settings file as plain text, so keep passwords out of them.
 - **Giving a terminal start lines.** Press Start Lines… on the layout's
-  card in File › Layouts › Manage Layouts. The dialog draws the window
-  small: each pane is a box where it stands, its name, its machine when
-  that is not this computer, and the lines it holds. A group of tabs is
-  one box with its tabs along its top. Click a pane or a tab, or move
-  with the arrow keys: Left and Right go along a box's tabs first, then
-  on to the box beside. Home and End pick the first pane and the last.
-  Under the map is the pane picked: where it starts, as its shell, its
-  machine and its folder, so no `cd` is needed, and an editor for its
-  lines, one per line. The editor is coloured for that shell, and marks
-  a line written for another, as the paste editor does. Tab moves from
-  the map to the editor and on to the buttons, and a tab typed in the
-  editor is a space. Save keeps every terminal's lines, with spaces at
-  the end dropped and blank lines dropped; Cancel keeps none of what was typed. A command pane
-  and a file manager are on the map, quieter, and take no lines. A
-  terminal through another kakel window takes lines, which are saved
-  but not typed yet. Save fails, and says so, where the layout was
-  removed meanwhile, or saved over with other panes.
+  card in File › Layouts › Manage Layouts. The card counts the start
+  lines the layout holds, as "4 terminals, 3 start lines". The dialog
+  draws the window across its width: each pane is a box where it
+  stands, its name, its machine when that is not this computer, and as
+  many of its lines as fit, then how many more. A terminal is filled
+  like the editor; a pane that takes no lines is quieter, its icon
+  dimmed. A dot on a pane's icon says it holds lines. A group of tabs
+  is one box with its tabs along its top: the tab in front as wide as
+  its name, the rest narrowing to their icons, each naming itself in a
+  tooltip. Click a pane or a tab, or move with the arrow keys: Left and
+  Right go along a box's tabs first, then on to the nearest box beside.
+  Home and End pick the first pane and the last. A click, Enter or
+  Space puts the keyboard in the pane's lines. Under the map are the
+  pane's name and where it starts, as its shell, its machine and its
+  folder, so no `cd` is needed, and an editor for its lines, one per
+  line. The editor is coloured for that shell, and marks a line written
+  for another: a PowerShell command in a bash terminal is marked
+  "PowerShell command. This terminal starts Bash." Tab moves from the
+  map to the editor and on to the buttons, and a tab typed in the
+  editor is a space. Save keeps the lines of each terminal whose lines
+  you changed, with spaces at the end and blank lines dropped, and
+  leaves the others as they are; Cancel and Escape keep none of what
+  was typed. A command pane, a file manager and a terminal through
+  another kakel window take no start lines yet; lines such a terminal
+  already holds stay as they are. Where the layout was removed
+  meanwhile, saved over, or the same terminal given other lines in
+  another window, Save says so and the dialog stays open. A window
+  opened from the layout, or saved as it, keeps the lines given here
+  when it is saved over the layout again.
 - **Panes through another kakel window.** These are kept by the
   window, and by the machine beyond it when the pane ran on one the
   window reaches. Opening the layout connects to the window once for

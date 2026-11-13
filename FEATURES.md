@@ -190,9 +190,12 @@ The whole list. The [README](README.md) has the short version.
   one at each prompt, so they land in the shell's history; anything
   typed or pasted into the pane cancels the lines left, except the
   answer to a password question. Start Lines… on a layout's card in
-  Manage Layouts draws the window small, each pane where it stands, and
-  gives the pane picked an editor for its lines, coloured for its shell
-  and marking a line written for another one. A layout can open as
+  Manage Layouts draws the window across the dialog, each pane where it
+  stands, and gives the terminal picked an editor for its lines,
+  coloured for its shell and marking a line written for another one;
+  the card counts the lines. Two windows can give lines to two
+  terminals of one layout, and a window saved over its layout keeps
+  the lines given since. A layout can open as
   kakel starts, and be given a key in Settings › Shortcuts. Tool panes
   such as Settings are left out; so are readers and tunnels, and saving
   names those.
