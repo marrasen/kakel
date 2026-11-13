@@ -199,21 +199,29 @@ A layout is one window, saved to open again as it is.
   settings file as plain text, so keep passwords out of them.
 - **Giving a terminal start lines.** Press Start Lines… on the layout's
   card in File › Layouts › Manage Layouts. The card counts the start
-  lines the layout holds, as "4 terminals, 3 start lines". The dialog
+  lines the layout's terminals type, as "4 terminals, 3 start lines";
+  lines a terminal through another kakel window holds are not counted.
+  The dialog
   draws the window across its width: each pane is a box where it
   stands, its name, its machine when that is not this computer, and as
-  many of its lines as fit, then how many more. A terminal is filled
+  many of its lines as fit. With more lines than fit, the last row
+  says how many more. A terminal is filled
   like the editor; a pane that takes no lines is quieter, its icon
   dimmed. A dot on a pane's icon says it holds lines. A group of tabs
-  is one box with its tabs along its top: the tab in front as wide as
-  its name, the rest narrowing to their icons, each naming itself in a
-  tooltip. Click a pane or a tab, or move with the arrow keys: Left and
-  Right go along a box's tabs first, then on to the nearest box beside.
+  is one box with its tabs along its top. The tab in front shows its
+  name, cut where the box is crowded. Each tab behind shows its name
+  whole, shortest names first, as far as the room goes; the rest show
+  their icons, or a dot in a box too narrow for those, and name
+  themselves in a tooltip. Click a pane or a tab, or move with the
+  arrow keys: Left and Right go along a box's tabs first, then on to
+  the nearest box beside. Of two boxes as near, as the two panes over
+  one across a T, an arrow goes back to the one it came from.
   Home and End pick the first pane and the last. A click, Enter or
   Space puts the keyboard in the pane's lines. Under the map are the
   pane's name and where it starts, as its shell, its machine and its
   folder, so no `cd` is needed, and an editor for its lines, one per
-  line. The editor is coloured for that shell, and marks a line written
+  line. An empty editor reads "such as npm run dev, one a line". The
+  editor is coloured for that shell, and marks a line written
   for another: a PowerShell command in a bash terminal is marked
   "PowerShell command. This terminal starts Bash." Tab moves from the
   map to the editor and on to the buttons, and a tab typed in the
@@ -226,7 +234,13 @@ A layout is one window, saved to open again as it is.
   meanwhile, saved over, or the same terminal given other lines in
   another window, Save says so and the dialog stays open. A window
   opened from the layout, or saved as it, keeps the lines given here
-  when it is saved over the layout again.
+  when it is saved over the layout again. Lines saved while that
+  window's terminal is still starting are the ones typed into it.
+  Where another window was saved over the layout since, the lines go
+  to the terminal that is in that slot now; a terminal whose slot is
+  no longer in the layout is given none. A removed layout gives no
+  lines to the windows opened from it, even when a new layout gets
+  its name; Undo links them again.
 - **Panes through another kakel window.** These are kept by the
   window, and by the machine beyond it when the pane ran on one the
   window reaches. Opening the layout connects to the window once for

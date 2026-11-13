@@ -29,13 +29,15 @@ file the next time it saves its settings.
 
 To give a terminal its lines, press Start Lines… on the layout's card
 in File › Layouts › Manage Layouts. The card counts the start lines its
-layout holds. The dialog draws the window across its width, each pane
+layout's terminals type. The dialog draws the window across its width, each pane
 where it stands, a terminal filled like the editor, and each group of
-tabs as one box with its tabs. Pick a pane with a click or the arrow
-keys; a click, Enter or Space puts the keyboard in its lines. Under the
+tabs as one box with its tabs, showing the names that fit whole. Pick a
+pane with a click or the arrow keys; a click, Enter or Space puts the
+keyboard in its lines. Under the
 map is the pane's name and where it starts, its shell, machine and
 folder, so no `cd` is needed, and an editor for its lines, one per
-line. It is coloured for that shell, and marks a line written for
+line, which reads "such as npm run dev, one a line" while empty. It is
+coloured for that shell, and marks a line written for
 another shell, such as "PowerShell command. This terminal starts
 Bash." Save keeps the lines of the terminals whose lines you changed,
 with spaces at the end and blank lines dropped; a space at the start
@@ -47,7 +49,9 @@ holds in the file stay as they are. Where another window removed the
 layout, saved over it or changed the same terminal's lines meanwhile,
 Save says so under the dialog and the dialog stays open with what you
 typed. Lines given to a layout open in a window are kept when that
-window is saved over the layout again.
+window is saved over the layout again, and go to the terminal in that
+slot as the layout has it now, after another window was saved over it.
+Lines saved while a terminal is still starting are the ones typed.
 
 ### Fixed
 
