@@ -11,6 +11,7 @@ import (
 	"github.com/marrasen/kakel/relay"
 	"github.com/marrasen/kakel/settings"
 	shellfind "github.com/marrasen/kakel/shells"
+	"github.com/marrasen/kakel/shellsetup"
 	"github.com/marrasen/kakel/words"
 )
 
@@ -42,6 +43,14 @@ type (
 	}
 	// RenameLayout gives the layout with ID another name.
 	RenameLayout struct{ ID, Name string }
+	// SaveStartLines gives each slot of Layout, as it was when the lines
+	// were written for it, that Lines names, the start lines Lines holds
+	// for it, none for nil: the slots whose lines were changed. The other
+	// slots keep theirs.
+	SaveStartLines struct {
+		Layout settings.SavedLayout
+		Lines  map[string][]string
+	}
 	// SetLayoutAtStart has the layout with ID open as kakel starts, or
 	// not.
 	SetLayoutAtStart struct {
@@ -96,6 +105,18 @@ func (a *app) saveLayout(in SaveLayout) (settings.SavedLayout, leftOut, bool, er
 		// Saved as it, the window is offered it to save over next time.
 		w.fromLayout = kept.ID
 		a.recordSaved(kept.ID, kept, names)
+		// The window's panes are linked to the layout as saved now, a pane
+		// still waiting through its slot, for the pane it becomes. Panes
+		// of other windows stay linked to the layout as it was before,
+		// whose Rev it no longer has.
+		for id, name := range names {
+			link := layoutSlot{layout: kept.ID, slot: name, rev: kept.Rev}
+			if s := a.slots[id]; s != nil {
+				s.link = link
+			} else {
+				a.linesFrom[id] = link
+			}
+		}
 	}
 	return kept, left, replaced, err
 }
@@ -291,6 +312,8 @@ func (a *app) recipeOf(p Pane) (settings.SavedPane, bool) {
 			// one is not told which it ran.
 			r.Profile, r.Command = a.runsOf(p)
 		}
+		// As the layout that opened it kept them.
+		r.Start = slices.Clone(a.startLines[p.ID])
 	}
 	return r, true
 }
@@ -398,6 +421,70 @@ func (a *app) renameLayout(in RenameLayout) error {
 	return err
 }
 
+// saveStartLines gives a layout's terminals their start lines, and the
+// panes open from those slots, or waiting to open, the same lines to
+// keep, so the layout saved again from their window keeps them. Only a
+// pane linked to the layout as the file holds it now, by its Rev, is
+// given them: one linked to it before it was saved over, from another
+// window or another kakel, or before it was removed and another layout
+// took its ID, keeps the lines it has, and a notice says so. They are
+// not typed into a shell running already.
+func (a *app) saveStartLines(in SaveStartLines) error {
+	if a.settings == nil {
+		return errNoSettings
+	}
+	err := a.settings.PutStartLines(in.Layout, in.Lines)
+	a.st.Layouts = a.settings.Layouts()
+	if err != nil {
+		return err
+	}
+	i := slices.IndexFunc(a.st.Layouts, func(l settings.SavedLayout) bool { return l.ID == in.Layout.ID })
+	if i < 0 {
+		return nil
+	}
+	now := a.st.Layouts[i]
+	given := func(link layoutSlot) ([]string, bool) {
+		if link.layout != now.ID || link.rev != now.Rev {
+			return nil, false
+		}
+		lines, ok := in.Lines[link.slot]
+		return settings.StartLines(lines), ok
+	}
+	// earlier says a terminal is linked to the layout as it was before it
+	// was saved over, which the lines do not reach.
+	earlier := func(link layoutSlot) bool { return link.layout == now.ID && link.rev != now.Rev }
+	missed := false
+	for id, from := range a.linesFrom {
+		if lines, ok := given(from); ok && lines != nil {
+			a.startLines[id] = lines
+		} else if ok {
+			delete(a.startLines, id)
+		}
+		if earlier(from) && slices.ContainsFunc(a.st.Panes, func(p Pane) bool { return p.ID == id && !p.Command }) {
+			missed = true
+		}
+	}
+	for _, s := range a.slots {
+		if s.recipe.Kind != settings.LayoutTerminal {
+			continue
+		}
+		if lines, ok := given(s.link); ok {
+			s.recipe.Start = lines
+		}
+		missed = missed || earlier(s.link)
+	}
+	if missed {
+		a.notify("Saved "+now.Name+"'s start lines",
+			"Terminals opened from an earlier save of "+now.Name+" keep the lines they have.", "")
+	}
+	return nil
+}
+
+// layoutSlot is a link to a slot of a layout: the layout's ID, the
+// slot's name in it, and the layout's Rev as the link was made. It
+// holds only while the layout has that Rev.
+type layoutSlot struct{ layout, slot, rev string }
+
 // setLayoutAtStart has a layout open as kakel starts, or not.
 func (a *app) setLayoutAtStart(in SetLayoutAtStart) error {
 	if a.settings == nil {
@@ -426,6 +513,8 @@ func (a *app) removeLayout(id string) error {
 	a.editRecords(func(p []settings.LayoutPane) []settings.LayoutPane {
 		return slices.DeleteFunc(p, func(r settings.LayoutPane) bool { return r.Layout == id })
 	})
+	// The panes open from it stay linked to it as it was: Undo puts it
+	// back with its Rev, and a layout saved under its ID has another.
 	if at >= 0 {
 		a.post(Notice{Title: "Removed " + have[at].Name, Kind: NoticeWorked, Action: "Undo", On: RestoreLayout{Layout: have[at], At: at, Panes: recs}})
 	}
@@ -508,6 +597,20 @@ func LayoutHolds(l settings.SavedLayout) string {
 	return listOf(parts)
 }
 
+// LayoutStartLines counts the start lines layout l's terminals type as
+// it opens: those of a terminal through another kakel window are kept
+// but not typed, and not counted.
+func LayoutStartLines(l settings.SavedLayout) int {
+	n := 0
+	for _, p := range l.Panes {
+		// Through another kakel window, a terminal is typed nothing.
+		if p.Kind == settings.LayoutTerminal && !p.Window {
+			n += len(p.Start)
+		}
+	}
+	return n
+}
+
 // LayoutMachines are the names of the machines layout l opens panes on,
 // as LayoutHosts gives them.
 func LayoutMachines(l settings.SavedLayout, named func(id string) (string, bool)) []string {
@@ -545,25 +648,7 @@ func LayoutHosts(l settings.SavedLayout, named func(id string) (string, bool)) [
 			if !ok {
 				return
 			}
-			h := LayoutHost{Name: p.Host, Here: p.Host == "" && p.HostID == ""}
-			switch {
-			case h.Here:
-				h.Name = "This computer"
-			case p.HostID != "" && named != nil:
-				if now, ok := named(p.HostID); ok {
-					h.Name = now
-				}
-			case p.Window:
-				h.Name = relay.Shown(p.Host)
-			}
-			if p.Window {
-				if p.On != "" {
-					h.Name = p.On + " through " + h.Name
-				} else {
-					h.Window = true
-				}
-			}
-			if !slices.Contains(out, h) {
+			if h := LayoutPaneHost(p, named); !slices.Contains(out, h) {
 				out = append(out, h)
 			}
 			return
@@ -574,4 +659,118 @@ func LayoutHosts(l settings.SavedLayout, named func(id string) (string, bool)) [
 	}
 	walk(l.Root)
 	return out
+}
+
+// LayoutPaneHost is the machine a layout's pane kept as p opens on, named
+// as LayoutHosts names it.
+func LayoutPaneHost(p settings.SavedPane, named func(id string) (string, bool)) LayoutHost {
+	h := LayoutHost{Name: p.Host, Here: p.Host == "" && p.HostID == ""}
+	switch {
+	case h.Here:
+		h.Name = "This computer"
+	case p.HostID != "" && named != nil:
+		if now, ok := named(p.HostID); ok {
+			h.Name = now
+		}
+	case p.Window:
+		h.Name = relay.Shown(p.Host)
+	}
+	if p.Window {
+		if p.On != "" {
+			h.Name = p.On + " through " + h.Name
+		} else {
+			h.Window = true
+		}
+	}
+	return h
+}
+
+// KnownShells are the shells a window knows of, as it was last told:
+// what LayoutShell names a layout's terminal by. Profiles are those on
+// every machine, Shells those here by the names the user gave them,
+// Found those found here, hidden ones too, with the command line each
+// runs, Default the ID of the one new terminals here start, and Defaults
+// what opens on each machine.
+type KnownShells struct {
+	Profiles []settings.Profile
+	Shells   []ShellChoice
+	Found    []ShellChoice
+	Default  string
+	Defaults map[machines.ID]MachineDefaults
+}
+
+// LayoutShell is the shell a layout's terminal kept as r starts, as
+// the shells known tell it: its name, and its kind, as shellKindOf has
+// an open pane's. Here, it is the profile or shell kept, or the program
+// kept, or else the one new terminals start; on a server, what opening
+// it starts there, as startFarSlot picks it: the profile kept, or else
+// what a new terminal there runs, or its own shell by the name the
+// server shows it under, taken to be POSIX. A profile's program the setup is not written for
+// is of no kind known. Through another kakel window the shell is that
+// window's to pick: the name is "" and the kind unknown, as is a shell
+// no longer known.
+func LayoutShell(r settings.SavedPane, known KnownShells) (string, shellsetup.Route) {
+	profile := func(id, host string) (settings.Profile, bool) {
+		i := slices.IndexFunc(known.Profiles, func(p settings.Profile) bool { return p.ID == id && p.HostID == host })
+		if i < 0 {
+			return settings.Profile{}, false
+		}
+		return known.Profiles[i], true
+	}
+	ofProfile := func(p settings.Profile) (string, shellsetup.Route) {
+		if !shellsetup.Knows(p.Command) && len(p.Command) > 0 {
+			return p.Name, shellsetup.NoRoute
+		}
+		return p.Name, shellsetup.RouteFor(p.Command)
+	}
+	switch {
+	case r.Window:
+		return "", shellsetup.NoRoute
+	case r.Host != "" || r.HostID != "":
+		var d MachineDefaults
+		if r.HostID != "" {
+			d = known.Defaults[machines.ID(r.HostID)]
+		}
+		_, kept := profile(r.Profile, r.HostID)
+		run, _ := farSlotRun(r.Profile, kept, d.Runs)
+		if p, ok := profile(run, r.HostID); ok && run != LoginShell {
+			return ofProfile(p)
+		}
+		if d.Login != "" {
+			return d.Login, shellsetup.Posix
+		}
+		return "Login Shell", shellsetup.Posix
+	case r.Profile == "" && len(r.Command) > 0:
+		line := joinLine(r.Command)
+		for _, s := range known.Found {
+			if strings.EqualFold(s.Line, line) {
+				return shellTitle(s, known), shellsetup.RouteFor(r.Command)
+			}
+		}
+		base := strings.TrimSuffix(strings.TrimSuffix(shellfind.CommandBase(r.Command[0]), ".exe"), ".EXE")
+		return base, shellsetup.RouteFor(r.Command)
+	}
+	// A profile no longer here starts the default, as it opens.
+	for _, id := range []string{r.Profile, known.Default} {
+		if p, ok := profile(id, ""); ok && id != "" {
+			return ofProfile(p)
+		}
+		for _, s := range known.Found {
+			if s.ID == id && id != "" {
+				return shellTitle(s, known), shellsetup.RouteFor(splitLine(s.Line))
+			}
+		}
+	}
+	return known.Defaults[machines.Local].Shell, shellsetup.NoRoute
+}
+
+// shellTitle is what shell s, found here, is called: as the user renamed
+// it, or as it was found.
+func shellTitle(s ShellChoice, known KnownShells) string {
+	for _, named := range known.Shells {
+		if named.ID == s.ID && named.Title != "" {
+			return named.Title
+		}
+	}
+	return s.Title
 }

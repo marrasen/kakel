@@ -774,6 +774,14 @@ type app struct {
 	// argvs are what each local pane runs, to start it again and to
 	// know how to hand it an image.
 	argvs map[string][]string
+	// startLines are the start lines of each terminal a layout opened,
+	// typed or not, so a layout saved from its window keeps them.
+	startLines map[string][]string
+	// linesFrom are the layout and the slot each terminal opened from a
+	// layout, or saved into one, stands for, so start lines given to that
+	// slot since reach the pane, and a layout saved from its window
+	// keeps them.
+	linesFrom map[string]layoutSlot
 	// farHost is the machine a pane attached from another window runs
 	// on, when that is a machine the window reached rather than its own.
 	farHost map[string]string
@@ -946,6 +954,8 @@ func newApp(c gunim.Client, sh *screen.Shells) *app {
 		parked:       map[*remote.Conn]int{},
 		linksAt:      map[string]*atomic.Pointer[machines.ID]{},
 		argvs:        map[string][]string{},
+		startLines:   map[string][]string{},
+		linesFrom:    map[string]layoutSlot{},
 		farHost:      map[string]string{},
 		nextFar:      map[machines.ID]string{},
 		farRuns:      map[string]string{},
@@ -1389,6 +1399,8 @@ func failedTitle(in gunim.Intent) string {
 		return "Couldn't save the layout"
 	case RenameLayout:
 		return "Couldn't rename the layout"
+	case SaveStartLines:
+		return "Couldn't save the start lines"
 	case SetLayoutAtStart:
 		return "Couldn't change whether the layout opens at start"
 	case RemoveLayout:
@@ -1902,6 +1914,8 @@ func (a *app) handle(in gunim.Intent) {
 		}
 	case RenameLayout:
 		err = a.renameLayout(in)
+	case SaveStartLines:
+		err = a.saveStartLines(in)
 	case SetLayoutAtStart:
 		err = a.setLayoutAtStart(in)
 	case RemoveLayout:
@@ -2589,6 +2603,8 @@ func (a *app) remove(id string) {
 	a.tunnelPaneGone(id)
 	delete(a.commands, id)
 	delete(a.argvs, id)
+	delete(a.startLines, id)
+	delete(a.linesFrom, id)
 	delete(a.farRuns, id)
 	delete(a.noticed, id)
 	delete(a.paneAt, id)

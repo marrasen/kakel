@@ -185,7 +185,19 @@ The whole list. The [README](README.md) has the short version.
   it: the window is connected to once, and a pane the layout opened
   there that is still open is watched again, program and screen as they
   are; otherwise a new one opens, in the same folder on the window's own
-  machine. Closing it here leaves it open there. A layout can open as
+  machine. Closing it here leaves it open there. A terminal can hold
+  start lines, which kakel types into its shell as the layout opens it,
+  one at each prompt, so they land in the shell's history; anything
+  typed or pasted into the pane cancels the lines left, except the
+  answer to a password question. Start Lines… on a layout's card in
+  Manage Layouts draws the window across the dialog, each pane where it
+  stands, and gives the terminal picked an editor for its lines,
+  coloured for its shell and marking a line written for another one;
+  the card counts the lines its terminals type. Two windows can give
+  lines to two terminals of one layout, and a window saved over its
+  layout keeps the lines given since. A window opened from an older
+  save of the layout, before another window was saved over it, keeps
+  the lines it has. A layout can open as
   kakel starts, and be given a key in Settings › Shortcuts. Tool panes
   such as Settings are left out; so are readers and tunnels, and saving
   names those.
@@ -420,18 +432,20 @@ command's output ends and the next begins, unless the shell says so. The
 shell says so by printing escape sequences nobody sees: OSC 7 or OSC 9;9
 for the directory, OSC 133 around each command.
 
-Kakel sets this up itself. As a shell starts it types one line in,
-the way you would type it, and then clears the pane. There is nothing to
+Kakel sets this up itself. As a shell starts it types a few lines in,
+the way you would type them, and then clears the pane. There is nothing to
 install and no profile to edit.
 
 - **On this machine it is on**, and "Shell Setup" on the Machine menu
   turns it off. It is invisible: kakel
-  builds the line for whichever shell the pane runs. A profile gets it
+  builds the lines for whichever shell the pane runs. A profile gets it
   only when it runs one of the shells in the table below.
-- **On a server it is off**, and "Teach its shell to say what it is
-  doing" in the server dialog turns it on. It is off because the line goes into whatever
-  login shell that account has. bash and zsh understand it; fish, a
-  device CLI or a menu would answer with an error.
+- **On a server it is off**, and "Let kakel follow the shell's folder
+  and commands" on a profile in the server's settings pane turns it on
+  for that profile, Login Shell included. It is off because the lines
+  go into whatever login shell that account has. bash and zsh
+  understand them; fish, a device CLI or a menu would answer with an
+  error.
 - **Another kakel is never set up from here.** The window over there
   starts the shell and applies its own answer.
 

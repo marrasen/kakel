@@ -1,6 +1,7 @@
 package view
 
 import (
+	"maps"
 	"slices"
 	"strings"
 
@@ -17,11 +18,12 @@ import (
 	"github.com/marrasen/kakel/app"
 	"github.com/marrasen/kakel/look"
 	"github.com/marrasen/kakel/settings"
+	"github.com/marrasen/kakel/words"
 )
 
 // Layouts: the Save Layout dialog, the palette's line for each layout,
-// and the Layouts pane, a card for each layout to open, rename or
-// remove, and to have open as kakel starts.
+// and the Layouts pane, a card for each layout to open, rename, give
+// start lines or remove, and to have open as kakel starts.
 
 // layoutOpenPrefix starts the command that opens a layout, by the
 // layout's ID, which a rename leaves as it was, so a key bound to it
@@ -45,10 +47,12 @@ func (w *Window) setLayouts(layouts []settings.SavedLayout, u *gunim.UI) {
 }
 
 // sameLayout reports whether a and b say the same in the palette, the
-// shortcut editor and on their cards.
+// shortcut editor and on their cards, and hold the same start lines, so
+// what shows them is built again when they change.
 func sameLayout(a, b settings.SavedLayout) bool {
 	return a.ID == b.ID && a.Name == b.Name && a.AtStart == b.AtStart && app.LayoutNote(a) == app.LayoutNote(b) &&
-		app.LayoutHolds(a) == app.LayoutHolds(b) && slices.Equal(app.LayoutMachines(a, nil), app.LayoutMachines(b, nil))
+		app.LayoutHolds(a) == app.LayoutHolds(b) && slices.Equal(app.LayoutMachines(a, nil), app.LayoutMachines(b, nil)) &&
+		maps.EqualFunc(a.Panes, b.Panes, func(x, y settings.SavedPane) bool { return slices.Equal(x.Start, y.Start) })
 }
 
 // layoutNamed is the layout called name, as the settings tell names
@@ -179,6 +183,7 @@ func (w *Window) renameLayoutDialog(l settings.SavedLayout, u *gunim.UI) {
 const (
 	ctlOpen = iota
 	ctlRename
+	ctlLines
 	ctlRemove
 	ctlStart
 	ctlCount
@@ -362,8 +367,8 @@ func (p *layoutsPane) Handle(e gi.Event, u *gunim.UI) bool {
 }
 
 // layoutCard is one layout: a badge, its name and what it opens, the
-// machines it opens panes on, and under them Open, Rename, Remove and
-// whether it opens as kakel starts, in a row that runs on to the next
+// machines it opens panes on, and under them Open, Rename, Start
+// Lines…, Remove and whether it opens as kakel starts, in a row that runs on to the next
 // line where it has no room, each control gliding to its place.
 type layoutCard struct {
 	anim.Group
@@ -379,10 +384,10 @@ type layoutCard struct {
 	hosts map[app.LayoutHost]*widget.Fold
 	order []app.LayoutHost
 	open  *widget.Button
-	// rename and remove are the card's other buttons, and start whether
-	// it opens as kakel starts.
-	rename, remove *widget.Button
-	start          *widget.Switch
+	// rename, lines and remove are the card's other buttons, and start
+	// whether it opens as kakel starts.
+	rename, lines, remove *widget.Button
+	start                 *widget.Switch
 	// at is where each of the chips and the controls stands, gliding to
 	// where the card puts it.
 	at map[gunim.Node]*anim.Point
@@ -391,14 +396,15 @@ type layoutCard struct {
 func newLayoutCard(p *layoutsPane, l settings.SavedLayout) *layoutCard {
 	c := &layoutCard{
 		pane: p, id: l.ID, badge: newJobBadge(),
-		open: iconButton(icon.SquareArrowOutUpRight, "Open"), rename: iconButton(icon.Pencil, "Rename"), remove: iconButton(icon.Trash2, "Remove"),
+		open: iconButton(icon.SquareArrowOutUpRight, "Open"), rename: iconButton(icon.Pencil, "Rename"),
+		lines: iconButton(icon.ListStart, "Start Lines…"), remove: iconButton(icon.Trash2, "Remove"),
 		start: widget.NewSwitch("Open at start"), hosts: map[app.LayoutHost]*widget.Fold{}, at: map[gunim.Node]*anim.Point{},
 	}
 	c.badge.icon.Icon, c.badge.icon.Color = icon.LayoutPanelLeft, widget.Accent
-	c.nameText, c.holdsText = l.Name, app.LayoutHolds(l)
+	c.nameText, c.holdsText = l.Name, cardHolds(l)
 	c.name, c.holds = widget.NewPages(nameLabel(c.nameText)), widget.NewPages(holdsLabel(c.holdsText))
 	c.open.Kind = widget.ButtonPrimary
-	c.rename.Ghost, c.remove.Ghost = true, true
+	c.rename.Ghost, c.lines.Ghost, c.remove.Ghost = true, true, true
 	id := l.ID
 	c.open.OnClick = widget.Sends(app.OpenLayout{ID: id})
 	c.rename.OnClick = func(u *gunim.UI) gunim.Intent {
@@ -406,6 +412,15 @@ func newLayoutCard(p *layoutsPane, l settings.SavedLayout) *layoutCard {
 		for _, now := range p.w.layouts {
 			if now.ID == id {
 				p.w.renameLayoutDialog(now, u)
+			}
+		}
+		return nil
+	}
+	c.lines.OnClick = func(u *gunim.UI) gunim.Intent {
+		p.lastID, p.lastCtl = id, ctlLines
+		for _, now := range p.w.layouts {
+			if now.ID == id {
+				p.w.startLinesDialog(now, u)
 			}
 		}
 		return nil
@@ -429,6 +444,16 @@ func newLayoutCard(p *layoutsPane, l settings.SavedLayout) *layoutCard {
 	c.chips = widget.NewWrap(chips...)
 	c.chips.Gap = itemGap
 	return c
+}
+
+// cardHolds is what a card says layout l opens, and how many start
+// lines its terminals type: "4 terminals, 3 start lines".
+func cardHolds(l settings.SavedLayout) string {
+	holds := app.LayoutHolds(l)
+	if n := app.LayoutStartLines(l); n > 0 {
+		holds += ", " + words.ManyOf(n, "start line", "start lines")
+	}
+	return holds
 }
 
 // nameLabel and holdsLabel are a card's name, and what it opens, as the
@@ -461,7 +486,7 @@ func hostChip(h app.LayoutHost) *itemChip {
 
 // control is the card's control i, one of ctlOpen and on.
 func (c *layoutCard) control(i int) gunim.Node {
-	return [ctlCount]gunim.Node{c.open, c.rename, c.remove, c.start}[min(max(i, 0), ctlCount-1)]
+	return [ctlCount]gunim.Node{c.open, c.rename, c.lines, c.remove, c.start}[min(max(i, 0), ctlCount-1)]
 }
 
 // show brings the card up to date with l, in place: new words fade in
@@ -472,7 +497,7 @@ func (c *layoutCard) show(l settings.SavedLayout, u *gunim.UI) {
 		c.nameText = l.Name
 		c.name.Show(nameLabel(l.Name), geom.Point{}, u)
 	}
-	if holds := app.LayoutHolds(l); holds != c.holdsText {
+	if holds := cardHolds(l); holds != c.holdsText {
 		c.holdsText = holds
 		c.holds.Show(holdsLabel(holds), geom.Point{}, u)
 	}
@@ -507,7 +532,7 @@ func (c *layoutCard) Access() access.Info {
 // Children implements [gunim.Composite]: the words, then the controls in
 // the order they are read.
 func (c *layoutCard) Children() []gunim.Node {
-	return []gunim.Node{c.badge, c.name, c.holds, c.chips, c.open, c.rename, c.remove, c.start}
+	return []gunim.Node{c.badge, c.name, c.holds, c.chips, c.open, c.rename, c.lines, c.remove, c.start}
 }
 
 // place puts child k at pt, at once the first time and gliding after.

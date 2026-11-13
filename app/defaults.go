@@ -24,6 +24,10 @@ type MachineDefaults struct {
 	Shells []ShellEntry
 	// FilesKey is its default folder's key, as SetDefaultFiles takes it.
 	FilesKey string
+	// Runs is, on a saved server, the ID of the profile a new terminal
+	// there runs, or "" for the server's own shell, and Login what the
+	// server's own shell is called there.
+	Runs, Login string
 }
 
 // SetDefaultFiles makes the folder Key where files on Machine open:
@@ -146,6 +150,11 @@ func (a *app) machineDefaults() map[machines.ID]MachineDefaults {
 		if _, ok := out[m]; !ok {
 			files := a.defaultFiles(m)
 			out[m] = MachineDefaults{Shell: a.defaultShellName(m), Files: files.name, FilesKey: files.key, Shells: a.shellsOn(m)}
+			if m != machines.Local {
+				d := out[m]
+				d.Runs, d.Login = a.farDefault(m), a.loginName(m)
+				out[m] = d
+			}
 		}
 	}
 	add(machines.Local)

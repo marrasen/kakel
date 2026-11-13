@@ -157,6 +157,105 @@ A layout is one window, saved to open again as it is.
   from the list, and saving names them. Settings, the Jobs, the
   Layouts and the other tool panes are left out too, unsaid, as their
   own commands open them.
+- **Start lines.** A terminal can hold start lines: lines kakel types
+  into its shell as the layout opens it, as the keyboard would, each
+  followed by Enter. One terminal might type `vite dev`, another
+  `tail -f log/app.log`, one on a server `tmux attach`. Spaces at the
+  end of a line are dropped, and a tab in one is typed as a space. A
+  space at the start stays, so a shell set to ignore such lines keeps
+  that line out of its history. The others go into it: Ctrl+C, Up and
+  Enter runs one again.
+  With Shell Setup on, the shell says when it is at its prompt. The
+  first line is typed at the first prompt after Shell Setup's own
+  lines, and each line after it at the next prompt, so a line that
+  keeps running, as a dev server does, holds back the lines after it.
+  Only Shell Setup's own marks count, so a prompt that marks itself
+  as well is counted once. A shell that has said nothing five seconds
+  after it first printed gets each line once it has been quiet for half
+  a second. On a server whose login shell is not bash or zsh, such as
+  fish, turn Shell Setup off for it: in the server's settings pane,
+  pick Login Shell and clear "Let kakel follow the shell's folder and
+  commands". Such a shell takes Shell Setup's lines as its own input.
+  With it off, the start lines are typed as for a shell without Shell
+  Setup. A shell that shows fewer prompts while it is set up than kakel
+  expects gets the next line once it stands quiet at a prompt, with
+  text before the cursor and no command started, for ten seconds, or
+  three once Shell Setup's prompts are past; then it waits for the next
+  prompt as before.
+  Without Shell Setup, each line is typed once the shell has printed
+  something and been quiet for half a second. A line still running
+  then does not hold back the next, so keep to one line, or turn Shell
+  Setup on.
+  Nothing is typed into a question for a password, a passphrase, a
+  one-time code or a host key, and what is typed to answer it cancels
+  nothing. A prompt Shell Setup marked is never taken for such a
+  question, whatever it reads. Ctrl+C or Ctrl+D cancels the lines left, and so does
+  anything else typed or pasted into the pane before the last line is
+  typed, by you, by someone watching it, or by an agent, and the shell
+  ending. A server that fails at first gets its lines when Retry opens
+  its shell. A terminal through another kakel window, and a shell
+  started again in its pane, is typed nothing into. Saving the window
+  again keeps each terminal's start lines. They are saved in the
+  settings file as plain text, so keep passwords out of them.
+- **Giving a terminal start lines.** Press Start Lines… on the layout's
+  card in File › Layouts › Manage Layouts. The card counts the start
+  lines the layout's terminals type, as "4 terminals, 3 start lines";
+  lines a terminal through another kakel window holds are not counted.
+  The dialog
+  draws the window across its width: each pane is a box where it
+  stands, its name, its machine when that is not this computer, and as
+  many of its lines as fit. With more lines than fit, the last row
+  says how many more. A terminal is filled
+  like the editor; a pane that takes no lines is quieter, its icon
+  dimmed. A dot on a pane's icon says it holds lines. The pointer over a
+  box brightens its border. A group of tabs
+  is one box with its tabs along its top. The tab in front shows its
+  name, cut where the box is crowded. Each tab behind shows its name
+  whole, shortest names first, as far as the room goes; the rest show
+  their icons, and name themselves in a tooltip. In a box too narrow
+  for every icon, the tabs behind are all dots and the tab in front
+  keeps its icon and a pill of its own, so the one coloured dot reads
+  as a tab holding lines. A box turns between icons and dots over a
+  moment as the window is resized, never resting half way. Click a pane or a tab, or move with the
+  arrow keys: Left and Right go along a box's tabs first, then on to
+  the nearest box beside. Of two boxes as near, as the two panes over
+  one across a T, an arrow goes back to the one it came from.
+  Home and End pick the first pane and the last. A click, Enter or
+  Space puts the keyboard in the pane's lines. Under the map are the
+  pane's name and where it starts, as its shell, its machine and its
+  folder, so no `cd` is needed, on a second line where the window is
+  narrow, and an editor for its lines, one per line. An empty editor
+  reads `npm run dev`. The
+  editor is coloured for that shell, and marks a line written
+  for another: a PowerShell command in a bash terminal is marked
+  "PowerShell command. This terminal starts Bash.", and in a server's
+  login shell "PowerShell command. This terminal starts the login
+  shell." A pane that takes no lines shows a quiet well in place of the
+  editor, saying what it is, such as "Start lines are for terminals.
+  This pane runs a command." Tab moves from the
+  map to the editor and on to the buttons, and a tab typed in the
+  editor is a space. Save keeps the lines of each terminal whose lines
+  you changed, with spaces at the end and blank lines dropped, and
+  leaves the others as they are; Cancel and Escape keep none of what
+  was typed. A command pane, a file manager and a terminal through
+  another kakel window have no start lines yet; lines such a terminal
+  already holds stay as they are. Where the layout was removed
+  meanwhile, saved over with other splits, tabs or panes, or the same
+  terminal given other lines in another window, Save says so and the
+  dialog stays open. Where it was saved over with nothing changed, Save
+  saves, and where a window opened before that save is still open, a
+  notice says its terminals keep the lines they have. A window
+  opened from the layout, or saved as it, keeps the lines given here
+  when it is saved over the layout again. Lines saved while that
+  window's terminal is still starting are the ones typed into it.
+  The lines reach only the windows opened from the layout as it is
+  now, or saved as it. When the same layout is open in two windows and
+  one is saved over it, the other window's terminals no longer follow
+  the dialog: they keep the lines they have, and saving that window
+  over the layout writes those. The same goes for a layout saved over
+  by another kakel, and for a layout removed and a new one saved under
+  its name. Undo of a removal puts the layout back as it was, and the
+  dialog reaches its windows again.
 - **Panes through another kakel window.** These are kept by the
   window, and by the machine beyond it when the pane ran on one the
   window reaches. Opening the layout connects to the window once for
@@ -195,8 +294,8 @@ A layout is one window, saved to open again as it is.
 - **Open at start.** Turn on Open at start on a layout's card, and it
   opens in its own window each time kakel starts.
 - **Manage.** File › Layouts › Manage Layouts lists the layouts as
-  cards: Open, Rename, Remove (with Undo on the notice) and Open at
-  start.
+  cards: Open, Rename, Start Lines…, Remove (with Undo on the notice)
+  and Open at start.
 - **A key for a layout.** Settings › Shortcuts lists each layout under
   Layouts, as Open and its name; give it a key there. Its command is
   `layout.open.<id>`, which a rename leaves as it was. A layout

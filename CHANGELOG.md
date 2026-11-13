@@ -7,6 +7,104 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
+## v0.12.2-beta.16
+
+### Added
+
+**Start lines for a layout's terminals.** A terminal in a layout can
+hold start lines, which kakel types into its shell as the layout opens
+it, each followed by Enter: `vite dev` in one pane, `tail -f
+log/app.log` in another, `tmux attach` on a server. The first is typed
+at the shell's first prompt and each after it at the next prompt, so
+they go into the shell's history and Ctrl+C, Up, Enter runs one again.
+A shell that does not say when it is at its prompt is typed into once
+it has been quiet for a moment, and then a line still running does not
+hold back the next. Anything typed or pasted into the pane cancels the
+lines left, except the answer to a password question. Nothing is typed
+into a password question, a pane through another kakel window, or a
+shell started again. Saving the window again keeps them. They are saved in the settings file as plain
+text, so keep passwords out of them. A kakel from v0.12.2-beta.15
+opens these layouts without the lines, and drops the lines from the
+file the next time it saves its settings.
+
+To give a terminal its lines, press Start Lines… on the layout's card
+in File › Layouts › Manage Layouts. The card counts the start lines its
+layout's terminals type. The dialog draws the window across its width, each pane
+where it stands, a terminal filled like the editor, and each group of
+tabs as one box with its tabs, showing the names that fit whole, and in
+a box too narrow for every icon, dots behind the tab in front. Pick a
+pane with a click or the arrow keys; a click, Enter or Space puts the
+keyboard in its lines. Under the
+map is the pane's name and where it starts, its shell, machine and
+folder, so no `cd` is needed, and an editor for its lines, one per
+line, which reads `npm run dev` while empty. It is
+coloured for that shell, and marks a line written for
+another shell, such as "PowerShell command. This terminal starts
+Bash." Save keeps the lines of the terminals whose lines you changed,
+with spaces at the end and blank lines dropped; a space at the start
+stays, to keep a line out of the shell's history. Two windows giving
+lines to two terminals of one layout both keep theirs. A file manager,
+a command pane and a terminal through another kakel window are on the
+map too, quieter, and their page says what they are in place of an
+editor; lines such a terminal
+holds in the file stay as they are. Where another window removed the
+layout, saved over it with other splits, tabs or panes, or changed the
+same terminal's lines meanwhile, Save says so under the dialog and the
+dialog stays open with what you typed. Where it was saved over with
+nothing changed, Save saves, and a notice says the terminals opened
+from an earlier save keep the lines they have. Lines given to a layout open in a window are kept when that
+window is saved over the layout again. When the same layout is open
+in two windows and one is saved over it, the other window's terminals
+keep the lines they have and no longer follow the dialog. Lines saved
+while a terminal is still starting are the ones typed.
+
+### Fixed
+
+**bash with a `PROMPT_COMMAND` of its own stood at its prompt as if a
+command ran.** With Shell Setup on, bash marked a command started at
+each prompt when its `PROMPT_COMMAND` ran something of its own, as
+starship, direnv, zoxide, atuin or `history -a` add, and at a key bound
+with `bind -x`, as fzf's Ctrl+R. kakel then took the shell to be
+running a program while it sat at its prompt. On bash 4.4 and later
+Shell Setup now marks each command from `PS0`, and never at an empty
+prompt, and sets no debug trap, so a debug trap of the user's own
+stays. A block of lines pasted at once is one command line to bash:
+each command in it is marked, and kakel reads the block as one run that
+ends at the next prompt. With bash-preexec hooked into the prompt, as
+atuin and bash-it load it, Shell Setup hooks in through bash-preexec's
+own lists, so its preexec hooks run once for each command, on every
+bash.
+
+`PROMPT_COMMAND` keeps its form: a string stays a string, exported if
+it was, and an array stays an array. So starship, direnv and zoxide
+still find their own hook in it when `.bashrc` is read again, and add
+it no second time. What it runs sees the last command's status and
+`$_`. Only the elements after the first of an array see `PIPESTATUS`,
+on bash 5.1 and later.
+
+Shell Setup's bash line no longer fails where `set -e` or an `ERR` trap
+sees it. With `set -e`, Ctrl+C at an empty prompt ended the shell; an
+`ERR` trap fired again at every prompt; and with `extdebug` on, a
+failed command was followed by no prompt mark at all. A bash started
+inside the pane with an exported `PROMPT_COMMAND` said `__gt_d: command
+not found` at each prompt; it says nothing now, and what its
+`PROMPT_COMMAND` runs sees each command's status.
+
+A `.bashrc` read again that sets `PROMPT_COMMAND` afresh, as
+`PROMPT_COMMAND='history -a'` does, takes Shell Setup's hook away: the
+shell's prompts are no longer marked, and kakel takes the shell to be
+running a program from that command on, until a new terminal opens. A
+read-only `PROMPT_COMMAND` gets no marks at all, and a `PS0` set afresh
+after Shell Setup ran gets no command marks.
+
+Bash before 4.4, as macOS has, has no `PS0`, so Shell Setup keeps a
+debug trap there. It now runs the trap that was there before after its
+own, rather than replacing it. There a `bind -x` key, and a hook added
+to `PROMPT_COMMAND` after Shell Setup ran, still mark a command at the
+prompt. A tool that replaces the debug trap after Shell Setup ran ends
+the command marks; prompts are still marked. direnv, read again there,
+adds its hook a second time.
+
 ## v0.12.2-beta.15
 
 ### Added

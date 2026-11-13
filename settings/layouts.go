@@ -1,11 +1,14 @@
 package settings
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
 	"reflect"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -36,6 +39,22 @@ type SavedLayout struct {
 
 	// AtStart opens it as kakel starts.
 	AtStart bool `json:"atStart,omitempty"`
+
+	// Rev is a token given afresh each time the layout's tree and panes
+	// are written as a whole: saved anew, or saved over. A change of
+	// start lines, a rename, Open at start and putting a removed layout
+	// back keep it. What was linked to a slot of the layout holds only
+	// while Rev is the one it was linked against. A layout written
+	// before this field, or by a kakel without it, has none, which is a
+	// revision like any other until the layout is saved over.
+	Rev string `json:"rev,omitempty"`
+}
+
+// newRev is a fresh revision token for a layout.
+func newRev() string {
+	var b [8]byte
+	_, _ = rand.Read(b[:])
+	return hex.EncodeToString(b[:])
 }
 
 // LayoutNode is one part of a saved window's tree, as gunim's dock
@@ -112,6 +131,56 @@ type SavedPane struct {
 	// Title is the name the user gave the pane, and empty for one they
 	// did not name.
 	Title string `json:"title,omitempty"`
+
+	// Start are a terminal's start lines: what is typed into its shell as
+	// the layout opens it, one line at each prompt, as the keyboard types
+	// it, each followed by a return. Only a terminal has them, and none
+	// is blank.
+	Start []string `json:"start,omitempty"`
+}
+
+// StartLines are lines as a layout keeps them as start lines: a line
+// holding line breaks is the lines it holds, each is trimmed on the
+// right, a tab or a run of them is a space, as a tab typed into a shell
+// starts its completion, and blank lines are dropped. A space at the
+// start stays: it keeps the line out of a shell's history where the
+// shell is set to ignore lines that start with one. None is nil.
+func StartLines(lines []string) []string {
+	var out []string
+	for _, l := range lines {
+		for _, one := range strings.FieldsFunc(l, func(r rune) bool { return r == '\r' || r == '\n' }) {
+			if one = strings.TrimRightFunc(tabs.ReplaceAllString(one, " "), unicode.IsSpace); strings.TrimSpace(one) != "" {
+				out = append(out, one)
+			}
+		}
+	}
+	return out
+}
+
+// tabs is a run of tabs.
+var tabs = regexp.MustCompile("\t+")
+
+// tidy is l with each pane's start lines as a layout keeps them, and
+// none on a pane other than a terminal. The panes are copied where one
+// changes, so a layout shared with another list is left as it is.
+func (l SavedLayout) tidy() SavedLayout {
+	copied := false
+	for slot, p := range l.Panes {
+		start := StartLines(p.Start)
+		if p.Kind != LayoutTerminal {
+			start = nil
+		}
+		if slices.Equal(start, p.Start) && (start == nil) == (p.Start == nil) {
+			continue
+		}
+		if !copied {
+			l.Panes = maps.Clone(l.Panes)
+			copied = true
+		}
+		p.Start = start
+		l.Panes[slot] = p
+	}
+	return l
 }
 
 // ErrLayoutNameUsed is returned when a layout is given a name another
@@ -138,6 +207,10 @@ func (l *layoutList) UnmarshalJSON(raw []byte) error {
 	if err := json.Unmarshal(raw, &out); err != nil {
 		return err
 	}
+	// Start lines written by hand are read as they are kept.
+	for i := range out {
+		out[i] = out[i].tidy()
+	}
 	*l = out
 	return nil
 }
@@ -162,10 +235,12 @@ func (s *Settings) Layouts() []SavedLayout {
 // takes its place in the list, its ID, and whether it opens at start.
 //
 // All of it is decided on the list as the file holds it now, so a
-// layout another kakel saved or removed since is seen.
+// layout another kakel saved or removed since is seen. Either way it is
+// given a new Rev.
 func (s *Settings) SaveLayout(l SavedLayout, replace bool) (SavedLayout, bool, error) {
-	l = l.Clone()
+	l = l.Clone().tidy()
 	l.Name = strings.TrimSpace(l.Name)
+	l.Rev = newRev()
 	replaced := false
 	err := s.putLayouts(func(have []SavedLayout) ([]SavedLayout, error) {
 		if l.Name == "" {
@@ -193,14 +268,90 @@ func (s *Settings) SaveLayout(l SavedLayout, replace bool) (SavedLayout, bool, e
 }
 
 // ReplaceLayout puts l in place of the layout with its ID, where that
-// one stood in the list, and saves: a layout saved again over one of the
-// same name, or renamed, or set to open at start. A name another layout
-// has is refused with ErrLayoutNameUsed, and an ID no layout has with
-// ErrNoLayout.
+// one stood in the list, and saves, as a layout written as a whole, with
+// a new Rev. A name another layout has is refused with
+// ErrLayoutNameUsed, and an ID no layout has with ErrNoLayout.
 func (s *Settings) ReplaceLayout(l SavedLayout) error {
-	l = l.Clone()
+	l = l.Clone().tidy()
 	l.Name = strings.TrimSpace(l.Name)
+	l.Rev = newRev()
 	return s.editLayout(l.ID, func(at *SavedLayout) { *at = l })
+}
+
+// ErrLayoutSavedOver is returned when start lines are put on a layout
+// that was saved over since they were written for it: its slots may
+// hold other panes now.
+var ErrLayoutSavedOver = errors.New("layout saved over")
+
+// PutStartLines gives each slot lines names the start lines it holds
+// for it, none for nil, and saves: lines holds the slots whose lines
+// were changed, and the others keep theirs, so two windows giving lines
+// to two terminals of one layout both stand. Only a terminal takes
+// lines. was is the layout as the lines were written for it, and
+// StartLinesFit says whether they still fit the layout as the file holds
+// it now; one no longer in the list is refused with ErrNoLayout. A name
+// or Open at start changed since stays as it is now.
+func (s *Settings) PutStartLines(was SavedLayout, lines map[string][]string) error {
+	return s.putLayouts(func(have []SavedLayout) ([]SavedLayout, error) {
+		i := slices.IndexFunc(have, func(at SavedLayout) bool { return at.ID == was.ID })
+		if i < 0 {
+			return nil, ErrNoLayout
+		}
+		if err := StartLinesFit(have[i], was, lines); err != nil {
+			return nil, err
+		}
+		l := have[i].Clone()
+		for slot, start := range lines {
+			if p, ok := l.Panes[slot]; ok && p.Kind == LayoutTerminal {
+				p.Start = StartLines(start)
+				l.Panes[slot] = p
+			}
+		}
+		have[i] = l
+		return have, nil
+	})
+}
+
+// StartLinesFit reports whether lines, start lines written for the
+// layout as was held it, fit it as now holds it: ErrLayoutSavedOver
+// where now has other splits or tabs, or a pane started another way, or
+// other lines on a slot lines changes, as when another window saved over
+// it or gave that terminal lines of its own; nil where they fit. Both are
+// compared as the settings file carries them, so words the file cannot
+// hold exactly, as a folder named in bytes that are not UTF-8, read the
+// same on both sides.
+func StartLinesFit(now, was SavedLayout, lines map[string][]string) error {
+	now, was = asFiled(now), asFiled(was)
+	if !reflect.DeepEqual(now.Root, was.Root) || !maps.EqualFunc(now.Panes, was.Panes, sameRecipe) {
+		return ErrLayoutSavedOver
+	}
+	for slot := range lines {
+		if !slices.Equal(now.Panes[slot].Start, was.Panes[slot].Start) {
+			return ErrLayoutSavedOver
+		}
+	}
+	return nil
+}
+
+// asFiled is l as it reads back from the settings file: written out and
+// read in again, its start lines tidied as the file's are.
+func asFiled(l SavedLayout) SavedLayout {
+	raw, err := json.Marshal(l)
+	if err != nil {
+		return l.tidy()
+	}
+	var out SavedLayout
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return l.tidy()
+	}
+	return out.tidy()
+}
+
+// sameRecipe reports whether a and b start the same pane, whatever start
+// lines each holds.
+func sameRecipe(a, b SavedPane) bool {
+	a.Start, b.Start = nil, nil
+	return reflect.DeepEqual(a, b)
 }
 
 // RenameLayout gives the layout with id another name, and saves. Its ID
@@ -229,12 +380,24 @@ func (s *Settings) DropLayout(id string) error {
 // was given that ID since, when it is given one of its own as a new
 // layout is. A name another layout took since is refused with
 // ErrLayoutNameUsed, as a layout saved under it would be. A layout back
-// in the list already, just as it was, is left as it is.
+// in the list already, just as it was but for its Rev, as after a second
+// Undo or after a window opened from it was saved as it again, is left as
+// it is, and returned as the file holds it.
+//
+// It keeps the Rev it had. Put back under its own ID, it is the layout
+// panes were linked to, so their links hold again. Given a new ID, it is
+// linked to by nothing: the panes linked to its old ID are another
+// layout's now, or none.
 func (s *Settings) PutLayoutBack(l SavedLayout, at int) (SavedLayout, error) {
-	l = l.Clone()
+	l = l.Clone().tidy()
 	err := s.putLayouts(func(have []SavedLayout) ([]SavedLayout, error) {
-		if slices.ContainsFunc(have, func(o SavedLayout) bool { return reflect.DeepEqual(o, l) }) {
-			// Back already, as after a second Undo: nothing to do.
+		sameButRev := func(o SavedLayout) bool {
+			o.Rev = l.Rev
+			return reflect.DeepEqual(o, l)
+		}
+		if i := slices.IndexFunc(have, sameButRev); i >= 0 {
+			// Back already: nothing to do.
+			l = have[i].Clone()
 			return have, nil
 		}
 		// Checked against every layout: one given its ID since is
@@ -286,6 +449,9 @@ func (s *Settings) putLayouts(edit func([]SavedLayout) ([]SavedLayout, error)) e
 	layouts, err := edit(slices.Clone(s.have.Layouts))
 	if err != nil {
 		return err
+	}
+	for i := range layouts {
+		layouts[i] = layouts[i].tidy()
 	}
 	before := s.have
 	s.have.Layouts = layouts
@@ -344,6 +510,7 @@ func (l SavedLayout) Clone() SavedLayout {
 	l.Panes = maps.Clone(l.Panes)
 	for slot, p := range l.Panes {
 		p.Command = slices.Clone(p.Command)
+		p.Start = slices.Clone(p.Start)
 		l.Panes[slot] = p
 	}
 	if l.Place != nil {

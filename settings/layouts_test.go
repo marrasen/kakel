@@ -337,6 +337,37 @@ func TestALayoutIsPutBack(t *testing.T) {
 	}
 }
 
+// A layout removed and then saved again just as it was, from a window
+// opened from it, is back already: Undo leaves it as it is, though the
+// save gave it a new Rev.
+func TestALayoutSavedAgainAsItWasIsBackAlready(t *testing.T) {
+	s, err := Load(at(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	desk, _, err := s.SaveLayout(aLayout("Desk"), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DropLayout(desk.ID); err != nil {
+		t.Fatal(err)
+	}
+	again, _, err := s.SaveLayout(aLayout("Desk"), false)
+	if err != nil || again.ID != desk.ID || again.Rev == desk.Rev {
+		t.Fatalf("saved again: %+v, %v", again, err)
+	}
+	back, err := s.PutLayoutBack(desk, 0)
+	if err != nil {
+		t.Fatalf("Undo after the layout was saved again as it was: %v", err)
+	}
+	if back.ID != desk.ID || back.Rev != again.Rev {
+		t.Fatalf("put back as %+v, want the layout as the file holds it, Rev %q", back, again.Rev)
+	}
+	if got := s.Layouts(); len(got) != 1 || got[0].Rev != again.Rev {
+		t.Fatalf("the layouts are %+v", got)
+	}
+}
+
 // layoutNames are the names of the layouts s holds, in order.
 func layoutNames(s *Settings) []string {
 	var out []string
@@ -344,4 +375,204 @@ func layoutNames(s *Settings) []string {
 		out = append(out, l.Name)
 	}
 	return out
+}
+
+// A terminal's start lines come back from the file as they went in, but
+// for blank lines, which are dropped, and a line holding a line break,
+// which is the lines it holds. A pane other than a terminal keeps none.
+// A copy handed out is the caller's own.
+func TestStartLinesComeBackFromTheFile(t *testing.T) {
+	path := at(t)
+	s, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l := aLayout("Work")
+	p1, p2 := l.Panes["p1"], l.Panes["p2"]
+	p1.Start = []string{"  ", " cd /srv", "tmux attach\r\nhtop\t", "", "\tgit log\t\t--oneline \t-5"}
+	p2.Start = []string{"make"}
+	l.Panes["p1"], l.Panes["p2"] = p1, p2
+	kept, _, err := s.SaveLayout(l, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Trimmed on the right, and a tab, which would start the shell's
+	// completion, is a space. A space at the start, which keeps a line
+	// out of the history, stays.
+	want := []string{" cd /srv", "tmux attach", "htop", " git log --oneline  -5"}
+	if got := kept.Panes["p1"].Start; !slices.Equal(got, want) {
+		t.Fatalf("kept the lines %q, want %q", got, want)
+	}
+	if got := kept.Panes["p2"].Start; got != nil {
+		t.Fatalf("a command pane kept the lines %q", got)
+	}
+
+	again, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := again.Layouts()
+	if len(got) != 1 || !reflect.DeepEqual(got[0], kept) {
+		t.Fatalf("read back %+v, want %+v", got, kept)
+	}
+	got[0].Panes["p1"].Start[0] = "changed"
+	if line := again.Layouts()[0].Panes["p1"].Start[0]; line != " cd /srv" {
+		t.Fatalf("a change to the copy reached the settings: %q", line)
+	}
+}
+
+// Start lines written into the file by hand are read as a layout keeps
+// them.
+func TestStartLinesWrittenByHandAreTidied(t *testing.T) {
+	path := at(t)
+	body := `{"version": 1, "layouts": [{"id": "a", "name": "A", "root": {"id": "#1", "kind": "group", "front": "p1", "kids": [` +
+		`{"id": "p1", "kind": "item"}, {"id": "p2", "kind": "item"}]}, "panes": {` +
+		`"p1": {"kind": "terminal", "start": ["", "vite dev  ", "   "]}, "p2": {"kind": "files", "start": ["ls"]}}}]}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := s.Layouts()
+	if len(got) != 1 || !slices.Equal(got[0].Panes["p1"].Start, []string{"vite dev"}) || got[0].Panes["p2"].Start != nil {
+		t.Fatalf("the layout reads %+v", got)
+	}
+}
+
+// Start lines are written to the slots they are given for and to no
+// other, so two saves of one layout, each giving lines to another
+// terminal, both stand; a slot the second changes, whose lines the first
+// changed meanwhile, is refused as saved over.
+func TestStartLinesAreWrittenOnlyWhereChanged(t *testing.T) {
+	s, err := Load(at(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.SaveLayout(aLayout("Work"), false); err != nil {
+		t.Fatal(err)
+	}
+	was := s.Layouts()[0]
+	if err := s.PutStartLines(was, map[string][]string{"p1": {"one"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.PutStartLines(was, map[string][]string{"p3": {"two"}}); err != nil {
+		t.Fatal(err)
+	}
+	got := s.Layouts()[0]
+	if !slices.Equal(got.Panes["p1"].Start, []string{"one"}) || !slices.Equal(got.Panes["p3"].Start, []string{"two"}) {
+		t.Fatalf("after two saves, the panes hold %+v", got.Panes)
+	}
+	if err := s.PutStartLines(was, map[string][]string{"p1": {"three"}}); !errors.Is(err, ErrLayoutSavedOver) {
+		t.Fatalf("lines changed since were written over: %v", err)
+	}
+	if err := s.PutStartLines(was, map[string][]string{"p3": nil}); !errors.Is(err, ErrLayoutSavedOver) {
+		t.Fatalf("lines changed since were taken out: %v", err)
+	}
+	now := s.Layouts()[0]
+	if err := s.PutStartLines(now, map[string][]string{"p1": nil}); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Layouts()[0]; got.Panes["p1"].Start != nil || !slices.Equal(got.Panes["p3"].Start, []string{"two"}) {
+		t.Fatalf("taking p1's lines out left %+v", got.Panes)
+	}
+}
+
+// A layout changed in its splits alone, in a pane's recipe alone, or in
+// the start lines of a slot the lines are for alone, is saved over; one
+// whose words do not carry through the file exactly, as a folder named
+// in bytes that are not UTF-8, is the same layout read back.
+func TestStartLinesSeeALayoutSavedOver(t *testing.T) {
+	base := aLayout("Work")
+	base.ID = "work"
+	lines := map[string][]string{"p1": {"make"}}
+	for _, c := range []struct {
+		name   string
+		change func(*SavedLayout)
+		over   bool
+	}{
+		{"the tree", func(l *SavedLayout) { l.Root.Share = 0.5 }, true},
+		{"a tab in front", func(l *SavedLayout) { l.Root.Kids[1].Front = "p2" }, true},
+		{"a pane's folder", func(l *SavedLayout) { p := l.Panes["p3"]; p.Folder = "/tmp"; l.Panes["p3"] = p }, true},
+		{"a pane's kind", func(l *SavedLayout) { p := l.Panes["p2"]; p.Kind = LayoutTerminal; l.Panes["p2"] = p }, true},
+		{"the lines changed", func(l *SavedLayout) { p := l.Panes["p1"]; p.Start = []string{"other"}; l.Panes["p1"] = p }, true},
+		{"another slot's lines", func(l *SavedLayout) { p := l.Panes["p3"]; p.Start = []string{"other"}; l.Panes["p3"] = p }, false},
+		{"the name", func(l *SavedLayout) { l.Name = "Play" }, false},
+		{"where it stands", func(l *SavedLayout) { l.Place.X = 400 }, false},
+	} {
+		now := base.Clone()
+		c.change(&now)
+		if err := StartLinesFit(now, base, lines); errors.Is(err, ErrLayoutSavedOver) != c.over {
+			t.Errorf("with %s changed, the lines fit: %v", c.name, err)
+		}
+	}
+
+	s, err := Load(at(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	odd := aLayout("Odd")
+	p := odd.Panes["p1"]
+	p.Folder = "/srv/caf\xe9"
+	odd.Panes["p1"] = p
+	kept, _, err := s.SaveLayout(odd, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.PutStartLines(kept, lines); err != nil {
+		t.Fatalf("a folder in bytes that are not UTF-8 refused the lines: %v", err)
+	}
+}
+
+// A layout is given a new Rev each time it is saved, anew or over
+// another; a change of start lines, a rename, Open at start and putting
+// it back after Remove keep the one it has.
+func TestARevChangesOnlyWhenALayoutIsSavedWhole(t *testing.T) {
+	s, err := Load(at(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, _, err := s.SaveLayout(aLayout("Work"), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Rev == "" {
+		t.Fatal("a layout saved has no Rev")
+	}
+	over, _, err := s.SaveLayout(aLayout("Work"), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if over.Rev == "" || over.Rev == first.Rev {
+		t.Fatalf("saved over, Rev %q, was %q", over.Rev, first.Rev)
+	}
+	rev := func() string {
+		t.Helper()
+		return s.Layouts()[0].Rev
+	}
+	steps := []struct {
+		what string
+		do   func() error
+	}{
+		{"start lines", func() error { return s.PutStartLines(over, map[string][]string{"p1": {"ls"}}) }},
+		{"a rename", func() error { return s.RenameLayout(over.ID, "Office") }},
+		{"open at start", func() error { return s.PutLayoutAtStart(over.ID, true) }},
+		{"removed and put back", func() error {
+			l := s.Layouts()[0]
+			if err := s.DropLayout(l.ID); err != nil {
+				return err
+			}
+			_, err := s.PutLayoutBack(l, 0)
+			return err
+		}},
+	}
+	for _, step := range steps {
+		if err := step.do(); err != nil {
+			t.Fatalf("%s: %v", step.what, err)
+		}
+		if got := rev(); got != over.Rev {
+			t.Fatalf("after %s, Rev %q, want %q", step.what, got, over.Rev)
+		}
+	}
 }

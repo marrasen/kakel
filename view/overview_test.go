@@ -25,6 +25,8 @@ import (
 func overviewStage(t *testing.T) (*gunim.Window, *Overview, app.OverState) {
 	t.Helper()
 	w := gunimtest.New(t, geom.Sz(1600, 1000), nil)
+	// Painted each frame, for UI.Bounds; see windowStageOf.
+	w.PaintWhenLooked(false)
 	sh := screen.NewShells()
 	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
 	for _, id := range []string{"p1", "p2", "p3", "p4"} {
@@ -169,6 +171,8 @@ func lastTheme(*gunim.Window) *theme.Live { return overviewUI.Theme() }
 // Asked to close before it has shown, All Panes is done at once.
 func TestAllPanesAskedToCloseFirstIsDone(t *testing.T) {
 	w := gunimtest.New(t, geom.Sz(800, 600), nil)
+	// Painted each frame, for UI.Bounds; see windowStageOf.
+	w.PaintWhenLooked(false)
 	gunim.RegisterView(w, "overview", func(app.OverState) *Overview { return NewOverview(screen.NewShells(), Shortcuts()) },
 		func(o *Overview, st app.OverState, u *gunim.UI) { o.Update(st, u) })
 	c := w.Client()

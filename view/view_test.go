@@ -49,6 +49,10 @@ func windowStage(t *testing.T) (win *Window, sh *screen.Shells, publish func(app
 func windowStageOf(t *testing.T, size geom.Size) (win *Window, sh *screen.Shells, publish func(app.State)) {
 	t.Helper()
 	w := gunimtest.New(t, size, nil)
+	// Painted each frame, as gunimtest's windows were: these tests ask
+	// where a node stands with UI.Bounds, which a window that paints
+	// only when looked at answers from the frame it last painted.
+	w.PaintWhenLooked(false)
 	lastWindow = w
 	sh = screen.NewShells()
 	gunim.RegisterView(w, "window", func(app.State) *Window {

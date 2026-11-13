@@ -183,9 +183,9 @@ func wslRuns(args []string) []string {
 func Lines(r Route) []string {
 	switch r {
 	case Posix:
-		// The leading space keeps it out of the history of a shell set
+		// The leading space keeps them out of the history of a shell set
 		// to ignore lines that start with one.
-		return []string{" " + posixLine, "clear"}
+		return []string{" " + posixLine, " " + posixCommandLine, "clear"}
 	case PowerShell:
 		return []string{powerShellLine}
 	case Cmd:
@@ -196,17 +196,96 @@ func Lines(r Route) []string {
 	return nil
 }
 
-// posixLine tells bash and zsh to mark the directory and each command.
+// Prompts is how many prompts a shell taught as r shows, marked, while
+// it runs the lines: one after each line, as the first prompt comes
+// before the first line has taught it to mark one. The last of them is
+// the first prompt at which the shell is ready for what the user types.
+//
+// So the first line is the one that hooks the prompt, in every shell.
+func Prompts(r Route) int { return len(Lines(r)) }
+
+// OwnPrompt is the option Shell Setup puts on the OSC 133 A mark it
+// teaches a shell to send, so a prompt kakel's own lines mark is told
+// from one a shell's own prompt marks as well. Other terminals ignore
+// an option they do not know.
+const OwnPrompt = "kakel=1"
+
+// posixLine tells bash and zsh to mark the directory and each prompt, and
+// zsh each command. posixCommandLine, typed after it, tells bash to mark
+// each command. They are two lines so that each stays well under the
+// 1024 bytes a terminal on macOS or BSD takes in one line while the shell
+// is still starting.
 //
 // __gt_d runs before each prompt: it reports how the last command went,
-// says where the shell is, and marks the prompt. __gt_c runs before a
-// command and marks where its output starts. bash has no hook for that,
-// so the debug trap stands in, skipping the calls this makes itself and
-// firing once per command line.
-const posixLine = `__gt_d(){ local c=$?; __gt_r=; printf '\033]133;D;%s\a\033]7;file://%s%s\a\033]133;A\a' "$c" "${HOSTNAME:-${HOST:-localhost}}" "$PWD"; }; ` +
-	`__gt_c(){ case "$BASH_COMMAND" in __gt_*) return;; esac; [ -n "$__gt_r" ] || { __gt_r=1; printf '\033]133;C\a'; }; }; ` +
-	`if [ -n "$ZSH_VERSION" ]; then autoload -Uz add-zsh-hook; add-zsh-hook precmd __gt_d; add-zsh-hook preexec __gt_c; ` +
-	`else PROMPT_COMMAND="__gt_d${PROMPT_COMMAND:+;$PROMPT_COMMAND}"; trap __gt_c DEBUG; fi`
+// from $? or the status it is handed, says where the shell is, and marks
+// the prompt. __gt_c marks where a command's output starts, once until
+// the next prompt; __gt_r says it has. zsh has hooks for both. sh, dash
+// and ksh get the functions and nothing calls them, and only parse the
+// rest, so nothing in it is bash's own syntax outside eval.
+//
+// A bash where bash-preexec hooked the prompt, with __bp_precmd in
+// PROMPT_COMMAND, has hooks for both too, and they are used: bash-preexec
+// tells its own commands from the user's by the pieces of PROMPT_COMMAND,
+// and an entry of kakel's there would make it take the user's last
+// command for a new one at every empty prompt. bash-preexec loaded but
+// not hooked, as when a later line sets PROMPT_COMMAND afresh, calls no
+// hooks, so that bash gets kakel's own entry.
+//
+// That entry is __gt_p, first in PROMPT_COMMAND, which stays a string, or
+// an array when the user made it one, with the entry at the front of its
+// first element: a tool that checks whether it is in PROMPT_COMMAND
+// already still finds itself, and a child bash, which an exported
+// PROMPT_COMMAND reaches, still gets it. __gt_p hands back the status for
+// what follows, and $_ as it was. It is called through ${__gt_k-}, so a
+// child bash, which has none of these functions, runs $(exit $?) in its
+// place, which keeps the status for the user's part. A semicolon parts it
+// from the user's part, so a tool looking for ;its_hook; finds it, and
+// none follows it alone, so one that adds ;its_hook makes no ;;.
+//
+// __gt_h says the prompt is hooked, and how: 2 through bash-preexec, 1
+// through PROMPT_COMMAND. A prompt hooked already is left as it is, so the
+// lines typed twice mark each prompt once. __gt_h stays empty where
+// PROMPT_COMMAND is read only, and then nothing marks a command either, as
+// a command marked with no prompt after it would be taken to run for good.
+//
+// No command here leaves a failing status where set -e or an ERR trap
+// sees it: a status handed back is the first of an && list. __gt_v is
+// bash's version as major*100+minor, and a test sets it to try older ones.
+const posixLine = `__gt_d(){ local c=${1:-$?}; __gt_r=; printf '\033]133;D;%s\a\033]7;file://%s%s\a\033]133;A;` + OwnPrompt + `\a' "$c" "${HOSTNAME:-${HOST:-localhost}}" "$PWD"; }; ` +
+	`__gt_c(){ [ -n "${__gt_r-}" ] || { __gt_r=1; printf '\033]133;C\a'; }; }; ` +
+	`if [ -n "${ZSH_VERSION-}" ]; then autoload -Uz add-zsh-hook; add-zsh-hook precmd __gt_d; add-zsh-hook preexec __gt_c; ` +
+	`elif [ -n "${BASH_VERSION-}" ]; then __gt_v=${__gt_v:-$((BASH_VERSINFO[0]*100+BASH_VERSINFO[1]))}; __gt_h=; ` +
+	`case ${bash_preexec_imported:+y}${__bp_imported:+y}:${__gt_k-}${PROMPT_COMMAND-} in *:__gt_p*__gt_k*) __gt_h=1;; ` +
+	`y*:*__bp_precmd*) eval '[[ ${precmd_functions[*]-} = *__gt_d* ]] || precmd_functions+=(__gt_d)'; __gt_h=2;; ` +
+	`*) __gt_p(){ local c=$?; __gt_d "$c"; __gt_r=1; return $c; }; __gt_k=__gt_p; ` +
+	`PROMPT_COMMAND='${__gt_k-$(exit $?)} ${__gt_k+"$_"} && : __gt_ "$_"'"${PROMPT_COMMAND:+;$PROMPT_COMMAND}" && __gt_h=1;; esac; fi`
+
+// posixCommandLine tells bash to mark each command, once posixLine has
+// hooked its prompt.
+//
+// bash 4.4 and later print PS0 before each command they read from the
+// prompt, and never at an empty one, so the C mark goes at the front of
+// it, as the bytes themselves: they mean the same whether promptvars is
+// on or off. A block of lines pasted at once, or an alias holding more
+// than one line, is read as one line and gets one PROMPT_COMMAND after
+// it, so each of its commands is marked C and one D ends them all. A PS0
+// that marks C already is left as it is.
+//
+// There is no hook before a command in older bash, and the debug trap
+// stands in: it fires for every command bash runs, those in
+// PROMPT_COMMAND too, so __gt_p sets __gt_r as the prompt's commands
+// start and the last one clears it. The trap that was there before runs
+// after __gt_c, with $_ as it was, and neither runs for kakel's own
+// commands or, with extdebug, for those inside kakel's functions. The
+// trap is one call, to __gt_t, so a tool that keeps a trap it finds by
+// running its first word, or all of it, keeps this one. A trap that is
+// kakel's already is left as it is. With bash-preexec, its preexec hook
+// stands in.
+const posixCommandLine = `if [ -n "${__gt_h-}" ]; then if [ "$__gt_v" -ge 404 ]; then case ${PS0-} in *'133;C'*) ;; *) PS0=$'\033]133;C\a'${PS0-};; esac; ` +
+	`elif [ "$__gt_h" = 2 ]; then eval 'preexec_functions+=(__gt_c)'; ` +
+	`else __gt_x=$(trap -p DEBUG); __gt_x=${__gt_x#trap -- }; eval "__gt_x=${__gt_x% DEBUG}"; case $__gt_x in *__gt_*) ;; *) __gt_o=$__gt_x; ` +
+	`__gt_t(){ case $BASH_COMMAND${FUNCNAME[1]-} in *__gt_*) return 0;; esac; __gt_c; : "$1"; eval "$__gt_o"; }; trap '__gt_t "$_"' DEBUG; ` +
+	`PROMPT_COMMAND="$PROMPT_COMMAND"$'\n''__gt_r=';; esac; fi; fi`
 
 // powerShellLine wraps the prompt that is already there rather than
 // replacing it, so a profile that sets one keeps it.
@@ -218,7 +297,7 @@ const powerShellLine = `$global:GtPrompt=$function:prompt; ` +
 	`function global:prompt { $ok=$?; $e=[char]27; $b=[char]7; $c=0; ` +
 	`if(-not $ok){ if($global:LASTEXITCODE){$c=$global:LASTEXITCODE}else{$c=1} }; ` +
 	`$h=(Get-Location).Path; ` +
-	`Write-Host -NoNewline "$e]133;D;$c$b$e]7;file://localhost/$([uri]::EscapeUriString(($h -replace '\\','/')))$b$e]133;A$b"; ` +
+	`Write-Host -NoNewline "$e]133;D;$c$b$e]7;file://localhost/$([uri]::EscapeUriString(($h -replace '\\','/')))$b$e]133;A;` + OwnPrompt + `$b"; ` +
 	`$t=if($global:GtPrompt){& $global:GtPrompt}else{"PS $h> "}; "$t$e]133;B$b" }; ` +
 	`if($function:PSConsoleHostReadLine){ $global:GtRead=$function:PSConsoleHostReadLine; ` +
 	`function global:PSConsoleHostReadLine { $l=& $global:GtRead; Write-Host -NoNewline "$([char]27)]133;C$([char]7)"; $l } }; ` +
