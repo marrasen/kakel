@@ -67,6 +67,15 @@ var (
 	startTabSize  = theme.Length("kakel.startlines.tab", 12)
 )
 
+// startRingRoom is the room kept round the map and under it for gunim's
+// focus ring, which stands 3 pixels out from the box it rings and is 2
+// wide, so it shows whole on a box at the map's edge.
+const startRingRoom = 4
+
+// startBareEditor is the editor's own fill taken off: the well it sits
+// in is drawn under the pages, and stays as they turn.
+var startBareEditor = theme.Make("kakel.startlines.editor", theme.Set(widget.CodeEditorFill, color.NRGBA{}))
+
 // startPick is the motion of a pane being picked on the map: the mark
 // gliding to it, its tab coming to the front of its box, and its name
 // lit. The page under the map turns in two halves on widget.PageTurn,
@@ -121,11 +130,18 @@ type startLines struct {
 	ed    *widget.CodeEditor
 	// noteAt is where the note stands, as last laid out.
 	noteAt geom.Rect
+	// well is where the well under the page's lines stands, and code how
+	// far it is the editor's, filled as a terminal on the map, rather
+	// than the quiet well of a pane that takes no lines. It stays where
+	// it is as the pages turn over it, its colour fading between the two.
+	well *anim.Rect
+	code *anim.Float
+	laid bool
 }
 
 func newStartLines(w *Window, l settings.SavedLayout, u *gunim.UI) *startLines {
-	s := &startLines{w: w, l: l, texts: map[string]string{}, noteOn: anim.NewFloat(0)}
-	s.Add(s.noteOn)
+	s := &startLines{w: w, l: l, texts: map[string]string{}, noteOn: anim.NewFloat(0), well: anim.NewRect(geom.Rect{}), code: anim.NewFloat(0)}
+	s.Add(s.noteOn, s.well, s.code)
 	faces := map[string]*paneFace{}
 	eachItem(l.Root, func(slot string) {
 		if _, ok := faces[slot]; ok {
@@ -162,6 +178,7 @@ func newStartLines(w *Window, l settings.SavedLayout, u *gunim.UI) *startLines {
 	// the old one leaves before the new one comes, never read over it.
 	s.pages.InTurn = true
 	s.noteOn.Jump(anim.OnOff(s.ed != nil))
+	s.code.Jump(anim.OnOff(s.ed != nil))
 	s.note = widget.NewLabel("kakel types these lines as the layout opens, one at each prompt. " +
 		"Put a line that keeps running, such as a dev server, last. The lines are saved as plain text, so keep passwords out.")
 	s.note.Size = smallText
@@ -283,23 +300,25 @@ func (s *startLines) where(p settings.SavedPane) string {
 	return b.String()
 }
 
-// why is the sentence a page says in place of an editor, for a pane that
-// takes no lines: the pane in slot, or with none, the layout.
+// why is what a page says in place of an editor, for a pane that has no
+// start lines: the pane in slot, or with none, the layout. The first
+// sentence says what start lines are for, the second what the pane is.
 func (s *startLines) why(slot string) string {
 	p, known := s.l.Panes[slot]
+	const forTerminals = "Start lines are for terminals. "
 	switch {
 	case slot == "":
 		return "This layout has no panes."
 	case !known:
-		return "kakel can't open this pane, so it takes no start lines."
+		return forTerminals + "This slot has no pane."
 	case p.Kind == settings.LayoutTerminal && p.Window:
-		return "This terminal opens through another kakel window, so it takes no start lines yet."
+		return "Start lines are for terminals kakel starts. This one opens through another kakel window."
 	case p.Kind == settings.LayoutCommand:
-		return "This pane runs a command, so it takes no start lines."
+		return forTerminals + "This pane runs a command."
 	case p.Kind == settings.LayoutFiles:
-		return "This pane shows files, so it takes no start lines."
+		return forTerminals + "This pane shows files."
 	}
-	return "kakel can't open this kind of pane, so it takes no start lines."
+	return forTerminals + "This kakel can't open this kind of pane."
 }
 
 // page is the part under the map for the pane in slot: its name and
@@ -310,12 +329,14 @@ func (s *startLines) page(slot string, u *gunim.UI) gunim.Node {
 	f := s.m.faces[slot]
 	pg := &startPage{}
 	if f != nil {
-		pg.name = widget.NewLabel(f.name)
-		pg.name.Size, pg.name.Face, pg.name.MaxLines = smallText, widget.BoldFont, 1
+		pg.name = f.name
 		if p, ok := s.l.Panes[slot]; ok {
-			if where := s.where(p); where != "" {
-				pg.where = widget.NewLabel("· " + where)
-				pg.where.Size, pg.where.MaxLines = smallText, 1
+			pg.where = s.where(p)
+			// "Bash on this computer": a pane named for its shell, in
+			// any case, is said once, the rest following on from its
+			// name.
+			if n := len(f.name); n > 0 && len(pg.where) > n && pg.where[n] == ' ' && strings.EqualFold(pg.where[:n], f.name) {
+				pg.where, pg.follows = pg.where[n+1:], true
 			}
 		}
 	}
@@ -336,7 +357,7 @@ func (s *startLines) page(slot string, u *gunim.UI) gunim.Node {
 		s.m.SetLines(slot, settings.StartLines([]string{t}), u)
 		return nil
 	}
-	pg.body, s.ed = ed, ed
+	pg.body, s.ed = widget.NewThemed(ed, startBareEditor), ed
 	return pg
 }
 
@@ -350,7 +371,7 @@ func startEditor(label string, kind shellsetup.Route) *widget.CodeEditor {
 	ed.TabMovesOn, ed.Numbers = true, false
 	ed.Label = label
 	// A command every shell runs, so no shell is shown another's.
-	ed.Placeholder = "such as npm run dev, one a line"
+	ed.Placeholder = "npm run dev"
 	ed.Highlight = pasteColours(kind, false)
 	return ed
 }
@@ -365,7 +386,12 @@ func startSlips(t string, kind shellsetup.Route, shell string) []widget.CodeMark
 		msg := slip.Message
 		if slip.Only != "" {
 			msg = slip.Only + " command."
-			if shell != "" {
+			switch shell {
+			case "":
+			case "Login Shell":
+				// Named as a sentence names it.
+				msg += " This terminal starts the login shell."
+			default:
 				msg += " This terminal starts " + shell + "."
 			}
 		}
@@ -382,8 +408,11 @@ func (s *startLines) show(slot string, from geom.Point, u *gunim.UI) {
 	}
 	s.shown = slot
 	s.pages.Show(s.page(slot, u), from, u)
-	if on := anim.OnOff(s.ed != nil); s.noteOn.Target() != on {
-		s.noteOn.Animate(on, startPick.Get(u.Theme()))
+	on := anim.OnOff(s.ed != nil)
+	for _, v := range []*anim.Float{s.noteOn, s.code} {
+		if v.Target() != on {
+			v.Animate(on, startPick.Get(u.Theme()))
+		}
 	}
 }
 
@@ -433,37 +462,64 @@ func (s *startLines) Children() []gunim.Node { return []gunim.Node{s.m, s.pages,
 // Layout implements [gunim.Node]: the map across the top, the dialog's
 // width and as tall as keeps the window's proportions within its limits,
 // then the page, of a height that stays as panes are picked, then the
-// line on how the lines are typed.
+// line on how the lines are typed. The map keeps room round its boxes
+// for the focus ring, and the page and the line stand in from the
+// dialog's sides as far, in line with the boxes.
 func (s *startLines) Layout(c gunim.Constraints, f gunim.Frame, kids gunim.Children) geom.Size {
 	const gap = 14
 	th := f.Theme
-	w := c.Max.W
+	room := float32(startRingRoom)
+	w := max(c.Max.W-2*room, 0)
 	m, pages, note := kids.At(0), kids.At(1), kids.At(2)
 	ns := note.Layout(gunim.Constraints{Max: geom.Sz(w, 0)})
 	short, ph := startMapShort.Get(th), startPageHeight.Get(th)
 	tall := min(max(w/s.m.aspect, short), startMapTall.Get(th))
-	if room := s.w.size.H - startLinesChrome - ns.H - 2*gap; room > 0 && tall+ph > room {
+	if left := s.w.size.H - startLinesChrome - ns.H - 2*gap - 2*room; left > 0 && tall+ph > left {
 		// In a short window the map gives up its room first, then the
 		// page, so the dialog scrolls only where there is no room for
 		// either.
-		tall = max(room-ph, short)
-		ph = max(room-tall, startPageShort.Get(th))
+		tall = max(left-ph, short)
+		ph = max(left-tall, startPageShort.Get(th))
 	}
-	m.Layout(gunim.Tight(geom.Sz(w, tall)))
+	m.Layout(gunim.Tight(geom.Sz(c.Max.W, tall+2*room)))
 	m.Place(geom.Point{})
-	y := tall + gap
+	// The page under the boxes, which stand room in from the map's edge.
+	y := tall + room + gap
 	pages.Layout(gunim.Tight(geom.Sz(w, ph)))
-	pages.Place(geom.Pt(0, y))
+	pages.Place(geom.Pt(room, y))
+	// The well stands under the body of the page shown, whichever page
+	// is drawn over it as they turn.
+	well := geom.Rc(room, y, w, ph)
+	if pg, ok := s.pages.Page().(*startPage); ok {
+		well = geom.Rc(room, y+pg.bodyY, w, max(ph-pg.bodyY, 0))
+	}
+	if !s.laid {
+		s.well.Jump(well)
+	} else if s.well.Target() != well {
+		s.well.Animate(well, startPick.Get(th))
+	}
+	s.laid = true
 	y += ph + gap
-	note.Place(geom.Pt(0, y))
-	s.noteAt = geom.Rc(0, y, w, ns.H)
-	return geom.Sz(w, y+ns.H)
+	note.Place(geom.Pt(room, y))
+	s.noteAt = geom.Rc(room, y, w, ns.H)
+	return geom.Sz(c.Max.W, y+ns.H)
 }
 
-// Paint implements [gunim.Node]: the note fading as a pane that takes no
-// lines is picked.
-func (s *startLines) Paint(p *paint.Painter, _ gunim.Frame, _ geom.Size, kids gunim.Children) {
+// Paint implements [gunim.Node]: the map, the well under the pages, the
+// pages, and the note fading as a pane that takes no lines is picked.
+// The well is the editor's while a terminal is picked, and as quiet as a
+// quiet box on the map otherwise, so a box and its page match.
+func (s *startLines) Paint(p *paint.Painter, f gunim.Frame, _ geom.Size, kids gunim.Children) {
+	th := f.Theme
 	kids.At(0).Paint(p)
+	code := min(max(s.code.Value(), 0), 1)
+	r, radius := s.well.Value(), widget.CodeRadius.Get(th)
+	if r.Size().W > 0 && r.Size().H > 0 {
+		p.RRect(r, radius, paint.Solid(mix(widget.CardFill.Get(th), widget.CodeEditorFill.Get(th), code)))
+		if quiet := 1 - code; quiet > 0.01 {
+			p.RRectStroke(r.Inset(geom.Uniform(0.5)), radius, paint.Fill{}, paint.Stroke{Width: 1, Color: fade(widget.FieldBorder.Get(th), quiet)})
+		}
+	}
 	kids.At(1).Paint(p)
 	if on := min(max(s.noteOn.Value(), 0), 1); on > 0.01 {
 		end := p.Layer(paint.LayerOpts{Bounds: s.noteAt, Opacity: on})
@@ -473,57 +529,125 @@ func (s *startLines) Paint(p *paint.Painter, _ gunim.Frame, _ geom.Size, kids gu
 }
 
 // startPage is a pane's page: its name and where it starts along the
-// top, and under them its lines, or why it takes none.
+// top, and under them its lines, or why it has none. Where the two do not
+// fit on one line, where it starts goes on a second; words still too
+// long fade out where they are cut, and say themselves whole in a
+// tooltip.
 type startPage struct {
-	name, where *widget.Label
+	// name is the pane's name, and where where it starts; follows says
+	// where reads on from the name, as "Bash" "on this computer".
+	name, where string
+	follows     bool
 	body        gunim.Node
+	// bodyY is how far down the body stands, as last laid out, under
+	// one line of words or two.
+	bodyY float32
+	// nameAt and whereAt are where the words stand, as last laid out.
+	nameAt, whereAt geom.Rect
+	cuts            []mapCut
+	tip             widget.PartTip
+}
+
+// runs are the page's words shaped: its name, bold, and where it
+// starts.
+func (p *startPage) runs(th *theme.Live) (name, where text.Run) {
+	size := smallText.Get(th)
+	return text.GoSans(true, false).Shape(p.name, size), text.Default().Shape(p.where, size)
 }
 
 // Children implements [gunim.Composite].
-func (p *startPage) Children() []gunim.Node {
-	var out []gunim.Node
-	for _, l := range []*widget.Label{p.name, p.where} {
-		if l != nil {
-			out = append(out, l)
-		}
-	}
-	return append(out, p.body)
-}
+func (p *startPage) Children() []gunim.Node { return []gunim.Node{p.body} }
 
-// Layout implements [gunim.Node]: the name and where along the top, the
-// body in the room left under them.
-func (p *startPage) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children) geom.Size {
-	const gap, apart = 8, 5
+// Layout implements [gunim.Node]: the name and where along the top, on
+// one line or two, the body in the room left under them.
+func (p *startPage) Layout(c gunim.Constraints, f gunim.Frame, kids gunim.Children) geom.Size {
+	const gap, apart = 8, 10
 	w := c.Max.W
 	y := float32(0)
-	if n := kids.Len() - 1; n > 0 {
-		name := kids.At(0)
-		ns := name.Layout(gunim.Constraints{Max: geom.Sz(w, 0)})
-		name.Place(geom.Point{})
-		y = ns.H
-		if n > 1 {
-			where := kids.At(1)
-			ws := where.Layout(gunim.Constraints{Max: geom.Sz(max(w-ns.W-apart, 0), 0)})
-			where.Place(geom.Pt(ns.W+apart, 0))
-			y = max(y, ws.H)
+	p.nameAt, p.whereAt = geom.Rect{}, geom.Rect{}
+	if p.name != "" {
+		name, where := p.runs(f.Theme)
+		h := max(name.Height(), where.Height())
+		p.nameAt = geom.Rc(0, 0, min(name.Advance, w), h)
+		y = h
+		if p.where != "" {
+			space := float32(apart)
+			if p.follows {
+				space = text.Default().Shape(" ", smallText.Get(f.Theme)).Advance
+			}
+			if x := name.Advance + space; x+where.Advance <= w {
+				p.whereAt = geom.Rc(x, 0, where.Advance, h)
+			} else {
+				p.whereAt = geom.Rc(0, h+2, min(where.Advance, w), h)
+				y = 2*h + 2
+			}
 		}
 		y += gap
 	}
-	body := kids.At(kids.Len() - 1)
+	p.bodyY = y
+	body := kids.At(0)
 	body.Layout(gunim.Tight(geom.Sz(w, max(c.Max.H-y, 0))))
 	body.Place(geom.Pt(0, y))
 	return c.Max
 }
 
-// Paint implements [gunim.Node].
-func (p *startPage) Paint(pt *paint.Painter, _ gunim.Frame, _ geom.Size, kids gunim.Children) {
-	for k := range kids.All {
-		k.Paint(pt)
+// Paint implements [gunim.Node]: the name in the text's colour and where
+// quieter, each faded out where it is cut.
+func (p *startPage) Paint(pt *paint.Painter, f gunim.Frame, box geom.Size, kids gunim.Children) {
+	th := f.Theme
+	p.cuts = p.cuts[:0]
+	if p.name != "" {
+		name, where := p.runs(th)
+		fadeAt := widget.TextFade.Get(th)
+		draw := func(run text.Run, at geom.Rect, c color.NRGBA, words string) {
+			room := max(box.W-at.Min.X, 0)
+			run.PaintFaded(pt, at.Min, c, room, fadeAt)
+			if run.Advance > room {
+				p.cuts = append(p.cuts, mapCut{r: geom.Rc(at.Min.X, at.Min.Y, room, at.Size().H), words: words})
+			}
+		}
+		draw(name, p.nameAt, widget.Ink.Get(th), p.name)
+		if p.where != "" {
+			draw(where, p.whereAt, look.Faint.Get(th), p.where)
+		}
 	}
+	kids.At(0).Paint(pt)
 }
 
-// startWell is a sentence in the middle of a well the editor's size,
-// where a pane that takes no lines would have its editor.
+// Handle implements [gunim.Handler]: words cut short say themselves
+// whole in a tooltip.
+func (p *startPage) Handle(e gi.Event, u *gunim.UI) bool {
+	switch e := e.(type) {
+	case gi.PointerMove:
+		words := ""
+		for _, c := range p.cuts {
+			if c.r.Contains(e.Pos) {
+				words = c.words
+			}
+		}
+		p.tip.Handle(e, u, p, words)
+	case gi.PointerLeave:
+		p.tip.Handle(e, u, p, "")
+	}
+	return false
+}
+
+// Access implements [gunim.Accessible]: the page's words, as one line.
+func (p *startPage) Access() access.Info {
+	said := p.name
+	if p.where != "" {
+		sep := ", "
+		if p.follows {
+			sep = " "
+		}
+		said += sep + p.where
+	}
+	return access.Info{Role: access.RoleLabel, Name: said}
+}
+
+// startWell is a sentence in the middle of the well a pane that has no
+// lines shows where a terminal has its editor. The well itself is drawn
+// under the pages.
 type startWell struct{ says *widget.Label }
 
 func newStartWell(s string) *startWell {
@@ -546,12 +670,7 @@ func (s *startWell) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Childr
 }
 
 // Paint implements [gunim.Node].
-func (s *startWell) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gunim.Children) {
-	th := f.Theme
-	r := geom.Rect{Max: box.Point()}
-	radius := widget.FieldRadius.Get(th)
-	p.RRect(r, radius, paint.Solid(widget.FieldFill.Get(th)))
-	p.RRectStroke(r.Inset(geom.Uniform(0.5)), radius, paint.Fill{}, paint.Stroke{Width: 1, Color: widget.FieldBorder.Get(th)})
+func (s *startWell) Paint(p *paint.Painter, _ gunim.Frame, _ geom.Size, kids gunim.Children) {
 	kids.At(0).Paint(p)
 }
 
@@ -812,10 +931,12 @@ type paneMap struct {
 	shows map[string]string
 	// mark is where the picked box's mark stands, and ring the focus
 	// ring; tabOn is how far each box of tabs shows the mark on its tab
-	// picked, by its key.
+	// picked, and icons how far its tabs behind show their icons rather
+	// than dots, by its key.
 	mark  *anim.Rect
 	ring  *anim.Float
 	tabOn map[string]*anim.Float
+	icons map[string]*anim.Float
 	laid  bool
 	hover string
 	click widget.Clicker
@@ -833,7 +954,7 @@ type mapCut struct {
 
 func newPaneMap(root *settings.LayoutNode, faces map[string]*paneFace, aspect float32) *paneMap {
 	m := &paneMap{root: root, faces: faces, aspect: aspect, shows: map[string]string{},
-		mark: anim.NewRect(geom.Rect{}), ring: anim.NewFloat(0), tabOn: map[string]*anim.Float{}}
+		mark: anim.NewRect(geom.Rect{}), ring: anim.NewFloat(0), tabOn: map[string]*anim.Float{}, icons: map[string]*anim.Float{}}
 	m.Add(m.mark, m.ring)
 	var walk func(n *settings.LayoutNode)
 	walk = func(n *settings.LayoutNode) {
@@ -853,9 +974,9 @@ func newPaneMap(root *settings.LayoutNode, faces map[string]*paneFace, aspect fl
 		if n.Kind == "group" {
 			key := groupKey(n)
 			m.shows[key] = n.Front
-			on := anim.NewFloat(0)
-			m.tabOn[key] = on
-			m.Add(on)
+			on, icons := anim.NewFloat(0), anim.NewFloat(1)
+			m.tabOn[key], m.icons[key] = on, icons
+			m.Add(on, icons)
 		}
 	}
 	walk(root)
@@ -1254,8 +1375,8 @@ func (f *paneFace) said() string {
 }
 
 // Layout implements [gunim.Node]: the window's tree across the room
-// given, each split by its share, and the marks sent gliding to the pane
-// picked.
+// given, less startRingRoom round it for the focus ring, each split by
+// its share, and the marks sent gliding to the pane picked.
 func (m *paneMap) Layout(c gunim.Constraints, f gunim.Frame, _ gunim.Children) geom.Size {
 	th := f.Theme
 	size := c.Max
@@ -1317,7 +1438,7 @@ func (m *paneMap) Layout(c gunim.Constraints, f gunim.Frame, _ gunim.Children) g
 			at += part + gap
 		}
 	}
-	walk(m.root, geom.Rect{Max: size.Point()})
+	walk(m.root, geom.Rect{Max: size.Point()}.Inset(geom.Uniform(startRingRoom)))
 	glide := startPick.Get(th)
 	ease := func(v *anim.Float, want float32, spring anim.Spring) {
 		if !m.laid {
@@ -1337,7 +1458,7 @@ func (m *paneMap) Layout(c gunim.Constraints, f gunim.Frame, _ gunim.Children) g
 			ease(m.faces[slot].on, anim.OnOff(slot == m.picked), glide)
 		}
 		if b.tabbed() {
-			m.layTabs(b, th)
+			m.layTabs(b, th, ease)
 		}
 		for _, slot := range b.slots {
 			m.layFace(b.body, m.faces[slot], th)
@@ -1365,9 +1486,9 @@ func (m *paneMap) Layout(c gunim.Constraints, f gunim.Frame, _ gunim.Children) g
 }
 
 // The parts of a tab: the room at its sides, its icon's size, and the
-// room between its icon and its name; and the least room a tab is given,
-// where it is drawn as a dot.
-const tabPad, tabIcon, tabIconGap, tabDot = 6, 12, 5, 6
+// room between its icon and its name; the least room a tab behind is
+// given to show its icon; and the room a dot is given.
+const tabPad, tabIcon, tabIconGap, tabIconLeast, tabDot = 6, 12, 5, 16, 6
 
 // tabNeed is how wide a tab is with name whole beside its icon, in
 // whole pixels, so a tab given it has room for every letter.
@@ -1376,14 +1497,21 @@ func tabNeed(th *theme.Live, name string) float32 {
 	return float32(math.Ceil(float64(2*tabPad + tabIcon + tabIconGap + run.Advance + 0.5)))
 }
 
-// layTabs lays out the tabs of box b along its top. The tab shown takes
-// the room its name needs, as far as leaves the rest room for their
-// icons. The rest are each as wide as their names, the shortest first,
-// as far as the room left holds, and the others narrowed to their
-// icons: never between, where a name would show cut. As another tab
-// comes to the front, the two change widths together, and only then is a
-// name seen cut, fading as its tab narrows.
-func (m *paneMap) layTabs(b *mapBox, th *theme.Live) {
+// layTabs lays out the tabs of box b along its top, easing its springs
+// with ease. A box shows its tabs behind as icons where the tab in front
+// has room for its own and each behind for its icon, and as dots where
+// not, and turns from one to the other over time, so a tab at rest is
+// one or the other.
+//
+// With icons, the tab in front takes the room its name needs, as far as
+// leaves the rest room for their icons. The rest are each as wide as
+// their names, the shortest first, as far as the room left holds, and
+// the others narrowed to their icons: never between, where a name would
+// show cut. With dots, the tab in front keeps at least its icon's room,
+// and the dots behind give theirs up first. As another tab comes to the
+// front, the two change widths together, and only then is a name seen
+// cut, fading as its tab narrows.
+func (m *paneMap) layTabs(b *mapBox, th *theme.Live, ease func(v *anim.Float, want float32, spring anim.Spring)) {
 	const inset, gap = 4, 2
 	n := len(b.slots)
 	avail := max(b.r.Size().W-2*inset-gap*float32(n-1), 0)
@@ -1393,28 +1521,29 @@ func (m *paneMap) layTabs(b *mapBox, th *theme.Live) {
 		need[i] = tabNeed(th, m.faces[slot].name)
 	}
 	least := startTabLeast.Get(th)
-	widthsIf := func(j int) []float32 {
+	icons := m.icons[b.key]
+	ease(icons, anim.OnOff(avail >= iconOnly+float32(n-1)*tabIconLeast), startPick.Get(th))
+	withIcons := func(j int) []float32 {
 		out := make([]float32, n)
 		// As wide as its name, or where the rest would have no room for
 		// their icons, as wide as shows some of it; and never so wide as
-		// squeezes the rest past their icons. In a box too narrow for
-		// every icon, it keeps its own, and the rest are dots.
+		// squeezes the rest past their icons.
 		w := min(need[j], max(avail-float32(n-1)*iconOnly, min(need[j], least)))
-		w = max(min(w, avail-float32(n-1)*(tabIcon+4)), min(iconOnly, avail-float32(n-1)*tabDot), 0)
-		rest := avail - w
-		icons := min(iconOnly, rest/float32(n-1))
+		w = max(min(w, avail-float32(n-1)*tabIconLeast), min(iconOnly, avail))
+		rest := max(avail-w, 0)
+		each := min(iconOnly, rest/float32(n-1))
 		var others []int
 		for i := range out {
 			if i != j {
-				out[i] = icons
+				out[i] = each
 				others = append(others, i)
 			}
 		}
 		out[j] = w
-		left := rest - icons*float32(n-1)
+		left := rest - each*float32(n-1)
 		slices.SortStableFunc(others, func(x, y int) int { return cmp.Compare(need[x], need[y]) })
 		for _, i := range others {
-			more := need[i] - icons
+			more := need[i] - each
 			if more > left {
 				break
 			}
@@ -1422,6 +1551,24 @@ func (m *paneMap) layTabs(b *mapBox, th *theme.Live) {
 			left -= more
 		}
 		return out
+	}
+	withDots := func(j int) []float32 {
+		out := make([]float32, n)
+		w := min(need[j], least, max(avail-float32(n-1)*tabDot, iconOnly), avail)
+		each := max(avail-w, 0) / float32(n-1)
+		for i := range out {
+			out[i] = each
+		}
+		out[j] = w
+		return out
+	}
+	t := min(max(icons.Value(), 0), 1)
+	widthsIf := func(j int) []float32 {
+		a, d := withIcons(j), withDots(j)
+		for i := range a {
+			a[i] = d[i] + (a[i]-d[i])*t
+		}
+		return a
 	}
 	widths := make([]float32, n)
 	total := float32(0)
@@ -1513,38 +1660,36 @@ func monoFace(th *theme.Live) *text.Face {
 
 // Paint implements [gunim.Node]: each box, a terminal that takes lines
 // filled as the editor is and a pane that takes none quieter, the marks
-// of the pane picked over them, and the focus ring round the mark.
+// of the pane picked over them, and the focus ring round the mark. The
+// pointer over a box brightens its border toward the mark's colour, and
+// tints a tab under it, leaving the box's own fill as it is.
 func (m *paneMap) Paint(p *paint.Painter, f gunim.Frame, _ geom.Size, _ gunim.Children) {
 	th := f.Theme
 	radius := startMapRadius.Get(th)
 	m.cuts = m.cuts[:0]
 	mark := m.mark.Value()
 	field, quiet := widget.FieldFill.Get(th), widget.CardFill.Get(th)
+	accent, ink, border := widget.Accent.Get(th), widget.Ink.Get(th), widget.FieldBorder.Get(th)
 	for i := range m.boxes {
 		b := &m.boxes[i]
+		lit := float32(0)
+		for _, slot := range b.slots {
+			lit = max(lit, min(max(m.faces[slot].hover.Value(), 0), 1))
+		}
 		p.RRect(b.r, radius, paint.Solid(mix(quiet, field, m.editableShown(b))))
-		p.RRectStroke(b.r.Inset(geom.Uniform(0.5)), radius, paint.Fill{}, paint.Stroke{Width: 1, Color: widget.FieldBorder.Get(th)})
+		p.RRectStroke(b.r.Inset(geom.Uniform(0.5)), radius, paint.Fill{}, paint.Stroke{Width: 1, Color: mix(border, accent, 0.6*lit)})
+		if !b.tabbed() {
+			continue
+		}
 		for j, slot := range b.slots {
 			if h := m.faces[slot].hover.Value(); h > 0.01 {
-				lit := b.r
-				if b.tabbed() {
-					lit = b.tabs[j]
-				}
-				p.RRect(lit, radius, paint.Solid(fade(look.RowHover.Get(th), h)))
+				p.RRect(b.tabs[j], radius-2, paint.Solid(fade(accent, 0.16*h)))
 			}
 		}
 	}
 	// The mark's fill, under the words.
-	p.RRect(mark, radius, paint.Solid(look.RowActive.Get(th)))
-	for i := range m.boxes {
-		b := &m.boxes[i]
-		if !b.tabbed() {
-			continue
-		}
-		if on := min(max(m.tabOn[b.key].Value(), 0), 1); on > 0.01 {
-			p.RRect(m.tabMark(b), radius-2, paint.Solid(fade(widget.Accent.Get(th), 0.4*on)))
-		}
-	}
+	markFill := look.RowActive.Get(th)
+	p.RRect(mark, radius, paint.Solid(markFill))
 	for i := range m.boxes {
 		b := &m.boxes[i]
 		end := m.clip(p, b.r, radius)
@@ -1553,9 +1698,30 @@ func (m *paneMap) Paint(p *paint.Painter, f gunim.Frame, _ geom.Size, _ gunim.Ch
 			picked = max(picked, min(max(m.faces[slot].on.Value(), 0), 1))
 		}
 		fill := mix(quiet, field, m.editableShown(b))
-		for j, slot := range b.slots {
-			if b.tabbed() {
-				m.paintTab(p, th, b.tabs[j], m.faces[slot], picked, fill)
+		// What the words stand on: the box's fill, under the mark as far
+		// as the box is picked.
+		under := mix(fill, over(fill, markFill), picked)
+		if b.tabbed() {
+			on := min(max(m.tabOn[b.key].Value(), 0), 1)
+			dots := 1 - min(max(m.icons[b.key].Value(), 0), 1)
+			// The tab in front of a box of dots wears a pill of its own,
+			// so the one dot in colour reads as lines held, not as the
+			// tab in front.
+			if front := dots * (1 - on); front > 0.01 {
+				p.RRect(m.tabMark(b), radius-2, paint.Solid(fade(ink, 0.14*front)))
+			}
+			// The tab picked wears the accent, as strong as leaves its
+			// name readable on it.
+			pill := tabPill(over(fill, markFill), accent, ink)
+			if on > 0.01 {
+				p.RRect(m.tabMark(b), radius-2, paint.Solid(fade(pill, on)))
+				p.RRectStroke(m.tabMark(b).Inset(geom.Uniform(0.5)), radius-2, paint.Fill{}, paint.Stroke{Width: 1, Color: fade(accent, 0.7*on)})
+			}
+			for j, slot := range b.slots {
+				fc := m.faces[slot]
+				front := min(max(fc.front.Value(), 0), 1)
+				surface := mix(under, pill, on*front)
+				m.paintTab(p, th, b.tabs[j], fc, picked, 1-dots, surface)
 			}
 		}
 		for _, slot := range b.slots {
@@ -1563,14 +1729,56 @@ func (m *paneMap) Paint(p *paint.Painter, f gunim.Frame, _ geom.Size, _ gunim.Ch
 			// and the one coming in in the second, so their words never
 			// stand on each other.
 			if t := min(max(2*m.faces[slot].front.Value()-1, 0), 1); t > 0.01 {
-				m.paintFace(p, th, b.body, m.faces[slot], t, picked, fill)
+				m.paintFace(p, th, b.body, m.faces[slot], t, picked, under)
 			}
 		}
 		end()
 	}
-	accent := widget.Accent.Get(th)
 	p.RRectStroke(mark.Inset(geom.Uniform(0.75)), radius, paint.Fill{}, paint.Stroke{Width: 1.5, Color: accent})
 	widget.FocusRing(p, mark, radius, m.ring.Value(), th)
+}
+
+// tabPill is the colour of the pill on the tab picked, on a box of
+// colour under: the accent laid over it as strongly as leaves words in
+// ink at 5:1 or better on it, past the 4.5:1 text needs so a letter's
+// soft edge still reads, and no stronger than four tenths.
+func tabPill(under, accent, ink color.NRGBA) color.NRGBA {
+	for a := float32(0.4); a > 0; a -= 0.02 {
+		if c := over(under, fade(accent, a)); contrast(ink, c) >= 5 {
+			return c
+		}
+	}
+	return under
+}
+
+// over is top laid over base, as paint lays a colour of some alpha over
+// a solid one.
+func over(base, top color.NRGBA) color.NRGBA {
+	a := float32(top.A) / 255
+	m := func(x, y uint8) uint8 { return uint8(float32(x) + (float32(y)-float32(x))*a + 0.5) }
+	return color.NRGBA{R: m(base.R, top.R), G: m(base.G, top.G), B: m(base.B, top.B), A: base.A}
+}
+
+// luminance is how bright c reads, from 0 to 1, as the contrast of text
+// is measured.
+func luminance(c color.NRGBA) float64 {
+	lin := func(v uint8) float64 {
+		x := float64(v) / 255
+		if x <= 0.03928 {
+			return x / 12.92
+		}
+		return math.Pow((x+0.055)/1.055, 2.4)
+	}
+	return 0.2126*lin(c.R) + 0.7152*lin(c.G) + 0.0722*lin(c.B)
+}
+
+// contrast is how far apart a and b read, from 1 to 21.
+func contrast(a, b color.NRGBA) float64 {
+	la, lb := luminance(a), luminance(b)
+	if la < lb {
+		la, lb = lb, la
+	}
+	return (la + 0.05) / (lb + 0.05)
 }
 
 // editableShown is how far box b shows a pane that takes lines.
@@ -1614,36 +1822,36 @@ func (m *paneMap) clip(p *paint.Painter, r geom.Rect, radius float32) func() {
 }
 
 // paintTab draws a tab of a box of tabs, picked as far as picked says,
-// on fill: its icon, and its name where it has room, which fades out as
-// the tab narrows to its icon. The name of the tab its box shows is in
+// on surface: its icon, and its name where it has room, which fades out
+// as the tab narrows to its icon. The name of the tab its box shows is in
 // the text's colour, and the rest are quieter, unless the box is picked,
-// when all are. The icon of a pane that takes no lines is quieter, and
-// the icon of one that holds lines carries a dot. The whole tab says its
-// name in a tooltip where it is cut short.
-func (m *paneMap) paintTab(p *paint.Painter, th *theme.Live, r geom.Rect, f *paneFace, picked float32, fill color.NRGBA) {
+// when all are. A tab behind is drawn as its icon as far as icons says,
+// and otherwise as a dot, in the accent while it holds lines; the tab in
+// front always shows its icon. The icon of a pane that takes no lines is
+// quieter, and the icon of one that holds lines carries a dot. The whole
+// tab says its name in a tooltip where it is cut short.
+func (m *paneMap) paintTab(p *paint.Painter, th *theme.Live, r geom.Rect, f *paneFace, picked, icons float32, surface color.NRGBA) {
 	ink, faint := widget.Ink.Get(th), look.Faint.Get(th)
-	words := mix(faint, ink, max(min(f.front.Value(), 1), picked))
+	front := min(max(f.front.Value(), 0), 1)
+	words := mix(faint, ink, max(front, picked))
 	run := text.Default().Shape(f.name, startTabSize.Get(th))
 	named, room := tabName(th, r, f)
 	left := r.Min.X + tabPad
 	middle := r.Min.X + (r.Size().W-tabIcon)/2
 	at := geom.Rc(middle+(left-middle)*named, r.Min.Y+(r.Size().H-tabIcon)/2, tabIcon, tabIcon)
-	// A tab too narrow for its icon, in a box of more tabs than it has
-	// room for, is a dot, in the accent while it holds lines; widening,
-	// it fades to its icon.
-	iconOn := min(max((r.Size().W-tabIcon-2)/4, 0), 1)
+	iconOn := max(icons, front)
 	if iconOn < 0.99 {
-		const dot = 4
+		dot := min(float32(4), r.Size().W+1)
 		c := mix(words, widget.Accent.Get(th), min(max(f.sign.Value(), 0), 1))
 		mid := r.Center()
 		p.RRect(geom.Rc(mid.X-dot/2, mid.Y-dot/2, dot, dot), dot/2, paint.Solid(fade(c, 1-iconOn)))
 	}
 	switch {
 	case iconOn > 0.999:
-		m.paintIcon(p, th, f, at, words, fill, 1.4)
+		m.paintIcon(p, th, f, at, words, surface, 1.4)
 	case iconOn > 0.01:
 		end := p.Layer(paint.LayerOpts{Bounds: r.Inset(geom.Uniform(-4)), Opacity: iconOn})
-		m.paintIcon(p, th, f, at, words, fill, 1.4)
+		m.paintIcon(p, th, f, at, words, surface, 1.4)
 		end()
 	}
 	if named > 0.01 {
@@ -1691,12 +1899,13 @@ func (f *paneFace) countShown() float32 { return f.more.showing() }
 func (f *paneFace) countDrawn() float32 { return f.more.drawn() }
 
 // paintIcon draws face f's icon in r, in words' colour for a pane that
-// takes lines and quieter for one that takes none, with a dot on its
-// corner, ringed in fill, while it holds lines.
+// takes lines, and for one that takes none, in words' colour at part
+// strength, so it reads on whatever it stands on; with a dot on its
+// corner, ringed in fill, the colour under it, while it holds lines.
 func (m *paneMap) paintIcon(p *paint.Painter, th *theme.Live, f *paneFace, r geom.Rect, words, fill color.NRGBA, thick float32) {
 	c := words
 	if !f.editable {
-		c = look.Faint.Get(th)
+		c = fade(words, 0.7)
 	}
 	drawIcon(p, f.icon, r, c, thick)
 	if sign := min(f.sign.Value(), 1); sign > 0.01 {
@@ -1707,8 +1916,8 @@ func (m *paneMap) paintIcon(p *paint.Painter, th *theme.Live, f *paneFace, r geo
 	}
 }
 
-// paintFace draws what a pane is in r, at opacity t, on fill, picked as
-// far as picked says: its icon and name, the machine it runs on, and,
+// paintFace draws what a pane is in r, at opacity t, on fill, the colour
+// under it there, picked as far as picked says: its icon and name, the machine it runs on, and,
 // for a terminal with lines, as many of them as there is room for, and
 // how many more.
 func (m *paneMap) paintFace(p *paint.Painter, th *theme.Live, r geom.Rect, f *paneFace, t, picked float32, fill color.NRGBA) {

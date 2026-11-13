@@ -1,6 +1,7 @@
 package view
 
 import (
+	"image/color"
 	"os"
 	"path/filepath"
 	"slices"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/access"
+	"github.com/marrasen/gunim/anim"
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/gunimtest"
 	gi "github.com/marrasen/gunim/input"
@@ -315,8 +317,39 @@ func TestShotsStartLines(t *testing.T) {
 		b.m.pick("p2", lastUI)
 		settle()
 		shot(pre + "26-quiet-alone")
+		// The pointer over the quiet box, picked and not.
+		lastWindow.Input(gi.PointerMove{Pos: mapRect(t, b, "p2").Center(), Time: time.Now()})
+		settle()
+		shot(pre + "27-quiet-hover-picked")
+		b.m.pick("p1", lastUI)
+		settle()
+		shot(pre + "28-quiet-hover")
+		lastWindow.Input(gi.PointerLeave{Time: time.Now()})
 		win.dialog.Close(lastUI)
 		settle()
+
+		// A pick made with a click while the editor has the keyboard: the
+		// keyboard goes to the lines of the pane clicked.
+		b = openStartLines(t, win, "shop")
+		settle()
+		lastUI.Focus(b.ed)
+		settle()
+		shot(pre + "29-editor-has-keys")
+		clickAt(mapRect(t, b, "p2").Center())
+		run(pre+"30-pick-from-editor", 6, 2)
+		settle()
+		shot(pre + "31-picked-from-editor")
+		win.dialog.Close(lastUI)
+		settle()
+	}
+	// The card's line with its count of start lines, in a narrow pane.
+	for _, th := range []string{"Dark", "Paper"} {
+		for _, width := range []float32{280, 340} {
+			_, _, publish := themedStage(t, geom.Sz(width, 900), th)
+			publish(startState(all...))
+			settle()
+			shot("startlines-card-" + th + "-" + strconv.Itoa(int(width)))
+		}
 	}
 	// Narrow and short.
 	for _, th := range []string{"Dark", "Paper"} {
@@ -403,17 +436,22 @@ func TestStartLinesOpensFromTheCard(t *testing.T) {
 	}
 }
 
-// The map is the window's tree across the dialog, in line with the
-// editor's edges and no taller than its cap: the columns side by side by
-// their share, each split down by its own, and a group of tabs one box
-// with its tabs along its top.
+// The map is the window's tree across the dialog, its boxes in line with
+// the editor's edges and no taller than its cap, with room round them in
+// the map for the focus ring: the columns side by side by their share,
+// each split down by its own, and a group of tabs one box with its tabs
+// along its top.
 func TestTheMapIsTheWindowsTree(t *testing.T) {
 	win, b, _ := startStage(t, shopLayout(), mixedLayout())
 	r := func(slot string) geom.Rect { return b.m.rectOf(slot) }
 	whole, _ := lastUI.Bounds(b.m)
 	ed, _ := lastUI.Bounds(b.ed)
-	if whole.Min.X != ed.Min.X || whole.Max.X != ed.Max.X || whole.Size().H > startMapTall.Default()+0.5 {
-		t.Errorf("the map stands at %v, the editor at %v", whole, ed)
+	boxes := r("p1").Union(r("p4")).Add(whole.Min)
+	if abs32(boxes.Min.X-ed.Min.X) > 0.01 || abs32(boxes.Max.X-ed.Max.X) > 0.01 || boxes.Size().H > startMapTall.Default()+0.5 {
+		t.Errorf("the boxes stand at %v, the editor at %v", boxes, ed)
+	}
+	if room := min(boxes.Min.X-whole.Min.X, boxes.Min.Y-whole.Min.Y, whole.Max.X-boxes.Max.X, whole.Max.Y-boxes.Max.Y); room < startRingRoom-0.01 {
+		t.Errorf("the boxes stand at %v in a map at %v, %v from its edge", boxes, whole, room)
 	}
 	if r("p1").Max.X > r("p3").Min.X || r("p1").Max.Y > r("p2").Min.Y || r("p3").Max.Y > r("p4").Min.Y {
 		t.Fatalf("the panes stand at %v %v %v %v", r("p1"), r("p2"), r("p3"), r("p4"))
@@ -783,6 +821,10 @@ func TestALineForAnotherShellIsSaid(t *testing.T) {
 	if len(marks) != 1 || marks[0].Message != "PowerShell command. This terminal starts Bash." {
 		t.Fatalf("the lines are marked %+v", marks)
 	}
+	if login := startSlips("Get-Content app.log", shellsetup.Posix, "Login Shell"); len(login) != 1 ||
+		login[0].Message != "PowerShell command. This terminal starts the login shell." {
+		t.Fatalf("on a server's own shell, the line is marked %+v", login)
+	}
 	if paste := pasteSlips("Get-Content app.log", shellsetup.Posix, false); len(paste) != 1 || paste[0].Message == marks[0].Message {
 		t.Fatalf("the paste dialog marks %+v", paste)
 	}
@@ -1044,6 +1086,154 @@ func TestALineGivesWayToTheCount(t *testing.T) {
 	for i := 1; i < len(ls); i++ {
 		if ls[i] < ls[i-1]-0.01 {
 			t.Fatalf("typed fast, the second line went back %v", ls)
+		}
+	}
+}
+
+// The tab picked wears a pill its name reads on at 5:1 or better, in the
+// light theme and the dark, and an icon dimmed for a pane that takes no
+// lines still reads on it, as it is drawn in the words' colour at part
+// strength.
+func TestThePickedTabsNameReadsOnItsPill(t *testing.T) {
+	for _, name := range []string{"Dark", "Paper"} {
+		themedStage(t, geom.Sz(400, 300), name)
+		th := lastUI.Theme()
+		ink, accent := widget.Ink.Get(th), widget.Accent.Get(th)
+		for _, fill := range []color.NRGBA{widget.FieldFill.Get(th), widget.CardFill.Get(th)} {
+			pill := tabPill(over(fill, look.RowActive.Get(th)), accent, ink)
+			if c := contrast(ink, pill); c < 5 {
+				t.Errorf("in %s, the name reads at %.2f:1 on the pill %v", name, c, pill)
+			}
+			if c := contrast(over(pill, fade(ink, 0.7)), pill); c < 3 {
+				t.Errorf("in %s, a dimmed icon reads at %.2f:1 on the pill %v", name, c, pill)
+			}
+		}
+	}
+}
+
+// A box of tabs shows those behind as icons or as dots, never between, at
+// whatever width it rests, and turns from one to the other over frames.
+// The tab in front keeps its icon's room, the dots giving theirs up
+// first.
+func TestCrowdedTabsRestAsIconsOrDots(t *testing.T) {
+	jump := func(v *anim.Float, want float32, _ anim.Spring) { v.Jump(want) }
+	for _, n := range []int{8, 10, 14, 16, 21} {
+		win, b, _ := startStage(t, manyTabsLayout("many", n))
+		th := lastUI.Theme()
+		box := *b.m.boxOf("p1")
+		key := box.key
+		for _, w := range []float32{80, 100, 120, 200, 260, 357, 500} {
+			box.r = geom.Rc(0, 0, w, 120)
+			b.m.layTabs(&box, th, jump)
+			icons := b.m.icons[key].Value()
+			if icons != 0 && icons != 1 {
+				t.Fatalf("%d tabs in %v px rest %v of the way to icons", n, w, icons)
+			}
+			avail := w - 8 - 2*float32(n-1)
+			front := box.tabs[0].Size().W
+			if front < min(2*tabPad+tabIcon, avail)-0.01 {
+				t.Errorf("%d tabs in %v px: the tab in front is %v wide", n, w, front)
+			}
+			for i, tab := range box.tabs {
+				if tab.Max.X > box.r.Max.X+0.01 || i > 0 && tab.Min.X < box.tabs[i-1].Max.X-0.01 {
+					t.Errorf("%d tabs in %v px: tab %d stands at %v", n, w, i, tab)
+				}
+				if i > 0 && icons == 1 && tab.Size().W < tabIconLeast-0.01 {
+					t.Errorf("%d tabs in %v px: tab %d shows its icon in %v px", n, w, i, tab.Size().W)
+				}
+			}
+		}
+		// From icons to dots, over frames.
+		box.r = geom.Rc(0, 0, 500, 120)
+		b.m.layTabs(&box, th, jump)
+		box.r = geom.Rc(0, 0, 60, 120)
+		var ons []float32
+		ease := func(v *anim.Float, want float32, s anim.Spring) {
+			if v.Target() != want {
+				v.Animate(want, s)
+			}
+		}
+		for range 40 {
+			b.m.layTabs(&box, th, ease)
+			b.m.icons[key].Step(time.Second / 60)
+			ons = append(ons, b.m.icons[key].Value())
+		}
+		if ons[0] < 0.5 || ons[len(ons)-1] != 0 {
+			t.Fatalf("%d tabs went to dots %v", n, ons)
+		}
+		noJumps(t, "the icons", ons)
+		win.dialog.Close(lastUI)
+		settle()
+	}
+}
+
+// Picking another pane turns the page over a well that stays where it is:
+// still from terminal to terminal, and fading its colour, not its place,
+// from a terminal to a command.
+func TestTheWellStaysAsAPaneIsPicked(t *testing.T) {
+	_, b, _ := startStage(t, mixedLayout())
+	was := b.well.Value()
+	var codes []float32
+	b.m.pick("p3", lastUI)
+	for range 40 {
+		lastWindow.Frame(time.Second / 60)
+		if got := b.well.Value(); got != was {
+			t.Fatalf("the well moved from %v to %v", was, got)
+		}
+		codes = append(codes, b.code.Value())
+	}
+	if codes[0] < 0.5 || codes[len(codes)-1] != 0 {
+		t.Fatalf("the well turned from the editor's %v", codes)
+	}
+	noJumps(t, "the well's colour", codes)
+}
+
+// In a narrow window the page's words go on two lines, the pane's name
+// first and where it starts under it; in a wide one they share a line.
+// A pane named for its shell says the shell once.
+func TestTheCaptionWrapsWhenNarrow(t *testing.T) {
+	for _, c := range []struct {
+		size geom.Size
+		two  bool
+	}{{geom.Sz(1100, 820), false}, {geom.Sz(420, 760), true}} {
+		win, _, publish := windowStageOf(t, c.size)
+		publish(startState(shopLayout()))
+		settle()
+		b := openStartLines(t, win, "shop")
+		settle()
+		pg := b.pages.Page().(*startPage)
+		if two := pg.whereAt.Min.Y > 0; two != c.two || pg.nameAt.Min.Y != 0 {
+			t.Errorf("at %v, the name stands at %v and where at %v", c.size, pg.nameAt, pg.whereAt)
+		}
+		b.m.pick("p4", lastUI)
+		settle()
+		if pg := b.pages.Page().(*startPage); pg.name != "Login Shell" || pg.where != "on db-primary" || !pg.follows {
+			t.Errorf("the server's shell says %q %q", pg.name, pg.where)
+		}
+		win.dialog.Close(lastUI)
+		settle()
+	}
+}
+
+// A pane that has no start lines says what start lines are for and what
+// the pane is, and an empty editor shows a command, as a format.
+func TestAPaneWithoutLinesSaysWhatItIs(t *testing.T) {
+	l := mixedLayout()
+	l.Panes["p6"] = settings.SavedPane{Kind: "browser"}
+	l.Root.Kids[1].Kids = append(l.Root.Kids[1].Kids, &settings.LayoutNode{ID: "p6", Kind: "item"}, &settings.LayoutNode{ID: "x9", Kind: "item"})
+	_, b, _ := startStage(t, l)
+	if b.ed.Placeholder != "npm run dev" {
+		t.Fatalf("the editor reads %q while empty", b.ed.Placeholder)
+	}
+	for slot, want := range map[string]string{
+		"p3": "Start lines are for terminals. This pane runs a command.",
+		"p4": "Start lines are for terminals. This pane shows files.",
+		"p5": "Start lines are for terminals kakel starts. This one opens through another kakel window.",
+		"p6": "Start lines are for terminals. This kakel can't open this kind of pane.",
+		"x9": "Start lines are for terminals. This slot has no pane.",
+	} {
+		if got := b.why(slot); got != want {
+			t.Errorf("%s says %q", slot, got)
 		}
 	}
 }

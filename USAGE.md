@@ -207,29 +207,38 @@ A layout is one window, saved to open again as it is.
   many of its lines as fit. With more lines than fit, the last row
   says how many more. A terminal is filled
   like the editor; a pane that takes no lines is quieter, its icon
-  dimmed. A dot on a pane's icon says it holds lines. A group of tabs
+  dimmed. A dot on a pane's icon says it holds lines. The pointer over a
+  box brightens its border. A group of tabs
   is one box with its tabs along its top. The tab in front shows its
   name, cut where the box is crowded. Each tab behind shows its name
   whole, shortest names first, as far as the room goes; the rest show
-  their icons, or a dot in a box too narrow for those, and name
-  themselves in a tooltip. Click a pane or a tab, or move with the
+  their icons, and name themselves in a tooltip. In a box too narrow
+  for every icon, the tabs behind are all dots and the tab in front
+  keeps its icon and a pill of its own, so the one coloured dot reads
+  as a tab holding lines. A box turns between icons and dots over a
+  moment as the window is resized, never resting half way. Click a pane or a tab, or move with the
   arrow keys: Left and Right go along a box's tabs first, then on to
   the nearest box beside. Of two boxes as near, as the two panes over
   one across a T, an arrow goes back to the one it came from.
   Home and End pick the first pane and the last. A click, Enter or
   Space puts the keyboard in the pane's lines. Under the map are the
   pane's name and where it starts, as its shell, its machine and its
-  folder, so no `cd` is needed, and an editor for its lines, one per
-  line. An empty editor reads "such as npm run dev, one a line". The
+  folder, so no `cd` is needed, on a second line where the window is
+  narrow, and an editor for its lines, one per line. An empty editor
+  reads `npm run dev`. The
   editor is coloured for that shell, and marks a line written
   for another: a PowerShell command in a bash terminal is marked
-  "PowerShell command. This terminal starts Bash." Tab moves from the
+  "PowerShell command. This terminal starts Bash.", and in a server's
+  login shell "PowerShell command. This terminal starts the login
+  shell." A pane that takes no lines shows a quiet well in place of the
+  editor, saying what it is, such as "Start lines are for terminals.
+  This pane runs a command." Tab moves from the
   map to the editor and on to the buttons, and a tab typed in the
   editor is a space. Save keeps the lines of each terminal whose lines
   you changed, with spaces at the end and blank lines dropped, and
   leaves the others as they are; Cancel and Escape keep none of what
   was typed. A command pane, a file manager and a terminal through
-  another kakel window take no start lines yet; lines such a terminal
+  another kakel window have no start lines yet; lines such a terminal
   already holds stay as they are. Where the layout was removed
   meanwhile, saved over, or the same terminal given other lines in
   another window, Save says so and the dialog stays open. A window

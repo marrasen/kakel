@@ -31,12 +31,13 @@ To give a terminal its lines, press Start Lines… on the layout's card
 in File › Layouts › Manage Layouts. The card counts the start lines its
 layout's terminals type. The dialog draws the window across its width, each pane
 where it stands, a terminal filled like the editor, and each group of
-tabs as one box with its tabs, showing the names that fit whole. Pick a
+tabs as one box with its tabs, showing the names that fit whole, and in
+a box too narrow for every icon, dots behind the tab in front. Pick a
 pane with a click or the arrow keys; a click, Enter or Space puts the
 keyboard in its lines. Under the
 map is the pane's name and where it starts, its shell, machine and
 folder, so no `cd` is needed, and an editor for its lines, one per
-line, which reads "such as npm run dev, one a line" while empty. It is
+line, which reads `npm run dev` while empty. It is
 coloured for that shell, and marks a line written for
 another shell, such as "PowerShell command. This terminal starts
 Bash." Save keeps the lines of the terminals whose lines you changed,
@@ -44,7 +45,8 @@ with spaces at the end and blank lines dropped; a space at the start
 stays, to keep a line out of the shell's history. Two windows giving
 lines to two terminals of one layout both keep theirs. A file manager,
 a command pane and a terminal through another kakel window are on the
-map too, quieter, and take no start lines yet; lines such a terminal
+map too, quieter, and their page says what they are in place of an
+editor; lines such a terminal
 holds in the file stay as they are. Where another window removed the
 layout, saved over it or changed the same terminal's lines meanwhile,
 Save says so under the dialog and the dialog stays open with what you
