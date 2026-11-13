@@ -1241,8 +1241,7 @@ func (m *paneMap) Layout(c gunim.Constraints, f gunim.Frame, _ gunim.Children) g
 // room between its icon and its name.
 const tabPad, tabIcon, tabIconGap = 6, 12, 5
 
-// tabFade is over how many pixels short of its room a tab's name fades
-// out.
+// tabFade is over how many pixels past its room a tab's name fades in.
 const tabFade = 10
 
 // layTabs lays out the tabs of box b along its top. The tab shown takes
@@ -1480,12 +1479,12 @@ func (m *paneMap) paintTab(p *paint.Painter, th *theme.Live, r geom.Rect, f *pan
 	ink, faint := widget.Ink.Get(th), look.Faint.Get(th)
 	words := mix(faint, ink, max(min(f.front.Value(), 1), picked))
 	run := text.Default().Shape(f.name, startTabSize.Get(th))
-	// The name shows where the tab has room for it whole, or for as much
-	// of a long one as the tab's least width holds, and fades out over
-	// the last few pixels of that, leaving no letters cut to crumbs.
+	// The name shows only where the tab has room for it whole, or for as
+	// much of a long one as the tab's least width holds, fading in over
+	// a few pixels more, so no letters are cut to crumbs.
 	iconOnly := float32(2*tabPad + tabIcon)
 	enough := min(run.Advance, startTabLeast.Get(th)-iconOnly-tabIconGap)
-	named := min(max((r.Size().W-iconOnly-tabIconGap-enough)/tabFade+1, 0), 1)
+	named := min(max((r.Size().W-iconOnly-tabIconGap-enough)/tabFade, 0), 1)
 	left := r.Min.X + tabPad
 	middle := r.Min.X + (r.Size().W-tabIcon)/2
 	at := geom.Rc(middle+(left-middle)*named, r.Min.Y+(r.Size().H-tabIcon)/2, tabIcon, tabIcon)
