@@ -430,18 +430,20 @@ command's output ends and the next begins, unless the shell says so. The
 shell says so by printing escape sequences nobody sees: OSC 7 or OSC 9;9
 for the directory, OSC 133 around each command.
 
-Kakel sets this up itself. As a shell starts it types one line in,
-the way you would type it, and then clears the pane. There is nothing to
+Kakel sets this up itself. As a shell starts it types a few lines in,
+the way you would type them, and then clears the pane. There is nothing to
 install and no profile to edit.
 
 - **On this machine it is on**, and "Shell Setup" on the Machine menu
   turns it off. It is invisible: kakel
-  builds the line for whichever shell the pane runs. A profile gets it
+  builds the lines for whichever shell the pane runs. A profile gets it
   only when it runs one of the shells in the table below.
-- **On a server it is off**, and "Teach its shell to say what it is
-  doing" in the server dialog turns it on. It is off because the line goes into whatever
-  login shell that account has. bash and zsh understand it; fish, a
-  device CLI or a menu would answer with an error.
+- **On a server it is off**, and "Let kakel follow the shell's folder
+  and commands" on a profile in the server's settings pane turns it on
+  for that profile, Login Shell included. It is off because the lines
+  go into whatever login shell that account has. bash and zsh
+  understand them; fish, a device CLI or a menu would answer with an
+  error.
 - **Another kakel is never set up from here.** The window over there
   starts the shell and applies its own answer.
 

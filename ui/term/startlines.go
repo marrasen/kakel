@@ -484,8 +484,11 @@ func (s *starter) fire(gen int, net bool) {
 	s.lines = s.lines[1:]
 	s.typed = true
 	// The next line waits for the next prompt, which this one's own
-	// leaves standing until the shell has read it.
+	// leaves standing until the shell has read it. Nor does the prompt
+	// Shell Setup marked stand any longer: a question the line asks, with
+	// no C mark before it, is a question all the same.
 	s.fresh[s.sign], s.stands[s.sign] = false, false
+	s.ownStands = false
 	s.stopNetLocked()
 	s.send([]byte(next + "\r"))
 	if len(s.lines) == 0 {

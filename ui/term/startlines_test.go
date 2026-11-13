@@ -455,6 +455,29 @@ func TestALineAskingForAPasswordIsAnswered(t *testing.T) {
 	tp.want(t, "at the prompt after sudo", "sudo true\r", "ls\r")
 }
 
+// A shell that marks its prompts but not its commands, as PowerShell
+// without PSReadLine, or bash before 4.4 running only a subshell, asks
+// its question with no C mark after the line: the answer to it cancels
+// nothing all the same.
+func TestAQuestionWithNoCommandMarkIsAnswered(t *testing.T) {
+	tp := newTypist(t)
+	tp.term.TypeAtPrompts([]string{"(sudo true)", "ls"}, vt.PromptMark, 1)
+	tp.says(t, markPrompt)
+	tp.clock.advance(promptSettle)
+	tp.want(t, "at the prompt", "(sudo true)\r")
+	tp.says(t, "(sudo true)\r\n[sudo] password for me: ")
+	for _, r := range "secret" {
+		key(tp.term, r)
+	}
+	enter(tp.term)
+	if n := tp.term.LinesLeft(); n != 1 {
+		t.Fatalf("%d lines left once the password was typed, want 1", n)
+	}
+	tp.says(t, "\r\n"+markDone+markPrompt)
+	tp.clock.advance(promptSettle)
+	tp.want(t, "at the prompt after sudo", "(sudo true)\r", "ls\r")
+}
+
 // Ctrl+C at a password question cancels the lines left: the line after
 // it was for what the question let in.
 func TestCtrlCAtAPasswordQuestionDropsTheLines(t *testing.T) {

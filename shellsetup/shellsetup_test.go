@@ -2,6 +2,7 @@ package shellsetup
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"regexp"
 	"runtime"
@@ -134,28 +135,49 @@ func TestEachLineEndsWithAReturn(t *testing.T) {
 	}
 }
 
-// The line for bash and zsh says where the shell is and marks each
-// command, and starts with a space so a shell set to ignore those
+// The lines for bash and zsh say where the shell is and mark each
+// command, and each starts with a space so a shell set to ignore those
 // keeps it out of the history.
-func TestTheLineForBashAndZsh(t *testing.T) {
+func TestTheLinesForBashAndZsh(t *testing.T) {
 	lines := Lines(Posix)
-	setup := lines[0]
+	setup := strings.Join(lines[:len(lines)-1], "")
 
-	if !strings.HasPrefix(setup, " ") {
-		t.Error("it does not start with a space, so it goes into the history")
+	for i, line := range lines[:len(lines)-1] {
+		if !strings.HasPrefix(line, " ") {
+			t.Errorf("line %d does not start with a space, so it goes into the history", i+1)
+		}
+		if strings.Contains(line, "\n") {
+			t.Errorf("line %d is more than one line, and only one line can be typed in", i+1)
+		}
 	}
 	for _, want := range []string{`]7;file://`, `]133;A`, `]133;C`, `]133;D`} {
 		if !strings.Contains(setup, want) {
-			t.Errorf("it does not send %s", want)
+			t.Errorf("they do not send %s", want)
 		}
 	}
 	for _, want := range []string{"ZSH_VERSION", "PROMPT_COMMAND", "precmd", "preexec"} {
-		if !strings.Contains(setup, want) {
-			t.Errorf("it does not mention %s, so it does not cover both shells", want)
+		if !strings.Contains(lines[0], want) {
+			t.Errorf("the first line does not mention %s, so it does not hook the prompt of both shells", want)
 		}
 	}
-	if strings.Contains(setup, "\n") {
-		t.Error("it is more than one line, and only one line can be typed in")
+}
+
+// longestLine is the most bytes a line typed into a shell may hold,
+// return included. A terminal on macOS or BSD takes at most 1024 bytes in
+// one line while it is in canonical mode, as it is while the shell
+// starts and reads its startup files, and drops the rest; Linux takes
+// 4095. The margin leaves room to grow before a line is cut short.
+const longestLine = 900
+
+// Every line Shell Setup types fits in one line of the strictest
+// terminal, with room to spare.
+func TestEveryTypedLineFitsATerminalLine(t *testing.T) {
+	for _, r := range []Route{Posix, PowerShell, Cmd} {
+		for i, line := range Lines(r) {
+			if n := len(line) + 1; n > longestLine {
+				t.Errorf("route %d, line %d is %d bytes with its return, more than %d", r, i+1, n, longestLine)
+			}
+		}
 	}
 }
 
@@ -204,6 +226,9 @@ type shell struct {
 // startShell runs argv in a terminal, with env added to its own.
 func startShell(t *testing.T, argv, env []string) *shell {
 	t.Helper()
+	// A history of its own, so bash-preexec has one to read, and the
+	// user's is left alone.
+	env = append([]string{"HISTFILE=" + t.TempDir() + "/history"}, env...)
 	sess, err := session.StartLocal(session.LocalConfig{Command: argv, Env: env, Cols: 200, Rows: 50})
 	if err != nil {
 		t.Fatal(err)
@@ -294,6 +319,27 @@ func (sh *shell) run(line string) {
 	sh.waitPrompts(n + 1)
 }
 
+// drawn waits for the prompt marked last to be drawn, ending in "$ ",
+// after which the shell reads keys, and what ran before it has written
+// all it will.
+func (sh *shell) drawn() {
+	sh.t.Helper()
+	sh.waitFor("the prompt drawn", func() bool {
+		out := sh.written()
+		return strings.Contains(out[strings.LastIndex(out, ownA):], "$ ")
+	})
+}
+
+// ctrlC presses Ctrl+C at the prompt, once it is drawn, and waits for
+// the prompt after it.
+func (sh *shell) ctrlC() {
+	sh.t.Helper()
+	sh.drawn()
+	n := sh.prompts()
+	sh.write("\x03")
+	sh.waitPrompts(n + 1)
+}
+
 // setUp types before, if anything, then Shell Setup's lines, and waits
 // for the prompt they leave the shell at.
 func (sh *shell) setUp(before string) {
@@ -334,30 +380,44 @@ func marksOf(t *testing.T, argv, env []string, before string, commands ...string
 // marksInOrder checks the marks a shell sent, got, and all it wrote,
 // out: from Shell Setup's last prompt on, each prompt is D then A, each
 // command C, and the D after a command has its status, as false, sh -c
-// 'exit 3' and echo hi give them. And a C comes only once the line typed
-// at the prompt before it has been echoed and ended: no C comes while
-// the shell stands at its prompt.
+// 'exit 3' and echo hi give them, and nothing else. And a C comes only
+// once the line typed at the prompt before it has been echoed and ended:
+// no C comes while the shell stands at its prompt.
 func marksInOrder(t *testing.T, got []string, out string) {
 	t.Helper()
-	want := []string{"D;0", "A", "C", "D;1", "A", "C", "D;3", "A", "C", "D;0", "A", "C"}
-	if len(got) < len(want) || !slices.Equal(got[len(got)-len(want):], want) {
-		t.Fatalf("marks %q, want them to end %q", got, want)
-	}
-	if n := strings.Count(strings.Join(got, " "), "C"); n != 5 {
-		t.Fatalf("marks %q: %d C, want one for clear, each command and exit", got, n)
+	want := []string{"C", "D;1", "A", "C", "D;3", "A", "C", "D;0", "A", "C"}
+	if after := afterSetup(got); !slices.Equal(after, want) {
+		t.Fatalf("marks %q, want them to be %q after Shell Setup's last prompt", got, want)
 	}
 	noCAtAPrompt(t, out)
 }
 
+// afterSetup is the marks after the last prompt Shell Setup's own lines
+// show, nil if it never came.
+func afterSetup(got []string) []string {
+	seen := 0
+	for i, m := range got {
+		if m == "A" {
+			seen++
+			if seen == Prompts(Posix) {
+				return got[i+1:]
+			}
+		}
+	}
+	return nil
+}
+
 // noCAtAPrompt checks that no C mark came at a prompt Shell Setup
-// marked before a line typed at it was echoed and ended.
+// marked, from the last its own lines show on, before a line typed at it
+// was echoed and ended. Its own lines are typed ahead, and zsh does not
+// echo them again at its prompt.
 func noCAtAPrompt(t *testing.T, out string) {
 	t.Helper()
 	const c = "\x1b]133;C\a"
-	for i, part := range strings.Split(out, ownA)[1:] {
+	for i, part := range strings.Split(out, ownA)[Prompts(Posix):] {
 		at := strings.Index(part, c)
 		if at >= 0 && !strings.Contains(part[:at], "\r\n") {
-			t.Fatalf("prompt %d was marked C before a line was typed at it: %q", i+1, part)
+			t.Fatalf("prompt %d was marked C before a line was typed at it: %q", i+Prompts(Posix), part)
 		}
 	}
 }
@@ -366,9 +426,14 @@ func noCAtAPrompt(t *testing.T, out string) {
 // minor, or skips the test.
 func bashHere(t *testing.T) (string, int) {
 	t.Helper()
-	bash, err := exec.LookPath("bash")
-	if err != nil {
-		t.Skip("no bash here")
+	// KAKEL_TEST_BASH names a bash to run in place of the one on the
+	// path, such as an old one built to try the line on.
+	bash := os.Getenv("KAKEL_TEST_BASH")
+	if bash == "" {
+		var err error
+		if bash, err = exec.LookPath("bash"); err != nil {
+			t.Skip("no bash here")
+		}
 	}
 	v, err := exec.Command(bash, "-c", "echo $((BASH_VERSINFO[0]*100+BASH_VERSINFO[1]))").Output()
 	if err != nil {
@@ -450,29 +515,23 @@ func TestBashMarksEachPromptAndEachCommand(t *testing.T) {
 	}
 }
 
-// Shell Setup's line in bash keeps the user's own: a debug trap, as
-// bash-preexec, atuin and starship set, still runs before each command,
-// and a preexec hook kept the way bash-preexec keeps it, which takes a
-// command run by PROMPT_COMMAND for none of the user's, still fires.
+// Shell Setup's lines in bash keep the user's own debug trap, as atuin
+// and starship set one: it still runs before each command, and only once
+// for each.
 func TestBashKeepsTheUsersDebugTrap(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("bash is not the Windows shell")
 	}
-	// What bash-preexec does: its hook ends PROMPT_COMMAND, and its trap
-	// fires for the first command after it that PROMPT_COMMAND does not
-	// run.
-	const preexec = `__m=; __in(){ case $'\n'"$PROMPT_COMMAND"$'\n' in *$'\n'"$1"$'\n'*) return 0;; esac; return 1; }; ` +
-		`__pre(){ [ -n "$__m" ] || return 0; __m=; __in "$BASH_COMMAND" && return 0; printf '<preexec %s>' "$BASH_COMMAND"; }; ` +
-		`trap '__pre' DEBUG; PROMPT_COMMAND="history -a"$'\n''__m=on'`
 	for kind, b := range bashes(t) {
 		t.Run(kind, func(t *testing.T) {
 			sh := startShell(t, plainBash(t), b.env)
-			sh.setUp(preexec)
+			sh.setUp(`trap '[ "$BASH_COMMAND" = "echo hi" ] && printf "<%s>" trap-ran' DEBUG`)
 			sh.run("echo hi")
+			sh.run("")
 			sh.run("true")
 			sh.exit()
-			if out := sh.written(); !strings.Contains(out, "<preexec echo hi>") || !strings.Contains(out, "<preexec true>") {
-				t.Fatalf("the user's preexec hook did not run for each command: %q", out)
+			if n := strings.Count(sh.written(), "<trap-ran>"); n != 1 {
+				t.Fatalf("the user's trap ran %d times for echo hi, want once: %q", n, sh.written())
 			}
 		})
 	}
@@ -535,9 +594,7 @@ func TestBashLeavesSetEAndTheErrTrapAlone(t *testing.T) {
 				t.Fatalf("the ERR trap fired %d times, want once: %q", n, sh.written())
 			}
 			sh.run("set -e")
-			n := sh.prompts()
-			sh.write("\x03")
-			sh.waitPrompts(n + 1)
+			sh.ctrlC()
 			sh.run("! true")
 			sh.run("echo ALIVE")
 			sh.exit()
@@ -548,8 +605,10 @@ func TestBashLeavesSetEAndTheErrTrapAlone(t *testing.T) {
 	}
 }
 
-// From bash 5.1, what the user's PROMPT_COMMAND runs sees PIPESTATUS as
-// the command left it.
+// From bash 5.1, what the user's PROMPT_COMMAND array runs after its
+// first element sees PIPESTATUS as the command left it. The first
+// element, and a PROMPT_COMMAND that is a string, follow Shell Setup's
+// entry, and see only the status.
 func TestBashShowsThePromptCommandThePipeStatus(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("bash is not the Windows shell")
@@ -557,21 +616,22 @@ func TestBashShowsThePromptCommandThePipeStatus(t *testing.T) {
 	if _, v := bashHere(t); v < 501 {
 		t.Skip("bash before 5.1 has no PROMPT_COMMAND array")
 	}
-	_, out := marksOf(t, plainBash(t), nil, `PROMPT_COMMAND='printf "<%s>" "${PIPESTATUS[*]}"'`, "false | true | false")
+	_, out := marksOf(t, plainBash(t), nil, `PROMPT_COMMAND=('history -a' 'printf "<%s>" "${PIPESTATUS[*]}"')`, "false | true | false")
 	if !strings.Contains(out, "<1 0 1>") {
 		t.Fatalf("the user's PROMPT_COMMAND did not see PIPESTATUS: %q", out)
 	}
 }
 
 // A bash started inside the pane inherits an exported PROMPT_COMMAND
-// and none of Shell Setup's functions, and says nothing of them.
+// and none of Shell Setup's functions, says nothing of them, and the
+// user's part of it sees each command's status.
 func TestABashInsideThePaneSaysNothing(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("bash is not the Windows shell")
 	}
 	for kind, b := range bashes(t) {
 		t.Run(kind, func(t *testing.T) {
-			sh := startShell(t, plainBash(t), append([]string{"PROMPT_COMMAND=history -a"}, b.env...))
+			sh := startShell(t, plainBash(t), append([]string{"PROMPT_COMMAND=printf '<%s>' $?"}, b.env...))
 			sh.setUp("export PROMPT_COMMAND")
 			n := sh.prompts()
 			sh.write(plainBash(t)[0] + " --norc --noprofile\r")
@@ -584,8 +644,12 @@ func TestABashInsideThePaneSaysNothing(t *testing.T) {
 			if !strings.Contains(out, "INSIDE") {
 				t.Fatalf("the bash inside did not run: %q", out)
 			}
-			if strings.Contains(out, "not found") {
+			if strings.Contains(out, "not found") || strings.Contains(out, "error") {
 				t.Fatalf("the bash inside called Shell Setup's functions: %q", out)
+			}
+			// Only the bash inside ran a command that failed.
+			if !strings.Contains(out, "<1>") {
+				t.Fatalf("the bash inside did not show its PROMPT_COMMAND the status: %q", out)
 			}
 		})
 	}
@@ -608,14 +672,22 @@ func TestBashReportsNoStaleStatus(t *testing.T) {
 	}
 }
 
-// zsh, taught by the same line, marks the same way.
+// zsh, taught by the same lines, marks the same way, whatever options
+// the user set.
 func TestZshMarksEachPromptAndEachCommand(t *testing.T) {
 	zsh, err := exec.LookPath("zsh")
 	if err != nil {
 		t.Skip("no zsh here")
 	}
-	got, out := marksOf(t, []string{zsh, "-f"}, nil, "", "false", "sh -c 'exit 3'", "echo hi")
-	marksInOrder(t, got, out)
+	for _, before := range []string{"", "setopt nounset", "setopt ksharrays shwordsplit", "setopt noglob"} {
+		t.Run(before, func(t *testing.T) {
+			got, out := marksOf(t, []string{zsh, "-f"}, nil, before, "false", "sh -c 'exit 3'", "echo hi")
+			marksInOrder(t, got, out)
+			if strings.Contains(out, "parameter not set") || strings.Contains(out, "parse error") {
+				t.Fatalf("zsh did not take the lines: %q", out)
+			}
+		})
+	}
 }
 
 // A shell's own OSC 133 marks are told from Shell Setup's: those it

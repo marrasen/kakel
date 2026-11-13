@@ -171,8 +171,13 @@ A layout is one window, saved to open again as it is.
   keeps running, as a dev server does, holds back the lines after it.
   Only Shell Setup's own marks count, so a prompt that marks itself
   as well is counted once. A shell that has said nothing five seconds
-  after it first printed is typed into as a shell without Shell Setup
-  is. A shell that shows fewer prompts while it is set up than kakel
+  after it first printed gets each line once it has been quiet for half
+  a second. On a server whose login shell is not bash or zsh, such as
+  fish, turn Shell Setup off for it: in the server's settings pane,
+  pick Login Shell and clear "Let kakel follow the shell's folder and
+  commands". Such a shell takes Shell Setup's lines as its own input.
+  With it off, the start lines are typed as for a shell without Shell
+  Setup. A shell that shows fewer prompts while it is set up than kakel
   expects gets the next line once it stands quiet at a prompt, with
   text before the cursor and no command started, for ten seconds, or
   three once Shell Setup's prompts are past; then it waits for the next

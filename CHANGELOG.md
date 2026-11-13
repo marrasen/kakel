@@ -58,24 +58,43 @@ starship, direnv, zoxide, atuin or `history -a` add, and at a key bound
 with `bind -x`, as fzf's Ctrl+R. kakel then took the shell to be
 running a program while it sat at its prompt. On bash 4.4 and later
 Shell Setup now marks a command from `PS0`, once per command line and
-never at an empty prompt, and sets no debug trap. So a debug trap of
-the user's own stays, and the preexec hooks of bash-preexec, atuin and
-starship run again. What the `PROMPT_COMMAND` runs sees the last
-command's status, and from bash 5.1 its `PIPESTATUS` too.
+never at an empty prompt, and sets no debug trap, so a debug trap of
+the user's own stays. With bash-preexec loaded, as atuin and bash-it
+load it, Shell Setup hooks in through bash-preexec's own lists, so its
+preexec hooks run once for each command, on every bash.
+
+`PROMPT_COMMAND` keeps its form: a string stays a string, exported if
+it was, and an array stays an array. So starship, direnv and zoxide
+still find their own hook in it when `.bashrc` is read again, and add
+it no second time. What it runs sees the last command's status and
+`$_`. Only the elements after the first of an array see `PIPESTATUS`,
+on bash 5.1 and later.
 
 Shell Setup's bash line no longer fails where `set -e` or an `ERR` trap
 sees it. With `set -e`, Ctrl+C at an empty prompt ended the shell; an
 `ERR` trap fired again at every prompt; and with `extdebug` on, a
 failed command was followed by no prompt mark at all. A bash started
 inside the pane with an exported `PROMPT_COMMAND` said `__gt_d: command
-not found` at each prompt; it says nothing now.
+not found` at each prompt; it says nothing now, and what its
+`PROMPT_COMMAND` runs sees each command's status.
+
+A `.bashrc` read again that sets `PROMPT_COMMAND` afresh, as
+`PROMPT_COMMAND='history -a'` does, takes Shell Setup's hook away: the
+shell's prompts and commands are no longer marked until a new terminal
+opens. From bash 4.4 the next command ends the command marked last, so
+kakel does not take a program to run for good. A read-only
+`PROMPT_COMMAND` gets no marks at all, and a `PS0` set afresh after
+Shell Setup ran gets no command marks. bash-preexec loaded after Shell
+Setup ran still runs its preexec hooks again at an empty prompt.
 
 Bash before 4.4, as macOS has, has no `PS0`, so Shell Setup keeps a
 debug trap there. It now runs the trap that was there before after its
 own, rather than replacing it. There a `bind -x` key, and a hook added
 to `PROMPT_COMMAND` after Shell Setup ran, still mark a command at the
-prompt, and `PIPESTATUS` is not shown to the `PROMPT_COMMAND` before
-bash 5.1.
+prompt. A tool that sets its own debug trap after Shell Setup ran, as
+starship may when `.bashrc` is read again, ends the command marks;
+prompts are still marked. direnv, read again there, adds its hook a
+second time.
 
 ## v0.12.2-beta.15
 
