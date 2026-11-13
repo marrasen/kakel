@@ -1,6 +1,8 @@
 package app
 
 import (
+	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -371,12 +373,12 @@ func slotPanes(t *testing.T, a *app, w *ownWin) map[string]string {
 	return out
 }
 
-// Lines given in the dialog reach the pane of the slot as the layout
-// has it now. Another window saved over the layout, its first terminal
-// closed, names the second one p1; a window still open from the layout
-// as it was gives p1's lines to its second terminal, and its first,
-// whose slot is no longer in the layout, gets none.
-func TestDialogLinesFollowTheLayoutSavedFromAnotherWindow(t *testing.T) {
+// Layout Shop, open in two windows: the second, its first terminal
+// closed, is saved over Shop, which names its second terminal p1. Lines
+// the dialog gives p1 then reach that terminal alone: the first window
+// was opened from Shop as it was before, so its terminals keep what they
+// have, and the first window saved over Shop puts no line on either.
+func TestAWindowOfALayoutSavedOverElsewhereKeepsItsLines(t *testing.T) {
 	a, opened := openingApp(t)
 	a.st.ShellSetup = false
 	term := settings.SavedPane{Kind: settings.LayoutTerminal, Command: plainShell()}
@@ -391,25 +393,27 @@ func TestDialogLinesFollowTheLayoutSavedFromAnotherWindow(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.handle(SaveStartLines{Layout: a.st.Layouts[0], Lines: map[string][]string{"p1": {"run-b"}}})
-	if got := a.startLines[one["p1"]]; got != nil {
-		t.Fatalf("the first terminal, gone from the layout, was given %q", got)
+	if got := a.startLines[two["p2"]]; !slices.Equal(got, []string{"run-b"}) {
+		t.Fatalf("the saved window's terminal was given %q", got)
 	}
-	if got := a.startLines[one["p2"]]; !slices.Equal(got, []string{"run-b"}) {
-		t.Fatalf("the second terminal was given %q", got)
+	for slot, id := range one {
+		if got := a.startLines[id]; got != nil {
+			t.Fatalf("the other window's %s was given %q", slot, got)
+		}
 	}
 	again, _, _, err := a.saveLayout(SaveLayout{Window: w1.id, Name: "Shop", Replace: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if a1, b1 := again.Panes["p1"].Start, again.Panes["p2"].Start; a1 != nil || !slices.Equal(b1, []string{"run-b"}) {
+	if a1, b1 := again.Panes["p1"].Start, again.Panes["p2"].Start; a1 != nil || b1 != nil {
 		t.Fatalf("saved over, the terminals keep %q and %q", a1, b1)
 	}
 }
 
-// A layout removed lets go of the windows opened from it: another layout
-// given its name, and so its ID, gives its lines to its own panes alone,
-// and a window of the one removed keeps the lines it had. Undo of the
-// removal links the window again, as nothing else linked it meanwhile.
+// A layout removed, and its ID given to another layout saved under its
+// name: the new layout's lines reach its own window alone, and a window
+// of the one removed keeps the lines it had. Undo of a removal brings
+// the layout back as it was, so the dialog reaches its window again.
 func TestARemovedLayoutsIDLinksNoPane(t *testing.T) {
 	a, opened := openingApp(t)
 	a.st.ShellSetup = false
@@ -442,8 +446,192 @@ func TestARemovedLayoutsIDLinksNoPane(t *testing.T) {
 	if got := a.startLines[mine]; !slices.Equal(got, []string{"echo NEW"}) {
 		t.Fatalf("the new layout's own terminal was given %q", got)
 	}
-	if _, linked := a.linesFrom[old]; linked {
-		t.Fatalf("the removed layout's terminal is linked to %+v", a.linesFrom[old])
+}
+
+// waitingSlow opens layout id, whose terminal waits for its folder to be
+// looked at, and returns the waiting pane's ID while it still waits.
+func waitingSlow(t *testing.T, a *app, id string) string {
+	t.Helper()
+	a.handle(OpenLayout{ID: id})
+	var pane string
+	waitFor(t, a, "the waiting pane", func() bool {
+		for p, s := range a.slots {
+			if s.layout == id {
+				pane = p
+				return true
+			}
+		}
+		return false
+	})
+	return pane
+}
+
+// slowLayout is a layout of one terminal that waits for its folder,
+// with start lines.
+func slowLayout(t *testing.T, name string, start ...string) settings.SavedLayout {
+	return alone(name, settings.SavedPane{Kind: settings.LayoutTerminal, Command: plainShell(), Folder: t.TempDir(), Start: start})
+}
+
+// A layout removed while its terminal is still starting, and brought
+// back by Undo once the terminal runs: lines the dialog gives then reach
+// the terminal.
+func TestUndoAfterAPaneStartedLinksIt(t *testing.T) {
+	a, opened := openingApp(t)
+	a.st.ShellSetup = false
+	kept := keep(t, a, slowLayout(t, "Slow"))
+	waitingSlow(t, a, kept.ID)
+	a.handle(RemoveLayout{ID: kept.ID})
+	undo := a.st.Notices[len(a.st.Notices)-1].On.(RestoreLayout)
+	w := layoutWindow(a)
+	waitFor(t, a, "the layout's window", func() bool { return opened.Load() == 1 })
+	p := onlyPane(t, a, w)
+	a.handle(undo)
+	a.handle(SaveStartLines{Layout: layoutNamed(t, a, "Slow"), Lines: map[string][]string{"p1": {"echo AFTER"}}})
+	if got := a.startLines[p.ID]; !slices.Equal(got, []string{"echo AFTER"}) {
+		t.Fatalf("the terminal was given %q", got)
+	}
+}
+
+// Two notices of one layout removed twice, Undo pressed on both: in
+// either order the layout is back, and the dialog reaches its window.
+func TestTwoUndosInEitherOrderEndTheSame(t *testing.T) {
+	for _, order := range [][2]int{{0, 1}, {1, 0}} {
+		t.Run(fmt.Sprint(order), func(t *testing.T) {
+			a, opened := openingApp(t)
+			a.st.ShellSetup = false
+			kept := keep(t, a, alone("Shop", settings.SavedPane{Kind: settings.LayoutTerminal, Command: plainShell()}))
+			pane := slotPanes(t, a, opens(t, a, opened, kept.ID))["p1"]
+			var undo []RestoreLayout
+			for range 2 {
+				a.handle(RemoveLayout{ID: kept.ID})
+				undo = append(undo, a.st.Notices[len(a.st.Notices)-1].On.(RestoreLayout))
+				a.handle(undo[len(undo)-1])
+				a.handle(RemoveLayout{ID: kept.ID})
+			}
+			a.st.Notices = nil
+			a.handle(undo[order[0]])
+			a.handle(undo[order[1]])
+			if len(a.st.Layouts) != 1 || a.st.Layouts[0].ID != kept.ID {
+				t.Fatalf("back as %+v", a.st.Layouts)
+			}
+			a.handle(SaveStartLines{Layout: a.st.Layouts[0], Lines: map[string][]string{"p1": {"echo BOTH"}}})
+			if got := a.startLines[pane]; !slices.Equal(got, []string{"echo BOTH"}) {
+				t.Fatalf("the terminal was given %q", got)
+			}
+		})
+	}
+}
+
+// A window saved as a layout while a pane waits links the slot it
+// waits in, and the pane it becomes: no link is left under the waiting
+// pane's ID.
+func TestAWaitingPaneLeavesNoLinkBehind(t *testing.T) {
+	a, opened := openingApp(t)
+	a.st.ShellSetup = false
+	kept := keep(t, a, slowLayout(t, "Slow"))
+	waiting := waitingSlow(t, a, kept.ID)
+	w := layoutWindow(a)
+	again, _, _, err := a.saveLayout(SaveLayout{Window: w.id, Name: "Slow", Replace: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := a.linesFrom[waiting]; ok {
+		t.Fatalf("the waiting pane is linked: %+v", a.linesFrom[waiting])
+	}
+	waitFor(t, a, "the layout's window", func() bool { return opened.Load() == 1 })
+	p := onlyPane(t, a, w)
+	if _, ok := a.linesFrom[waiting]; ok {
+		t.Fatalf("started, the waiting pane is still linked: %+v", a.linesFrom[waiting])
+	}
+	if got := a.linesFrom[p.ID]; got.rev != again.Rev || got.slot != "p1" {
+		t.Fatalf("the pane is linked to %+v, want p1 of revision %s", got, again.Rev)
+	}
+}
+
+// A layout written by a kakel before revisions has none; a window
+// opened from it is reached by the dialog all the same.
+func TestALayoutWithNoRevLinksItsPanes(t *testing.T) {
+	a, opened := openingApp(t)
+	a.st.ShellSetup = false
+	keep(t, a, alone("Old", settings.SavedPane{Kind: settings.LayoutTerminal, Command: plainShell()}))
+	path := a.settings.Path()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var file map[string]any
+	if err := json.Unmarshal(raw, &file); err != nil {
+		t.Fatal(err)
+	}
+	for _, l := range file["layouts"].([]any) {
+		delete(l.(map[string]any), "rev")
+	}
+	if raw, err = json.Marshal(file); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if a.settings, err = settings.Load(path); err != nil {
+		t.Fatal(err)
+	}
+	a.st.Layouts = a.settings.Layouts()
+	if rev := a.st.Layouts[0].Rev; rev != "" {
+		t.Fatalf("the old layout reads with revision %q", rev)
+	}
+	pane := slotPanes(t, a, opens(t, a, opened, a.st.Layouts[0].ID))["p1"]
+	a.handle(SaveStartLines{Layout: a.st.Layouts[0], Lines: map[string][]string{"p1": {"echo OLD"}}})
+	if got := a.startLines[pane]; !slices.Equal(got, []string{"echo OLD"}) {
+		t.Fatalf("the terminal was given %q", got)
+	}
+}
+
+// Another kakel saving over the layout leaves the panes opened here from
+// it as they are: the dialog's lines, saved here after, go to the
+// layout and not to them.
+func TestASaveFromAnotherKakelLeavesThePanes(t *testing.T) {
+	a, opened := openingApp(t)
+	a.st.ShellSetup = false
+	kept := keep(t, a, alone("Shop", settings.SavedPane{Kind: settings.LayoutTerminal, Command: plainShell()}))
+	pane := slotPanes(t, a, opens(t, a, opened, kept.ID))["p1"]
+	other, err := settings.Load(a.settings.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := other.SaveLayout(kept, true); err != nil {
+		t.Fatal(err)
+	}
+	a.handle(SaveStartLines{Layout: a.st.Layouts[0], Lines: map[string][]string{"p1": {"echo THERE"}}})
+	if len(a.st.Notices) != 0 {
+		t.Fatalf("saving the lines said %+v", a.st.Notices)
+	}
+	if got := a.st.Layouts[0].Panes["p1"].Start; !slices.Equal(got, []string{"echo THERE"}) {
+		t.Fatalf("the layout holds %q", got)
+	}
+	if got := a.startLines[pane]; got != nil {
+		t.Fatalf("the terminal was given %q", got)
+	}
+}
+
+// A layout of one terminal through the window desk, open in three
+// windows here: the second window's pane dragged into the first, and the
+// first saved over the layout. What is written down of the panes it
+// holds there still has all three, the third window's too, so that one
+// is watched again, as before start lines.
+func TestSavingOverWithAPaneDraggedInKeepsEveryFarPane(t *testing.T) {
+	a, b, opened := windowLayoutApps(t)
+	id := keep(t, b, alone("Desk", throughDesk(settings.SavedPane{Kind: settings.LayoutTerminal}))).ID
+	w1 := openLanded(t, a, b, opened, id)
+	w2 := openLanded(t, a, b, opened, id)
+	w3 := openLanded(t, a, b, opened, id)
+	third := farIDs(b, w3)[0]
+	b.moveToWindow(b.panesIn(w2)[0].ID, w1)
+	if _, _, _, err := b.saveLayout(SaveLayout{Window: w1.id, Name: "Desk", Replace: true}); err != nil {
+		t.Fatal(err)
+	}
+	recs := b.recordsOf(id)
+	if len(recs) != 3 || !slices.ContainsFunc(recs, func(r settings.LayoutPane) bool { return r.Pane == third }) {
+		t.Fatalf("written down: %+v; want three, the third window's %s among them", recs, third)
 	}
 }
 

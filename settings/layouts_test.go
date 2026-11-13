@@ -493,3 +493,55 @@ func TestStartLinesSeeALayoutSavedOver(t *testing.T) {
 		t.Fatalf("a folder in bytes that are not UTF-8 refused the lines: %v", err)
 	}
 }
+
+// A layout is given a new Rev each time it is saved, anew or over
+// another; a change of start lines, a rename, Open at start and putting
+// it back after Remove keep the one it has.
+func TestARevChangesOnlyWhenALayoutIsSavedWhole(t *testing.T) {
+	s, err := Load(at(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, _, err := s.SaveLayout(aLayout("Work"), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Rev == "" {
+		t.Fatal("a layout saved has no Rev")
+	}
+	over, _, err := s.SaveLayout(aLayout("Work"), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if over.Rev == "" || over.Rev == first.Rev {
+		t.Fatalf("saved over, Rev %q, was %q", over.Rev, first.Rev)
+	}
+	rev := func() string {
+		t.Helper()
+		return s.Layouts()[0].Rev
+	}
+	steps := []struct {
+		what string
+		do   func() error
+	}{
+		{"start lines", func() error { return s.PutStartLines(over, map[string][]string{"p1": {"ls"}}) }},
+		{"a rename", func() error { return s.RenameLayout(over.ID, "Office") }},
+		{"open at start", func() error { return s.PutLayoutAtStart(over.ID, true) }},
+		{"removed and put back", func() error {
+			l := s.Layouts()[0]
+			if err := s.DropLayout(l.ID); err != nil {
+				return err
+			}
+			_, err := s.PutLayoutBack(l, 0)
+			return err
+		}},
+	}
+	for _, step := range steps {
+		if err := step.do(); err != nil {
+			t.Fatalf("%s: %v", step.what, err)
+		}
+		if got := rev(); got != over.Rev {
+			t.Fatalf("after %s, Rev %q, want %q", step.what, got, over.Rev)
+		}
+	}
+}

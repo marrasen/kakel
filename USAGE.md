@@ -236,11 +236,14 @@ A layout is one window, saved to open again as it is.
   opened from the layout, or saved as it, keeps the lines given here
   when it is saved over the layout again. Lines saved while that
   window's terminal is still starting are the ones typed into it.
-  Where another window was saved over the layout since, the lines go
-  to the terminal that is in that slot now; a terminal whose slot is
-  no longer in the layout is given none. A removed layout gives no
-  lines to the windows opened from it, even when a new layout gets
-  its name; Undo links them again.
+  The lines reach only the windows opened from the layout as it is
+  now, or saved as it. When the same layout is open in two windows and
+  one is saved over it, the other window's terminals no longer follow
+  the dialog: they keep the lines they have, and saving that window
+  over the layout writes those. The same goes for a layout saved over
+  by another kakel, and for a layout removed and a new one saved under
+  its name. Undo of a removal puts the layout back as it was, and the
+  dialog reaches its windows again.
 - **Panes through another kakel window.** These are kept by the
   window, and by the machine beyond it when the pane ran on one the
   window reaches. Opening the layout connects to the window once for

@@ -1,6 +1,8 @@
 package settings
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -37,6 +39,22 @@ type SavedLayout struct {
 
 	// AtStart opens it as kakel starts.
 	AtStart bool `json:"atStart,omitempty"`
+
+	// Rev is a token given afresh each time the layout's tree and panes
+	// are written as a whole: saved anew, or saved over. A change of
+	// start lines, a rename, Open at start and putting a removed layout
+	// back keep it. What was linked to a slot of the layout holds only
+	// while Rev is the one it was linked against. A layout written
+	// before this field, or by a kakel without it, has none, which is a
+	// revision like any other until the layout is saved over.
+	Rev string `json:"rev,omitempty"`
+}
+
+// newRev is a fresh revision token for a layout.
+func newRev() string {
+	var b [8]byte
+	_, _ = rand.Read(b[:])
+	return hex.EncodeToString(b[:])
 }
 
 // LayoutNode is one part of a saved window's tree, as gunim's dock
@@ -217,10 +235,12 @@ func (s *Settings) Layouts() []SavedLayout {
 // takes its place in the list, its ID, and whether it opens at start.
 //
 // All of it is decided on the list as the file holds it now, so a
-// layout another kakel saved or removed since is seen.
+// layout another kakel saved or removed since is seen. Either way it is
+// given a new Rev.
 func (s *Settings) SaveLayout(l SavedLayout, replace bool) (SavedLayout, bool, error) {
 	l = l.Clone().tidy()
 	l.Name = strings.TrimSpace(l.Name)
+	l.Rev = newRev()
 	replaced := false
 	err := s.putLayouts(func(have []SavedLayout) ([]SavedLayout, error) {
 		if l.Name == "" {
@@ -248,13 +268,13 @@ func (s *Settings) SaveLayout(l SavedLayout, replace bool) (SavedLayout, bool, e
 }
 
 // ReplaceLayout puts l in place of the layout with its ID, where that
-// one stood in the list, and saves: a layout saved again over one of the
-// same name, or renamed, or set to open at start. A name another layout
-// has is refused with ErrLayoutNameUsed, and an ID no layout has with
-// ErrNoLayout.
+// one stood in the list, and saves, as a layout written as a whole, with
+// a new Rev. A name another layout has is refused with
+// ErrLayoutNameUsed, and an ID no layout has with ErrNoLayout.
 func (s *Settings) ReplaceLayout(l SavedLayout) error {
 	l = l.Clone().tidy()
 	l.Name = strings.TrimSpace(l.Name)
+	l.Rev = newRev()
 	return s.editLayout(l.ID, func(at *SavedLayout) { *at = l })
 }
 
@@ -360,7 +380,8 @@ func (s *Settings) DropLayout(id string) error {
 // was given that ID since, when it is given one of its own as a new
 // layout is. A name another layout took since is refused with
 // ErrLayoutNameUsed, as a layout saved under it would be. A layout back
-// in the list already, just as it was, is left as it is.
+// in the list already, just as it was, is left as it is. It keeps the
+// Rev it had, so what was linked to it holds again.
 func (s *Settings) PutLayoutBack(l SavedLayout, at int) (SavedLayout, error) {
 	l = l.Clone().tidy()
 	err := s.putLayouts(func(have []SavedLayout) ([]SavedLayout, error) {

@@ -49,9 +49,10 @@ holds in the file stay as they are. Where another window removed the
 layout, saved over it or changed the same terminal's lines meanwhile,
 Save says so under the dialog and the dialog stays open with what you
 typed. Lines given to a layout open in a window are kept when that
-window is saved over the layout again, and go to the terminal in that
-slot as the layout has it now, after another window was saved over it.
-Lines saved while a terminal is still starting are the ones typed.
+window is saved over the layout again. When the same layout is open
+in two windows and one is saved over it, the other window's terminals
+keep the lines they have and no longer follow the dialog. Lines saved
+while a terminal is still starting are the ones typed.
 
 ### Fixed
 

@@ -82,6 +82,10 @@ type slot struct {
 	// layout and name are the layout's ID and the slot's name in it, by
 	// which a pane it opened on another window is found again.
 	layout, name string
+	// link is the slot its start lines come from, for the pane it
+	// becomes: the layout as it was opened, or as its window was saved
+	// as since.
+	link layoutSlot
 }
 
 // errNothingToOpen refuses a layout of which no pane can be opened, as
@@ -92,11 +96,11 @@ var errNothingToOpen = errors.New("the layout has no panes")
 // new names, the waiting panes it holds, in order, and the pane in
 // front.
 type layoutPlan struct {
-	// from is the layout's ID.
-	from  string
-	root  *dock.Node
-	slots []plannedSlot
-	front string
+	// from is the layout's ID, and rev its Rev.
+	from, rev string
+	root      *dock.Node
+	slots     []plannedSlot
+	front     string
 }
 
 // plannedSlot is one waiting pane of a plan: its pane's ID, what goes
@@ -198,7 +202,7 @@ func (a *app) planLayout(l settings.SavedLayout) (layoutPlan, error) {
 	}
 	plan.root = root
 	plan.front = frontOf(root)
-	plan.from = l.ID
+	plan.from, plan.rev = l.ID, l.Rev
 	return plan, nil
 }
 
@@ -234,7 +238,8 @@ func (a *app) fillLayout(plan layoutPlan, w *ownWin) {
 		unnamed.Title = ""
 		p.shell = a.waitTitle(unnamed, m)
 		a.st.Panes = append(a.st.Panes, p)
-		a.slots[s.id] = &slot{recipe: s.recipe, layout: plan.from, name: s.name}
+		a.slots[s.id] = &slot{recipe: s.recipe, layout: plan.from, name: s.name,
+			link: layoutSlot{layout: plan.from, slot: s.name, rev: plan.rev}}
 		a.setWait(s.id, Waiting{Doing: a.doingOf(s.recipe, m)})
 		ids = append(ids, s.id)
 	}
@@ -1055,8 +1060,8 @@ func (a *app) intoSlot(p Pane, id string) {
 		if len(s.recipe.Start) > 0 {
 			a.startLines[p.ID] = slices.Clone(s.recipe.Start)
 		}
-		if s.layout != "" {
-			a.linesFrom[p.ID] = layoutSlot{layout: s.layout, slot: s.name}
+		if s.link.layout != "" {
+			a.linesFrom[p.ID] = s.link
 		}
 	}
 	a.forgetSlot(id)

@@ -195,8 +195,9 @@ The whole list. The [README](README.md) has the short version.
   coloured for its shell and marking a line written for another one;
   the card counts the lines its terminals type. Two windows can give
   lines to two terminals of one layout, and a window saved over its
-  layout keeps the lines given since; the lines go to the terminal in
-  the slot as the layout has it now. A layout can open as
+  layout keeps the lines given since. A window opened from an older
+  save of the layout, before another window was saved over it, keeps
+  the lines it has. A layout can open as
   kakel starts, and be given a key in Settings › Shortcuts. Tool panes
   such as Settings are left out; so are readers and tunnels, and saving
   names those.

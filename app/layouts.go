@@ -67,9 +67,6 @@ type (
 		Layout settings.SavedLayout
 		At     int
 		Panes  []settings.LayoutPane
-		// links are the panes that were linked to its slots, to link
-		// again where nothing linked them since.
-		links []slotLink
 	}
 	// ShowLayouts opens the Layouts pane, or goes to it.
 	ShowLayouts struct{}
@@ -107,120 +104,21 @@ func (a *app) saveLayout(in SaveLayout) (settings.SavedLayout, leftOut, bool, er
 	if err == nil {
 		// Saved as it, the window is offered it to save over next time.
 		w.fromLayout = kept.ID
-		// A layout saved anew has nothing of the one that had its ID
-		// before, removed: the panes still linked to that one are not its.
-		var renamed map[string]string
-		if replaced {
-			renamed = a.slotsRenamed(kept.ID, names)
-		}
-		a.relink(kept.ID, names, renamed)
-		a.recordSaved(kept.ID, kept, names, renamed)
-		for id, slot := range names {
-			a.linesFrom[id] = layoutSlot{layout: kept.ID, slot: slot}
+		a.recordSaved(kept.ID, kept, names)
+		// The window's panes are linked to the layout as saved now, a pane
+		// still waiting through its slot, for the pane it becomes. Panes
+		// of other windows stay linked to the layout as it was before,
+		// whose Rev it no longer has.
+		for id, name := range names {
+			link := layoutSlot{layout: kept.ID, slot: name, rev: kept.Rev}
+			if s := a.slots[id]; s != nil {
+				s.link = link
+			} else {
+				a.linesFrom[id] = link
+			}
 		}
 	}
 	return kept, left, replaced, err
-}
-
-// slotsRenamed is the name each slot of layout gets as window panes,
-// whose slots names gives by pane, are saved over it: by the slot's name
-// before, as the window's panes opened from it or saved into it had it.
-// A slot two panes of the window had, as one dragged in from another
-// copy of the layout, is named by neither.
-func (a *app) slotsRenamed(layout string, names map[string]string) map[string]string {
-	renamed, twice := map[string]string{}, map[string]bool{}
-	note := func(was, name string) {
-		if now, ok := renamed[was]; ok && now != name {
-			twice[was] = true
-		}
-		renamed[was] = name
-	}
-	for id, name := range names {
-		if from, ok := a.linesFrom[id]; ok && from.layout == layout {
-			note(from.slot, name)
-		}
-		if fp, ok := a.farPanes[id]; ok && fp.layout == layout {
-			note(fp.slot, name)
-		}
-		if s := a.slots[id]; s != nil && s.layout == layout {
-			note(s.name, name)
-		}
-	}
-	for was := range twice {
-		delete(renamed, was)
-	}
-	return renamed
-}
-
-// relink points the panes of other windows linked to a slot of layout,
-// open from it or waiting to open, at the slot's new name, renamed by
-// its name before, as window panes whose slots names gives by pane were
-// saved over it; a pane whose slot is not in renamed is linked to
-// nothing, as its slot's name may now be another pane's. A pane let go
-// of keeps the lines it has.
-func (a *app) relink(layout string, names, renamed map[string]string) {
-	for id, from := range a.linesFrom {
-		if _, saved := names[id]; saved || from.layout != layout {
-			continue
-		}
-		if name, ok := renamed[from.slot]; ok {
-			a.linesFrom[id] = layoutSlot{layout: layout, slot: name}
-		} else {
-			delete(a.linesFrom, id)
-		}
-	}
-	for id, s := range a.slots {
-		if _, saved := names[id]; saved || s.layout != layout {
-			continue
-		}
-		if name, ok := renamed[s.name]; ok {
-			s.name = name
-		} else {
-			s.layout, s.name = "", ""
-		}
-	}
-}
-
-// slotLink is a pane, or a waiting pane, linked to a slot of a layout
-// removed, to link again should Undo bring the layout back.
-type slotLink struct {
-	pane, slot string
-	waiting    bool
-}
-
-// unlink lets go of every pane linked to layout id, removed, and returns
-// the links, for Undo.
-func (a *app) unlink(id string) []slotLink {
-	var out []slotLink
-	for pane, from := range a.linesFrom {
-		if from.layout == id {
-			out = append(out, slotLink{pane: pane, slot: from.slot})
-			delete(a.linesFrom, pane)
-		}
-	}
-	for pane, s := range a.slots {
-		if s.layout == id {
-			out = append(out, slotLink{pane: pane, slot: s.name, waiting: true})
-			s.layout, s.name = "", ""
-		}
-	}
-	return out
-}
-
-// linkBack links again the panes links names to the layout brought back
-// as id: each still open, or still waiting, and linked to no layout since.
-func (a *app) linkBack(id string, links []slotLink) {
-	for _, l := range links {
-		if l.waiting {
-			if s := a.slots[l.pane]; s != nil && s.layout == "" {
-				s.layout, s.name = id, l.slot
-			}
-			continue
-		}
-		if _, linked := a.linesFrom[l.pane]; !linked && slices.ContainsFunc(a.st.Panes, func(p Pane) bool { return p.ID == l.pane }) {
-			a.linesFrom[l.pane] = layoutSlot{layout: id, slot: l.slot}
-		}
-	}
 }
 
 // sayLayoutSaved says layout l was saved, or saved over one of its
@@ -525,8 +423,12 @@ func (a *app) renameLayout(in RenameLayout) error {
 
 // saveStartLines gives a layout's terminals their start lines, and the
 // panes open from those slots, or waiting to open, the same lines to
-// keep, so the layout saved again from their window keeps them. They are
-// not typed into a shell running already.
+// keep, so the layout saved again from their window keeps them. Only a
+// pane linked to the layout as the file holds it now, by its Rev, is
+// given them: one linked to it before it was saved over, from another
+// window or another kakel, or before it was removed and another layout
+// took its ID, keeps the lines it has. They are not typed into a shell
+// running already.
 func (a *app) saveStartLines(in SaveStartLines) error {
 	if a.settings == nil {
 		return errNoSettings
@@ -536,26 +438,37 @@ func (a *app) saveStartLines(in SaveStartLines) error {
 	if err != nil {
 		return err
 	}
+	i := slices.IndexFunc(a.st.Layouts, func(l settings.SavedLayout) bool { return l.ID == in.Layout.ID })
+	if i < 0 {
+		return nil
+	}
+	now := a.st.Layouts[i]
+	given := func(link layoutSlot) ([]string, bool) {
+		if link.layout != now.ID || link.rev != now.Rev {
+			return nil, false
+		}
+		lines, ok := in.Lines[link.slot]
+		return settings.StartLines(lines), ok
+	}
 	for id, from := range a.linesFrom {
-		if lines, ok := in.Lines[from.slot]; ok && from.layout == in.Layout.ID {
-			if lines = settings.StartLines(lines); lines != nil {
-				a.startLines[id] = lines
-			} else {
-				delete(a.startLines, id)
-			}
+		if lines, ok := given(from); ok && lines != nil {
+			a.startLines[id] = lines
+		} else if ok {
+			delete(a.startLines, id)
 		}
 	}
 	for _, s := range a.slots {
-		if lines, ok := in.Lines[s.name]; ok && s.layout == in.Layout.ID && s.recipe.Kind == settings.LayoutTerminal {
-			s.recipe.Start = settings.StartLines(lines)
+		if lines, ok := given(s.link); ok && s.recipe.Kind == settings.LayoutTerminal {
+			s.recipe.Start = lines
 		}
 	}
 	return nil
 }
 
-// layoutSlot is a slot of a layout: the layout's ID, and the slot's name
-// in it.
-type layoutSlot struct{ layout, slot string }
+// layoutSlot is a link to a slot of a layout: the layout's ID, the
+// slot's name in it, and the layout's Rev as the link was made. It
+// holds only while the layout has that Rev.
+type layoutSlot struct{ layout, slot, rev string }
 
 // setLayoutAtStart has a layout open as kakel starts, or not.
 func (a *app) setLayoutAtStart(in SetLayoutAtStart) error {
@@ -585,11 +498,10 @@ func (a *app) removeLayout(id string) error {
 	a.editRecords(func(p []settings.LayoutPane) []settings.LayoutPane {
 		return slices.DeleteFunc(p, func(r settings.LayoutPane) bool { return r.Layout == id })
 	})
-	// The panes open from it are linked to nothing, so a layout given its
-	// ID later gives them none of its lines.
-	links := a.unlink(id)
+	// The panes open from it stay linked to it as it was: Undo puts it
+	// back with its Rev, and a layout saved under its ID has another.
 	if at >= 0 {
-		a.post(Notice{Title: "Removed " + have[at].Name, Kind: NoticeWorked, Action: "Undo", On: RestoreLayout{Layout: have[at], At: at, Panes: recs, links: links}})
+		a.post(Notice{Title: "Removed " + have[at].Name, Kind: NoticeWorked, Action: "Undo", On: RestoreLayout{Layout: have[at], At: at, Panes: recs}})
 	}
 	return nil
 }
@@ -604,7 +516,6 @@ func (a *app) restoreLayout(in RestoreLayout) error {
 	a.st.Layouts = a.settings.Layouts()
 	if err == nil {
 		a.restoreRecords(back.ID, in.Panes)
-		a.linkBack(back.ID, in.links)
 	}
 	if errors.Is(err, settings.ErrLayoutNameUsed) {
 		return errors.New("another layout is called " + strings.TrimSpace(in.Layout.Name) + " now")

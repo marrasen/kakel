@@ -301,11 +301,8 @@ func (a *app) landedFor(s *slot, r settings.SavedPane) func(string) {
 			return
 		}
 		// As the slot is named now: a save while it waited names it
-		// afresh, or lets it go.
+		// afresh.
 		layout, name := s.layout, s.name
-		if layout == "" {
-			return
-		}
 		fp.layout, fp.slot = layout, name
 		a.farPanes[id] = fp
 		rec := settings.LayoutPane{Layout: layout, Slot: name, From: thisComputer(), Window: fp.kept,
@@ -414,13 +411,22 @@ func (a *app) editRecords(edit func([]settings.LayoutPane) []settings.LayoutPane
 // same panes, and a slot whose pane is not one of those any more comes
 // back to none. Another copy of the layout open now keeps the panes it
 // watches, under the new names of its slots, where the saved window
-// still has them: renamed gives each slot's new name by its old one, as
-// slotsRenamed finds them.
-func (a *app) recordSaved(layout string, l settings.SavedLayout, names, renamed map[string]string) {
+// still has them.
+func (a *app) recordSaved(layout string, l settings.SavedLayout, names map[string]string) {
 	if a.settings == nil {
 		return
 	}
 	here := thisComputer()
+	// The saved window's slots, by the names the layout had for them.
+	renamed := map[string]string{}
+	for id, name := range names {
+		if fp, ok := a.farPanes[id]; ok && fp.layout == layout {
+			renamed[fp.slot] = name
+		}
+		if s := a.slots[id]; s != nil && s.layout == layout {
+			renamed[s.name] = name
+		}
+	}
 	had := slices.DeleteFunc(a.layoutPanes(), func(p settings.LayoutPane) bool { return p.Layout != layout || p.From != here })
 	var recs []settings.LayoutPane
 	for id, name := range names {
