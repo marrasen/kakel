@@ -109,6 +109,13 @@ func (a *app) addWindow(c gunim.Client, gw *gunim.Window) *ownWin {
 	if a.cur == nil {
 		a.cur = w
 	}
+	// A notice that asks, posted with no window open, has waited for
+	// this one.
+	for i := range a.st.Notices {
+		if n := &a.st.Notices[i]; n.win == 0 && len(n.Buttons) > 0 {
+			n.win = w.id
+		}
+	}
 	return w
 }
 

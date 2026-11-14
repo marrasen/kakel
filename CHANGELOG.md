@@ -7,6 +7,29 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
+## Unreleased
+
+### Fixed
+
+**The notice of an update that installed itself offers the restart.**
+When kakel fetched a new release in the background, the notice said it
+was ready and would start the next time kakel did, with only a What's
+New link. It now has a Restart Now button beside What's New, and stays
+until it is answered or closed.
+
+- Restart Now asks first while anything is open, as Exit does. Told
+  no, kakel offers the restart again.
+- With kakel in the tray and no window open, the tray says the release
+  is ready, and the notice waits for the next window.
+- A later release's notice takes the place of an earlier one's, and
+  What's New always opens the release that is waiting.
+
+### Changed
+
+**A restart asks "Restart kakel?".** The question before a restart
+into an update, or into the installed kakel, said "Exit kakel?" with
+an Exit button. It now says what it does.
+
 ## v0.12.2-beta.17
 
 ### Added

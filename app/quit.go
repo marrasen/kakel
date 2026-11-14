@@ -20,7 +20,15 @@ import (
 // done and three shells is not one to lose to a slip of the mouse.
 
 // askToQuit asks before the window goes, and says what is still open.
-func (a *app) askToQuit() {
+func (a *app) askToQuit() { a.askToLeave("Exit", nil) }
+
+// askToRestart is askToQuit for a restart, asked in those words. no,
+// when set, runs once the user has said no to it.
+func (a *app) askToRestart(no func()) { a.askToLeave("Restart", no) }
+
+// askToLeave asks whether to do what verb names, Exit or Restart, while
+// anything is open, and leaves on a yes, or with nothing open.
+func (a *app) askToLeave(verb string, no func()) {
 	if a.leaving {
 		// Already asking.
 		return
@@ -33,16 +41,19 @@ func (a *app) askToQuit() {
 	a.leaving = true
 	go func() {
 		_, err := a.ask(a.ctx, Ask{
-			Title: "Exit kakel?", Text: "Still open: " + listOf(open) + ".",
-			Yes: "Exit", Danger: true,
+			Title: verb + " kakel?", Text: "Still open: " + listOf(open) + ".",
+			Yes: verb, Danger: true,
 		})
 		a.events <- func() {
 			a.leaving = false
 			if err == nil {
 				a.exitNow()
-			} else {
-				// A restart asked for is not done by a quit long after.
-				restartInto = ""
+				return
+			}
+			// A restart asked for is not done by a quit long after.
+			restartInto = ""
+			if no != nil {
+				no()
 			}
 		}
 	}()
