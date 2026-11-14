@@ -7,6 +7,39 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
+## v0.12.2-beta.17
+
+### Added
+
+**Paste files another program copied, on Windows.** Paste in Files now
+takes files that Explorer, or a Remote Desktop session, put on the
+clipboard. Before, it took only what a kakel window had cut or copied
+itself. The clipboard's files are pasted when they are newer than the
+window's own cut or copy, and Paste in the right-click menu is enabled
+for them. By Eriknord20.
+
+- Files copied in Explorer are copied, into a folder on this computer
+  or onto a server. Files cut in Explorer are moved, once: a second
+  Ctrl+V does nothing.
+- Files copied in a Remote Desktop session are fetched from the far
+  computer as they are pasted, with the same progress card, replace
+  question, Undo and Retry as any copy. Stop is heard within about two
+  seconds.
+- A paste stops, and says to paste again, when the clipboard changes
+  while it runs. A file that arrives shorter or longer than the
+  clipboard said fails, and does not replace the file already there.
+
+### Fixed
+
+**Delete works on a file that Files is reading, on Windows.** Delete,
+move and trash failed now and then on a file whose preview or
+thumbnail was being read at that moment. Files now opens what it reads
+so that Windows lets it be deleted meanwhile.
+
+### Changed
+
+**A newer gunim.** kakel moves to gunim c713509.
+
 ## v0.12.2-beta.16
 
 ### Added
