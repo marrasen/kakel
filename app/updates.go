@@ -44,9 +44,12 @@ type (
 	// ShowWhatsNew shows what the releases after From changed, up to
 	// this one: every release's notes for "".
 	ShowWhatsNew struct{ From string }
-	// ShowReadyUpdate shows the update window on Release, put in place
-	// by itself, to restart into it.
-	ShowReadyUpdate struct{ Release install.Release }
+	// ShowReadyUpdate shows the update window on the release put in
+	// place by itself, to restart into it.
+	ShowReadyUpdate struct{}
+	// RestartIntoUpdate restarts kakel into the update put in place by
+	// itself, asking first as Exit does.
+	RestartIntoUpdate struct{}
 	// SetBeta has updates take beta releases too, or no longer.
 	SetBeta struct{ On bool }
 	// ShowAbout opens the window about kakel: its version, what each
@@ -182,20 +185,58 @@ func (a *app) setBeta(on bool) error {
 }
 
 // updated says a release gunim's updates put in place by themselves is
-// ready, with the update window, its notes and its restart, a click
-// away. Without that window, it offers the restart.
+// ready, and offers the restart into it, with the update window and
+// its notes a click away. Without that window, it asks.
 func (a *app) updated(r install.Release) {
 	exe, err := executable()
 	if err != nil {
 		return
 	}
-	a.staged = r.Version
+	a.staged = r
 	if a.updateWins == nil {
 		a.offerRestart(exe, "kakel "+r.Version+" is ready", "It starts the next time kakel does.")
 		return
 	}
-	a.post(Notice{Title: "kakel " + r.Version + " is ready", Body: "It starts the next time kakel does.",
-		Action: "What's New", On: ShowReadyUpdate{Release: r}})
+	if len(a.liveWins()) == 0 && a.inTray() && a.traySet.Notify != nil {
+		// No window shows the notice, which waits for the next one: the
+		// tray tells meanwhile.
+		_ = a.traySet.Notify("kakel "+r.Version+" is ready", "Open a window to restart now, or it starts the next time kakel does.")
+	}
+	a.sayReady()
+}
+
+// sayReady says the release put in place is ready, and offers the
+// restart into it, in the words gunim's install.ReadyToast has, with
+// what's new beside it. A later release's notice takes the place of an
+// earlier one's.
+func (a *app) sayReady() {
+	a.post(Notice{Title: "kakel " + a.staged.Version + " is ready", Body: "Restart now, or it starts the next time you open kakel.",
+		Key: "update", Icon: "refresh-cw", Buttons: []NoticeButton{
+			{Label: "Restart Now", On: RestartIntoUpdate{}},
+			{Label: "What's New", On: ShowReadyUpdate{}},
+		}})
+}
+
+// showReadyUpdate shows the update window on the release put in place:
+// the newest of them, whichever one's notice asked.
+func (a *app) showReadyUpdate() {
+	if a.staged.Version != "" {
+		a.offerUpdate(a.staged)
+	}
+}
+
+// restartIntoUpdate restarts kakel into the update put in place of this
+// program, asking first as Exit does. Told no, it offers again. It
+// starts with a window and no arguments, as the user asked from one,
+// where the first start may have been into the tray.
+func (a *app) restartIntoUpdate() error {
+	exe, err := executable()
+	if err != nil {
+		return err
+	}
+	restartInto = exe
+	a.askToRestart(a.sayReady)
+	return nil
 }
 
 // sayUpdated says, on the first start of a release an update put in
@@ -233,7 +274,7 @@ func (a *app) showAbout() error {
 		return nil
 	}
 	// A release put in place already is offered for the restart alone.
-	o := install.About{Quit: a.quitForUpdate, Ready: a.staged}
+	o := install.About{Quit: a.quitForUpdate, Ready: a.staged.Version}
 	if exe, err := executable(); err == nil {
 		if _, to, err := install.Where(installer()); err != nil || !samePath(exe, to) {
 			o.Exe = exe
@@ -272,7 +313,7 @@ func (a *app) quitForUpdate() error {
 	case a.events <- func() {
 		// The new copy starts kakel itself.
 		restartInto = ""
-		a.askToQuit()
+		a.askToRestart(nil)
 	}:
 		return nil
 	case <-a.ctx.Done():
@@ -361,7 +402,7 @@ func (a *app) writable() bool {
 // offers the restart into it when it is in place already.
 func (a *app) offerUpdate(newest install.Release) {
 	have := thisVersion()
-	ready := newest.Version == a.staged
+	ready := newest.Version == a.staged.Version
 	if (ready || a.writable()) && a.showUpdateWindow(newest, ready) {
 		return
 	}
@@ -420,7 +461,7 @@ func (a *app) fetchUpdate(newest install.Release, asked bool) {
 				}
 				return
 			}
-			a.staged = newest.Version
+			a.staged = newest
 			a.offerRestart(exe, "kakel "+newest.Version+" is ready", "It starts the next time kakel does.")
 		}
 	}()
@@ -442,7 +483,7 @@ func (a *app) offerRestart(exe, title, text string) {
 // it has.
 func (a *app) restartAs(exe string) {
 	restartInto = exe
-	a.askToQuit()
+	a.askToRestart(nil)
 }
 
 // installKakel installs this copy, and offers to move to it.

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/marrasen/gunim/filemanager"
+	"github.com/marrasen/gunim/install"
 	"github.com/marrasen/gunim/widget/dock"
 
 	"github.com/marrasen/kakel/look"
@@ -338,16 +339,34 @@ type Notice struct {
 	// Kind says whether it tells of a failure, of work done, or of
 	// neither.
 	Kind NoticeKind
+	// Icon, when set, names the icon before the title in the kind's
+	// place, by its Lucide name.
+	Icon string
+	// Key names the notice: one shown with the key of one still showing
+	// takes its place.
+	Key string
 	// Action names a link on the toast, and On is the intent a click on
-	// it sends.
-	Action    string
-	On        gunim.Intent
+	// it sends. A notice with buttons shows no link.
+	Action string
+	On     gunim.Intent
+	// Buttons are the notice's buttons, the first the one it expects. A
+	// notice with buttons asks: its toast stays until one of them, or
+	// its close button, is clicked, and with no window open it waits
+	// for the next one.
+	Buttons   []NoticeButton
 	Clipboard string
 	// Forget has the window take Clipboard back off the clipboard in
 	// half a minute, unless something else was copied since.
 	Forget bool
 	// win is the window it shows in.
 	win int
+}
+
+// NoticeButton is a button of a notice that asks: its label, and the
+// intent a click on it sends.
+type NoticeButton struct {
+	Label string
+	On    gunim.Intent
 }
 
 // NoticeKind is what a notice tells of, which picks its icon.
@@ -670,8 +689,8 @@ type app struct {
 	// layout is where every window's panes stand.
 	layout dock.Layout
 	// staged is the release put in place of this program, which starts
-	// the next time kakel does.
-	staged string
+	// the next time kakel does; its Version is "" for none.
+	staged install.Release
 	// work is the window last worked in, other than a tool window, and
 	// fromTool says an intent from a tool window is being handled.
 	work     *ownWin
@@ -1873,7 +1892,9 @@ func (a *app) handle(in gunim.Intent) {
 	case ShowWhatsNew:
 		err = a.showWhatsNew(in.From)
 	case ShowReadyUpdate:
-		a.offerUpdate(in.Release)
+		a.showReadyUpdate()
+	case RestartIntoUpdate:
+		err = a.restartIntoUpdate()
 	case ShowAbout:
 		err = a.showAbout()
 	case NoTextToPaste:
@@ -2031,8 +2052,12 @@ func (a *app) post(n Notice) {
 		log.Print(n.Title)
 	}
 	a.notices++
-	// A window shows only the notices meant for it.
+	// A window shows only the notices meant for it. One that asks, with
+	// no window open, waits for the next: see addWindow.
 	n.ID, n.win = a.notices, a.frontID()
+	if len(n.Buttons) > 0 && len(a.liveWins()) == 0 {
+		n.win = 0
+	}
 	a.st.Notices = append(a.st.Notices, n)
 	// The window has shown all but the newest few by now.
 	if n := len(a.st.Notices); n > 8 {

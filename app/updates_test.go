@@ -9,6 +9,9 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/marrasen/gunim"
+	"github.com/marrasen/gunim/geom"
+	"github.com/marrasen/gunim/gunimtest"
 	"github.com/marrasen/gunim/install"
 	"github.com/marrasen/kakel/internal/testhome"
 	"github.com/marrasen/kakel/settings"
@@ -111,8 +114,8 @@ func TestGunimsUpdatesAreAskedAbout(t *testing.T) {
 	waitFor(t, a, "the no", func() bool { return len(a.st.Asks) == 0 })
 	go toLive(func(a *app) { a.updated(install.Release{Version: "v99.0.0"}) })
 	waitFor(t, a, "the restart offer", func() bool { return len(a.st.Asks) == 1 })
-	if q := a.st.Asks[0]; q.Title != "kakel v99.0.0 is ready" || q.Yes != "Restart Now" || a.staged != "v99.0.0" {
-		t.Fatalf("the restart offer is %+v, staged %q", q, a.staged)
+	if q := a.st.Asks[0]; q.Title != "kakel v99.0.0 is ready" || q.Yes != "Restart Now" || a.staged.Version != "v99.0.0" {
+		t.Fatalf("the restart offer is %+v, staged %q", q, a.staged.Version)
 	}
 }
 
@@ -166,6 +169,63 @@ func TestInstallingCopiesAndOffersARestart(t *testing.T) {
 	}
 }
 
+// Restart Now on the notice of an update put in place by itself
+// restarts into this program's place, asking first as Exit does, in a
+// restart's words. Told no, kakel offers the restart again.
+func TestTheReadyNoticeRestarts(t *testing.T) {
+	a := updatesApp(t)
+	a.updateWins = &fakeUpdateWindows{}
+	t.Cleanup(func() { restartInto = "" })
+	a.updated(install.Release{Version: "v99.0.0"})
+	told := len(a.st.Notices)
+	a.handle(RestartIntoUpdate{})
+	waitFor(t, a, "the question", func() bool { return len(a.st.Asks) == 1 })
+	if exe, _ := executable(); restartInto != exe {
+		t.Fatalf("it restarts into %q", restartInto)
+	}
+	if q := a.st.Asks[0]; q.Title != "Restart kakel?" || q.Yes != "Restart" {
+		t.Fatalf("it asks %+v", q)
+	}
+	a.handle(AskAnswered{ID: a.st.Asks[0].ID})
+	waitFor(t, a, "the no", func() bool { return !a.leaving })
+	if restartInto != "" {
+		t.Fatalf("declined, it still restarts into %q", restartInto)
+	}
+	if len(a.st.Notices) != told+1 || a.st.Notices[told].Title != "kakel v99.0.0 is ready" {
+		t.Fatalf("declined, the notices are %+v", a.st.Notices)
+	}
+}
+
+// An update put in place with no window open, in the tray, is told from
+// the tray, and its notice waits for the next window.
+func TestAReadyUpdateWaitsForAWindow(t *testing.T) {
+	a, one, two := twoWindowApp(t)
+	a.updateWins = &fakeUpdateWindows{}
+	var popped []string
+	a.traySet = Tray{
+		Set:      func(gunim.Tray) error { return nil },
+		StayOpen: func(bool) {},
+		Notify:   func(title, body string) error { popped = append(popped, title); return nil },
+	}
+	a.tray.on = true
+	one.gone, two.gone = true, true
+	a.updated(install.Release{Version: "v99.0.0"})
+	if len(popped) != 1 || popped[0] != "kakel v99.0.0 is ready" {
+		t.Fatalf("the tray said %q", popped)
+	}
+	three := a.addWindow(gunimtest.New(t, geom.Sz(400, 300), nil).Client(), nil)
+	if got := a.stateFor(three, a.st).Notices; len(got) != 1 || got[0].Title != "kakel v99.0.0 is ready" {
+		t.Fatalf("the next window shows %+v", got)
+	}
+	// With a window open the notice is that window's, and the tray is
+	// left alone.
+	a.front(three)
+	a.updated(install.Release{Version: "v99.1.0"})
+	if len(popped) != 1 || len(a.stateFor(three, a.st).Notices) != 2 {
+		t.Fatalf("with a window open, the tray said %q and the window shows %+v", popped, a.stateFor(three, a.st).Notices)
+	}
+}
+
 // A restart the user then declines to quit for isn't done by a quit
 // long after.
 func TestADeclinedRestartIsForgotten(t *testing.T) {
@@ -185,7 +245,7 @@ func TestADeclinedRestartIsForgotten(t *testing.T) {
 func TestAStagedUpdateIsNotFetchedAgain(t *testing.T) {
 	a := updatesApp(t)
 	stubRelease(t, "v99.0.0")
-	a.staged = "v99.0.0"
+	a.staged = install.Release{Version: "v99.0.0"}
 	a.handle(CheckUpdates{})
 	waitFor(t, a, "the offer", func() bool { return len(a.st.Asks) == 1 })
 	if q := a.st.Asks[0]; q.Title != "kakel v99.0.0 is ready" || q.Yes != "Restart Now" {
@@ -250,14 +310,33 @@ func TestUpdatesOpenGunimsWindow(t *testing.T) {
 
 	a.updated(install.Release{Version: "v99.0.0"})
 	n := a.st.Notices[len(a.st.Notices)-1]
-	ready, ok := n.On.(ShowReadyUpdate)
-	if !ok || n.Action != "What's New" || a.staged != "v99.0.0" || len(a.st.Asks) != 0 {
+	if len(n.Buttons) != 2 || n.Buttons[0].Label != "Restart Now" || n.Buttons[1].Label != "What's New" {
+		t.Fatalf("ready, the notice's buttons are %+v", n.Buttons)
+	}
+	if _, ok := n.Buttons[0].On.(RestartIntoUpdate); !ok {
+		t.Fatalf("Restart Now sends %T", n.Buttons[0].On)
+	}
+	ready, ok := n.Buttons[1].On.(ShowReadyUpdate)
+	if !ok || a.staged.Version != "v99.0.0" || len(a.st.Asks) != 0 {
 		t.Fatalf("ready, the notice is %+v", n)
 	}
 	a.handle(ready)
 	waitFor(t, a, "the ready window", func() bool { return wins.seen(func() bool { return len(wins.updates) == 2 }) })
 	if !wins.updates[1].Ready {
 		t.Fatalf("the notice opened %+v", wins.updates)
+	}
+
+	// A later release put in place takes the notice's place, and the
+	// first one's What's New, still showing in another window, opens the
+	// later release too: the earlier one is no longer the one waiting.
+	a.updated(install.Release{Version: "v99.1.0"})
+	if later := a.st.Notices[len(a.st.Notices)-1]; later.Key == "" || later.Key != n.Key {
+		t.Fatalf("the notices are keyed %q and %q", n.Key, later.Key)
+	}
+	a.handle(ready)
+	waitFor(t, a, "the later window", func() bool { return wins.seen(func() bool { return len(wins.updates) == 3 }) })
+	if u := wins.updates[2]; !u.Ready || u.Release.Version != "v99.1.0" {
+		t.Fatalf("the first notice opened %+v", u)
 	}
 }
 

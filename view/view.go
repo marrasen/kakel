@@ -2339,7 +2339,15 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 			}
 		}
 		// Logged already, as the program posted it.
-		w.toasts.Show(widget.Toast{Title: n.Title, Body: n.Body, Kind: toastKinds[n.Kind], Action: n.Action, OnClick: widget.Sends(n.On)}, u)
+		t := widget.Toast{Title: n.Title, Body: n.Body, Kind: toastKinds[n.Kind], Icon: askIcons[n.Icon], Key: n.Key}
+		for _, b := range n.Buttons {
+			t.Buttons = append(t.Buttons, widget.ToastButton{Label: b.Label, OnClick: func(bool, *gunim.UI) gunim.Intent { return b.On }})
+		}
+		if len(n.Buttons) == 0 {
+			// A notice that asks shows its buttons alone.
+			t.Action, t.OnClick = n.Action, widget.Sends(n.On)
+		}
+		w.toasts.Show(t, u)
 	}
 	// The menus take the pane in front's lines, and tick a switch while
 	// it is on, such as the sidebar while it shows.
@@ -3743,9 +3751,10 @@ func (r *sideRow) closeMenu(u *gunim.UI) {
 	}
 }
 
-// askIcons are the icons a question can show before its title, by
-// their Lucide names.
+// askIcons are the icons a question or a notice can show before its
+// title, by their Lucide names.
 var askIcons = map[string]*icon.Icon{
+	"refresh-cw":   icon.RefreshCw,
 	"shield-alert": icon.ShieldAlert,
 	"key-round":    icon.KeyRound,
 	"log-in":       icon.LogIn,
