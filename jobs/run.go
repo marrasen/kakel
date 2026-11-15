@@ -543,6 +543,10 @@ func (j *Job) file(ctx context.Context, it item, to string, have vfs.Entry, over
 	// The mode a file already there keeps is its own: a copy over it
 	// changes what is in it, not who may read it.
 	mode := j.modeFor(it.e)
+	// Whether the source was private, for the note when the server
+	// refuses the mode: a copy over a private file is not one of a
+	// private file.
+	private := vfs.OwnerOnly(mode)
 	if over && !have.IsDir() {
 		mode = have.Mode
 	}
@@ -568,7 +572,7 @@ func (j *Job) file(ctx context.Context, it item, to string, have vfs.Entry, over
 	}
 	if refused := vfs.ModeRefused(out); refused != nil {
 		// The file is all there, with the mode the server gave it.
-		j.kept(refused, mode.Perm()&0o077 == 0)
+		j.kept(refused, private)
 	}
 
 	j.update(func(p *Progress) { p.FilesDone++ })

@@ -84,6 +84,7 @@ func TestACopyThatCannotWriteStillFails(t *testing.T) {
 	for name, refuse := range map[string]func(*sshtest.NoModes){
 		"a full disk":       (*sshtest.NoModes).RefuseWrites,
 		"permission denied": (*sshtest.NoModes).DenyWrites,
+		"a rename denied":   (*sshtest.NoModes).DenyRenames,
 	} {
 		t.Run(name, func(t *testing.T) {
 			from := local(t)
@@ -106,6 +107,45 @@ func TestACopyThatCannotWriteStillFails(t *testing.T) {
 			if len(names) != 0 {
 				t.Fatalf("a copy that failed left %v", names)
 			}
+			if kept := j.Progress().Kept; len(kept) != 0 {
+				t.Fatalf("a file that was never put in place is counted: %v", kept)
+			}
 		})
+	}
+}
+
+// A copy over a file already there is counted as private by the mode
+// of the file it copies, not the one that was there.
+func TestACopyOverAFileCountsTheSourcesMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a Windows file has no mode private to its owner")
+	}
+	from := local(t)
+	write(t, from.real, "key", "the key")
+	if err := os.Chmod(filepath.Join(from.real, "key"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	srv := sshtest.NewNoModes(t)
+	to := vfs.NewSFTP("plain", nil, srv.Client, nil)
+	w, err := to.Create("/key", 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if e, err := to.Stat("/key"); err != nil || vfs.OwnerOnly(e.Mode) {
+		t.Fatalf("the file there reads %+v, %v; the test wants one that isn't private", e, err)
+	}
+
+	j := New(1).Start(t.Context(), Op{
+		Kind: Copy, From: from.fs, At: from.at, Names: []string{"key"},
+		To: to, Into: "/",
+	}, Options{Ask: Always{What: Replace}})
+	if err := ends(t, j); err != nil {
+		t.Fatalf("the job: %v", err)
+	}
+	if p := j.Progress(); len(p.Kept) != 1 || p.KeptPrivate != 1 {
+		t.Fatalf("the job kept %v with %d private, want the private key counted", p.Kept, p.KeptPrivate)
 	}
 }

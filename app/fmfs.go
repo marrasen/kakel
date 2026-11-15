@@ -151,7 +151,7 @@ func (m *fmFS) tellKept() {
 	m.kept = keptBatch{}
 	told := m.told
 	m.keptMu.Unlock()
-	if b.items == nil || told == nil {
+	if len(b.items) == 0 || told == nil {
 		return
 	}
 	k := keptNote{Server: b.server, Items: len(b.items), First: b.first}
@@ -505,13 +505,43 @@ func (m *fmFS) absent(op string, f vfs.FS, path string) error {
 // by copying: a server says no more of a rename from one mount to
 // another, though the same failure may mean something else, and then
 // the copy or the delete after it fails and says so.
+//
+// What the server refused on from goes with it to to. When the rename
+// fails, it is no longer told of: the copy that wrote from fails, and
+// nothing was put in place.
 func (m *fmFS) Rename(from, to string) error {
 	f, err := m.files()
 	if err != nil {
 		return err
 	}
 	defer m.stir()
-	err = f.Rename(from, to)
+	err = m.rename(f, from, to)
+	if err != nil {
+		m.moved(from, "")
+	} else {
+		m.moved(from, to)
+	}
+	return err
+}
+
+// moved notes that the item at from is now at to, or gone when to is
+// empty, for what the server refused on it.
+func (m *fmFS) moved(from, to string) {
+	m.keptMu.Lock()
+	defer m.keptMu.Unlock()
+	what, ok := m.kept.items[from]
+	if !ok {
+		return
+	}
+	delete(m.kept.items, from)
+	if to != "" {
+		m.kept.items[to] |= what
+	}
+}
+
+// rename is Rename on f.
+func (m *fmFS) rename(f vfs.FS, from, to string) error {
+	err := f.Rename(from, to)
 	if err == nil {
 		return nil
 	}
@@ -557,12 +587,19 @@ func (m *fmFS) Volume(path string) (string, error) {
 }
 
 // Remove implements [filemanager.FS].
+//
+// What the server refused on the item at path is no longer told of: a
+// part file the copy takes away was never put in place.
 func (m *fmFS) Remove(path string) error {
 	f, err := m.files()
 	if err != nil {
 		return err
 	}
-	return f.Remove(path)
+	err = f.Remove(path)
+	if err == nil {
+		m.moved(path, "")
+	}
+	return err
 }
 
 // Chmod implements [filemanager.Stamper].
@@ -578,7 +615,7 @@ func (m *fmFS) Chmod(path string, mode fs.FileMode) error {
 		// on and the window is told. An item only its owner could read
 		// may now be readable by others.
 		what := keptPerms
-		if mode.Perm()&0o077 == 0 {
+		if vfs.OwnerOnly(mode) {
 			what |= keptPrivate
 		}
 		m.refused(path, err, what)

@@ -515,15 +515,53 @@ func keptWords(k keptNote) (title, body string) {
 	return title, body
 }
 
+// fmRunner is a file manager window, as fmBusy asks it.
+type fmRunner interface {
+	// Running is how many operations it runs: 0 too when it took a
+	// second to say, or has closed.
+	Running() int
+	// Done is closed once it has closed.
+	Done() <-chan struct{}
+}
+
+// runningWait is how long a window may take to say how many operations
+// it runs before fmBusy counts it as one that did not say.
+var runningWait = 900 * time.Millisecond
+
 // fmBusy reports whether a file manager window is running an
 // operation. It runs on any goroutine, and may take a moment.
 func (a *app) fmBusy() bool {
+	if a.fmRunners != nil {
+		return anyRunning(a.fmRunners())
+	}
 	list := a.fmRoute.Load()
 	if list == nil {
 		return false
 	}
-	for _, fw := range *list {
-		if fw.Running() > 0 {
+	ws := make([]fmRunner, len(*list))
+	for i, fw := range *list {
+		ws[i] = fw
+	}
+	return anyRunning(ws)
+}
+
+// anyRunning reports whether one of ws runs an operation. A window
+// still open that takes too long to say counts as running one: it may
+// be busy in the middle of a copy, which is then not over. The caller
+// asks again later.
+func anyRunning(ws []fmRunner) bool {
+	for _, w := range ws {
+		start := time.Now()
+		if w.Running() > 0 {
+			return true
+		}
+		if time.Since(start) < runningWait {
+			continue
+		}
+		select {
+		case <-w.Done():
+			// Closed: it runs nothing.
+		default:
 			return true
 		}
 	}

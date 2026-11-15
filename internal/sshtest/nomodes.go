@@ -25,6 +25,7 @@ type NoModes struct {
 	modes       atomic.Int32
 	writes      atomic.Pointer[error]
 	refuseTimes atomic.Bool
+	denyRenames atomic.Bool
 }
 
 // NewNoModes starts a server that doesn't store permissions, and a
@@ -69,6 +70,10 @@ func (n *NoModes) DenyWrites() {
 	n.writes.Store(&err)
 }
 
+// DenyRenames makes every rename fail from now on with "permission
+// denied".
+func (n *NoModes) DenyRenames() { n.denyRenames.Store(true) }
+
 // RefuseTimes makes it refuse to set times too from now on, with
 // "operation unsupported", as some servers do.
 func (n *NoModes) RefuseTimes() { n.refuseTimes.Store(true) }
@@ -97,6 +102,9 @@ func (c noModesCmd) Filecmd(r *sftp.Request) error {
 			c.n.mu.Unlock()
 		}
 	case "Rename":
+		if c.n.denyRenames.Load() {
+			return sftp.ErrSSHFxPermissionDenied
+		}
 		_ = c.FileCmder.Filecmd(&sftp.Request{Method: "Remove", Filepath: r.Target})
 		if err := c.FileCmder.Filecmd(r); err != nil {
 			return err

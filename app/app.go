@@ -863,6 +863,9 @@ type app struct {
 	fmTitles  map[string][2]string
 	fmFolders map[string][2]string
 	fmRoute   atomic.Pointer[[]*filemanager.Window]
+	// fmRunners, when set, are the windows fmBusy asks in place of
+	// fmRoute's, for a test.
+	fmRunners func() []fmRunner
 	hotKeys   HotKeys
 	// shortcutUndo is the way back from the last edit of the shortcuts.
 	shortcutUndo *shortcutUndo
