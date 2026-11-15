@@ -2,6 +2,9 @@ package jobs
 
 import (
 	"io"
+	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/marrasen/kakel/internal/sshtest"
@@ -15,6 +18,19 @@ func TestACopyToAServerWithoutPermissionsFinishes(t *testing.T) {
 	from := local(t)
 	write(t, from.real, "one.txt", "the first")
 	write(t, from.real, "dir/two.txt", "the second")
+	unix := runtime.GOOS != "windows"
+	if unix {
+		// A private file, and a folder the job makes wide and then
+		// narrows, which the server refuses too.
+		if err := os.Chmod(filepath.Join(from.real, "one.txt"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		dir := filepath.Join(from.real, "dir")
+		if err := os.Chmod(dir, 0o555); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+	}
 	srv := sshtest.NewNoModes(t)
 	to := vfs.NewSFTP("plain", nil, srv.Client, nil)
 
@@ -48,7 +64,10 @@ func TestACopyToAServerWithoutPermissionsFinishes(t *testing.T) {
 		t.Errorf("%d files done", p.FilesDone)
 	}
 	if len(p.Kept) != 2 {
-		t.Errorf("the job kept %v, want a refusal for each file", p.Kept)
+		t.Errorf("the job kept %v, want a refusal for each file and none for the folder", p.Kept)
+	}
+	if unix && p.KeptPrivate != 1 {
+		t.Errorf("%d private files kept the server's permissions, want 1", p.KeptPrivate)
 	}
 	for _, err := range p.Kept {
 		if !vfs.Refused(err) {
@@ -58,22 +77,35 @@ func TestACopyToAServerWithoutPermissionsFinishes(t *testing.T) {
 }
 
 // A copy whose bytes don't arrive still fails, on a server that
-// doesn't store permissions as on any other.
+// doesn't store permissions as on any other, and leaves no part file.
+// A write the server answers with "permission denied" fails too: only
+// a refused chmod is let through.
 func TestACopyThatCannotWriteStillFails(t *testing.T) {
-	from := local(t)
-	write(t, from.real, "one.txt", "the body")
-	srv := sshtest.NewNoModes(t)
-	srv.RefuseWrites()
-	to := vfs.NewSFTP("plain", nil, srv.Client, nil)
+	for name, refuse := range map[string]func(*sshtest.NoModes){
+		"a full disk":       (*sshtest.NoModes).RefuseWrites,
+		"permission denied": (*sshtest.NoModes).DenyWrites,
+	} {
+		t.Run(name, func(t *testing.T) {
+			from := local(t)
+			write(t, from.real, "one.txt", "the body")
+			srv := sshtest.NewNoModes(t)
+			refuse(srv)
+			to := vfs.NewSFTP("plain", nil, srv.Client, nil)
 
-	j := New(1).Start(t.Context(), Op{
-		Kind: Copy, From: from.fs, At: from.at, Names: []string{"one.txt"},
-		To: to, Into: "/",
-	}, Options{})
-	if err := ends(t, j); err == nil {
-		t.Fatal("a copy whose bytes never arrived finished")
-	}
-	if _, err := to.Stat("/one.txt"); err == nil {
-		t.Fatal("a copy that failed left a file at the name")
+			j := New(1).Start(t.Context(), Op{
+				Kind: Copy, From: from.fs, At: from.at, Names: []string{"one.txt"},
+				To: to, Into: "/",
+			}, Options{})
+			if err := ends(t, j); err == nil {
+				t.Fatal("a copy whose bytes never arrived finished")
+			}
+			names, err := to.ReadDir("/")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(names) != 0 {
+				t.Fatalf("a copy that failed left %v", names)
+			}
+		})
 	}
 }

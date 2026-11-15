@@ -41,13 +41,18 @@ type fmFS struct {
 	// learned, when set, runs once the home folder is read, on the
 	// goroutine that read it.
 	learned func()
-	// told, when set, hears what the server refused to set, gathered
-	// for a moment so a copy of many files tells of it once. It runs on
-	// a goroutine of its own.
-	told   func(keptNote)
-	keptMu sync.Mutex
-	kept   keptNote
-	armed  bool
+	// told, when set, hears what the server refused to set during one
+	// copy, once the copy is over. It runs on a goroutine of its own.
+	told func(keptNote)
+	// busy, when set, reports whether a file manager operation is still
+	// running, so the copy is not over yet. It may take a moment.
+	busy func() bool
+	// keptMu guards the refusals gathered so far, the timer that tells
+	// of them, and how many files are open for writing.
+	keptMu  sync.Mutex
+	kept    keptBatch
+	keptT   *time.Timer
+	writing int
 }
 
 // keptNote is what a server refused to set on the items a copy wrote,
@@ -55,47 +60,139 @@ type fmFS struct {
 type keptNote struct {
 	// Server is the machine's name.
 	Server string
-	// Items is how many refusals there were.
+	// Items is how many items had something refused, each counted once.
 	Items int
 	// Perms and Times say which it refused: the permissions, the time
 	// an item last changed, or both.
 	Perms, Times bool
+	// Private is how many of the items were readable by their owner
+	// only, and now have the server's default permissions, which may
+	// let others read them.
+	Private int
 	// First is the first refusal, as the server answered it.
 	First error
 }
 
-// keptWait is how long refusals gather before the window hears of them.
+// keptBatch gathers the refusals of one copy, by the path of each item.
+type keptBatch struct {
+	server string
+	first  error
+	items  map[string]keptWhat
+}
+
+// keptWhat is what the server refused to set on one item.
+type keptWhat uint8
+
+const (
+	keptPerms keptWhat = 1 << iota
+	keptTimes
+	// keptPrivate marks an item readable by its owner only, whose
+	// permissions the server refused.
+	keptPrivate
+)
+
+// keptWait is how long the file system stays quiet, with no file open
+// for writing and no operation running, before a copy counts as over
+// and the window hears what the server refused.
 var keptWait = 500 * time.Millisecond
 
-// refused notes that the server refused to set what err says on an item
-// that is otherwise all there. times says it was the time.
-func (m *fmFS) refused(err error, times bool) {
+// refused notes that the server refused to set what err says on the
+// item at path, which is otherwise all there.
+func (m *fmFS) refused(path string, err error, what keptWhat) {
 	m.keptMu.Lock()
 	defer m.keptMu.Unlock()
 	k := &m.kept
-	if k.Items == 0 {
-		k.First = err
+	if k.items == nil {
+		k.items = map[string]keptWhat{}
+		k.first = err
 		if n := m.name.Load(); n != nil {
-			k.Server = *n
+			k.server = *n
 		}
 	}
-	k.Items++
-	k.Perms = k.Perms || !times
-	k.Times = k.Times || times
-	if m.armed {
+	k.items[path] |= what
+	m.stirLocked()
+}
+
+// stir notes the copy is still going: what the server refused is told
+// of only once it has been quiet for keptWait.
+func (m *fmFS) stir() {
+	m.keptMu.Lock()
+	defer m.keptMu.Unlock()
+	m.stirLocked()
+}
+
+func (m *fmFS) stirLocked() {
+	if m.kept.items == nil {
 		return
 	}
-	m.armed = true
-	time.AfterFunc(keptWait, func() {
-		m.keptMu.Lock()
-		k := m.kept
-		m.kept, m.armed = keptNote{}, false
-		told := m.told
-		m.keptMu.Unlock()
-		if told != nil {
-			told(k)
+	if m.keptT == nil {
+		m.keptT = time.AfterFunc(keptWait, m.tellKept)
+		return
+	}
+	m.keptT.Reset(keptWait)
+}
+
+// tellKept tells what the server refused during the copy, once the copy
+// is over: no file is open for writing and no operation is running.
+func (m *fmFS) tellKept() {
+	m.keptMu.Lock()
+	open := m.writing > 0
+	m.keptMu.Unlock()
+	if open {
+		// The file's Close stirs the timer again.
+		return
+	}
+	if m.busy != nil && m.busy() {
+		m.stir()
+		return
+	}
+	m.keptMu.Lock()
+	b := m.kept
+	m.kept = keptBatch{}
+	told := m.told
+	m.keptMu.Unlock()
+	if b.items == nil || told == nil {
+		return
+	}
+	k := keptNote{Server: b.server, Items: len(b.items), First: b.first}
+	for _, what := range b.items {
+		k.Perms = k.Perms || what&keptPerms != 0
+		k.Times = k.Times || what&keptTimes != 0
+		if what&keptPrivate != 0 {
+			k.Private++
 		}
+	}
+	told(k)
+}
+
+// writingFile is a file the file manager writes. The copy is not over
+// until it closes.
+type writingFile struct {
+	io.WriteCloser
+	m    *fmFS
+	once sync.Once
+}
+
+func (w *writingFile) Close() error {
+	err := w.WriteCloser.Close()
+	w.once.Do(func() {
+		w.m.keptMu.Lock()
+		w.m.writing--
+		w.m.stirLocked()
+		w.m.keptMu.Unlock()
 	})
+	return err
+}
+
+// writes counts w as open for writing until it closes.
+func (m *fmFS) writes(w io.WriteCloser, err error) (io.WriteCloser, error) {
+	if err != nil {
+		return nil, err
+	}
+	m.keptMu.Lock()
+	m.writing++
+	m.keptMu.Unlock()
+	return &writingFile{WriteCloser: w, m: m}, nil
 }
 
 // newFMFS is f in the file manager, named id.
@@ -365,12 +462,12 @@ func (m *fmFS) Create(path string) (io.WriteCloser, error) {
 		return nil, err
 	}
 	if n, ok := f.(newCreator); ok {
-		return n.CreateNew(path, 0o600)
+		return m.writes(n.CreateNew(path, 0o600))
 	}
 	if err := m.absent("create", f, path); err != nil {
 		return nil, err
 	}
-	return f.Create(path, 0o600)
+	return m.writes(f.Create(path, 0o600))
 }
 
 // Mkdir implements [filemanager.FS].
@@ -382,6 +479,7 @@ func (m *fmFS) Mkdir(path string, perm fs.FileMode) error {
 	if err := m.absent("mkdir", f, path); err != nil {
 		return err
 	}
+	defer m.stir()
 	return f.Mkdir(path, perm)
 }
 
@@ -412,6 +510,7 @@ func (m *fmFS) Rename(from, to string) error {
 	if err != nil {
 		return err
 	}
+	defer m.stir()
 	err = f.Rename(from, to)
 	if err == nil {
 		return nil
@@ -476,8 +575,13 @@ func (m *fmFS) Chmod(path string, mode fs.FileMode) error {
 	if err != nil && vfs.Refused(err) {
 		// A server that doesn't store permissions. The file manager
 		// sets them on a file it has written whole, so the copy goes
-		// on and the window is told.
-		m.refused(err, false)
+		// on and the window is told. An item only its owner could read
+		// may now be readable by others.
+		what := keptPerms
+		if mode.Perm()&0o077 == 0 {
+			what |= keptPrivate
+		}
+		m.refused(path, err, what)
 		return nil
 	}
 	return err
@@ -496,7 +600,7 @@ func (m *fmFS) Chtimes(path string, mod time.Time) error {
 	}
 	err = t.Chtimes(path, mod)
 	if err != nil && vfs.Refused(err) {
-		m.refused(err, true)
+		m.refused(path, err, keptTimes)
 		return nil
 	}
 	return err

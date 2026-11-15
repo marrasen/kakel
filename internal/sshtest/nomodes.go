@@ -20,10 +20,11 @@ type NoModes struct {
 	// Client is a session on it.
 	Client *sftp.Client
 
-	mu     sync.Mutex
-	times  map[string]time.Time
-	modes  atomic.Int32
-	writes atomic.Bool
+	mu          sync.Mutex
+	times       map[string]time.Time
+	modes       atomic.Int32
+	writes      atomic.Pointer[error]
+	refuseTimes atomic.Bool
 }
 
 // NewNoModes starts a server that doesn't store permissions, and a
@@ -59,9 +60,20 @@ func (n *NoModes) Time(path string) (time.Time, bool) {
 func (n *NoModes) Refused() int { return int(n.modes.Load()) }
 
 // RefuseWrites makes every write fail from now on, as a full disk does.
-func (n *NoModes) RefuseWrites() { n.writes.Store(true) }
+func (n *NoModes) RefuseWrites() { n.writes.Store(&errDiskFull) }
 
-// noModesCmd refuses permissions, keeps times, and renames over a name
+// DenyWrites makes every write fail from now on with "permission
+// denied", the answer a refused chmod may also get.
+func (n *NoModes) DenyWrites() {
+	err := error(sftp.ErrSSHFxPermissionDenied)
+	n.writes.Store(&err)
+}
+
+// RefuseTimes makes it refuse to set times too from now on, with
+// "operation unsupported", as some servers do.
+func (n *NoModes) RefuseTimes() { n.refuseTimes.Store(true) }
+
+// noModesCmd refuses permissions, keeps times unless told not to, and renames over a name
 // that is taken.
 type noModesCmd struct {
 	sftp.FileCmder
@@ -74,6 +86,9 @@ func (c noModesCmd) Filecmd(r *sftp.Request) error {
 		flags := r.AttrFlags()
 		if flags.Permissions || flags.UidGid {
 			c.n.modes.Add(1)
+			return sftp.ErrSSHFxOpUnsupported
+		}
+		if flags.Acmodtime && c.n.refuseTimes.Load() {
 			return sftp.ErrSSHFxOpUnsupported
 		}
 		if flags.Acmodtime {
@@ -125,8 +140,8 @@ type refusingWriter struct {
 }
 
 func (w refusingWriter) WriteAt(b []byte, off int64) (int, error) {
-	if w.n.writes.Load() {
-		return 0, errDiskFull
+	if err := w.n.writes.Load(); err != nil {
+		return 0, *err
 	}
 	return w.WriterAt.WriteAt(b, off)
 }

@@ -185,6 +185,7 @@ func (a *app) fmFor(m machines.ID, f vfs.FS) *fmFS {
 			case <-a.ctx.Done():
 			}
 		}
+		fm.busy = a.fmBusy
 		a.fmFiles[m] = fm
 	} else {
 		fm.set(f)
@@ -422,6 +423,20 @@ func (a *app) transferFiles(ctx context.Context, w *filemanager.Window, t filema
 		names[at] = append(names[at], vfs.Base(o.ff, path))
 	}
 	ask := &fmAsker{p: p}
+	// What the server refused to set, over all the jobs, for one
+	// warning once they are done.
+	kept := keptNote{Server: o.tf.Name(), Perms: true}
+	defer func() {
+		if kept.Items == 0 {
+			return
+		}
+		title, body := keptWords(kept)
+		if w != nil {
+			w.Notify(title, body, "warning")
+			return
+		}
+		on(func() { a.notice(NoticePlain, title, body, "") })
+	}()
 	for _, at := range ats {
 		op := jobs.Op{Kind: kind, From: o.ff, At: at, Names: names[at], To: o.tf, Into: t.Into}
 		title := verb + " " + words.Count(len(names[at]), "item") + " to " + vfs.Base(o.tf, t.Into)
@@ -445,12 +460,16 @@ func (a *app) transferFiles(ctx context.Context, w *filemanager.Window, t filema
 		if job == nil {
 			return ctx.Err()
 		}
-		if err := follow(ctx, job, p); err != nil {
-			return err
+		err := follow(ctx, job, p)
+		if jp := job.Progress(); len(jp.Kept) > 0 {
+			if kept.First == nil {
+				kept.First = jp.Kept[0]
+			}
+			kept.Items += len(jp.Kept)
+			kept.Private += jp.KeptPrivate
 		}
-		if kept := job.Progress().Kept; len(kept) > 0 && w != nil {
-			title, body := keptWords(keptNote{Server: o.tf.Name(), Items: len(kept), Perms: true, First: kept[0]})
-			w.Notify(title, body, "warning")
+		if err != nil {
+			return err
 		}
 	}
 	return nil
@@ -480,7 +499,35 @@ func keptWords(k keptNote) (title, body string) {
 	if k.First != nil {
 		body = words.UpperFirst(k.First.Error()) + "."
 	}
+	if k.Perms && k.Private > 0 {
+		// A private file, a key say, may now be readable by others.
+		var private string
+		if k.Items == 1 {
+			private = "It was readable only by you. Others on the server may be able to read it now."
+		} else {
+			private = words.Count(k.Private, "item") + " were readable only by you. Others on the server may be able to read them now."
+			if k.Private == 1 {
+				private = "1 item was readable only by you. Others on the server may be able to read it now."
+			}
+		}
+		body = strings.TrimSpace(body + " " + private)
+	}
 	return title, body
+}
+
+// fmBusy reports whether a file manager window is running an
+// operation. It runs on any goroutine, and may take a moment.
+func (a *app) fmBusy() bool {
+	list := a.fmRoute.Load()
+	if list == nil {
+		return false
+	}
+	for _, fw := range *list {
+		if fw.Running() > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // tellKept tells the file manager panes that show a folder on the file
