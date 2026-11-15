@@ -24,6 +24,25 @@ until it is answered or closed.
 - A later release's notice takes the place of an earlier one's, and
   What's New always opens the release that is waiting.
 
+**A move between two drives counts right.** Moving folders to another
+drive showed more items done than there were, as in "114 of 15", and
+the speed graph filled to the right edge and stood still while the
+move went on. The move now counts everything before it copies the
+first file, so the numbers, the graph and the time left hold for the
+whole move.
+
+- The card says "Counting…" with the number of items found so far,
+  and "Removing the originals" while a move deletes what it copied.
+- How far along it is, and the time left, come from both the files and
+  the bytes. Many small files no longer sit near 0% with a wild time
+  left.
+- A copy of many small files is quicker: it made a new 1 MB buffer for
+  every file.
+- The name of the file on the card changes twice a second at most, so
+  it can be read.
+- The finished card's items a second count every file, as the running
+  card does.
+
 ### Changed
 
 **A restart asks "Restart kakel?".** The question before a restart
