@@ -319,6 +319,22 @@ func entryOf(name string, info fs.FileInfo, link string) Entry {
 	}
 }
 
+// ModeKeeper is a file Create or CreateNew made with the mode the
+// server gave it, as the server refused the one asked for.
+type ModeKeeper interface {
+	// ModeRefused is what the server answered.
+	ModeRefused() error
+}
+
+// ModeRefused is what the server answered when it refused to give the
+// file w the mode it was made with, and nil when it gave it.
+func ModeRefused(w io.Writer) error {
+	if k, ok := w.(ModeKeeper); ok {
+		return k.ModeRefused()
+	}
+	return nil
+}
+
 // wrap says which filesystem a failure happened on, so an error from a
 // two-pane copy names the end that could not do it. The system's own
 // error names the call and the path again, as "open D:\x: denied": the

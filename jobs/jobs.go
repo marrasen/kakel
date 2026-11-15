@@ -15,6 +15,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -84,6 +85,11 @@ type Progress struct {
 
 	// Skipped counts what the user chose not to overwrite.
 	Skipped int
+
+	// Kept is what the far end refused to set and the job carried on
+	// past, one for each item: permissions a server that doesn't store
+	// them would not take. The bytes of each are all there.
+	Kept []error
 
 	// Started is when the job began and Ended when it stopped, for a
 	// panel that wants to say how long it has been going. Ended is zero
@@ -183,7 +189,9 @@ func (j *Job) Name() string {
 func (j *Job) Progress() Progress {
 	j.mu.Lock()
 	defer j.mu.Unlock()
-	return j.p
+	p := j.p
+	p.Kept = slices.Clone(p.Kept)
+	return p
 }
 
 // Done reports a channel that is closed when the job has stopped.

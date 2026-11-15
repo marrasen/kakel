@@ -287,6 +287,9 @@ func jobRow(r *running, p jobs.Progress) Job {
 		if p.Skipped > 0 {
 			done += fmt.Sprintf(", %d left as they were", p.Skipped)
 		}
+		if len(p.Kept) > 0 {
+			done += ", " + words.Count(len(p.Kept), "item") + " with the server's default permissions"
+		}
 		said = append(said, done)
 		took := p.Ended.Sub(p.Started)
 		if took >= time.Second {

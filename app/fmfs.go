@@ -41,6 +41,61 @@ type fmFS struct {
 	// learned, when set, runs once the home folder is read, on the
 	// goroutine that read it.
 	learned func()
+	// told, when set, hears what the server refused to set, gathered
+	// for a moment so a copy of many files tells of it once. It runs on
+	// a goroutine of its own.
+	told   func(keptNote)
+	keptMu sync.Mutex
+	kept   keptNote
+	armed  bool
+}
+
+// keptNote is what a server refused to set on the items a copy wrote,
+// while the bytes of each all arrived.
+type keptNote struct {
+	// Server is the machine's name.
+	Server string
+	// Items is how many refusals there were.
+	Items int
+	// Perms and Times say which it refused: the permissions, the time
+	// an item last changed, or both.
+	Perms, Times bool
+	// First is the first refusal, as the server answered it.
+	First error
+}
+
+// keptWait is how long refusals gather before the window hears of them.
+var keptWait = 500 * time.Millisecond
+
+// refused notes that the server refused to set what err says on an item
+// that is otherwise all there. times says it was the time.
+func (m *fmFS) refused(err error, times bool) {
+	m.keptMu.Lock()
+	defer m.keptMu.Unlock()
+	k := &m.kept
+	if k.Items == 0 {
+		k.First = err
+		if n := m.name.Load(); n != nil {
+			k.Server = *n
+		}
+	}
+	k.Items++
+	k.Perms = k.Perms || !times
+	k.Times = k.Times || times
+	if m.armed {
+		return
+	}
+	m.armed = true
+	time.AfterFunc(keptWait, func() {
+		m.keptMu.Lock()
+		k := m.kept
+		m.kept, m.armed = keptNote{}, false
+		told := m.told
+		m.keptMu.Unlock()
+		if told != nil {
+			told(k)
+		}
+	})
 }
 
 // newFMFS is f in the file manager, named id.
@@ -417,19 +472,34 @@ func (m *fmFS) Chmod(path string, mode fs.FileMode) error {
 	if err != nil {
 		return err
 	}
-	return f.Chmod(path, mode)
+	err = f.Chmod(path, mode)
+	if err != nil && vfs.Refused(err) {
+		// A server that doesn't store permissions. The file manager
+		// sets them on a file it has written whole, so the copy goes
+		// on and the window is told.
+		m.refused(err, false)
+		return nil
+	}
+	return err
 }
 
 // Chtimes implements [filemanager.Stamper], where the file system can.
+// A time the server refuses to set is told of as a refused mode is.
 func (m *fmFS) Chtimes(path string, mod time.Time) error {
 	f, err := m.files()
 	if err != nil {
 		return err
 	}
-	if t, ok := f.(timer); ok {
-		return t.Chtimes(path, mod)
+	t, ok := f.(timer)
+	if !ok {
+		return nil
 	}
-	return nil
+	err = t.Chtimes(path, mod)
+	if err != nil && vfs.Refused(err) {
+		m.refused(err, true)
+		return nil
+	}
+	return err
 }
 
 // Symlink implements [filemanager.Linker].

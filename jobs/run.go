@@ -345,6 +345,12 @@ func (j *Job) narrow() error {
 			continue
 		}
 		if err := j.op.To.Chmod(made.to, mode); err != nil {
+			if vfs.Refused(err) {
+				// A server that doesn't store permissions: what is
+				// in the directory is all there.
+				j.kept(err)
+				continue
+			}
 			errs = append(errs, err)
 		}
 	}
@@ -560,9 +566,19 @@ func (j *Job) file(ctx context.Context, it item, to string, have vfs.Entry, over
 		// could be taken away.
 		return errors.Join(err, j.op.To.Remove(part))
 	}
+	if refused := vfs.ModeRefused(out); refused != nil {
+		// The file is all there, with the mode the server gave it.
+		j.kept(refused)
+	}
 
 	j.update(func(p *Progress) { p.FilesDone++ })
 	return nil
+}
+
+// kept records something the far end refused to set, which the job
+// carries on past.
+func (j *Job) kept(err error) {
+	j.update(func(p *Progress) { p.Kept = append(p.Kept, err) })
 }
 
 // partName is where a file is written while it is being written.

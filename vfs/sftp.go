@@ -224,6 +224,11 @@ func (s *SFTP) Create(path string, mode fs.FileMode) (io.WriteCloser, error) {
 		return f, nil
 	}
 	if err := s.client.Chmod(path, mode.Perm()); err != nil {
+		if Refused(err) {
+			// A server that doesn't store permissions: the file is
+			// made, and the bytes can still go in.
+			return keptMode{f, wrap(s, "set the permissions on", path, err)}, nil
+		}
 		// The file is half made: it has been emptied and nothing has
 		// been written to it. Taking it away is better than leaving one
 		// that nobody asked for with a mode nobody chose.
@@ -252,6 +257,11 @@ func (s *SFTP) CreateNew(path string, mode fs.FileMode) (io.WriteCloser, error) 
 	if err := f.Chmod(mode.Perm()); err != nil {
 		// A server may set permissions by path alone.
 		if perr := s.client.Chmod(path, mode.Perm()); perr != nil {
+			if Refused(perr) {
+				// A server that doesn't store permissions: the file is
+				// made, and the bytes can still go in.
+				return keptMode{f, wrap(s, "set the permissions on", path, perr)}, nil
+			}
 			return nil, wrap(s, "set the permissions on", path,
 				errors.Join(err, f.Close(), s.client.Remove(path)))
 		}
@@ -259,12 +269,36 @@ func (s *SFTP) CreateNew(path string, mode fs.FileMode) (io.WriteCloser, error) 
 	return f, nil
 }
 
+// keptMode is a file made with the mode the server gave it, as the
+// server refused the one asked for. It is still pkg/sftp's file, so a
+// copy into it still sends many writes at once.
+type keptMode struct {
+	*sftp.File
+	refused error
+}
+
+// ModeRefused implements [ModeKeeper].
+func (k keptMode) ModeRefused() error { return k.refused }
+
 // Failed reports whether err is SFTP's plain failure, which says nothing
 // of why: a rename across volumes fails so, as does a statvfs a server
 // can't answer.
 func Failed(err error) bool {
 	var se *sftp.StatusError
 	return errors.As(err, &se) && se.FxCode() == sftp.ErrSSHFxFailure
+}
+
+// Refused reports whether err is a server declining to set an item's
+// permissions, owner or time, rather than failing to: one that doesn't
+// store them answers "operation unsupported", and some answer
+// "permission denied". The item itself is fine. A copy carries on, and
+// says what it could not set.
+func Refused(err error) bool {
+	if errors.Is(err, fs.ErrPermission) {
+		return true
+	}
+	var se *sftp.StatusError
+	return errors.As(err, &se) && se.FxCode() == sftp.ErrSSHFxOpUnsupported
 }
 
 // Mkdir makes one directory, with the mode it was asked for rather than
@@ -292,6 +326,11 @@ func (s *SFTP) Mkdir(path string, mode fs.FileMode) error {
 		return nil
 	}
 	if err := s.client.Chmod(path, mode.Perm()); err != nil {
+		if Refused(err) {
+			// A server that doesn't store permissions: the directory
+			// is there, and what goes in it can still go in.
+			return nil
+		}
 		// Made but not as asked. It goes, so that trying again is not
 		// refused for being there already.
 		return wrap(s, "set the permissions on", path,

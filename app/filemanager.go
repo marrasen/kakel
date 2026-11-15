@@ -178,6 +178,13 @@ func (a *app) fmFor(m machines.ID, f vfs.FS) *fmFS {
 		fm = newFMFS(serverFS+string(m), f)
 		// Its place goes to its home once that is known.
 		fm.learned = func() { go func() { a.events <- a.notePlaces }() }
+		id := fm.id
+		fm.told = func(k keptNote) {
+			select {
+			case a.events <- func() { a.tellKept(id, k) }:
+			case <-a.ctx.Done():
+			}
+		}
 		a.fmFiles[m] = fm
 	} else {
 		fm.set(f)
@@ -327,7 +334,7 @@ func (a *app) visitPlace(w *filemanager.Window, fs, path string, newWindow bool)
 // stops them and asks whether to replace a file, and kakel's windows
 // list them, quietly. It runs on a goroutine of its own, and returns
 // once the items are across.
-func (a *app) transferFiles(ctx context.Context, _ *filemanager.Window, t filemanager.Transfer, p *filemanager.TransferProgress) error {
+func (a *app) transferFiles(ctx context.Context, w *filemanager.Window, t filemanager.Transfer, p *filemanager.TransferProgress) error {
 	if len(t.Paths) == 0 || t.Into == "" {
 		return nil
 	}
@@ -441,8 +448,64 @@ func (a *app) transferFiles(ctx context.Context, _ *filemanager.Window, t filema
 		if err := follow(ctx, job, p); err != nil {
 			return err
 		}
+		if kept := job.Progress().Kept; len(kept) > 0 && w != nil {
+			title, body := keptWords(keptNote{Server: o.tf.Name(), Items: len(kept), Perms: true, First: kept[0]})
+			w.Notify(title, body, "warning")
+		}
 	}
 	return nil
+}
+
+// keptWords is what the user is told of what a server refused to set on
+// the items a copy wrote: what worked, but what did not, and the
+// server's answer.
+func keptWords(k keptNote) (title, body string) {
+	what := "permissions"
+	switch {
+	case k.Perms && k.Times:
+		what = "permissions and times"
+	case k.Times:
+		what = "times"
+	}
+	whose := "their"
+	if k.Items == 1 {
+		whose = "its"
+		what = strings.Replace(what, "times", "time", 1)
+	}
+	title = "Wrote " + words.Count(k.Items, "item")
+	if k.Server != "" {
+		title += " to " + k.Server
+	}
+	title += ", but couldn't set " + whose + " " + what
+	if k.First != nil {
+		body = words.UpperFirst(k.First.Error()) + "."
+	}
+	return title, body
+}
+
+// tellKept tells the file manager panes that show a folder on the file
+// system with ID fs what its server refused to set. With none showing
+// one, kakel's own window tells it.
+func (a *app) tellKept(fs string, k keptNote) {
+	title, body := keptWords(k)
+	a.fmTitleMu.Lock()
+	var on []string
+	for id, f := range a.fmFolders {
+		if f[0] == fs {
+			on = append(on, id)
+		}
+	}
+	a.fmTitleMu.Unlock()
+	told := false
+	for _, id := range on {
+		if fp := a.fmPanes[id]; fp != nil && fp.w != nil && !fp.done {
+			fp.w.Notify(title, body, "warning")
+			told = true
+		}
+	}
+	if !told {
+		a.notice(NoticePlain, title, body, "")
+	}
 }
 
 // follow tells p how job goes until it ends, and stops it when ctx
