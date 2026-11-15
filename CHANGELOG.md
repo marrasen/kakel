@@ -49,6 +49,11 @@ whole move.
 into an update, or into the installed kakel, said "Exit kakel?" with
 an Exit button. It now says what it does.
 
+**Graphs take less to draw.** The speed graph on a copy's card, in
+Jobs and on a machine's connection drew its fill as one shape for each
+column of pixels. Each is one shape now, so a graph costs the same on
+a screen scaled to 200% as at 100%. They look as they did.
+
 ## v0.12.2-beta.17
 
 ### Added
