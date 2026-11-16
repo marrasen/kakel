@@ -345,6 +345,12 @@ func (j *Job) narrow() error {
 			continue
 		}
 		if err := j.op.To.Chmod(made.to, mode); err != nil {
+			if vfs.Refused(err) {
+				// A server that doesn't store permissions: what is
+				// in the directory is all there. Only files are
+				// counted in Kept, as for SFTP's Mkdir.
+				continue
+			}
 			errs = append(errs, err)
 		}
 	}
@@ -537,6 +543,10 @@ func (j *Job) file(ctx context.Context, it item, to string, have vfs.Entry, over
 	// The mode a file already there keeps is its own: a copy over it
 	// changes what is in it, not who may read it.
 	mode := j.modeFor(it.e)
+	// Whether the source was private, for the note when the server
+	// refuses the mode: a copy over a private file is not one of a
+	// private file.
+	private := vfs.OwnerOnly(mode)
 	if over && !have.IsDir() {
 		mode = have.Mode
 	}
@@ -560,9 +570,25 @@ func (j *Job) file(ctx context.Context, it item, to string, have vfs.Entry, over
 		// could be taken away.
 		return errors.Join(err, j.op.To.Remove(part))
 	}
+	if refused := vfs.ModeRefused(out); refused != nil {
+		// The file is all there, with the mode the server gave it.
+		j.kept(refused, private)
+	}
 
 	j.update(func(p *Progress) { p.FilesDone++ })
 	return nil
+}
+
+// kept records the permissions the far end refused to set on a file,
+// which the job carries on past. private says the file was readable by
+// its owner only.
+func (j *Job) kept(err error, private bool) {
+	j.update(func(p *Progress) {
+		p.Kept = append(p.Kept, err)
+		if private {
+			p.KeptPrivate++
+		}
+	})
 }
 
 // partName is where a file is written while it is being written.

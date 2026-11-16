@@ -178,6 +178,14 @@ func (a *app) fmFor(m machines.ID, f vfs.FS) *fmFS {
 		fm = newFMFS(serverFS+string(m), f)
 		// Its place goes to its home once that is known.
 		fm.learned = func() { go func() { a.events <- a.notePlaces }() }
+		id := fm.id
+		fm.told = func(k keptNote) {
+			select {
+			case a.events <- func() { a.tellKept(id, k) }:
+			case <-a.ctx.Done():
+			}
+		}
+		fm.busy = a.fmBusy
 		a.fmFiles[m] = fm
 	} else {
 		fm.set(f)
@@ -327,7 +335,7 @@ func (a *app) visitPlace(w *filemanager.Window, fs, path string, newWindow bool)
 // stops them and asks whether to replace a file, and kakel's windows
 // list them, quietly. It runs on a goroutine of its own, and returns
 // once the items are across.
-func (a *app) transferFiles(ctx context.Context, _ *filemanager.Window, t filemanager.Transfer, p *filemanager.TransferProgress) error {
+func (a *app) transferFiles(ctx context.Context, w *filemanager.Window, t filemanager.Transfer, p *filemanager.TransferProgress) error {
 	if len(t.Paths) == 0 || t.Into == "" {
 		return nil
 	}
@@ -415,6 +423,20 @@ func (a *app) transferFiles(ctx context.Context, _ *filemanager.Window, t filema
 		names[at] = append(names[at], vfs.Base(o.ff, path))
 	}
 	ask := &fmAsker{p: p}
+	// What the server refused to set, over all the jobs, for one
+	// warning once they are done.
+	kept := keptNote{Server: o.tf.Name(), Perms: true}
+	defer func() {
+		if kept.Items == 0 {
+			return
+		}
+		title, body := keptWords(kept)
+		if w != nil {
+			w.Notify(title, body, "warning")
+			return
+		}
+		on(func() { a.notice(NoticePlain, title, body, "") })
+	}()
 	for _, at := range ats {
 		op := jobs.Op{Kind: kind, From: o.ff, At: at, Names: names[at], To: o.tf, Into: t.Into}
 		title := verb + " " + words.Count(len(names[at]), "item") + " to " + vfs.Base(o.tf, t.Into)
@@ -438,11 +460,137 @@ func (a *app) transferFiles(ctx context.Context, _ *filemanager.Window, t filema
 		if job == nil {
 			return ctx.Err()
 		}
-		if err := follow(ctx, job, p); err != nil {
+		err := follow(ctx, job, p)
+		if jp := job.Progress(); len(jp.Kept) > 0 {
+			if kept.First == nil {
+				kept.First = jp.Kept[0]
+			}
+			kept.Items += len(jp.Kept)
+			kept.Private += jp.KeptPrivate
+		}
+		if err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// keptWords is what the user is told of what a server refused to set on
+// the items a copy wrote: what worked, but what did not, and the
+// server's answer.
+func keptWords(k keptNote) (title, body string) {
+	what := "permissions"
+	switch {
+	case k.Perms && k.Times:
+		what = "permissions and times"
+	case k.Times:
+		what = "times"
+	}
+	whose := "their"
+	if k.Items == 1 {
+		whose = "its"
+		what = strings.Replace(what, "times", "time", 1)
+	}
+	title = "Wrote " + words.Count(k.Items, "item")
+	if k.Server != "" {
+		title += " to " + k.Server
+	}
+	title += ", but couldn't set " + whose + " " + what
+	if k.First != nil {
+		body = words.UpperFirst(k.First.Error()) + "."
+	}
+	if k.Perms && k.Private > 0 {
+		// A private file, a key say, may now be readable by others.
+		var private string
+		if k.Items == 1 {
+			private = "It was readable only by you. Others on the server may be able to read it now."
+		} else {
+			private = words.Count(k.Private, "item") + " were readable only by you. Others on the server may be able to read them now."
+			if k.Private == 1 {
+				private = "1 item was readable only by you. Others on the server may be able to read it now."
+			}
+		}
+		body = strings.TrimSpace(body + " " + private)
+	}
+	return title, body
+}
+
+// fmRunner is a file manager window, as fmBusy asks it.
+type fmRunner interface {
+	// Running is how many operations it runs: 0 too when it took a
+	// second to say, or has closed.
+	Running() int
+	// Done is closed once it has closed.
+	Done() <-chan struct{}
+}
+
+// runningWait is how long a window may take to say how many operations
+// it runs before fmBusy counts it as one that did not say.
+var runningWait = 900 * time.Millisecond
+
+// fmBusy reports whether a file manager window is running an
+// operation. It runs on any goroutine, and may take a moment.
+func (a *app) fmBusy() bool {
+	if a.fmRunners != nil {
+		return anyRunning(a.fmRunners())
+	}
+	list := a.fmRoute.Load()
+	if list == nil {
+		return false
+	}
+	ws := make([]fmRunner, len(*list))
+	for i, fw := range *list {
+		ws[i] = fw
+	}
+	return anyRunning(ws)
+}
+
+// anyRunning reports whether one of ws runs an operation. A window
+// still open that takes too long to say counts as running one: it may
+// be busy in the middle of a copy, which is then not over. The caller
+// asks again later.
+func anyRunning(ws []fmRunner) bool {
+	for _, w := range ws {
+		start := time.Now()
+		if w.Running() > 0 {
+			return true
+		}
+		if time.Since(start) < runningWait {
+			continue
+		}
+		select {
+		case <-w.Done():
+			// Closed: it runs nothing.
+		default:
+			return true
+		}
+	}
+	return false
+}
+
+// tellKept tells the file manager panes that show a folder on the file
+// system with ID fs what its server refused to set. With none showing
+// one, kakel's own window tells it.
+func (a *app) tellKept(fs string, k keptNote) {
+	title, body := keptWords(k)
+	a.fmTitleMu.Lock()
+	var on []string
+	for id, f := range a.fmFolders {
+		if f[0] == fs {
+			on = append(on, id)
+		}
+	}
+	a.fmTitleMu.Unlock()
+	told := false
+	for _, id := range on {
+		if fp := a.fmPanes[id]; fp != nil && fp.w != nil && !fp.done {
+			fp.w.Notify(title, body, "warning")
+			told = true
+		}
+	}
+	if !told {
+		a.notice(NoticePlain, title, body, "")
+	}
 }
 
 // follow tells p how job goes until it ends, and stops it when ctx

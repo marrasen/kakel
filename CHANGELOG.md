@@ -11,6 +11,16 @@ change how something behaves.
 
 ### Fixed
 
+**A copy to a server that doesn't store permissions finishes.** Many
+SFTP servers refuse to set a file's permissions, and answer "operation
+unsupported" or "permission denied". A copy, move or upload to one
+stopped at its first file, and took the file away. It now finishes:
+every file arrives whole at its name, and one warning, once the copy
+is over, says how many have the server's default permissions. Where a
+file was readable only by you, the warning says others may now be able
+to read it. A copy in the Files window still sets each file's time
+where the server allows it. A copy whose bytes don't arrive still fails.
+
 **The notice of an update that installed itself offers the restart.**
 When kakel fetched a new release in the background, the notice said it
 was ready and would start the next time kakel did, with only a What's
