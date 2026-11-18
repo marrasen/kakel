@@ -541,3 +541,18 @@ func motionOf(t themes.Theme) ([]theme.Entry, error) {
 		theme.Set(theme.Switch, settle),
 	}, nil
 }
+
+// Over returns all with entries set over each theme and its content,
+// as the user's settings set over every theme. Plain stays without
+// them, as the theme editor's base.
+func Over(all []Themed, entries ...theme.Entry) []Themed {
+	if len(entries) == 0 {
+		return all
+	}
+	out := make([]Themed, len(all))
+	for i, t := range all {
+		t.Theme, t.Content = t.Theme.With(entries...), t.Content.With(entries...)
+		out[i] = t
+	}
+	return out
+}

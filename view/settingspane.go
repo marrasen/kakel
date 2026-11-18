@@ -86,7 +86,11 @@ type settingsPane struct {
 	foldersRow, installRow                   *maybeShown
 	launcher                                 *savedLine
 	launcherFiles                            *widget.Segmented
-	updates                                  *widget.Dropdown
+	// wordStops are the characters Ctrl+Left and Ctrl+Right stop at in
+	// text fields, and wordReset brings back gunim's own.
+	wordStops *savedLine
+	wordReset *widget.Button
+	updates   *widget.Dropdown
 
 	// Appearance.
 	theme, font *widget.Dropdown
@@ -304,6 +308,11 @@ func (p *settingsPane) general() gunim.Node {
 	p.launcherFiles.OnChange = func(i int, u *gunim.UI) gunim.Intent {
 		return app.SetLauncherFiles{Where: launcherFilesChoices[max(0, min(i, len(launcherFilesChoices)-1))].value}
 	}
+	p.wordStops = p.newSavedLine("spaces only", 280, nil, func(s string) gunim.Intent { return app.SetWordStops{Stops: s} })
+	p.wordReset = widget.NewButton("Reset")
+	p.wordReset.OnClick = func(u *gunim.UI) gunim.Intent { p.send(app.SetWordStops{Reset: true}, u); return nil }
+	stops := widget.Row(p.wordStops.node, p.wordReset)
+	stops.Cross, stops.Gap = widget.CrossStart, settingsButtons
 	titles := make([]string, len(updateChoices))
 	for i, c := range updateChoices {
 		titles[i] = c.title
@@ -334,6 +343,8 @@ func (p *settingsPane) general() gunim.Node {
 			settingRow("Files open in", "Files from the launcher or the tray. Beside splits the last pane you used, if it is a file manager.", p.launcherFiles)),
 		settingsSection("Windows",
 			settingRow("Use the system's title bar", "The title bar your window manager draws, with its own buttons, for the windows opened from now on.", p.titleBar)),
+		settingsSection("Typing",
+			settingRow("Word stops", "Where Ctrl+Left, Ctrl+Right and Ctrl+Backspace stop in text fields, as well as at spaces. Empty stops at spaces only.", stops)),
 		settingsSection("Updates",
 			settingRow("New releases", "Installed, an update starts the next time kakel does.", p.updates),
 			settingRow("Beta releases", "Take betas too: what comes next, sooner, and less tried.", p.beta),
@@ -598,6 +609,8 @@ func (p *settingsPane) show(st app.State, u *gunim.UI) {
 	if !u.HasFocus(p.size) && float32(p.size.Value()) != st.FontSize {
 		p.size.SetValue(float64(st.FontSize), u)
 	}
+	p.wordStops.show(st.WordStops, u)
+	p.wordReset.Disabled = st.WordStops == widget.WordStops.Default()
 	// Terminal.
 	p.termProgram.show(st.TermProgram, u)
 	p.proxy.show(st.Serving.Proxy, u)

@@ -48,6 +48,7 @@ import (
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/driver"
 	"github.com/marrasen/gunim/theme"
+	"github.com/marrasen/gunim/widget"
 )
 
 // The program side of the window. It owns the panes, how they are
@@ -254,6 +255,9 @@ type State struct {
 	Looks       []look.Themed
 	ShellSetup  bool
 	TermProgram string
+	// WordStops are the characters, besides spaces, that end a word in
+	// text fields, as the settings or gunim say.
+	WordStops string
 	// PasteCheck says a paste of several lines, or a large one, opens in
 	// an editor before it reaches the pane.
 	PasteCheck bool
@@ -504,6 +508,12 @@ type (
 	// SetPasteCheck turns on or off opening a paste of several lines,
 	// or a large one, in an editor before it reaches the pane.
 	SetPasteCheck struct{ On bool }
+	// SetWordStops keeps the characters that end a word in text fields,
+	// or with Reset, goes back to gunim's own.
+	SetWordStops struct {
+		Stops string
+		Reset bool
+	}
 	// RunSavedCommand runs a command kept from before.
 	RunSavedCommand struct{ Saved settings.SavedCommand }
 	// OpenOn opens a terminal on Machine, "" for this computer. Login
@@ -1006,7 +1016,15 @@ func (a *app) run(ctx context.Context) error {
 	log.Printf("kakel %s started on %s/%s", thisVersion(), runtime.GOOS, runtime.GOARCH)
 	// On unless the settings say otherwise, read or not.
 	a.st.PasteCheck = true
+	a.st.WordStops = widget.WordStops.Default()
 	a.loadSettings()
+	if over := a.themeOver(); len(over) > 0 {
+		// The themes went to the windows before the settings were read.
+		a.themes = look.Over(a.themes, over...)
+		if a.registerThemes != nil {
+			a.registerThemes(a.themes)
+		}
+	}
 	// The theme picked last time, or the first.
 	if len(a.themes) > 0 {
 		name := a.themes[0].Name
@@ -1229,6 +1247,7 @@ func (a *app) loadSettings() {
 			a.st.ShellSetup = s.ShellSetup()
 			a.st.PasteCheck = s.PasteCheck()
 			a.st.TermProgram = s.TermProgram()
+			a.st.WordStops = a.wordStops()
 			a.st.SavedCopies = s.Copies()
 			a.st.Layouts = s.Layouts()
 			a.st.KeyFiles = s.Keys()
@@ -1804,6 +1823,14 @@ func (a *app) handle(in gunim.Intent) {
 		if a.settings != nil {
 			err = a.settings.PutPasteCheck(in.On)
 		}
+	case SetWordStops:
+		if a.settings != nil {
+			err = a.settings.PutWordStops(in.Stops, !in.Reset)
+		}
+		a.st.WordStops = a.wordStops()
+		// Every theme again, with the stops over it, and the window's
+		// own taken again so its fields have them.
+		a.readThemes()
 	case SetTermProgram:
 		a.st.TermProgram = strings.TrimSpace(in.Called)
 		if a.settings != nil {
@@ -2847,4 +2874,26 @@ func Start(ctx context.Context, cfg Config) error {
 	a.updateWins = cfg.Updates
 	defer closeToaster()
 	return errors.Join(a.run(ctx), a.shotErr)
+}
+
+// wordStops are the characters that end a word in text fields: the
+// settings' or, with none saved, gunim's own.
+func (a *app) wordStops() string {
+	if a.settings != nil {
+		if s, ok := a.settings.WordStops(); ok {
+			return s
+		}
+	}
+	return widget.WordStops.Default()
+}
+
+// themeOver is what the settings set over every theme.
+func (a *app) themeOver() []theme.Entry {
+	if a.settings == nil {
+		return nil
+	}
+	if _, ok := a.settings.WordStops(); !ok {
+		return nil
+	}
+	return []theme.Entry{theme.Set(widget.WordStops, a.wordStops())}
 }

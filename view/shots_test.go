@@ -372,3 +372,33 @@ func TestShotsProfileEnded(t *testing.T) {
 	settle()
 	shot("profile-ended-open")
 }
+
+func TestShotsWordStops(t *testing.T) {
+	dir := os.Getenv("KAKEL_SHOTS")
+	if dir == "" {
+		t.Skip("KAKEL_SHOTS names no folder to write the screenshots to")
+	}
+	shot := func(name string) {
+		gunimtest.WritePNG(t, filepath.Join(dir, "wordstops-"+name+".png"), gunimtest.Pixels(t, lastWindow))
+	}
+	win, _, publish := windowStageOf(t, geom.Sz(1100, 1300))
+	st := app.State{Panes: []app.Pane{{ID: "p1", Kind: app.KindSettings, Title: "Settings"}}, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1", SettingsTab: "General", SettingsAsked: 1, WordStops: widget.WordStops.Default()}
+	publish(st)
+	settle()
+	shot("rest")
+	f := win.settings.wordStops.field
+	lastUI.Focus(f)
+	f.SetText("/home/me/my_file.txt", lastUI)
+	settle()
+	lastWindow.Input(gi.KeyPress{Key: gi.KeyEnd})
+	settle()
+	lastWindow.Input(gi.KeyPress{Key: gi.KeyLeft, Mods: gi.ModControl})
+	frames(2)
+	shot("caret-gliding")
+	settle()
+	shot("caret-stopped")
+	st.WordStops = "/"
+	publish(st)
+	settle()
+	shot("saved")
+}
