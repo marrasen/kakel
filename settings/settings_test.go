@@ -1137,6 +1137,35 @@ func TestThePasteCheckIsOnUntilTurnedOff(t *testing.T) {
 	}
 }
 
+// Word stops are gunim's until some are saved, empty ones too, and go
+// back to gunim's when cleared.
+func TestWordStopsAreKeptEvenEmpty(t *testing.T) {
+	path := at(t)
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if _, ok := s.WordStops(); ok {
+		t.Error("with nothing saved, there are word stops")
+	}
+	if err := s.PutWordStops("", true); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	again, err := Load(path)
+	if err != nil {
+		t.Fatalf("load again: %v", err)
+	}
+	if got, ok := again.WordStops(); !ok || got != "" {
+		t.Errorf("saved empty, the stops read back as %q, %v", got, ok)
+	}
+	if err := again.PutWordStops("", false); err != nil {
+		t.Fatalf("clear: %v", err)
+	}
+	if _, ok := again.WordStops(); ok {
+		t.Error("cleared, the stops are still kept")
+	}
+}
+
 // The file manager window's place is kept apart from the window's, and
 // read back after a load.
 func TestTheFileManagerWindowsPlaceIsKeptApart(t *testing.T) {

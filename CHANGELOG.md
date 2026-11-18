@@ -7,9 +7,22 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
-## Unreleased
+## v0.12.2-beta.18
 
 ### Fixed
+
+**Ctrl+Left and Ctrl+Right stop inside paths.** In a text field they
+stopped only at spaces, so in a path or an address with none they
+jumped to the start or the end, like Home and End. They now also stop
+at punctuation, as most text fields do: Ctrl+Left in
+`/home/me/my_file.txt` stops before `txt`, `my_file`, `me` and `home`.
+The underscore stays part of a word.
+
+- Ctrl+Shift+Left and Ctrl+Shift+Right select to the same places.
+- Ctrl+Backspace and Ctrl+Delete delete up to them, and a double click
+  selects the word between them.
+- Settings › General › Typing › Word stops changes the characters.
+  Saved empty, words end at spaces only. Reset brings back the list.
 
 **A copy to a server that doesn't store permissions finishes.** Many
 SFTP servers refuse to set a file's permissions, and answer "operation

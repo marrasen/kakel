@@ -207,6 +207,11 @@ type stored struct {
 	// field left out is kakel's own name, which is the true one.
 	TermProgram *string `json:"termProgram,omitempty"`
 
+	// WordStops are the characters, besides spaces, that end a word in
+	// text fields: where Ctrl+Left and Ctrl+Right stop. A field left out
+	// is gunim's own list; empty ends words at spaces only.
+	WordStops *string `json:"wordStops,omitempty"`
+
 	// Tunnels are the tunnels the user asked to keep, newest first.
 	Tunnels []SavedTunnel `json:"tunnels,omitempty"`
 
@@ -1926,6 +1931,39 @@ func (s *Settings) PutTermProgram(called string) error {
 		s.have.TermProgram = nil
 	} else {
 		s.have.TermProgram = &called
+	}
+	if err := s.saveLocked(); err != nil {
+		s.have = before
+		return err
+	}
+	return nil
+}
+
+// WordStops returns the characters that end a word in text fields, and
+// false when none are saved, for gunim's own.
+func (s *Settings) WordStops() (string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.have.WordStops == nil {
+		return "", false
+	}
+	return *s.have.WordStops, true
+}
+
+// PutWordStops writes the characters that end a word in text fields,
+// and saves. With set false it goes back to gunim's own.
+func (s *Settings) PutWordStops(stops string, set bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// The file first, for the same reason PutServe reads it first.
+	if err := s.rereadLocked(); err != nil {
+		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
+	}
+	before := s.have
+	if set {
+		s.have.WordStops = &stops
+	} else {
+		s.have.WordStops = nil
 	}
 	if err := s.saveLocked(); err != nil {
 		s.have = before

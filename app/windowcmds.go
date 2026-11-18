@@ -209,7 +209,7 @@ func (a *app) readThemes() {
 	if err != nil {
 		a.failed("Couldn't read all the themes", err.Error())
 	}
-	a.themes = all
+	a.themes = look.Over(all, a.themeOver()...)
 	if a.registerThemes != nil {
 		a.registerThemes(a.themes)
 	}
