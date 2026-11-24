@@ -51,7 +51,7 @@ func (w *Window) checkPaste(t *term, s string, u *gunim.UI) bool {
 	// each into Enter on its way all the same.
 	s = strings.ReplaceAll(s, "\r\n", "\n")
 	s = strings.ReplaceAll(s, "\r", "\n")
-	kind, running := w.shellKind(t.id), t.sh.T.RunningAProgram()
+	kind, running := w.shellKind(t.id), t.Shell().T.RunningAProgram()
 	text := widget.NewCodeEditor()
 	text.Label = "Text to paste"
 	text.Highlight = pasteColours(kind, running)
@@ -60,7 +60,7 @@ func (w *Window) checkPaste(t *term, s string, u *gunim.UI) bool {
 	d := widget.NewDialog(pasteTitle(s))
 	d.Icon = icon.ClipboardPaste
 	d.Width = pasteWidth
-	along, bracketed := len(t.alongOthers()), t.sh.T.Bracketed()
+	along, bracketed := len(t.AlongOthers()), t.Shell().T.Bracketed()
 	// Lines written for another shell are marked, as an editor marks
 	// mistakes, and counted above the text.
 	marks := pasteSlips(s, kind, running)
@@ -69,13 +69,13 @@ func (w *Window) checkPaste(t *term, s string, u *gunim.UI) bool {
 	d.Body = widget.NewForm().Add("", says).Add("", text)
 	d.SetButtons("Paste", "Cancel")
 	d.OnAccept = func(*gunim.UI) gunim.Intent {
-		t.paste(text.Text())
+		t.Paste(text.Text())
 		return app.DialogClosed{}
 	}
 	// Enter pastes from the editor too, and Shift+Enter starts a line.
 	text.OnCommit = func(s string, u *gunim.UI) gunim.Intent {
 		d.Close(u)
-		t.paste(s)
+		t.Paste(s)
 		return app.DialogClosed{}
 	}
 	// The title counts the lines as they are edited, and the marks

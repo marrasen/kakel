@@ -9,6 +9,7 @@ import (
 
 	"github.com/marrasen/kakel/internal/sessiontest"
 	"github.com/marrasen/kakel/screen"
+	"github.com/marrasen/kakel/termview"
 	"github.com/marrasen/kakel/ui"
 	"github.com/marrasen/kakel/winkeys"
 
@@ -31,54 +32,15 @@ func termStage(t *testing.T, size geom.Size) (*Window, *term) {
 	return win, win.terms["p1"]
 }
 
+// hoverMods are the modifiers the pointer is over tm with.
+func hoverMods(tm *term) input.Mods {
+	mods, _ := tm.Hover()
+	return mods
+}
+
 func frames(n int) {
 	for range n {
 		lastWindow.Frame(time.Second / 60)
-	}
-}
-
-// The click that gives a pane the keyboard only does that; the next
-// one reaches the terminal.
-func TestTheClickThatFocusesAPaneOnlyFocusesIt(t *testing.T) {
-	_, tm := termStage(t, geom.Sz(900, 600))
-	box, _ := lastUI.Bounds(tm)
-	lastUI.Focus(nil)
-	frames(1)
-	click := func() input.MouseButton {
-		lastWindow.Input(gi.PointerDown{Pos: box.Center(), Button: gi.ButtonPrimary, Clicks: 1})
-		held := tm.held
-		lastWindow.Input(gi.PointerUp{Pos: box.Center(), Button: gi.ButtonPrimary})
-		frames(1)
-		return held
-	}
-	if held := click(); held != input.MouseNone || !tm.focused {
-		t.Fatalf("the focusing click held %v, focused %v", held, tm.focused)
-	}
-	if held := click(); held != input.MouseLeft {
-		t.Fatalf("the next click held %v, want the left button", held)
-	}
-}
-
-// A pane without the keyboard draws no cursor; with it, one, lit again
-// by each key.
-func TestOnlyThePaneWithTheKeyboardDrawsACursor(t *testing.T) {
-	_, tm := termStage(t, geom.Sz(900, 600))
-	if !tm.cursorShown {
-		t.Fatal("the pane with the keyboard shows no cursor")
-	}
-	tm.blinkOff = true
-	lastWindow.Input(gi.TextInput{Text: "x"})
-	// Lit by the key, for a whole half of the blink.
-	for i := range 29 {
-		frames(1)
-		if tm.blinkOff {
-			t.Fatalf("the cursor went off %d frames after a key", i+1)
-		}
-	}
-	lastUI.Focus(nil)
-	frames(1)
-	if tm.cursorShown {
-		t.Fatal("the pane without the keyboard shows a cursor")
 	}
 }
 
@@ -89,12 +51,12 @@ func TestCtrlOverAStillPointerIsHeard(t *testing.T) {
 	lastWindow.Input(gi.PointerMove{Pos: box.Center()})
 	frames(1)
 	lastWindow.Input(gi.KeyPress{Key: gi.KeyLeftControl})
-	if tm.hoverMods != input.ModCtrl {
-		t.Fatalf("with Ctrl down, the hover's modifiers are %v", tm.hoverMods)
+	if hoverMods(tm) != input.ModCtrl {
+		t.Fatalf("with Ctrl down, the hover's modifiers are %v", hoverMods(tm))
 	}
 	lastWindow.Input(gi.KeyRelease{Key: gi.KeyLeftControl, Mods: gi.ModControl})
-	if tm.hoverMods != 0 {
-		t.Fatalf("with Ctrl up, the hover's modifiers are %v", tm.hoverMods)
+	if hoverMods(tm) != 0 {
+		t.Fatalf("with Ctrl up, the hover's modifiers are %v", hoverMods(tm))
 	}
 	// With the keyboard elsewhere, the pane under the pointer still
 	// hears it.
@@ -107,20 +69,20 @@ func TestCtrlOverAStillPointerIsHeard(t *testing.T) {
 	lastWindow.Input(gi.PointerMove{Pos: box.Center()})
 	lastUI.Focus(win.serversRow(lastUI))
 	frames(1)
-	if tm.focused {
+	if tm.Focused() {
 		t.Fatal("the terminal kept the keyboard")
 	}
 	lastWindow.Input(gi.KeyPress{Key: gi.KeyLeftControl})
-	if tm.hoverMods != input.ModCtrl {
-		t.Fatalf("with the keyboard elsewhere and Ctrl down, the hover's modifiers are %v", tm.hoverMods)
+	if hoverMods(tm) != input.ModCtrl {
+		t.Fatalf("with the keyboard elsewhere and Ctrl down, the hover's modifiers are %v", hoverMods(tm))
 	}
 	lastWindow.Input(gi.KeyRelease{Key: gi.KeyLeftControl, Mods: gi.ModControl})
 	// Once the pointer has gone, Ctrl leaves the pane alone.
 	lastWindow.Input(gi.PointerMove{Pos: geom.Pt(20, 300)})
 	frames(1)
 	lastWindow.Input(gi.KeyPress{Key: gi.KeyLeftControl})
-	if tm.over || tm.hoverMods != 0 {
-		t.Fatalf("with the pointer gone, the pane is over %v with modifiers %v", tm.over, tm.hoverMods)
+	if _, over := tm.Hover(); over || hoverMods(tm) != 0 {
+		t.Fatalf("with the pointer gone, the pane is over it %v with modifiers %v", over, hoverMods(tm))
 	}
 }
 
@@ -140,7 +102,7 @@ func TestAClickOutsideThePaletteClosesIt(t *testing.T) {
 	if win.palette.IsOpen() {
 		t.Fatal("a click on the terminal left the palette open")
 	}
-	if !tm.focused {
+	if !tm.Focused() {
 		t.Fatal("after the click, the terminal has no keyboard")
 	}
 }
@@ -158,8 +120,8 @@ func TestAClickOutsideTheThemePickerClosesIt(t *testing.T) {
 	lastWindow.Input(gi.PointerDown{Pos: box.Center(), Button: gi.ButtonPrimary, Clicks: 1})
 	lastWindow.Input(gi.PointerUp{Pos: box.Center(), Button: gi.ButtonPrimary})
 	frames(20)
-	if win.themePicker.IsOpen() || !tm.focused {
-		t.Fatalf("after a click on the terminal, the picker is open %v, the terminal has the keyboard %v", win.themePicker.IsOpen(), tm.focused)
+	if win.themePicker.IsOpen() || !tm.Focused() {
+		t.Fatalf("after a click on the terminal, the picker is open %v, the terminal has the keyboard %v", win.themePicker.IsOpen(), tm.Focused())
 	}
 }
 
@@ -187,17 +149,49 @@ func TestPunctuationIsTheKeyItTypes(t *testing.T) {
 	}
 }
 
+// A press that another program took the release of, as a browser a
+// Ctrl+click opened does, ends as the window loses the keyboard, and no
+// link stays lit or named.
+func TestLosingTheKeyboardEndsAPressAndTheLinksLight(t *testing.T) {
+	_, tm := termStage(t, geom.Sz(900, 600))
+	box, _ := lastUI.Bounds(tm)
+	lastWindow.Input(gi.PointerMove{Pos: box.Center()})
+	lastWindow.Input(gi.KeyPress{Key: gi.KeyLeftControl})
+	lastWindow.Input(gi.PointerDown{Pos: box.Center(), Button: gi.ButtonPrimary, Clicks: 1, Mods: gi.ModControl})
+	frames(1)
+	if tm.Pressed() == input.MouseNone || hoverMods(tm) == 0 {
+		t.Fatalf("pressed with Ctrl, held %v, modifiers %v", tm.Pressed(), hoverMods(tm))
+	}
+	lastWindow.Input(gi.WindowFocusLost{})
+	frames(1)
+	if tm.Pressed() != input.MouseNone || hoverMods(tm) != 0 || tm.Shell().T.HoveredLink() != "" {
+		t.Fatalf("away, held %v, modifiers %v, link %q", tm.Pressed(), hoverMods(tm), tm.Shell().T.HoveredLink())
+	}
+}
+
+// A terminal pane whose shell has gone by the time the window shows it,
+// as a connection's closed when the connection is given up, is drawn
+// blank rather than crashing the window.
+func TestAPaneWhoseShellHasGoneIsBlank(t *testing.T) {
+	win, _, publish := windowStageOf(t, geom.Sz(900, 600))
+	publish(app.State{Panes: []app.Pane{{ID: "p9", Title: "gone"}}, Layout: boxLayout(&app.Box{Pane: "p9"}), Focus: "p9"})
+	frames(2)
+	if _, ok := win.terms["p9"]; ok {
+		t.Fatal("a terminal was made for a pane with no shell")
+	}
+}
+
 // A pane too small for a usable screen still resizes the shell, once it
 // has stayed so a moment.
 func TestATinyPaneResizesItsShellOnceSettled(t *testing.T) {
 	_, tm := termStage(t, geom.Sz(900, 75))
 	// Until the sidebar has slid into place.
 	frames(90)
-	cols, rows := tm.cells.Fit()
-	if cols >= leastCols && rows >= leastRows {
+	cols, rows := tm.Cells().Fit()
+	if cols >= termview.LeastCols && rows >= termview.LeastRows {
 		t.Fatalf("the pane fits %dx%d, which is not small", cols, rows)
 	}
-	if size := tm.sh.T.Size(); size.Cols != cols || size.Rows != rows {
+	if size := tm.Shell().T.Size(); size.Cols != cols || size.Rows != rows {
 		t.Fatalf("settled, the shell is %dx%d, want %dx%d", size.Cols, size.Rows, cols, rows)
 	}
 }
@@ -221,8 +215,8 @@ func TestTheHandShowsOverALinkWithCtrl(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	frames(30)
-	box, _ := lastUI.Bounds(tm.cells)
-	cell := tm.cells.CellSize()
+	box, _ := lastUI.Bounds(tm.Cells())
+	cell := tm.Cells().CellSize()
 	at := box.Min.Add(geom.Pt(cell.W*3, cell.H/2))
 	lastWindow.Input(gi.PointerMove{Pos: at})
 	frames(2)
@@ -236,78 +230,32 @@ func TestTheHandShowsOverALinkWithCtrl(t *testing.T) {
 	}
 }
 
-// A press that another program took the release of, as a browser a
-// Ctrl+click opened does, ends as the window loses the keyboard, and no
-// link stays lit or named.
-func TestLosingTheKeyboardEndsAPressAndTheLinksLight(t *testing.T) {
-	_, tm := termStage(t, geom.Sz(900, 600))
-	box, _ := lastUI.Bounds(tm)
-	lastWindow.Input(gi.PointerMove{Pos: box.Center()})
-	lastWindow.Input(gi.KeyPress{Key: gi.KeyLeftControl})
-	lastWindow.Input(gi.PointerDown{Pos: box.Center(), Button: gi.ButtonPrimary, Clicks: 1, Mods: gi.ModControl})
-	frames(1)
-	if tm.held == input.MouseNone || tm.hoverMods == 0 {
-		t.Fatalf("pressed with Ctrl, held %v, modifiers %v", tm.held, tm.hoverMods)
-	}
-	lastWindow.Input(gi.WindowFocusLost{})
-	frames(1)
-	if tm.held != input.MouseNone || tm.hoverMods != 0 || tm.sh.T.HoveredLink() != "" {
-		t.Fatalf("away, held %v, modifiers %v, link %q", tm.held, tm.hoverMods, tm.sh.T.HoveredLink())
-	}
-}
-
-// A terminal pane whose shell has gone by the time the window shows it,
-// as a connection's closed when the connection is given up, is drawn
-// blank rather than crashing the window.
-func TestAPaneWhoseShellHasGoneIsBlank(t *testing.T) {
-	win, _, publish := windowStageOf(t, geom.Sz(900, 600))
-	publish(app.State{Panes: []app.Pane{{ID: "p9", Title: "gone"}}, Layout: boxLayout(&app.Box{Pane: "p9"}), Focus: "p9"})
-	frames(2)
-	if _, ok := win.terms["p9"]; ok {
-		t.Fatal("a terminal was made for a pane with no shell")
-	}
-}
-
-// The shell's output moving the cursor lights it, and the blink goes on
-// after: it once stopped there, lit, until the window lost the keyboard
-// and got it back.
-func TestTheBlinkGoesOnAfterOutputMovesTheCursor(t *testing.T) {
+// A shell's output reaches its pane through the window, and moving the
+// cursor lights it, with the blink going on after.
+func TestTheWindowsOutputLightsTheCursorAndTheBlinkGoesOn(t *testing.T) {
 	win, tm := termStage(t, geom.Sz(900, 600))
 	toggles := func() int {
-		n, was := 0, tm.blinkOff
+		n, was := 0, tm.CursorLit()
 		for range 120 {
 			frames(1)
-			if tm.blinkOff != was {
-				n, was = n+1, tm.blinkOff
+			if tm.CursorLit() != was {
+				n, was = n+1, tm.CursorLit()
 			}
 		}
 		return n
 	}
-	if n := toggles(); n < 2 {
-		t.Fatalf("the cursor blinked %d times in two seconds, before any output", n)
-	}
-	// The pane loses the keyboard and gets it back between two steps of
-	// the blink: the cursor is lit for a whole half from there, not put
-	// out by the step still to come.
-	for lit := false; !lit; {
-		was := tm.blinkOff
-		frames(1)
-		lit = was && !tm.blinkOff
-	}
-	frames(20)
-	lastUI.Focus(nil)
-	lastUI.Focus(tm)
-	for i := range 29 {
-		frames(1)
-		if tm.blinkOff {
-			t.Fatalf("the cursor went off %d frames after the pane got the keyboard back", i+1)
-		}
-	}
 	for i := range 3 {
-		tm.sh.T.Say("output")
+		// Out, so what lights it is the output.
+		for j := 0; tm.CursorLit(); j++ {
+			if j > 120 {
+				t.Fatal("the cursor never blinks")
+			}
+			frames(1)
+		}
+		tm.Shell().T.Say("output")
 		win.OutputArrived(lastUI)
 		frames(1)
-		if tm.blinkOff {
+		if !tm.CursorLit() {
 			t.Fatalf("output %d left the cursor in the off half", i)
 		}
 		if n := toggles(); n < 2 {

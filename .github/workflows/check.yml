@@ -57,6 +57,15 @@ jobs:
           # as a type error.
           version: v2.13.2
 
+      # The parts that are built for a browser, which the steps round this
+      # one never build for it. Vetting builds them. The tests below open
+      # the client in the Chrome that is on this machine.
+      - name: Browser client
+        env:
+          GOOS: js
+          GOARCH: wasm
+        run: go vet ./webclient/... ./termview ./relay
+
       # On Linux only. The release workflow runs the suite on Windows as
       # well, which is where the interesting differences are; running
       # both here would double the wait on every push for a difference

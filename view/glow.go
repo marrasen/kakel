@@ -31,7 +31,7 @@ const markWidth, markGap = 2, 3
 
 // shared reports whether the terminal is shared, and how.
 func (t *term) shared() (agent, watched bool) {
-	return t.agent, t.sh.T.Watched() > 0
+	return t.agent, t.Shell().T.Watched() > 0
 }
 
 // paintRings draws the rings round a shared terminal.
@@ -49,7 +49,7 @@ func (t *term) paintRings(p *paint.Painter, f gunim.Frame, box geom.Size) {
 	}
 	const dim, bright = 0x70, 0x90
 	a := uint8(dim + int(float64(bright-dim)*glowAt(f.Now)+0.5))
-	corner := min(t.cells.CellSize().W, t.cells.CellSize().H)
+	corner := min(t.Cells().CellSize().W, t.Cells().CellSize().H)
 	for i, c := range hues {
 		in := float32(i)*(markWidth+markGap) + markWidth/2.0
 		if box.W <= 2*in || box.H <= 2*in {

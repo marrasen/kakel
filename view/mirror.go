@@ -10,6 +10,7 @@ import (
 	"github.com/marrasen/kakel/grid"
 	"github.com/marrasen/kakel/look"
 	"github.com/marrasen/kakel/screen"
+	"github.com/marrasen/kakel/termview"
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
@@ -60,7 +61,7 @@ func (m *mirror) sync(now time.Time) {
 	for y := range rows {
 		m.row = m.row[:0]
 		for x := range cols {
-			m.row = append(m.row, cellOf(m.g, x, y))
+			m.row = append(m.row, termview.CellOf(m.g, x, y))
 		}
 		m.cells.SetRow(y, m.row)
 	}

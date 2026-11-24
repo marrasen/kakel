@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/marrasen/kakel/app"
+	"github.com/marrasen/kakel/termview"
 
 	"github.com/marrasen/kakel/look"
 
@@ -249,7 +250,7 @@ func (rd *reader) sync() {
 		}
 		rd.row = rd.row[:0]
 		for x := range cols {
-			rd.row = append(rd.row, cellOf(rd.g, x, y))
+			rd.row = append(rd.row, termview.CellOf(rd.g, x, y))
 		}
 		rd.cells.SetRow(y, rd.row)
 	}
@@ -393,18 +394,18 @@ func (rd *reader) Handle(e gi.Event, u *gunim.UI) bool {
 	case gi.PointerDown:
 		at := rd.cellAt(e.Pos)
 		rd.held = true
-		_, _ = rd.r.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: mouseButton(e.Button), Col: at.X, Row: at.Y, Mods: mouseMods(e.Mods)})
+		_, _ = rd.r.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: termview.MouseButton(e.Button), Col: at.X, Row: at.Y, Mods: termview.MouseMods(e.Mods)})
 	case gi.PointerMove:
 		at := rd.cellAt(e.Pos)
 		button := input.MouseNone
 		if rd.held {
 			button = input.MouseLeft
 		}
-		_, _ = rd.r.HandleMouse(input.MouseEvent{Kind: input.MouseMove, Button: button, Col: at.X, Row: at.Y, Mods: mouseMods(e.Mods)})
+		_, _ = rd.r.HandleMouse(input.MouseEvent{Kind: input.MouseMove, Button: button, Col: at.X, Row: at.Y, Mods: termview.MouseMods(e.Mods)})
 	case gi.PointerUp:
 		at := rd.cellAt(e.Pos)
 		rd.held = false
-		_, _ = rd.r.HandleMouse(input.MouseEvent{Kind: input.MouseRelease, Button: mouseButton(e.Button), Col: at.X, Row: at.Y, Mods: mouseMods(e.Mods)})
+		_, _ = rd.r.HandleMouse(input.MouseEvent{Kind: input.MouseRelease, Button: termview.MouseButton(e.Button), Col: at.X, Row: at.Y, Mods: termview.MouseMods(e.Mods)})
 	default:
 		return false
 	}

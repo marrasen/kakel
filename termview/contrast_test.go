@@ -1,4 +1,4 @@
-package view
+package termview
 
 import (
 	"testing"
@@ -17,15 +17,15 @@ func TestTextTooCloseToItsGroundIsMadeToRead(t *testing.T) {
 	g := grid.New(10, 2, pal.FG, pal.BG)
 	term.Screen().Render(g)
 	for x, what := range []string{"blue on green", "default text on blue"} {
-		c := cellOf(g, x, 0)
+		c := CellOf(g, x, 0)
 		if r := grid.Contrast(rgba(c.FG), rgba(c.BG)); r < 4.5-0.05 {
 			t.Errorf("%s contrasts %.2f in the cell drawn, want 4.5", what, r)
 		}
 	}
-	if c := cellOf(g, 2, 0); rgba(c.FG) != g.FGOf(2, 0) {
+	if c := CellOf(g, 2, 0); rgba(c.FG) != g.FGOf(2, 0) {
 		t.Errorf("a half block's colour changed from %v to %v", g.FGOf(2, 0), c.FG)
 	}
-	if c := cellOf(g, 3, 0); rgba(c.FG) != g.FGOf(3, 0) {
+	if c := CellOf(g, 3, 0); rgba(c.FG) != g.FGOf(3, 0) {
 		t.Errorf("plain text that reads changed colour from %v to %v", g.FGOf(3, 0), c.FG)
 	}
 }

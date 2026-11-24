@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kakel</title>
+<link rel="icon" href="data:,">
+<style>
+  html, body { margin: 0; height: 100%; background: #14171c; overflow: hidden; }
+  #gunim { display: block; width: 100%; height: 100vh; height: 100dvh; opacity: 0; transition: opacity .2s; }
+  .ready #gunim { opacity: 1; }
+</style>
+</head>
+<body>
+<canvas id="gunim"></canvas>
+<script src="wasm_exec.js"></script>
+<script>
+  const go = new Go();
+  WebAssembly.instantiateStreaming(fetch("kakel.wasm"), go.importObject).then(r => go.run(r.instance));
+</script>
+</body>
+</html>
