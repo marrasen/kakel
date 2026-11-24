@@ -374,7 +374,7 @@ func TestTheLauncherOffersEverythingSaved(t *testing.T) {
 	a.st.SavedTunnels = []settings.SavedTunnel{tunnelled}
 	ms := a.launchMachines()
 	i := slices.IndexFunc(ms, func(m LaunchMachine) bool { return m.ID == "w1" })
-	if i < 0 || !ms[i].Window || ms[i].Note != "kakel window" {
+	if i < 0 || !ms[i].Window || ms[i].Note != "another kakel" {
 		t.Fatalf("the saved window is offered as %+v", ms)
 	}
 	var copyThing, tunnelThing LaunchThing

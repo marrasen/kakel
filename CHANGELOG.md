@@ -7,6 +7,26 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
+## Unreleased
+
+### Changed
+
+**"Serve This Window…" is now "Remote Access…".** Serving never gave
+only the window in front: it let another kakel, with an allowed key,
+use every pane in every window, open shells, read and write files and
+make tunnels, also with no window open. The name and the dialog now say
+so. "Connect to Window…" is now "Connect to Another kakel…". What they
+do is unchanged, and so are the settings, the saved servers, the keys
+that may connect, the relay codes and the shortcuts.
+
+- Both are still on the Share menu. Typing the old names in the palette
+  still finds them.
+- Settings › Sharing › Remote access has Turn On… and Turn Off, and the
+  mark on the bar reads Remote Access while it is on.
+- A kakel on another machine is called another kakel, or kakel, in the
+  Machines pane, the launcher, the palette, the dialogs, the Window Log
+  and what a relay answers. A window is only a window on the screen.
+
 ## v0.12.2-beta.18
 
 ### Fixed

@@ -72,7 +72,7 @@ func (a *app) runCommandWith(in RunCommand, still func() bool, then func(id stri
 		through = in.Machine
 	}
 	if !far && a.machines.Get(in.Machine).Window == nil && a.machines.IsWindow(in.Machine) {
-		return fmt.Errorf("%s is a kakel window that is not connected: connect to it first", a.machines.Name(in.Machine))
+		return fmt.Errorf("%s is another kakel, not connected: connect to it first", a.machines.Name(in.Machine))
 	}
 	if in.Forget != "" && !in.Keep && a.settings != nil {
 		if err := a.settings.DropCommand(in.Forget); err != nil {
@@ -223,7 +223,7 @@ func (a *app) startCommand(machine machines.ID, cmd command, s commandStart) err
 		})
 	}
 	if !ok {
-		return fmt.Errorf("this window is not connected to %s", a.machines.Name(machine))
+		return fmt.Errorf("kakel is not connected to %s", a.machines.Name(machine))
 	}
 	if !s.wanted() {
 		return nil

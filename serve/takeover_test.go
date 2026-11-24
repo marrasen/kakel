@@ -1247,7 +1247,7 @@ func TestAWindowThatDoesNotServeItsFilesSaysSo(t *testing.T) {
 		_ = ch.Close()
 		t.Fatal("it opened a file session on a window that serves none")
 	}
-	if !strings.Contains(err.Error(), "does not serve its files") {
+	if !strings.Contains(err.Error(), "does not offer its files") {
 		t.Errorf("it said %v", err)
 	}
 }

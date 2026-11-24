@@ -189,7 +189,7 @@ func (a *app) withFilesHow(machine machines.ID, then func(vfs.FS), failed func(e
 				}
 			})
 		}
-		return fmt.Errorf("this window is not connected to %s", a.machines.Name(machine))
+		return fmt.Errorf("kakel is not connected to %s", a.machines.Name(machine))
 	}
 	opening := "files " + string(machine)
 	a.say(opening, "Opening the files on "+a.machines.Name(machine)+"…")

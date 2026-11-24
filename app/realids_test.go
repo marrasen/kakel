@@ -116,7 +116,7 @@ func TestACommandOnASavedWindowByItsIDIsRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 	box, _ := a.book.Lookup("box")
-	if err := a.runCommand(RunCommand{Machine: machines.ID(box.ID), Line: "uptime"}); err == nil || !strings.Contains(err.Error(), "box is a kakel window") {
+	if err := a.runCommand(RunCommand{Machine: machines.ID(box.ID), Line: "uptime"}); err == nil || !strings.Contains(err.Error(), "box is another kakel") {
 		t.Fatalf("a command on a saved window said %v", err)
 	}
 }

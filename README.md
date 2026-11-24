@@ -204,8 +204,8 @@ kakel is gridterm, renamed, with its window rebuilt on gunim.
   after kakel starts with no files.
 - **Shortcut files keep working.** The commands kept gridterm's names.
 - **A kakel and a gridterm still talk to each other.** The names they
-  use between machines are unchanged, so windows of either can connect
-  to each other.
+  use between machines are unchanged, so either can connect to the
+  other.
 - **An agent set up for gridterm is set up again for kakel.** The MCP
   server is now called kakel, and runs the kakel executable.
 

@@ -1250,7 +1250,7 @@ func TestAPaneWithoutLinesSaysWhatItIs(t *testing.T) {
 	for slot, want := range map[string]string{
 		"p3": "Start lines are for terminals. This pane runs a command.",
 		"p4": "Start lines are for terminals. This pane shows files.",
-		"p5": "Start lines are for terminals kakel starts. This one opens through another kakel window.",
+		"p5": "Start lines are for terminals kakel starts. This one opens through another kakel.",
 		"p6": "Start lines are for terminals. This kakel can't open this kind of pane.",
 		"x9": "Start lines are for terminals. This slot has no pane.",
 	} {

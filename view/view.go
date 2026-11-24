@@ -679,7 +679,7 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 		if m := w.machineOf(w.focused); m != "" {
 			w.disconnect(m, u)
 		} else {
-			w.toast(widget.Toast{Title: "This pane is on this computer", Body: "Disconnect closes the connection to a server or a window."}, u)
+			w.toast(widget.Toast{Title: "This pane is on this computer", Body: "Disconnect closes the connection to a server or another kakel."}, u)
 		}
 		return true
 	case "serve.window":
@@ -1371,7 +1371,7 @@ func (w *Window) servers(saved []remote.Host) {
 			keys = hint("server.open." + name)
 			also = append(also, h.Address)
 			if h.Window {
-				ic, note = icon.AppWindow, strings.TrimSuffix("kakel window · "+note, " · ")
+				ic, note = icon.AppWindow, strings.TrimSuffix("another kakel · "+note, " · ")
 			}
 		}
 		w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: where, Detail: note, Icon: ic, Hint: keys,
@@ -1588,8 +1588,8 @@ func (w *Window) shellIDs() []string {
 }
 
 // savingClashes says what stands in the way of saving h in place of
-// old: a new name something is connected as, a window saved twice, a
-// connected window moved.
+// old: a new name something is connected as, a kakel saved twice, a
+// connected kakel moved.
 func (w *Window) savingClashes(h remote.Host, old *remote.Host) string {
 	was := ""
 	if old != nil {
@@ -1598,13 +1598,13 @@ func (w *Window) savingClashes(h remote.Host, old *remote.Host) string {
 	if h.Window {
 		for _, s := range w.saved {
 			if s.Window && (was == "" || s.ID != was) && s.ServeAddr() == h.ServeAddr() {
-				return fmt.Sprintf("%s is already saved as the window at %s; a window has one entry in the list.", s.Name, relay.Shown(h.ServeAddr()))
+				return fmt.Sprintf("%s is already saved as the kakel at %s; a kakel has one entry in the list.", s.Name, relay.Shown(h.ServeAddr()))
 			}
 		}
 	}
 	for _, rw := range w.remoteWindows {
 		if was != "" && rw.Name == machines.ID(was) && (!h.Window || rw.Addr != h.ServeAddr()) {
-			return fmt.Sprintf("%s is connected at %s; let go of it before changing where it is.", old.Name, relay.Shown(rw.Addr))
+			return fmt.Sprintf("%s is connected at %s; disconnect it before changing where it is.", old.Name, relay.Shown(rw.Addr))
 		}
 	}
 	return ""
@@ -2002,14 +2002,14 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 	// The Machines pane lists the rest, not itself.
 	all = slices.DeleteFunc(slices.Clone(all), func(p app.Pane) bool { return p.Kind == app.KindServers })
 	rows := sidebarRows(all, st.Tunnels, st.Share, st.Windows, saved, w.named, st.Dropped...)
-	// The windows connected to this one, under this computer.
+	// The kakels connected to this one, under this computer.
 	for i, c := range st.Serving.Clients {
 		at := slices.IndexFunc(rows, func(r sideItem) bool { return r.key == "machine:" }) + 1
 		for at < len(rows) && !rows[at].heading {
 			at++
 		}
 		key := "client:" + c.Name + ":" + strconv.Itoa(i)
-		item := sideItem{key: key, text: "serving " + c.Name, note: "from " + c.From, local: func(u *gunim.UI) { w.servingDialog(w.serving, u) },
+		item := sideItem{key: key, text: c.Name, note: "from " + c.From, local: func(u *gunim.UI) { w.servingDialog(w.serving, u) },
 			closes: app.DisconnectClient{Name: c.Name, From: c.From}}
 		rows = slices.Insert(rows, at, item)
 		// Under it, a row for each tunnel it holds through this window.

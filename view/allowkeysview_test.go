@@ -63,7 +63,7 @@ func TestTheServingDialogAddsAndRemovesKeys(t *testing.T) {
 	s.Edits++
 	publish(app.State{Serving: s})
 	lastWindow.Frame(time.Second)
-	if win.keysAsked || win.dialog == nil || win.dialog.Title != "Serve This Window" {
+	if win.keysAsked || win.dialog == nil || win.dialog.Title != "Remote Access" {
 		t.Fatalf("after the change, the dialog is %+v", win.dialog)
 	}
 }

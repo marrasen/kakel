@@ -32,7 +32,7 @@ var toaster = sync.OnceValue(func() notify.Toaster { return notify.New(ProgramNa
 var toasted atomic.Bool
 
 // openedForNote is what the row of a pane opened for another window says.
-const openedForNote = "opened from another window"
+const openedForNote = "opened from another kakel"
 
 // notePanes puts on each terminal's row what its program says, and who
 // else is watching it, and passes a new message on.

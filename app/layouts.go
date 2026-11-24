@@ -158,7 +158,7 @@ func (l leftOut) said() string {
 	}{
 		{l.readers, "reader", "readers"},
 		{l.tunnels, "tunnel", "tunnels"},
-		{l.through, "pane through a removed window", "panes through a removed window"},
+		{l.through, "pane through a removed kakel", "panes through a removed kakel"},
 		{l.removed, "pane on a removed server", "panes on a removed server"},
 		{l.other, "other pane", "other panes"},
 	} {

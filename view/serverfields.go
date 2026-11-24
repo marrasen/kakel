@@ -48,7 +48,7 @@ func newServerFields(w *Window, old *remote.Host) *serverFields {
 	// The code of a window served through a relay, whose address is
 	// then the relay's URL.
 	code := widget.NewTextField()
-	code.Placeholder = "XXXX-XXXX, for a window through a relay"
+	code.Placeholder = "XXXX-XXXX, for a kakel through a relay"
 	user.Placeholder, key.Placeholder = "your name here", "the usual keys in ~/.ssh"
 	// Through lists the other saved servers, to reach this one through:
 	// a server, or a kakel window or its relay. A server can go through
@@ -61,7 +61,7 @@ func newServerFields(w *Window, old *remote.Host) *serverFields {
 		if old == nil || h.ID != old.ID {
 			label := h.Name
 			if h.Window {
-				label += " (kakel window)"
+				label += " (kakel)"
 				windows[h.ID] = true
 			}
 			through = append(through, label)
@@ -167,7 +167,7 @@ func newServerFields(w *Window, old *remote.Host) *serverFields {
 		// or its relay, can be reached through a saved server.
 		h.ForwardAgent = forward.Checked()
 		if h.Window && windows[h.Via] {
-			return h, "A kakel window is reached through a server, not through another window."
+			return h, "Another kakel is reached through a server."
 		}
 		if err := h.Validate(); err != nil {
 			return h, words.UpperFirst(err.Error()) + "."

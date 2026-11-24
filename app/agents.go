@@ -561,7 +561,7 @@ func (w agentWindow) Restart(id string) (agent.Pane, error) {
 		// the box allows is a program started again on a connection the
 		// window already holds.
 		if machine := w.a.machineOf(h.pane); machine != "" && w.a.machines.Get(machine).Conn == nil && w.a.machines.Get(machine).Window == nil {
-			return struct{}{}, fmt.Errorf("this window is not connected to %s any more, and opening connections is the user's to do: ask them to connect to it", w.a.machines.Name(machine))
+			return struct{}{}, fmt.Errorf("kakel is not connected to %s any more, and opening connections is the user's to do: ask them to connect to it", w.a.machines.Name(machine))
 		}
 		// The question the pane asks goes: a restart on its way would
 		// otherwise read as one that failed, which asks it again.
@@ -643,7 +643,7 @@ func (w agentWindow) Open(id string) (agent.Pane, error) {
 			through = machine
 		}
 		if machine != "" && w.a.machines.Get(machine).Conn == nil && w.a.machines.Get(through).Window == nil {
-			return struct{}{}, fmt.Errorf("this window is not connected to %s any more, and opening connections is the user's to do: ask them to connect to it", w.a.machines.Name(through))
+			return struct{}{}, fmt.Errorf("kakel is not connected to %s any more, and opening connections is the user's to do: ask them to connect to it", w.a.machines.Name(through))
 		}
 		from = h
 		focus := w.a.st.Focus

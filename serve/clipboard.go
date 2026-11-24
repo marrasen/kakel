@@ -59,7 +59,7 @@ func (s *Server) takeImage(ctx context.Context, ch io.Reader) error {
 		return errors.New("the image was empty")
 	}
 	if len(raw) > mostClipboardBytes {
-		return fmt.Errorf("the image is larger than the %d bytes this window takes", mostClipboardBytes)
+		return fmt.Errorf("the image is larger than the %d bytes kakel takes", mostClipboardBytes)
 	}
 	if err := ctx.Err(); err != nil {
 		return err

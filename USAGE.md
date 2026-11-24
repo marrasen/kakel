@@ -30,7 +30,7 @@ A paste of more than one line, or over 5 KB, opens in an editor first.
 The editor colours the code the way the pane's shell reads it: bash
 (and other POSIX shells), PowerShell or the Command Prompt. The text
 stays plain while a program the shell started is running, and in a
-pane opened through another kakel window.
+pane opened through another kakel.
 `Enter` pastes it, `Shift+Enter` starts a new line, and `Escape`
 cancels. Settings › Terminal › Show before pasting turns this off.
 
@@ -153,7 +153,7 @@ A layout is one window, saved to open again as it is.
 - **What is saved.** The splits and tabs, the window's place and size,
   and for each terminal, command and file manager the machine, the
   shell or profile, the folder and the command. Left out are readers,
-  tunnels, and panes on a server or through a kakel window removed
+  tunnels, and panes on a server or through another kakel removed
   from the list, and saving names them. Settings, the Jobs, the
   Layouts and the other tool panes are left out too, unsaid, as their
   own commands open them.
@@ -193,14 +193,14 @@ A layout is one window, saved to open again as it is.
   anything else typed or pasted into the pane before the last line is
   typed, by you, by someone watching it, or by an agent, and the shell
   ending. A server that fails at first gets its lines when Retry opens
-  its shell. A terminal through another kakel window, and a shell
+  its shell. A terminal through another kakel, and a shell
   started again in its pane, is typed nothing into. Saving the window
   again keeps each terminal's start lines. They are saved in the
   settings file as plain text, so keep passwords out of them.
 - **Giving a terminal start lines.** Press Start Lines… on the layout's
   card in File › Layouts › Manage Layouts. The card counts the start
   lines the layout's terminals type, as "4 terminals, 3 start lines";
-  lines a terminal through another kakel window holds are not counted.
+  lines a terminal through another kakel holds are not counted.
   The dialog
   draws the window across its width: each pane is a box where it
   stands, its name, its machine when that is not this computer, and as
@@ -238,7 +238,7 @@ A layout is one window, saved to open again as it is.
   you changed, with spaces at the end and blank lines dropped, and
   leaves the others as they are; Cancel and Escape keep none of what
   was typed. A command pane, a file manager and a terminal through
-  another kakel window have no start lines yet; lines such a terminal
+  another kakel have no start lines yet; lines such a terminal
   already holds stay as they are. Where the layout was removed
   meanwhile, saved over with other splits, tabs or panes, or the same
   terminal given other lines in another window, Save says so and the
@@ -256,30 +256,28 @@ A layout is one window, saved to open again as it is.
   by another kakel, and for a layout removed and a new one saved under
   its name. Undo of a removal puts the layout back as it was, and the
   dialog reaches its windows again.
-- **Panes through another kakel window.** These are kept by the
-  window, and by the machine beyond it when the pane ran on one the
-  window reaches. Opening the layout connects to the window once for
-  all of them. A pane the layout opened there last time, and that is
-  still open there, is watched again, with its program still running
-  and its screen as it is. One closed there since, or any pane after
-  that window's kakel was started again, opens new, as New Terminal
-  there does. Closing a pane here, or the layout's window, or quitting,
-  leaves the pane open on the other window: close it there to end it.
-  If the layout is open twice at once, each copy has panes of its own
-  there, and each comes back to its own the next time, for up to four
-  copies. A pane the other window's user opened, that you worked in
-  from here, is saved as a terminal there: the layout opens a new one,
-  and leaves theirs alone.
+- **Panes through another kakel.** These are kept by that kakel, and by
+  the machine beyond it when the pane ran on one it reaches. Opening the
+  layout connects to the other kakel once for all of them. A pane the
+  layout opened there last time, and that is still open there, is
+  watched again, with its program still running and its screen as it is.
+  One closed there since, or any pane after that kakel was started
+  again, opens new, as New Terminal there does. Closing a pane here, or
+  the layout's window, or quitting, leaves the pane open in the other
+  kakel: close it there to end it. If the layout is open twice at once,
+  each copy has panes of its own there, and each comes back to its own
+  the next time, for up to four copies. A pane the other kakel's user
+  opened, that you worked in from here, is saved as a terminal there:
+  the layout opens a new one, and leaves theirs alone.
 - **Opening a new pane there.** A terminal runs the shell new
-  terminals start on that machine, as the window picks it. On the
-  window's own machine it starts in the folder it was in; on a machine
-  beyond the window it starts where that machine starts it. A pane
-  whose program ended there is started again there. A machine renamed
-  on that window is still found. A window running an older kakel opens
-  a new pane each time, a terminal in its default folder, and says so.
-  A machine beyond the window that the window is not connected to
-  fails its pane, saying why: connect to it from that window, then
-  press Retry.
+  terminals start on that machine, as that kakel picks it. On the
+  kakel's own machine it starts in the folder it was in; on a machine
+  beyond it, it starts where that machine starts it. A pane whose
+  program ended there is started again there. A machine renamed in that
+  kakel is still found. An older kakel there opens a new pane each time,
+  a terminal in its default folder, and says so. A machine beyond the
+  kakel that it is not connected to fails its pane, saying why: connect
+  to it from that kakel, then press Retry.
 - **From a window of tools.** Save Layout in a window that holds only
   tool panes saves the window you last worked in.
 - **Open.** Choose it in File › Layouts, which lists every layout, a key
@@ -287,7 +285,7 @@ A layout is one window, saved to open again as it is.
   (`Ctrl+Shift+K`) or the launcher, or press Open on its card in File ›
   Layouts › Manage Layouts. It always opens in a new window, so nothing
   running is closed. Each pane starts afresh.
-- **When a server fails.** Each server, and each kakel window, is
+- **When a server fails.** Each server, and each other kakel, is
   connected to once for all its panes. One that cannot be reached
   fails only its own panes, which say why and offer Retry. One removed
   from the list since fails its panes the same way.
@@ -345,49 +343,54 @@ at the agent's asking is not in it, because you typed that yourself.
 The record lives as long as the pane: it is capped, it says how many of
 the oldest entries it has dropped, and it goes when the pane closes.
 
-## Serving this window, and working in another
+## Remote access, and connecting to another kakel
 
-Serving this window and connecting to another are on the Share menu
-rather than on a key. "Serve This Window…" asks for the port and where
-to listen, and then shows the address and the host key's fingerprint to
-check. "Connect to Window…" asks for the address and the key file to
-offer. Connecting opens nothing over there: what
-that window has open lands in the Machines pane under its name, and the plus
-on that heading opens a pane on it. The servers that window is
+Remote access lets a kakel on another machine, with an allowed key, use
+this whole kakel as you: the panes of every window, shells, files and
+tunnels. It goes on with no window open, until you turn it off.
+
+Remote Access… and Connect to Another kakel… are on the Share menu
+rather than on a key. "Remote Access…" asks for the port and where to
+listen, and Turn On then shows the address and the host key's
+fingerprint to check. "Connect to Another kakel…" asks for the address
+and the key file to offer. Connecting opens nothing over there: what
+that kakel has open lands in the Machines pane under its name, and the
+plus on that heading opens a pane on it. The servers that kakel is
 connected to get headings of their own, and their plus opens things on
-them through it. Nothing listens until you ask it to,
-and the keys allowed in are the ones you list in an `authorized_keys`
-file in kakel's own directory, not the one in `~/.ssh`. The Serve dialog
-lists them: Add Key… takes a public key pasted, or one of this
-machine's, and Remove Key… takes one off and hangs up on the window it
-let in. If you made that file a link to `~/.ssh/authorized_keys`, the
-keys added here may log in over ssh too.
+them through it. Nothing listens until you ask it to, and the keys
+allowed in are the ones you list in an `authorized_keys` file in kakel's
+own directory, not the one in `~/.ssh`. The Remote Access dialog lists
+them: Add Key… takes a public key pasted, or one of this machine's, and
+Remove Key… takes one off and hangs up on the kakel it let in. If you
+made that file a link to `~/.ssh/authorized_keys`, the keys added here
+may log in over ssh too.
 
 ### Through a relay
 
-When the other machine cannot reach this one, serve through a relay
-(see below). Tick "Through a relay" in the Serve dialog and paste the
-relay's URL. Kakel makes a code, such as `7KQ2-M9XD`, and keeps it in
-`relay_code` beside the serving key, so it is the same every time this
-window is served and each machine has its own. The other end types
-that code. Copy Link puts the relay's URL and the code on the
+When the other machine cannot reach this one, use a relay (see below).
+Tick "Through a relay" in the Remote Access dialog and paste the relay's
+URL. kakel makes a code, such as `7KQ2-M9XD`, and keeps it in
+`relay_code` beside the remote access key, so it is the same every time
+remote access is turned on and each machine has its own. The other end
+types that code. Copy Link puts the relay's URL and the code on the
 clipboard, for pasting at the other end in one go. New Code makes
 another; the old one lets nobody else in. Untick "On a port of this
-machine" to serve through the relay alone. The keys that may connect
-are the same either way.
+machine" to use the relay alone. The keys that may connect are the same
+either way.
 
-At the other end, "Connect to Window…" with "Through a relay" takes the
-relay's URL and the code; pasting the copied link into either field
-fills in both. The relay used last is offered again. A window saved in
-the server list as a kakel window takes the relay's URL as its address
-and the code in Code. The host key is checked as for any window, under
-the code and the relay's name: a new code is a new window to trust.
+At the other end, "Connect to Another kakel…" with "Through a relay"
+takes the relay's URL and the code; pasting the copied link into either
+field fills in both. The relay used last is offered again. A machine
+saved in the server list with the type kakel takes the relay's URL as
+its address and the code in Code. The host key is checked as for any
+kakel, under the code and the relay's name: a new code is a new kakel to
+trust.
 
 Both dialogs have a Through choice: a saved server to reach the relay,
-or the window itself, through, as a server saved behind another one is
-reached. The stream goes out from that server over the SSH connection
+or the other kakel itself, through, as a server saved behind another one
+is reached. The stream goes out from that server over the SSH connection
 to it, which kakel makes first when it is not connected. A saved kakel
-window takes a Through as well.
+takes a Through as well.
 
 Kakel reaches a relay through the HTTP proxy that `HTTPS_PROXY` names
 or, on Windows, the one set for the system. Settings › Sharing ›
@@ -398,26 +401,26 @@ Windows (NTLM or Kerberos), is not supported yet.
 
 ### Tunnels with plain ssh
 
-A served window also takes ssh's own tunnels, with the same keys and
-the same host key. There is no shell, so give `-N`:
+A kakel with remote access on also takes ssh's own tunnels, with the
+same keys and the same host key. There is no shell, so give `-N`:
 
     ssh -p 2222 -N -L 8080:intranet:80 kakel@office-pc
 
-That makes port 8080 here reach `intranet` port 80 as the served
-machine finds it. `-J` and `-W` work the same way. The user name says
-where the tunnel goes out from: `kakel` for the served machine itself,
+That makes port 8080 here reach `intranet` port 80 as the machine
+connected to finds it. `-J` and `-W` work the same way. The user name
+says where the tunnel goes out from: `kakel` for that machine itself,
 or a machine saved there, by its name as the commands spell it
 (`db-server` for "DB Server"):
 
     ssh -p 2222 -N -L 5432:localhost:5432 db-server@office-pc
 
-At first a tunnel reaches what a kakel window connecting reaches: the
+At first a tunnel reaches what another kakel connecting reaches: the
 servers connected over there already. Turn on Settings › Sharing ›
-Tunnels may connect, on the served machine, and a saved server not
+Tunnels may connect, on the machine connected to, and a saved server not
 connected is connected to on the way, when that needs nothing asked: a
 key, or a secret while the secrets are open. A question would wait on
 a screen nobody may be at, so the tunnel is refused instead, saying to
-connect it there first. With it on, a kakel window connected over there
+connect it there first. With it on, another kakel connected over there
 can be gone through too.
 
 Through a relay, ssh runs kakel to reach it:
@@ -426,14 +429,14 @@ Through a relay, ssh runs kakel to reach it:
 
 `-relay-pipe` takes `-proxy` for an HTTP proxy, or uses the system's.
 
-"Tunnels with ssh…", on the Share menu, in the served dialog and in
-Settings › Sharing, explains all this with the commands filled in for
-this window: its port, its name, its relay and the machines saved here,
+"Tunnels with ssh…", on the Share menu, in the Remote Access dialog and
+in Settings › Sharing, explains all this with the commands filled in for
+this kakel: its port, its name, its relay and the machines saved here,
 each with a Copy beside it.
 
 ## Running a relay
 
-A relay joins two kakel windows that cannot reach each other: both
+A relay joins two kakels that cannot reach each other: both
 reach the relay instead, over WebSockets on HTTPS, which gets through
 HTTP proxies. It runs on a server with no screen:
 
@@ -450,9 +453,9 @@ relay answers nothing, so keep the URL to the people who should use it.
 The secret is kept in `relay_secret` in kakel's private directory (or
 `-dir`); `-new-secret` makes a new one and the old URL stops working.
 
-The relay only carries bytes. The windows speak SSH to each other
-through it, so it cannot read what passes, and the served window still
-lets in only the keys it lists.
+The relay only carries bytes. The two kakels speak SSH to each other
+through it, so it cannot read what passes, and the one connected to
+still lets in only the keys it lists.
 
 ## Where kakel keeps its files
 

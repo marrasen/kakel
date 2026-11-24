@@ -389,7 +389,7 @@ func (a *app) flushRecords() {
 		return have
 	})
 	if err != nil {
-		log.Printf("couldn't write down the panes layouts opened on other windows: %v", err)
+		log.Printf("couldn't write down the panes layouts opened on other kakels: %v", err)
 	}
 }
 

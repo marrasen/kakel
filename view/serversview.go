@@ -16,7 +16,7 @@ import (
 
 // The Machines pane: every machine kakel knows, with how its connection
 // is doing, and under each what is open on it in every window, with
-// Quick Connect, Add Server and Connect to Window along the top. It is
+// Quick Connect, Add Server and Connect to Another kakel along the top. It is
 // what the sidebar was, in a tab of its own. A pane's row in another
 // window says so, and a click there brings that window to the front.
 
@@ -42,7 +42,7 @@ var (
 	addItems = []widget.MenuItem{
 		{Label: "Add Server…", Icon: icon.Server},
 		{Label: "Quick Connect…", Icon: icon.Zap},
-		{Label: "Connect to Window…", Icon: icon.Plug},
+		{Label: "Connect to Another kakel…", Icon: icon.Plug},
 		{Label: "Import from SSH Config", Icon: icon.FileInput},
 	}
 	addCommands = []string{"server.add", "server.connect", "serve.attach", "server.import"}

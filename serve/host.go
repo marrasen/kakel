@@ -86,7 +86,7 @@ func (s *Server) serveChannels(ctx context.Context, c *Client, chans <-chan ssh.
 			if err := ssh.Unmarshal(nch.ExtraData(), &want); err != nil {
 				_ = nch.Reject(ssh.ConnectionFailed,
 					"that is not a stream request this kakel understands: "+
-						"both windows have to be the same build")
+						"both kakels have to be the same build")
 				continue
 			}
 			if streams.Load() >= mostStreams {
@@ -127,13 +127,13 @@ func (s *Server) serveChannels(ctx context.Context, c *Client, chans <-chan ssh.
 					// another build.
 					_ = nch.Reject(ssh.ConnectionFailed,
 						"that is not a file session request this kakel understands: "+
-							"both windows have to be the same build")
+							"both kakels have to be the same build")
 					continue
 				}
 			}
 			if files.Load() >= mostFileSessions {
 				_ = nch.Reject(ssh.ResourceShortage,
-					"this kakel is already serving as many file sessions"+
+					"this kakel already has as many file sessions open"+
 						" as it will on one connection")
 				continue
 			}
@@ -149,7 +149,7 @@ func (s *Server) serveChannels(ctx context.Context, c *Client, chans <-chan ssh.
 			if err := ssh.Unmarshal(nch.ExtraData(), &want); err != nil {
 				_ = nch.Reject(ssh.ConnectionFailed,
 					"that is not a log request this kakel understands: "+
-						"both windows have to be the same build")
+						"both kakels have to be the same build")
 				continue
 			}
 			if s.cfg.Log == nil {
@@ -172,7 +172,7 @@ func (s *Server) serveChannels(ctx context.Context, c *Client, chans <-chan ssh.
 			if err := ssh.Unmarshal(nch.ExtraData(), &want); err != nil {
 				_ = nch.Reject(ssh.ConnectionFailed,
 					"that is not a session request this kakel understands: "+
-						"both windows have to be the same build")
+						"both kakels have to be the same build")
 				continue
 			}
 			ch, reqs, err := nch.Accept()
@@ -195,7 +195,7 @@ func (s *Server) serveChannels(ctx context.Context, c *Client, chans <-chan ssh.
 			if err := ssh.Unmarshal(nch.ExtraData(), &want); err != nil {
 				_ = nch.Reject(ssh.ConnectionFailed,
 					"that is not a session request this kakel understands: "+
-						"both windows have to be the same build")
+						"both kakels have to be the same build")
 				continue
 			}
 			if s.cfg.OpenIn == nil {
@@ -212,7 +212,7 @@ func (s *Server) serveChannels(ctx context.Context, c *Client, chans <-chan ssh.
 			if err := ssh.Unmarshal(nch.ExtraData(), &want); err != nil || want.Attach == "" {
 				_ = nch.Reject(ssh.ConnectionFailed,
 					"that is not an attach request this kakel understands: "+
-						"both windows have to be the same build")
+						"both kakels have to be the same build")
 				continue
 			}
 			running.Go(func() { s.runAttachIn(ctx, nch, want) })
@@ -236,7 +236,7 @@ func (s *Server) serveChannels(ctx context.Context, c *Client, chans <-chan ssh.
 			// what a kakel of another build looks like from here.
 			_ = nch.Reject(ssh.ConnectionFailed,
 				"that is not a session request this kakel understands: "+
-					"both windows have to be the same build")
+					"both kakels have to be the same build")
 			continue
 		}
 		ch, reqs, err := nch.Accept()
@@ -448,7 +448,7 @@ func (s *Server) carry(ctx context.Context, nch ssh.NewChannel, within time.Dura
 // the only reader of.
 func (s *Server) runFiles(ctx context.Context, nch ssh.NewChannel, host string) {
 	if s.cfg.Files == nil {
-		_ = nch.Reject(ssh.Prohibited, "this kakel does not serve its files")
+		_ = nch.Reject(ssh.Prohibited, "this kakel does not offer its files")
 		return
 	}
 	ch, reqs, err := nch.Accept()

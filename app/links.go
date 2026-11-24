@@ -94,7 +94,7 @@ func (a *app) openLink(machine machines.ID, at string) error {
 		if _, ok, err := a.connOf(machine); err != nil {
 			return err
 		} else if !ok {
-			return fmt.Errorf("this window is not connected to %s any more, so its %s cannot be reached", a.machines.Name(machine), at)
+			return fmt.Errorf("kakel is not connected to %s any more, so its %s cannot be reached", a.machines.Name(machine), at)
 		}
 	}
 	local, err := a.tunnelTo(machine, target)

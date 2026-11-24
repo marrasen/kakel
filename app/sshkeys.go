@@ -186,7 +186,7 @@ func (a *app) keyWritten(key remote.NewKey, savedPassphrase bool) {
 	b.WriteString("To install it on a server, run ssh-copy-id -i " + key.Pub + " user@host, or add its public key line to ~/.ssh/authorized_keys there.\n\n")
 	b.WriteString(`For OpenSSH on Windows, add it to %USERPROFILE%\.ssh\authorized_keys, unless that account is an administrator, and then only to %ProgramData%\ssh\administrators_authorized_keys. Either file has to be readable by its owner alone, or sshd ignores it and says nothing about why.`)
 	if at, err := serve.AuthorizedKeysPath(); err == nil {
-		b.WriteString("\n\nFor a kakel window serving from this machine, add it to " + at + ".")
+		b.WriteString("\n\nFor remote access to kakel on this machine, add it to " + at + ".")
 	}
 	line := key.Line
 	go func() {

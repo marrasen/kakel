@@ -448,10 +448,10 @@ func (p *settingsPane) notifications() gunim.Node {
 	)
 }
 
-// serveAtStart are the choices of what kakel does as it starts when the
-// window was served as it last closed.
+// serveAtStart are the choices of what kakel does as it starts when
+// remote access was on as it last closed.
 var serveAtStart = []struct{ title, value string }{
-	{"Ask", settings.ServeAsk}, {"Serve again", settings.ServeAlways}, {"Don't serve", settings.ServeNever},
+	{"Ask", settings.ServeAsk}, {"Turn on", settings.ServeAlways}, {"Stay off", settings.ServeNever},
 }
 
 func (p *settingsPane) sharing() gunim.Node {
@@ -488,7 +488,7 @@ func (p *settingsPane) sharing() gunim.Node {
 	add.OnClick = func(u *gunim.UI) gunim.Intent { p.w.addKeyDialogFrom(p.st.Serving, false, u); return nil }
 	p.removeK = widget.NewButton("Remove Key…")
 	p.removeK.OnClick = func(u *gunim.UI) gunim.Intent { p.w.removeKeyPickerFrom(p.st.Serving, false, u); return nil }
-	p.serving = widget.NewButton("Serve This Window…")
+	p.serving = widget.NewButton("Turn On…")
 	p.serving.OnClick = func(u *gunim.UI) gunim.Intent {
 		if p.st.Serving.On {
 			p.send(app.StopServing{}, u)
@@ -498,19 +498,19 @@ func (p *settingsPane) sharing() gunim.Node {
 		return nil
 	}
 	return settingsPage(
-		settingsSection("Serving",
-			faintLabel("Another kakel window, on a machine whose key is allowed, can take a served window over: open shells here, work in the panes, and read and write files as you."),
+		settingsSection("Remote access",
+			faintLabel(remoteAccessSays),
 			settingRow("Now", "", p.serving),
-			settingRow("When kakel starts", "If the window was served as kakel last closed.", p.atStart),
+			settingRow("When kakel starts", "If remote access was on as kakel last closed.", p.atStart),
 			settingRow("Port", "0 picks a free port.", widget.NewSized(p.port, 110, 0)),
 			settingRow("Listen on", "", p.reach),
-			settingRow("Tunnels with ssh", "Plain ssh on another machine can make tunnels through a served window.", p.settingButton("How…", "serve.ssh")),
-			settingRow("Tunnels may connect", "A tunnel through a saved server not connected here connects it, when that needs nothing asked, and one may go through a kakel window connected here. Off, tunnels reach only the servers connected here, as a kakel window connecting does.", p.tunnels)),
+			settingRow("Tunnels with ssh", "Plain ssh on another machine can make tunnels through this kakel while remote access is on.", p.settingButton("How…", "serve.ssh")),
+			settingRow("Tunnels may connect", "A tunnel through a saved server not connected here connects it, when that needs nothing asked, and one may go through another kakel connected here. Off, tunnels reach only the servers connected here, as another kakel does.", p.tunnels)),
 		settingsSection("Keys that may connect",
 			p.keys,
 			buttons(add, p.removeK)),
 		settingsSection("Relays",
-			faintLabel("A relay joins two windows that cannot reach each other: run kakel -relay on a server, then serve or connect through it."),
+			faintLabel("A relay joins two kakels that cannot reach each other: run kakel -relay on a server, then turn on remote access or connect through it."),
 			settingRow("Proxy", "Empty uses HTTPS_PROXY or, on Windows, the system's proxy; none goes straight to the relay. A PAC script or a Windows (NTLM) proxy login is not supported.",
 				p.proxy.node)),
 	)
@@ -521,19 +521,19 @@ func (p *settingsPane) files() gunim.Node {
 	if dir, err := conf.Dir(); err == nil {
 		for _, f := range []struct{ what, name string }{
 			{"Settings", settings.File}, {"Saved servers", remote.BookFile}, {"Themes", themes.File},
-			{"Shortcuts", keys.File}, {"Authorized keys", serve.AuthFile}, {"Known windows", app.KnownWindowsFile},
+			{"Shortcuts", keys.File}, {"Authorized keys", serve.AuthFile}, {"Known kakels", app.KnownWindowsFile},
 		} {
 			rows = append(rows, settingRow(f.what, "", selectable(filepath.Join(dir, f.name))))
 		}
 	}
 	if key, err := serve.HostKeyPath(); err == nil {
-		rows = append(rows, settingRow("Serving key", "", selectable(key)))
+		rows = append(rows, settingRow("Remote access key", "", selectable(key)))
 	}
 	rows = append(rows, faintLabel("SSH keys and known_hosts stay in ~/.ssh."))
 	var place []gunim.Node
 	if own, beside, err := conf.CarriesItsOwn(); err == nil {
 		if own {
-			place = append(place, faintLabel("Portable: the files are kept beside kakel, in "+beside+". The serving key is in there too, and is only as private as that folder."))
+			place = append(place, faintLabel("Portable: the files are kept beside kakel, in "+beside+". The remote access key is in there too, and is only as private as that folder."))
 		} else if made, err := conf.IsDir(beside); err == nil && !made {
 			portable := widget.NewButton("Make Portable")
 			portable.OnClick = func(u *gunim.UI) gunim.Intent { p.send(app.MakePortable{}, u); return nil }
@@ -656,9 +656,9 @@ func (p *settingsPane) show(st app.State, u *gunim.UI) {
 	}
 	p.removeK.Disabled = len(s.Keys) == 0
 	if s.On {
-		p.serving.Label = "Stop Serving"
+		p.serving.Label = "Turn Off"
 	} else {
-		p.serving.Label = "Serve This Window…"
+		p.serving.Label = "Turn On…"
 	}
 	u.Invalidate()
 }

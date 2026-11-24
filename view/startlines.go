@@ -315,7 +315,7 @@ func (s *startLines) why(slot string) string {
 	case !known:
 		return forTerminals + "This slot has no pane."
 	case p.Kind == settings.LayoutTerminal && p.Window:
-		return "Start lines are for terminals kakel starts. This one opens through another kakel window."
+		return "Start lines are for terminals kakel starts. This one opens through another kakel."
 	case p.Kind == settings.LayoutCommand:
 		return forTerminals + "This pane runs a command."
 	case p.Kind == settings.LayoutFiles:

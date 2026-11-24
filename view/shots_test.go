@@ -23,6 +23,7 @@ import (
 	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/meter"
 	"github.com/marrasen/kakel/remote"
+	"github.com/marrasen/kakel/serve"
 	"github.com/marrasen/kakel/settings"
 	"github.com/marrasen/kakel/ui"
 )
@@ -401,4 +402,63 @@ func TestShotsWordStops(t *testing.T) {
 	publish(st)
 	settle()
 	shot("saved")
+}
+
+// TestShotsRemoteAccess writes the Remote Access dialog off and on,
+// Connect to Another kakel, Tunnels with ssh, Settings › Sharing and the
+// cards that name another kakel, wide and narrow.
+func TestShotsRemoteAccess(t *testing.T) {
+	dir := os.Getenv("KAKEL_SHOTS")
+	if dir == "" {
+		t.Skip("KAKEL_SHOTS names no folder to write the screenshots to")
+	}
+	off := app.Serving{Port: 2222, Host: "desk", RelayURL: "https://relay.example.com/k/0123456789abcdef", AtStart: settings.ServeAsk,
+		Keys: []serve.AllowedKey{{Name: "marcus@laptop", Type: "ssh-ed25519", Fingerprint: "SHA256:0Yx3c8V1Qm5pW2aT7rK9"}}, Allowed: []string{"marcus@laptop"}}
+	on := off
+	on.On, on.Addr, on.Fingerprint = true, "0.0.0.0:2222", "SHA256:q8mB1cYz7WJf0aK3xN5tR2vL9dPhG4sE6uT1oIyXwZc"
+	on.Relayed, on.Reached, on.RelayOn, on.RelayHost, on.Code = true, true, true, "relay.example.com", "7KQ2-M9XD"
+	on.Clients = []app.ServedClient{{Name: "marcus@laptop", From: "10.0.0.7:51322"}}
+	for _, size := range []geom.Size{geom.Sz(1100, 1000), geom.Sz(480, 900)} {
+		shot := func(name string) {
+			gunimtest.WritePNG(t, filepath.Join(dir, "remoteaccess-"+strconv.Itoa(int(size.W))+"-"+name+".png"), gunimtest.Pixels(t, lastWindow))
+		}
+		win, _, publish := windowStageOf(t, size)
+		st := app.State{Panes: []app.Pane{{ID: "p1", Kind: app.KindSettings, Title: "Settings"}}, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1",
+			SettingsTab: "Sharing", SettingsAsked: 1, Serving: off}
+		publish(st)
+		settle()
+		shot("settings-off")
+		win.servingDialog(win.serving, lastUI)
+		settle()
+		shot("dialog-off")
+		win.dialog.Close(lastUI)
+		settle()
+		win.connectWindowDialog(lastUI)
+		settle()
+		shot("connect")
+		win.dialog.Close(lastUI)
+		settle()
+		st.Serving = on
+		publish(st)
+		settle()
+		shot("settings-on")
+		win.servingDialog(win.serving, lastUI)
+		frames(4)
+		shot("dialog-on-opening")
+		settle()
+		shot("dialog-on")
+		win.dialog.Close(lastUI)
+		settle()
+		win.sshDialog(win.serving, lastUI)
+		settle()
+		shot("ssh")
+		// The cards and rows that name another kakel.
+		cards := shotsState()
+		cards.Saved = append(cards.Saved, remote.Host{ID: "k1", Name: "office", Address: "office.local", Window: true})
+		cards.Serving = on
+		publish(cards)
+		win.dialog.Close(lastUI)
+		settle()
+		shot("cards")
+	}
 }

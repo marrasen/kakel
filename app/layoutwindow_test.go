@@ -141,7 +141,7 @@ func TestPanesThroughAWindowAreSaved(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if skipped != (leftOut{through: 1}) || skipped.said() != "1 pane through a removed window" {
+	if skipped != (leftOut{through: 1}) || skipped.said() != "1 pane through a removed kakel" {
 		t.Errorf("left out %+v, said %q", skipped, skipped.said())
 	}
 	want := map[string]settings.SavedPane{

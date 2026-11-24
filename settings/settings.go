@@ -259,7 +259,7 @@ type Relay struct {
 	// can roam between machines and the code is each one's own.
 	URL string `json:"url,omitempty"`
 	// On says serving goes through the relay, and NoPort that it
-	// listens on no port of its own, as the Serve dialog was last set.
+	// listens on no port of its own, as the Remote Access dialog was last set.
 	On     bool `json:"on,omitempty"`
 	NoPort bool `json:"noPort,omitempty"`
 	// Via is the ID of the saved server the relay is reached through,
@@ -680,7 +680,7 @@ func (s *Settings) ServeReach() (string, bool) {
 	return *s.have.ServeReach, true
 }
 
-// PutServe remembers what the serve dialog was set to, and saves.
+// PutServe remembers what the Remote Access dialog was set to, and saves.
 //
 // The port is remembered as it was typed, so 0 stays 0 and goes on
 // meaning whichever port is free.
@@ -2163,7 +2163,7 @@ func check(file stored) error {
 		return fmt.Errorf("%d is not a port number", *p)
 	}
 	if r := file.ServeReach; r != nil && *r != ReachHere && *r != ReachAnywhere {
-		return fmt.Errorf("%q is not somewhere a window can be reached from", *r)
+		return fmt.Errorf("%q is not somewhere remote access can be reached from", *r)
 	}
 	// Which agents there are is the window's business, not this package's, so only an empty name is
 	// turned away: it names nothing and could not be offered back to the dialog.

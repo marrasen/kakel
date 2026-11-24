@@ -331,7 +331,7 @@ func (a *app) launchMachines() []LaunchMachine {
 		}
 		lm := LaunchMachine{ID: m, Name: h.Name, Window: h.Window}
 		if h.Window {
-			lm.Note = "kakel window"
+			lm.Note = "another kakel"
 		}
 		if slices.Contains(connected, m) || a.machines.Get(m).Window != nil {
 			lm.Note = strings.TrimPrefix(lm.Note+" · connected", " · ")

@@ -1057,7 +1057,7 @@ func (a *app) run(ctx context.Context) error {
 		switch a.settings.ServeAtStart() {
 		case settings.ServeAlways:
 			if err := a.startServing(a.servedLast()); err != nil {
-				a.failed("Couldn't serve the window", err.Error())
+				a.failed("Couldn't turn on remote access", err.Error())
 			}
 		case settings.ServeNever:
 		default:
@@ -1327,7 +1327,7 @@ func failedTitle(in gunim.Intent) string {
 	case ConnectTo:
 		return "Couldn't connect"
 	case ConnectWindow, AttachWindow:
-		return "Couldn't connect to the window"
+		return "Couldn't connect to the other kakel"
 	case Disconnect, DisconnectWindow:
 		return "Couldn't disconnect"
 	case OpenFiles, FilesOn:
@@ -1411,9 +1411,9 @@ func failedTitle(in gunim.Intent) string {
 	case RunCommand, RunSavedCommand:
 		return "Couldn't run the command"
 	case StartServing:
-		return "Couldn't serve this window"
+		return "Couldn't turn on remote access"
 	case StopServing:
-		return "Couldn't stop serving this window"
+		return "Couldn't turn off remote access"
 	case NewRelayCode:
 		return "Couldn't make a new code"
 	case CopyRelayLink:

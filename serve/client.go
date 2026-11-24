@@ -143,7 +143,7 @@ func (c DialConfig) say(what string) {
 func Dial(ctx context.Context, cfg DialConfig) (*Window, error) {
 	switch {
 	case cfg.Addr == "":
-		return nil, errors.New("serve: no window to reach")
+		return nil, errors.New("serve: no address to reach")
 	case len(cfg.Keys) == 0 && cfg.Auth == nil:
 		return nil, errors.New("serve: no key to reach it with")
 	case cfg.HostKey == nil:
@@ -416,7 +416,7 @@ func (w *Window) Attach(open Open, cols, rows int) (session.Session, error) {
 }
 
 // ErrCannotAttachIn is what AttachIn says of a window of an older build.
-var ErrCannotAttachIn = errors.New("serve: that window cannot say before an attach that it has nothing to attach to")
+var ErrCannotAttachIn = errors.New("serve: that kakel is too old to say before an attach that it has nothing to attach to")
 
 // AttachIn is Attach for a client that opens something new in its
 // place where it is not open: what the other window cannot attach to is
@@ -455,7 +455,7 @@ func (w *Window) Files() (*FileSession, error) { return w.FilesOn("") }
 // other window is on.
 func (w *Window) FilesOn(host string) (*FileSession, error) {
 	if w.isClosed() {
-		return nil, errors.New("serve: that window has been let go of")
+		return nil, errors.New("serve: that kakel is disconnected")
 	}
 	ch, reqs, err := w.client.OpenChannel(chanFiles, ssh.Marshal(openFiles{Host: host}))
 	if err != nil {
@@ -513,7 +513,7 @@ func (f *FileSession) Said() string {
 // says.
 func (w *Window) Open(cols, rows int, named func(Attached)) (session.Session, error) {
 	if w.isClosed() {
-		return nil, errors.New("serve: that window has been let go of")
+		return nil, errors.New("serve: that kakel is disconnected")
 	}
 	// Sent as asked. The machine that has to make a terminal this size
 	// is the one that clamps it, and a second clamp here would only
@@ -523,7 +523,7 @@ func (w *Window) Open(cols, rows int, named func(Attached)) (session.Session, er
 
 // ErrCannotOpenOn is what OpenOn says when the window over there does
 // not know how: a build from before it could.
-var ErrCannotOpenOn = errors.New("serve: that window cannot open anything on the machines it reaches: it is a kakel from before that")
+var ErrCannotOpenOn = errors.New("serve: that kakel is too old to open anything on the machines it reaches")
 
 // OpenOn asks the other window for a terminal on host, a machine it
 // reaches as its Open named it, or for command in dir there when command
@@ -541,7 +541,7 @@ func (w *Window) OpenOn(host, command, dir string, cols, rows int, named func(At
 // ErrCannotOpenIn is what OpenIn says when the window over there does
 // not know how: a build from before it could, which OpenOn still opens
 // on, with no folder for a terminal.
-var ErrCannotOpenIn = errors.New("serve: that window cannot open a terminal in a folder: it is a kakel from before that")
+var ErrCannotOpenIn = errors.New("serve: that kakel is too old to open a terminal in a folder")
 
 // ErrNoFolder is what OpenIn says when the folder asked for is not
 // there, on the machine that would open it. The served window refuses
@@ -571,14 +571,16 @@ func (w *Window) OpenIn(host, command, dir string, cols, rows int, named func(At
 // ErrNotClosedThere is what CloseThere says when the window over there
 // did not close what it opened: one of a build from before it could, or
 // one that had closed it already.
-var ErrNotClosedThere = errors.New("serve: that window did not close it")
+var ErrNotClosedThere = errors.New("serve: that kakel did not close it")
 
 // ErrCannotStartAgain is what StartAgain says when the window over there
 // does not know how: a build from before it could.
-var ErrCannotStartAgain = errors.New("serve: that window cannot start things again")
+var ErrCannotStartAgain = errors.New("serve: that kakel cannot start things again")
 
 // ErrNotOpen is what StartAgain says when the other window no longer
-// has what was asked for open: closed there, it cannot start again.
+// has what was asked for open: closed there, it cannot start again. Its
+// words are sent to the other end and matched there, so they stay as
+// they are whatever else is renamed.
 var ErrNotOpen = errors.New("serve: that is not open in that window any more")
 
 // StartAgain asks the other window to start again, in the same pane, the
@@ -596,7 +598,7 @@ func (w *Window) StartAgainConnected(what Attached) error {
 
 func (w *Window) startAgain(kind string, what Attached) error {
 	if w.isClosed() {
-		return errors.New("serve: that window has been let go of")
+		return errors.New("serve: that kakel is disconnected")
 	}
 	ok, reply, err := w.client.SendRequest(kind, true, ssh.Marshal(opened(what)))
 	switch {
@@ -615,7 +617,7 @@ func (w *Window) startAgain(kind string, what Attached) error {
 // open asks the other window for a session and wraps what comes back.
 func (w *Window) session(kind string, payload []byte, named func(Attached)) (session.Session, error) {
 	if w.isClosed() {
-		return nil, errors.New("serve: that window has been let go of")
+		return nil, errors.New("serve: that kakel is disconnected")
 	}
 	ch, reqs, err := w.client.OpenChannel(kind, payload)
 	if err != nil {
@@ -635,7 +637,7 @@ func (w *Window) session(kind string, payload []byte, named func(Attached)) (ses
 		var said strings.Builder
 		defer func() {
 			if why := strings.TrimSpace(said.String()); why != "" {
-				log.Printf("the window at %s said: %s", w.addr, strings.Join(strings.Fields(why), " "))
+				log.Printf("the kakel at %s said: %s", w.addr, strings.Join(strings.Fields(why), " "))
 			}
 		}()
 		to := io.MultiWriter(errWriter{s}, &capped{b: &said, room: saidRoom})
@@ -944,13 +946,13 @@ func (s *remoteSession) readRequests(reqs <-chan *ssh.Request) {
 // is called from a goroutine of its own rather than from whatever draws.
 func (w *Window) SendImage(png []byte) error {
 	if w.isClosed() {
-		return errors.New("serve: that window has been let go of")
+		return errors.New("serve: that kakel is disconnected")
 	}
 	if len(png) == 0 {
 		return errors.New("serve: there is no image to send")
 	}
 	if len(png) > mostClipboardBytes {
-		return fmt.Errorf("serve: the image is %d bytes, and a window takes %d",
+		return fmt.Errorf("serve: the image is %d bytes, and kakel takes %d",
 			len(png), mostClipboardBytes)
 	}
 	ch, reqs, err := w.client.OpenChannel(chanClipboard, nil)
@@ -984,7 +986,7 @@ const mostSaid = 4 << 10
 
 // ErrCannotForward is what DialOn says when the window over there does
 // not know how: a build from before it could.
-var ErrCannotForward = errors.New("serve: that window cannot carry tunnels to the machines it reaches: it is a kakel from before that")
+var ErrCannotForward = errors.New("serve: that kakel is too old to carry tunnels to the machines it reaches")
 
 // DialOn opens a stream to addr from host, a machine the other window
 // reaches as its Open named it, "" for its own: one stream of a tunnel
@@ -992,7 +994,7 @@ var ErrCannotForward = errors.New("serve: that window cannot carry tunnels to th
 // opens after that is closed.
 func (w *Window) DialOn(ctx context.Context, host, addr string) (net.Conn, error) {
 	if w.isClosed() {
-		return nil, errors.New("serve: that window has been let go of")
+		return nil, errors.New("serve: that kakel is disconnected")
 	}
 	type opened struct {
 		ch   ssh.Channel
@@ -1048,7 +1050,7 @@ func (channelConn) SetWriteDeadline(time.Time) error { return nil }
 
 // ErrCannotShowLog is what OpenLog says when the window over there does
 // not know how: a build from before it could.
-var ErrCannotShowLog = errors.New("serve: that window cannot show the logs of the machines it reaches: it is a kakel from before that")
+var ErrCannotShowLog = errors.New("serve: that kakel is too old to show the logs of the machines it reaches")
 
 // OpenLog reads the connection log the other window keeps for host, a
 // machine it reaches as its Open named it: what it has so far, and each
@@ -1068,13 +1070,13 @@ func (w *Window) OpenLog(host string) (session.Session, error) {
 // ErrCannotDisconnect is what DisconnectOn says when the window over
 // there does not know how: a build from before it could, or one that
 // lets nobody else close its connections.
-var ErrCannotDisconnect = errors.New("serve: that window cannot be asked to close its connections")
+var ErrCannotDisconnect = errors.New("serve: that kakel cannot be asked to close its connections")
 
 // DisconnectOn asks the other window to close its connection to host, a
 // machine it reaches as its Open named it, and what it has open there.
 func (w *Window) DisconnectOn(host string) error {
 	if w.isClosed() {
-		return errors.New("serve: that window has been let go of")
+		return errors.New("serve: that kakel is disconnected")
 	}
 	ok, reply, err := w.client.SendRequest(reqDisconnect, true, ssh.Marshal(logOf{Host: host}))
 	switch {
@@ -1093,7 +1095,7 @@ func (w *Window) DisconnectOn(host string) error {
 // older build drops it.
 func (w *Window) TellTunnels(notes []TunnelNote) error {
 	if w.isClosed() {
-		return errors.New("serve: that window has been let go of")
+		return errors.New("serve: that kakel is disconnected")
 	}
 	raw, err := json.Marshal(notes)
 	if err != nil {

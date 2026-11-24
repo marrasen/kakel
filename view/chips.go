@@ -16,8 +16,8 @@ import (
 
 // The chips at the end of the menu bar: what the window is doing for
 // someone else, a click away from its dialog.
-// "Agent Share" while panes are shared with an agent, and "Serving"
-// while the window is served, with how many windows are watching.
+// "Agent Share" while panes are shared with an agent, and
+// "Remote Access" while it is on, with how many kakels are connected.
 
 // chip is one chip: what it says, its colour, and what a click does.
 type chip struct {
@@ -207,7 +207,7 @@ func (w *Window) showChips(st app.State) {
 		chips = append(chips, chip{text: "Typing in All Panes", accent: true, off: func(u *gunim.UI) { w.setTypeAll(false, u) }})
 	}
 	if st.Serving.On {
-		text := "Serving"
+		text := "Remote Access"
 		if n := len(st.Serving.Clients); n > 0 {
 			text += " · " + strconv.Itoa(n)
 		}

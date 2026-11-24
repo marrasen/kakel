@@ -17,14 +17,14 @@ something.
   rest of the cluster is dropped rather than stacked in one cell.
 - **OSC 52 clipboard reads** are never answered: replying would let any
   program that can write to the terminal read the clipboard out.
-- **Two kakel windows have to be the same build.** What one window
-  says to another uses SSH's own encoding, which is positional: there is
-  no room for a field one end knows and the other does not. A window of
-  another build is refused by name rather than half understood.
-- **A remote forward cannot go through a kakel window.** A tunnel or a
-  SOCKS proxy to a machine beyond a window listens here, and works. A
-  port that listens on the far machine needs a connection of this
-  window's own to ask for it, so it is refused.
+- **Two kakels connected to each other have to be the same build.** What
+  one says to the other uses SSH's own encoding, which is positional:
+  there is no room for a field one end knows and the other does not. A
+  kakel of another build is refused by name rather than half understood.
+- **A remote forward cannot go through another kakel.** A tunnel or a
+  SOCKS proxy to a machine beyond another kakel listens here, and works.
+  A port that listens on the far machine needs a connection of this
+  kakel's own to ask for it, so it is refused.
 - **An agent is handed a screen, not a session.** It reads what is on
   the pane and types into it, the way a person looking over your
   shoulder would. A shell with shell integration on tells it when a

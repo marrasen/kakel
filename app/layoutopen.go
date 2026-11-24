@@ -320,7 +320,7 @@ func (a *app) slotMachine(r settings.SavedPane) (machines.ID, error) {
 	}
 	addr := serveAddr(r.Host)
 	if addr == "" {
-		return "", errors.New("the layout has no address for the window")
+		return "", errors.New("the layout has no address for the kakel")
 	}
 	if known := a.windowAt(addr); known != "" {
 		return known, nil
