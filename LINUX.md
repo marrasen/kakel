@@ -52,7 +52,7 @@ at all. Windows and macOS still use `atotto/clipboard` for text, in
 
 Since the move to gunim, `clip` carries less. Copying and pasting text
 in a pane goes through gunim's own clipboard. `clip` is what pastes a
-image, puts an image another window sent on this machine's clipboard,
+image, puts an image another kakel sent on this machine's clipboard,
 and copies a secret.
 
 An image that cannot be read is still an error, told apart from a

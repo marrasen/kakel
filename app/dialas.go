@@ -75,7 +75,7 @@ func (a *app) dialAs(ctx context.Context, c *serve.Client, addr string) (net.Con
 			return
 		}
 		if a.machines.IsWindow(id) {
-			answer(route{err: fmt.Errorf("%s is a kakel window not connected here; connect it here first", called)})
+			answer(route{err: fmt.Errorf("%s is another kakel, not connected here; connect it here first", called)})
 			return
 		}
 		take := func(err error) {

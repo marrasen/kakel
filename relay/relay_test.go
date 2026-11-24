@@ -130,7 +130,7 @@ func TestAWindowConnectingReachesTheOneServedUnderItsCode(t *testing.T) {
 func TestACodeNobodyServesIsSaidSo(t *testing.T) {
 	_, u := started(t)
 	_, err := Join(context.Background(), Link{Relay: u, Code: "AAAA-BBBB"}, Dialer{})
-	if err == nil || !strings.Contains(err.Error(), "no window is served with code AAAA-BBBB") {
+	if err == nil || !strings.Contains(err.Error(), "no kakel has code AAAA-BBBB") {
 		t.Fatalf("got %v", err)
 	}
 }
@@ -166,7 +166,7 @@ func TestACodeHeldByAnotherWindowIsRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = l.Close() }()
-	if err := st.next(t); err == nil || !strings.Contains(err.Error(), "in use by another window") {
+	if err := st.next(t); err == nil || !strings.Contains(err.Error(), "in use by another kakel") {
 		t.Fatalf("got %v", err)
 	}
 }

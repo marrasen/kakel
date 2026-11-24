@@ -52,9 +52,10 @@ func Size(n int64) string {
 	return fmt.Sprintf("%.1f %cB", v, "KMGT"[i-1])
 }
 
-// UpperFirst capitalises the first letter of s.
+// UpperFirst capitalises the first letter of s, unless it is kakel's,
+// which is lower case everywhere.
 func UpperFirst(s string) string {
-	if s == "" {
+	if first, _, _ := strings.Cut(s, " "); s == "" || first == "kakel" {
 		return s
 	}
 	return strings.ToUpper(s[:1]) + s[1:]

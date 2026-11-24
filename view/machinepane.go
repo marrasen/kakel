@@ -805,7 +805,7 @@ func (mp *machinePane) machineSide(u *gunim.UI) gunim.Node {
 		}
 		what := "server"
 		if h.Window {
-			what = "window"
+			what = "kakel"
 		}
 		remove := widget.NewButton("Remove…")
 		remove.Kind = widget.ButtonDanger

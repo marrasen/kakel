@@ -232,7 +232,7 @@ func (w *Window) confirmFarDisconnect(m machines.ID, u *gunim.UI) {
 	window, _, _ := m.Far()
 	d := widget.NewDialog("Disconnect " + w.farHostName(m) + " on " + w.nameOf(window) + "?")
 	d.Body = widget.NewLabel("This closes " + w.nameOf(window) + "'s own connection to " + w.farHostName(m) +
-		", and everything open on it there and on any server reached through it, for anyone working in that window too.")
+		", and everything open on it there and on any server reached through it, for anyone working in that kakel too.")
 	d.SetButtons("Disconnect", "Cancel")
 	d.Danger = true
 	d.OnAccept = widget.Sends(app.Disconnect{Machine: m})

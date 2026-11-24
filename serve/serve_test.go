@@ -160,7 +160,7 @@ func TestServingNobodyDoesNotListen(t *testing.T) {
 		_ = s.Close()
 		t.Fatal("a window with nobody listed started listening")
 	}
-	if !strings.Contains(err.Error(), "nobody to serve") {
+	if !strings.Contains(err.Error(), "no keys are allowed to connect") {
 		t.Errorf("it refused with %v", err)
 	}
 }

@@ -182,7 +182,7 @@ type Listener struct {
 func Listen(cfg HostConfig) (*Listener, error) {
 	switch {
 	case cfg.Relay.IsZero():
-		return nil, errors.New("no relay to serve through")
+		return nil, errors.New("no relay to register with")
 	case cfg.Token == "":
 		return nil, errors.New("no token to register with")
 	}

@@ -30,7 +30,7 @@ The terminal:
 - `input`: key, text, mouse and paste events turned into VT bytes.
 - `session`: a program as a byte stream, and the local pty.
 - `screen`: the programs running in panes, each with its screen, and
-  the session a watcher from another window gets.
+  the session a watcher from another kakel gets.
 - `ui/term`: a shell on a terminal, with the goroutines that move its
   bytes.
 - `shells`: the shells a pane on this machine can run, and WSL paths.
@@ -48,10 +48,11 @@ Machines and connections:
   hosts, tunnels.
 - `tunnel`: a port forwarded over a connection, and its account.
 - `meter`: bytes moved, and how long ago.
-- `serve`: one kakel window connected to another: the listener, the
-  client, and what they say to each other.
-- `relay`: `kakel -relay`, which joins a served window and one
-  connecting to it over WebSockets, and both windows' ends of it.
+- `serve`: remote access, one kakel connected to another: the listener,
+  the client, and what they say to each other. The code calls it serving
+  a window; the words a user reads do not.
+- `relay`: `kakel -relay`, which joins a kakel with remote access on and
+  one connecting to it over WebSockets, and both kakels' ends of it.
 - `vfs`: a filesystem kakel reads files through: this machine, or one
   over SFTP.
 - `jobs`: copying, moving and deleting in the background.
@@ -171,11 +172,11 @@ question is whether this window can put one there.
 - A pane on this machine whose shell is at its prompt: readline reads
   the paste key as quoted-insert, so the image is written to a file
   and the path typed instead (`shellWouldQuoteIt`).
-- A pane on a kakel window this one is connected to: the image is sent
+- A pane on a kakel this one is connected to: the image is sent
   over a channel of its own on the connection that is already open, put
   on that machine's clipboard, and then the paste key is pressed. Only
   once it has landed, or it would paste whatever was there before.
-- A pane on a machine reached by SSH, or beyond a connected window:
+- A pane on a machine reached by SSH, or beyond a connected kakel:
   there is no clipboard over there to reach, so the image is written
   on that machine and the path typed names a file it can open.
 
@@ -194,7 +195,7 @@ than failing in a way that reads like a fault.
 There is no standard for this. OSC 52 is the standard for a clipboard
 over a terminal and it carries text only; Sixel and the rest draw a
 image rather than putting one anywhere. So this is kakel's own
-channel between two kakel windows.
+channel between two kakels.
 
 The file an SSH pane gets goes under the home directory of whoever the
 connection logs in as, because where a temporary directory is depends on
@@ -335,6 +336,13 @@ What follows from it:
   nothing moves, "share" because a share is the set of panes handed to
   an agent, and "session" because a session is a running shell. The
   code still says "take over"; see #60.
+
+- **"Serve This Window…" became "Remote Access…", and "Connect to
+  Window…" "Connect to Another kakel…"** (2026-11-24). Serving gave
+  every pane in every window, shells, files and tunnels, also with no
+  window open, so "this window" was wrong. A window is from here on only
+  a window on the screen; the far end is another kakel. Command IDs, the
+  settings' names, the wire and the code still say serve and window.
 
 - **A new terminal here opens on the shell kept for new terminals**
   (2026-09-19). Three things are asked in order: the shell the focused

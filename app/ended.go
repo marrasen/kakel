@@ -162,7 +162,7 @@ func (a *app) startAgainOr(id string, dial bool) error {
 	}
 	machine := a.machineOf(id)
 	if !dial && machine != "" && a.machines.Get(machine).Conn == nil && a.machines.Get(machine).Window == nil {
-		return fmt.Errorf("this window is not connected to %s any more, and opening connections is the user's to do: ask them to connect to it", a.machines.Name(machine))
+		return fmt.Errorf("kakel is not connected to %s any more, and opening connections is the user's to do: ask them to connect to it", a.machines.Name(machine))
 	}
 	if cmd, ok := a.commands[id]; ok && a.machines.Get(machine).Window == nil {
 		return a.runAgain(id, cmd)
@@ -478,7 +478,7 @@ func (a *app) onWindowsOwn(id string) {
 		where.Store(&own)
 	}
 	if t := a.terminal(id); t != nil && was != "" {
-		t.Say("It ran on " + a.machines.Name(machines.FarID(a.machineOf(id), was)) + ", where it is not open any more: this one is on the window's own machine.")
+		t.Say("It ran on " + a.machines.Name(machines.FarID(a.machineOf(id), was)) + ", where it is not open any more: this one is on that kakel's own machine.")
 	}
 }
 

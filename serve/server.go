@@ -290,7 +290,7 @@ func Listen(cfg Config) (*Server, error) {
 		return nil, errors.New("serve: no host key to identify this machine by")
 	case cfg.Allowed.Len() == 0:
 		return nil, errors.New(
-			"serve: no keys are allowed to connect, so there is nobody to serve")
+			"serve: no keys are allowed to connect")
 	case cfg.Addr == "" && len(cfg.Listeners) == 0:
 		return nil, errors.New("serve: no address to listen on")
 	}
@@ -443,7 +443,7 @@ func (s *Server) handshake(nc net.Conn) {
 				// A certificate has an expiry, principals and a
 				// revocation list behind it, and none of that is
 				// checked here. The list holds keys, not authorities.
-				return nil, errors.New("serve: a certificate is not a key this window knows")
+				return nil, errors.New("serve: a certificate is not a key this kakel knows")
 			}
 			name, ok := s.allowed.Load().Who(key)
 			if !ok {

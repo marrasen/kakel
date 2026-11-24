@@ -27,7 +27,7 @@ const drainGrace = 250 * time.Millisecond
 //
 // A constant here rather than in the window, so the message and the
 // dialog cannot drift apart.
-const WindowKind = "Kakel"
+const WindowKind = "kakel"
 
 // isKakelWindow reports whether a refusal came from a kakel serving.
 //
@@ -44,7 +44,7 @@ func isKakelWindow(err error) bool {
 		strings.Contains(refused.Message, serve.SessionChannel)
 }
 
-// notAMachine says the far end is a kakel window saved as a machine,
+// notAMachine says the far end is another kakel saved as a machine,
 // and what to change about it.
 //
 // Said plainly, because what the user has to change is one field in the
@@ -57,8 +57,8 @@ func notAMachine(addr string, refused error) error {
 		inner = refused
 	}
 	return fmt.Errorf(
-		"remote: %s is a kakel window, not a machine to log in to."+
-			" Set its Type to %q and take it over instead: %w",
+		"remote: %s is another kakel, not a machine to log in to."+
+			" Set its Type to %q and connect to it instead: %w",
 		addr, WindowKind, inner)
 }
 

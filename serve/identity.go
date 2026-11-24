@@ -89,7 +89,7 @@ func HostKey(path string) (ssh.Signer, error) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	return nil, fmt.Errorf("serve: the host key %s is still being written by another window", path)
+	return nil, fmt.Errorf("serve: the host key %s is still being written by another kakel", path)
 }
 
 // errClaimed is a host key file with nothing in it yet: another window

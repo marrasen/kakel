@@ -164,7 +164,7 @@ func (s *Server) GoingTo(c *Client, why string) { s.going(c, why) }
 func (s *Server) going(only *Client, why string) {
 	line, err := json.Marshal(Snapshot{Going: why})
 	if err != nil {
-		s.onError(fmt.Errorf("serve: say why this window is going: %w", err))
+		s.onError(fmt.Errorf("serve: say why this kakel is going: %w", err))
 		return
 	}
 	line = append(line, '\n')

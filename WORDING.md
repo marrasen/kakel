@@ -19,7 +19,8 @@ first time rather than being rewritten later.
    not why kakel has to offer it.
 5. **Buttons are one verb**, from a small fixed set: `OK` `Add` `Cancel`
    `Close` `Retry` `Wait` `Save` `Create` `Delete` `Remove` `Replace`
-   `Skip` `Open` `Run` `Connect` `Generate` `Show` `Type`. No pronouns:
+   `Skip` `Open` `Run` `Connect` `Generate` `Show` `Type` `Turn On`
+   `Turn Off`. No pronouns:
    never `Make it`, `Close it`, `Keep them`, `Leave it`. And never a
    button that renames itself to say what the next press does: that is
    rule 9. Use a tick box.
@@ -51,15 +52,24 @@ first time rather than being rewritten later.
 | picture | image |
 | things | items |
 | hand-over | share |
+| serve a window, serving | remote access, turned on or off |
+| a kakel window (another machine's) | another kakel, a kakel on \<machine\> |
 | take (a menu line) | choose |
 | through (a server) | jump host |
 
 "Keys" means SSH keys throughout, and the keyboard kind is "shortcuts".
 
-A **layout** is one kakel window saved to open again: its splits, tabs
-and the recipe of each pane. It is never a "saved window", which is a
-kakel window on another machine, saved in the server list, nor a
-"workspace" or "session". A layout is saved, opened, renamed, removed,
+A **window** is only ever a window on the screen. **Remote access** gives
+another kakel, with an allowed key, this whole kakel: the panes of
+every window, shells, files and tunnels, also with no window open. It is
+turned on and off. The other end is **another kakel**, or *a kakel on
+\<machine\>*, and one saved in the server list a *saved kakel*. In what
+the program shows, kakel is lower case everywhere, at the start of a
+sentence and in a title too.
+
+A **layout** is one window saved to open again: its splits, tabs and the
+recipe of each pane. It is never a "saved window", nor a "workspace" or
+"session". A layout is saved, opened, renamed, removed,
 and opens at start; a name another layout has *replaces* it. What it
 does not keep is *left out*.
 
@@ -100,14 +110,14 @@ taken in at a glance and not to be read as a sentence.
    `taken over`, `connection lost`, `cancelled`. A sentence in a column
    is the thing read last, if at all.
 2. **The row is already named, so the state does not name it again.** The
-   row carries the machine's or window's name beside the state. `the
-   window stopped sharing` says it twice; `stopped sharing` says it once.
+   row carries the machine's or kakel's name beside the state. `the
+   kakel stopped sharing` says it twice; `stopped sharing` says it once.
 3. **The label is what the row is. The note is one fact about it** — who
    it is for, where it came from, how fast it is going. Not a second
    sentence.
 4. **The same thing gets the same words on every surface.** A connection
-   that dropped reads `connection lost` whether it carried a pane or a
-   window. Where a state is shown in two places it is written once.
+   that dropped reads `connection lost` whether it carried a pane or
+   another kakel. Where a state is shown in two places it is written once.
 5. **A note is shown while it is changing and then goes quiet.** It
    stands for four seconds (`noteFor` in `view/view.go`), and then comes
    off the row; the pointer on the row brings it back, and so does the
@@ -205,5 +215,5 @@ these rules remove.
 ## Dialog titles
 
 A dialog opened by a command is titled with the command's title, less
-the `…`: `Serve This Window`, `Agent Permissions`. Where it names its
+the `…`: `Remote Access`, `Agent Permissions`. Where it names its
 target it may drop the verb: `Run Command on <where>`.

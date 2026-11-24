@@ -25,10 +25,10 @@ import (
 	"github.com/marrasen/kakel/serve"
 )
 
-// Connecting to another window that is served: over SSH, with a key that
-// window allows. The window is then a machine in the sidebar, like a
-// server: New Terminal opens a shell there, Files its files, and what it
-// has open is listed under it, to work in from here.
+// Connecting to another kakel with remote access on, called a window in
+// the code: over SSH, with a key it allows. It is then a machine in the
+// sidebar, like a server: New Terminal opens a shell there, Files its
+// files, and what it has open is listed under it, to work in from here.
 
 // RemoteWindow is a window this one is connected to, as the sidebar
 // shows it.
@@ -153,7 +153,7 @@ func (a *app) reachWindow(in ConnectWindow, quiet bool, then func(error)) error 
 	terminal := then == nil && !in.Only
 	addr := serveAddr(in.Addr)
 	if addr == "" {
-		return errors.New("type the address of the window to connect to")
+		return errors.New("type the address of the kakel to connect to")
 	}
 	// A window through a relay is reached by the relay and its code.
 	var link *relay.Link
@@ -195,7 +195,7 @@ func (a *app) reachWindow(in ConnectWindow, quiet bool, then func(error)) error 
 	}
 	switch {
 	case a.machines.Get(name).Window != nil:
-		return fmt.Errorf("this window is already connected to %s", a.machines.Name(name))
+		return fmt.Errorf("already connected to %s", a.machines.Name(name))
 	case a.machines.Get(name).Dialing != nil:
 		// On its way already: that connection is the one asked for, and
 		// whoever asked hears how it went.
@@ -214,7 +214,7 @@ func (a *app) reachWindow(in ConnectWindow, quiet bool, then func(error)) error 
 	a.machines.At(name).Dialing = cancel
 	acct := a.dialLog(name)
 	shown := relay.Shown(addr)
-	logLine(acct, "", "connecting to the window at "+shown)
+	logLine(acct, "", "connecting to the kakel at "+shown)
 	logPane := ""
 	if !quiet && !in.InPlace {
 		logPane = a.watchDial(name)
@@ -230,7 +230,7 @@ func (a *app) reachWindow(in ConnectWindow, quiet bool, then func(error)) error 
 			Saying: func(what string) { logLine(acct, "", what) },
 			Wrong: func(what string) {
 				logLine(acct, badly, what)
-				log.Printf("connecting to the window %s: %s", called, oneLine(what))
+				log.Printf("connecting to the kakel %s: %s", called, oneLine(what))
 			},
 		}
 		switch {
@@ -267,20 +267,20 @@ func (a *app) reachWindow(in ConnectWindow, quiet bool, then func(error)) error 
 				switch {
 				case quiet || errors.Is(err, errDeclined) || errors.Is(err, context.Canceled):
 				case in.InPlace:
-					a.post(Notice{Kind: NoticeFailed, Title: "Couldn't connect to the window at " + shown, Body: err.Error(),
+					a.post(Notice{Kind: NoticeFailed, Title: "Couldn't connect to the kakel at " + shown, Body: err.Error(),
 						Action: "Show Log", On: ShowMachine{Machine: name, Row: MachineRowLog}})
 					a.problem()
 				default:
-					a.failed("Couldn't connect to the window at "+shown, err.Error())
+					a.failed("Couldn't connect to the kakel at "+shown, err.Error())
 					a.problem()
 				}
 				return
 			}
 			logLine(acct, well, "connected in "+time.Since(began).Round(10*time.Millisecond).String())
 			if called := oneLine(a.machines.Name(name)); called == shown {
-				log.Printf("connected to the window %s", called)
+				log.Printf("connected to the kakel %s", called)
 			} else {
-				log.Printf("connected to the window %s at %s", called, shown)
+				log.Printf("connected to the kakel %s at %s", called, shown)
 			}
 			if link != nil && a.settings != nil {
 				a.keep("the relay connected through", a.settings.PutRelayLast(link.Relay.String()))
@@ -378,9 +378,9 @@ func (a *app) windowGone(name machines.ID, w *machines.Window, why error) {
 	said := "Its panes here have ended."
 	switch w.Serve.Going() {
 	case serve.GoingStopped:
-		said = "It stopped being served. " + said
+		said = "Remote access was turned off there. " + said
 	case serve.GoingKicked:
-		said = "It disconnected this one. " + said
+		said = "It disconnected this kakel. " + said
 	case "":
 		if w.Leaving {
 			break
@@ -395,9 +395,9 @@ func (a *app) windowGone(name machines.ID, w *machines.Window, why error) {
 		}
 		logLine(a.machines.Get(name).Log, "", "connection lost")
 		if why != nil {
-			log.Printf("lost the connection to the window %s: %s", oneLine(a.machines.Name(name)), oneLine(serve.Plain(why.Error())))
+			log.Printf("lost the connection to the kakel %s: %s", oneLine(a.machines.Name(name)), oneLine(serve.Plain(why.Error())))
 		} else {
-			log.Printf("lost the connection to the window %s", oneLine(a.machines.Name(name)))
+			log.Printf("lost the connection to the kakel %s", oneLine(a.machines.Name(name)))
 		}
 		a.problem()
 		again := ConnectWindow{Addr: w.Addr, KeyFile: w.KeyFile, ID: name, Via: w.Via, ViaSet: true}
@@ -424,7 +424,7 @@ func (a *app) windowGone(name machines.ID, w *machines.Window, why error) {
 		return
 	}
 	logLine(a.machines.Get(name).Log, "", "disconnected")
-	a.notify("Disconnected from the window at "+relay.Shown(w.Addr), said, "")
+	a.notify("Disconnected from the kakel at "+relay.Shown(w.Addr), said, "")
 	a.showWindows()
 }
 
@@ -433,7 +433,7 @@ func (a *app) windowGone(name machines.ID, w *machines.Window, why error) {
 func (a *app) disconnectFar(window machines.ID, key string) error {
 	w := a.machines.Get(window).Window
 	if w == nil {
-		return fmt.Errorf("this window is not connected to %s any more", a.machines.Name(window))
+		return fmt.Errorf("kakel is not connected to %s any more", a.machines.Name(window))
 	}
 	far := machines.FarID(window, key)
 	called := a.machines.Name(far)
@@ -559,7 +559,7 @@ func (a *app) openThroughHow(window machines.ID, key string, cmd command, id, ti
 	w := a.machines.Get(window).Window
 	if w == nil {
 		delete(a.commands, id)
-		return fmt.Errorf("this window is not connected to %s any more", a.machines.Name(window))
+		return fmt.Errorf("kakel is not connected to %s any more", a.machines.Name(window))
 	}
 	on := window
 	if key != "" {
@@ -713,7 +713,7 @@ func (a *app) attachWindow(in AttachWindow) error {
 	w := a.machines.Get(in.Window).Window
 	ok := w != nil
 	if !ok {
-		return fmt.Errorf("this window is not connected to %s any more", a.machines.Name(in.Window))
+		return fmt.Errorf("kakel is not connected to %s any more", a.machines.Name(in.Window))
 	}
 	if pane, ok := w.Bound[in.ID]; ok && a.has(pane) {
 		a.bringHere(pane)
@@ -795,7 +795,7 @@ func (a *app) disconnect(machine machines.ID) error {
 	conn := a.machines.Get(machine).Conn
 	ok := conn != nil
 	if !ok {
-		return fmt.Errorf("this window is not connected to %s", a.machines.Name(machine))
+		return fmt.Errorf("kakel is not connected to %s", a.machines.Name(machine))
 	}
 	// Let go of on purpose: its row goes with it, and those of the
 	// servers reached through it.

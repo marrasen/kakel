@@ -28,7 +28,7 @@ func Pipe(ctx context.Context, args []string, in io.Reader, out io.Writer, says 
 	fs.SetOutput(says)
 	proxy := fs.String("proxy", "", "the HTTP proxy to reach the relay through: a URL, or none; empty for the system's")
 	fs.Usage = func() {
-		_, _ = fmt.Fprintln(says, "kakel -relay-pipe [-proxy URL] <relay URL>#<code> carries standard input and output to a window served through a relay, as an ssh ProxyCommand.")
+		_, _ = fmt.Fprintln(says, "kakel -relay-pipe [-proxy URL] <relay URL>#<code> carries standard input and output to a kakel with remote access through a relay, as an ssh ProxyCommand.")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args[1:]); err != nil {

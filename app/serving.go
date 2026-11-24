@@ -32,26 +32,30 @@ import (
 	uiterm "github.com/marrasen/kakel/ui/term"
 )
 
-// Serving this window: another window, on a machine whose key is in this
-// one's authorized keys, connects over SSH and can watch and type in the
-// panes here, open shells here, and read and write the files of this
-// machine and of the servers this window is connected to.
+// Remote access, as the user knows it: serving, in the code. Another
+// kakel, on a machine whose key is in this one's authorized keys,
+// connects over SSH and can watch and type in every pane here, open
+// shells here, read and write the files of this machine and of the
+// servers this kakel is connected to, and hold tunnels through it. It
+// goes on with no window open. Older comments call a kakel a window:
+// the window served is this whole kakel, and the window connected is
+// another one.
 
-// Serving is the serving, as the window shows it.
+// Serving is remote access, as the window shows it.
 type Serving struct {
-	// On says the window is served, at Addr, by the host key with
+	// On says remote access is on, at Addr, by the host key with
 	// Fingerprint.
 	On          bool
 	Addr        string
 	Fingerprint string
-	// Clients are the windows connected, by the name their key has in
+	// Clients are the kakels connected, by the name their key has in
 	// the authorized keys, and where they came from, and Tunnels the
 	// tunnels they hold through this window.
 	Clients []ServedClient
 	Tunnels []ServedTunnel
 	// Port and Anywhere are what serving starts with: the port asked
 	// for last, and whether it listened on every network. AtStart is
-	// what kakel does as it starts, when the window was served as it
+	// what kakel does as it starts, when remote access was on as it
 	// last closed: settings.ServeAsk, ServeAlways or ServeNever.
 	Port     int
 	Anywhere bool
@@ -110,10 +114,10 @@ type Serving struct {
 // file's, and the .pub file it is in.
 type LocalKey struct{ Name, Path string }
 
-// ServedClient is a window connected to this one.
+// ServedClient is a kakel connected to this one.
 //
 // As is the machine a plain ssh client's tunnels go out from, by the
-// user name it logged in as; empty for a kakel window.
+// user name it logged in as; empty for another kakel.
 type ServedClient struct{ Name, From, As string }
 
 // ServedTunnel is a tunnel a window connected to this one holds through
@@ -127,8 +131,8 @@ type DisconnectClient struct{ Name, From string }
 
 // Intents for serving.
 type (
-	// StartServing serves the window on Port, on this machine only or
-	// on every network.
+	// StartServing turns remote access on, on Port, on this machine only
+	// or on every network.
 	StartServing struct {
 		Port     string
 		Anywhere bool
@@ -152,7 +156,7 @@ type (
 	// SetRelayProxy sets the HTTP proxy relays are reached through: a
 	// URL, relay.NoProxy, or empty for the system's.
 	SetRelayProxy struct{ Proxy string }
-	// StopServing stops, hanging up on every window connected.
+	// StopServing turns it off, hanging up on every kakel connected.
 	StopServing struct{}
 	// DisconnectClients hangs up on the windows connected.
 	DisconnectClients struct{}
@@ -162,8 +166,8 @@ type (
 	// DisallowKey takes the key with Fingerprint off the keys that may
 	// connect, and hangs up on the windows it let in.
 	DisallowKey struct{ Fingerprint string }
-	// SetServeAtStart sets what kakel does as it starts when the window
-	// was served as it last closed: settings.ServeAsk, ServeAlways or
+	// SetServeAtStart sets what kakel does as it starts when remote
+	// access was on as it last closed: settings.ServeAsk, ServeAlways or
 	// ServeNever.
 	SetServeAtStart struct{ When string }
 	// SetServeDefaults sets the port serving starts on, and whether it
@@ -315,7 +319,7 @@ func (a *app) allowKey(in AllowKey) error {
 		return err
 	}
 	a.applyAllowed()
-	a.worked(name+" may connect", "Its window can take this one over while it is served.", "")
+	a.worked(name+" may connect", "It can use everything here while remote access is on.", "")
 	return nil
 }
 
@@ -335,7 +339,7 @@ func (a *app) disallowKey(in DisallowKey) error {
 	gone := a.applyAllowed()
 	body := ""
 	if gone > 0 {
-		body = "Its window was disconnected."
+		body = "It was disconnected."
 	}
 	a.worked(name+" may no longer connect", body, "")
 	return nil
@@ -361,10 +365,10 @@ func (a *app) applyAllowed() int {
 // startServing serves the window.
 func (a *app) startServing(in StartServing) error {
 	if a.serving.server != nil {
-		return fmt.Errorf("this window is already served on %s", a.servedWhere())
+		return fmt.Errorf("remote access is already on, at %s", a.servedWhere())
 	}
 	if in.NoPort && !in.Relay {
-		return errors.New("serve on a port, through a relay, or both")
+		return errors.New("choose a port, a relay, or both")
 	}
 	port := 0
 	if !in.NoPort {
@@ -395,7 +399,7 @@ func (a *app) startServing(in StartServing) error {
 		return err
 	}
 	if allowed.Len() == 0 {
-		return fmt.Errorf("no keys may connect, so there is nobody to serve. Put the public key of the machine you will connect from in %s", allowedAt)
+		return fmt.Errorf("no key may connect yet. Put the public key of the machine you will connect from in %s", allowedAt)
 	}
 	host := "127.0.0.1"
 	if in.Anywhere {
@@ -453,14 +457,14 @@ func (a *app) startServing(in StartServing) error {
 			post(func() {
 				a.serving.server, a.serving.clients, a.serving.carried = nil, nil, nil
 				a.serving.relay = nil
-				a.failed("This window is no longer served", err.Error())
+				a.failed("Couldn't keep remote access on", err.Error())
 				a.problem()
 				a.showServing()
 			})
 		},
 		// Written to the window log, which this reaches from any
 		// goroutine.
-		OnError: func(err error) { log.Printf("serving: %v", err) },
+		OnError: func(err error) { log.Printf("remote access: %v", err) },
 	})
 	if err != nil {
 		if rl != nil {
@@ -470,22 +474,22 @@ func (a *app) startServing(in StartServing) error {
 	}
 	a.serving.server, a.serving.relay = srv, rl
 	a.serving.reached, a.serving.trouble, a.serving.troubled = false, "", false
-	log.Printf("serving this window on %s", a.servedWhere())
+	log.Printf("remote access is on, at %s", a.servedWhere())
 	if a.settings != nil {
 		reach := settings.ReachHere
 		if in.Anywhere {
 			reach = settings.ReachAnywhere
 		}
 		if !in.NoPort {
-			a.keep("what is served", a.settings.PutServe(port, reach))
+			a.keep("the port of remote access", a.settings.PutServe(port, reach))
 		}
 		r := a.settings.Relay()
 		r.On, r.NoPort = in.Relay, in.NoPort
 		if in.Relay {
 			r.URL, r.Via = relayURL.String(), string(in.RelayVia)
 		}
-		a.keep("how this window is served through a relay", a.settings.PutRelay(r))
-		a.keep("that this window is served", a.settings.PutServeOn(true))
+		a.keep("how remote access goes through a relay", a.settings.PutRelay(r))
+		a.keep("that remote access is on", a.settings.PutServeOn(true))
 	}
 	a.tellServed()
 	a.showServing()
@@ -500,9 +504,9 @@ func (a *app) stopServing() error {
 	}
 	a.serving.server, a.serving.clients, a.serving.carried = nil, nil, nil
 	a.serving.relay = nil
-	log.Print("stopped serving this window")
+	log.Print("remote access is off")
 	if a.settings != nil {
-		a.keep("that this window is not served", a.settings.PutServeOn(false))
+		a.keep("that remote access is off", a.settings.PutServeOn(false))
 	}
 	a.showServing()
 	return srv.Close()
@@ -553,7 +557,7 @@ func (a *app) disconnectClient(in DisconnectClient) error {
 
 func (a *app) clientCame(c *serve.Client) {
 	a.serving.clients = append(a.serving.clients, c)
-	a.notify(c.Name+" connected", "From "+c.Addr+". It can open shells, use the panes here, and read and write files as you.", "")
+	a.notify(c.Name+" connected", "From "+c.Addr+". It can use every pane, open shells, read and write files, and make tunnels, as you.", "")
 	a.showServing()
 }
 
@@ -843,10 +847,10 @@ func (a *app) newShellPath(dir string, windows bool) string {
 func (a *app) closeOpenedFor(what serve.Attached) error {
 	_, err := onApp(a, func() (struct{}, error) {
 		if !a.openedFor[what.ID] {
-			return struct{}{}, fmt.Errorf("%q was not opened for another window", what.ID)
+			return struct{}{}, fmt.Errorf("%q was not opened for another kakel", what.ID)
 		}
 		if i := slices.IndexFunc(a.st.Panes, func(p Pane) bool { return p.ID == what.ID }); i >= 0 {
-			log.Printf("the window that opened %s no longer wants it", a.paneForLog(a.st.Panes[i]))
+			log.Printf("the kakel that opened %s no longer wants it", a.paneForLog(a.st.Panes[i]))
 			a.closePane(what.ID)
 		}
 		return struct{}{}, nil
@@ -933,13 +937,13 @@ func (a *app) logFor(host string) (session.Session, error) {
 		id, ok := a.machines.Find(host)
 		switch {
 		case host == "" || !ok || id == machines.Local:
-			return nil, fmt.Errorf("that window keeps no connection log for %q", host)
+			return nil, fmt.Errorf("that kakel keeps no connection log for %q", host)
 		case a.machines.IsWindow(id):
-			return nil, fmt.Errorf("%s is another kakel window, which keeps its own logs", a.machines.Name(id))
+			return nil, fmt.Errorf("%s is another kakel, which keeps its own logs", a.machines.Name(id))
 		}
 		l := a.machines.Get(id).Log
 		if l == nil {
-			return nil, fmt.Errorf("that window has not connected to %s, so it has no log of it", a.machines.Name(id))
+			return nil, fmt.Errorf("that kakel has not connected to %s, so it has no log of it", a.machines.Name(id))
 		}
 		return l.Open(), nil
 	})
@@ -951,7 +955,7 @@ func (a *app) logFor(host string) (session.Session, error) {
 func (a *app) disconnectFor(c *serve.Client, host string) error {
 	_, err := onApp(a, func() (struct{}, error) {
 		if host == "" {
-			return struct{}{}, errors.New("a window cannot disconnect from its own machine")
+			return struct{}{}, errors.New("a kakel cannot disconnect from its own machine")
 		}
 		machine, err := a.servedMachine(host)
 		if err != nil {
@@ -960,7 +964,7 @@ func (a *app) disconnectFor(c *serve.Client, host string) error {
 		if err := a.disconnect(machine); err != nil {
 			return struct{}{}, err
 		}
-		a.notify(c.Name+" disconnected "+a.machines.Name(machine), "Asked from the window connected from "+c.Addr+".", "")
+		a.notify(c.Name+" disconnected "+a.machines.Name(machine), "Asked from the kakel connected from "+c.Addr+".", "")
 		return struct{}{}, nil
 	})
 	return err
@@ -970,7 +974,7 @@ func (a *app) disconnectFor(c *serve.Client, host string) error {
 // on, as this window's list names it: this machine for "", or a server
 // connected here. A kakel window beyond this one is refused: what it
 // has is its own to open. What it says is read in the window that
-// asked, so it calls this one "that window".
+// asked, so it calls this one "that kakel".
 func (a *app) servedMachine(host string) (machines.ID, error) {
 	if host == "" {
 		return machines.Local, nil
@@ -978,11 +982,11 @@ func (a *app) servedMachine(host string) (machines.ID, error) {
 	id, ok := a.machines.Find(host)
 	switch {
 	case !ok:
-		return "", fmt.Errorf("that window knows no machine called %s", host)
+		return "", fmt.Errorf("that kakel knows no machine called %s", host)
 	case a.machines.IsWindow(id):
-		return "", fmt.Errorf("%s is another kakel window, which opens what it has itself", a.machines.Name(id))
+		return "", fmt.Errorf("%s is another kakel, which opens what it has itself", a.machines.Name(id))
 	case a.machines.Get(id).Conn == nil:
-		return "", fmt.Errorf("that window is not connected to %s", a.machines.Name(id))
+		return "", fmt.Errorf("that kakel is not connected to %s", a.machines.Name(id))
 	}
 	return id, nil
 }
@@ -1016,7 +1020,7 @@ func (a *app) startAgainFor(want serve.Attached, _ bool) error {
 		// with dial set, and is refused as well.
 		if machine := a.machineOf(want.ID); machine != "" && a.machines.Get(machine).Conn == nil && a.machines.Get(machine).Window == nil {
 			// Said so that it reads right in the window that asked.
-			return c, fmt.Errorf("the window it runs in is no longer connected to %s. Reconnect to %s from that window first", a.machines.Name(machine), a.machines.Name(machine))
+			return c, fmt.Errorf("the kakel it runs in is no longer connected to %s. Reconnect to %s from that kakel first", a.machines.Name(machine), a.machines.Name(machine))
 		}
 		return c, a.startAgainOr(want.ID, false)
 	})
@@ -1093,7 +1097,7 @@ func (a *app) serveFiles(client context.Context, host string, ch io.ReadWriteClo
 			}
 			host = a.machines.Name(id)
 		}
-		return nil, fmt.Errorf("this window is not connected to %s", host)
+		return nil, fmt.Errorf("that kakel is not connected to %s", host)
 	})
 	if err != nil {
 		return err
@@ -1199,8 +1203,8 @@ func (a *app) watchPane(t *uiterm.Terminal, cols, rows int) (session.Session, er
 	return w, nil
 }
 
-// offerToServeAgain asks, as the window opens, whether to serve it
-// again, when it was served as the last one closed. It runs on a
+// offerToServeAgain asks, as kakel starts, whether to turn remote access
+// on again, when it was on as kakel last closed. It runs on a
 // goroutine of its own, as asking waits.
 func (a *app) offerToServeAgain() {
 	s := a.st.Serving
@@ -1219,8 +1223,8 @@ func (a *app) offerToServeAgain() {
 	case s.RelayOn:
 		said += ", and through the relay " + s.RelayHost + ", as " + s.Code
 	}
-	ans, err := a.ask(a.ctx, Ask{Title: "Serve this window again?", Text: "It was served when it last closed: " + said + ".",
-		Yes: "Serve", No: "Not Now", Also: "Don't ask again"})
+	ans, err := a.ask(a.ctx, Ask{Title: "Turn on remote access again?", Text: "It was on when kakel last closed: " + said + ".",
+		Yes: "Turn On", No: "Not Now", Also: "Don't ask again"})
 	if err != nil && !errors.Is(err, errDeclined) {
 		return
 	}
@@ -1243,7 +1247,7 @@ func (a *app) offerToServeAgain() {
 	}
 	a.events <- func() {
 		if err := a.startServing(a.servedLast()); err != nil {
-			a.failed("Couldn't serve the window", err.Error())
+			a.failed("Couldn't turn on remote access", err.Error())
 		}
 	}
 }
@@ -1339,7 +1343,7 @@ func (a *app) relayState(rl *relay.Listener, code string, err error) {
 	switch {
 	case err == nil:
 		if !a.serving.reached {
-			log.Printf("served through the relay, as %s", where)
+			log.Printf("remote access goes through the relay, as %s", where)
 		}
 		a.serving.reached, a.serving.trouble, a.serving.troubled = true, "", false
 	default:
@@ -1349,7 +1353,7 @@ func (a *app) relayState(rl *relay.Listener, code string, err error) {
 		}
 		if !a.serving.troubled {
 			a.serving.troubled = true
-			a.failed("Couldn't reach the relay", why+"\n\nKakel goes on trying.")
+			a.failed("Couldn't reach the relay", why+"\n\nkakel keeps trying.")
 			a.problem()
 		}
 		a.serving.reached, a.serving.trouble = false, why
@@ -1373,7 +1377,7 @@ func (a *app) newRelayCode() error {
 			return err
 		}
 		a.serving.reached = false
-		log.Printf("the window is served under a new code on the relay, %s", code)
+		log.Printf("remote access has a new code on the relay, %s", code)
 	}
 	a.showServing()
 	return nil
@@ -1383,9 +1387,9 @@ func (a *app) newRelayCode() error {
 func (a *app) copyRelayLink() error {
 	link := a.st.Serving.Link
 	if link == "" {
-		return errors.New("this window has no code on a relay yet")
+		return errors.New("kakel has no code on a relay yet")
 	}
-	a.worked("Link copied", "Paste it into Connect to Window on the other machine. It holds the relay's secret.", link)
+	a.worked("Link copied", "Paste it into Connect to Another kakel on the other machine. It holds the relay's secret.", link)
 	return nil
 }
 

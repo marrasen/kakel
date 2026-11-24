@@ -215,3 +215,22 @@ func TestThePaletteStartsWithTheMachinesLastUsed(t *testing.T) {
 		t.Fatalf("Files on the first line opened on %q, want nas", got.Machine)
 	}
 }
+
+// The names remote access and connecting to another kakel went by
+// before still find them.
+func TestTheOldNamesOfRemoteAccessFindIt(t *testing.T) {
+	win, _, publish := windowStage(t)
+	publish(withDefaults(app.State{}))
+	items := make([]match.Item, len(win.palette.Items))
+	for i, it := range win.palette.Items {
+		items[i] = match.Item{Title: it.Title, Also: it.Also}
+	}
+	for q, want := range map[string]string{"serve this window": "Remote Access", "connect to window": "Connect to Another kakel"} {
+		found := match.Rank(items, q)
+		if len(found) == 0 {
+			t.Errorf("%q finds nothing", q)
+		} else if got := win.palette.Items[found[0].Index].Title; got != want {
+			t.Errorf("%q finds %q first, want %q", q, got, want)
+		}
+	}
+}

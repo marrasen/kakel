@@ -340,7 +340,7 @@ func (b *Book) routeLocked(h Host) ([]Host, error) {
 			return nil, fmt.Errorf("the server %q is reached through is not saved", route[len(route)-1].Name)
 		}
 		if next.Window && h.Window {
-			return nil, fmt.Errorf("%q is reached through %q, and one kakel window is not reached through another", route[len(route)-1].Name, next.Name)
+			return nil, fmt.Errorf("%q is reached through %q, and one kakel is not reached through another", route[len(route)-1].Name, next.Name)
 		}
 		h = next
 	}
@@ -469,7 +469,7 @@ func readBook(path string) ([]Host, error) {
 	}
 	if first, second, addr, dup := firstSharedServeAddr(file.Servers); dup {
 		return nil, fmt.Errorf(
-			"remote: the server list %s saves %q and %q as the window at %s",
+			"remote: the server list %s saves %q and %q as the kakel at %s",
 			path, first, second, relay.Shown(addr))
 	}
 	sortHosts(file.Servers)
@@ -575,7 +575,7 @@ func checkRoutes(hosts []Host) error {
 					h.Via, start.Name)
 			}
 			if next.Window && h.Window {
-				return fmt.Errorf("%q is reached through %q, and one kakel window is not reached through another",
+				return fmt.Errorf("%q is reached through %q, and one kakel is not reached through another",
 					h.Name, next.Name)
 			}
 			h = next
@@ -675,7 +675,7 @@ func readableBack(hosts []Host) error {
 	}
 	if first, second, addr, dup := firstSharedServeAddr(hosts); dup {
 		return fmt.Errorf(
-			"remote: will not write the server list: it saves %q and %q as the window at %s",
+			"remote: will not write the server list: it saves %q and %q as the kakel at %s",
 			first, second, relay.Shown(addr))
 	}
 	if err := checkRoutes(hosts); err != nil {

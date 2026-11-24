@@ -383,7 +383,7 @@ func TestServeAgainRemembersTheChoice(t *testing.T) {
 		go a.offerToServeAgain()
 		waitFor(t, a, "the question", func() bool { return len(a.st.Asks) == 1 })
 		q := a.st.Asks[0]
-		if q.Yes != "Serve" || q.No != "Not Now" || q.Also != "Don't ask again" {
+		if q.Yes != "Turn On" || q.No != "Not Now" || q.Also != "Don't ask again" {
 			t.Fatalf("asked %+v", q)
 		}
 		return q
@@ -397,7 +397,7 @@ func TestServeAgainRemembersTheChoice(t *testing.T) {
 	waitFor(t, a, "always kept", func() bool { return a.settings.ServeAtStart() == settings.ServeAlways })
 	// Served, or tried to be: this test has no keys to serve to.
 	waitFor(t, a, "the window served", func() bool {
-		return a.serving.server != nil || slices.ContainsFunc(a.st.Notices, func(n Notice) bool { return n.Title == "Couldn't serve the window" })
+		return a.serving.server != nil || slices.ContainsFunc(a.st.Notices, func(n Notice) bool { return n.Title == "Couldn't turn on remote access" })
 	})
 	_ = a.stopServing()
 
@@ -579,7 +579,7 @@ func TestDisconnectingAWindowAlreadyGoneSaysSo(t *testing.T) {
 	}
 }
 
-// A saved window's address typed in the Connect to Window dialog, with
+// A saved window's address typed in the Connect to Another kakel dialog, with
 // no key file typed, is dialled with the key saved for it.
 func TestASavedWindowTypedIsDialledWithItsKey(t *testing.T) {
 	a, _ := agentApp(t)

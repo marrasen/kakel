@@ -19,14 +19,18 @@ import (
 	"github.com/marrasen/kakel/words"
 )
 
-// servingDialog serves the window, or, while it is served, says where
-// and to whom.
+// remoteAccessSays is what turning remote access on gives, said in its
+// dialog and in the settings.
+const remoteAccessSays = "Another kakel with an allowed key can use this whole kakel as you: the panes of every window, new shells, files and tunnels. Plain ssh with an allowed key can make tunnels. It works with no window open too."
+
+// servingDialog is the Remote Access dialog: it turns remote access on,
+// or, while it is on, says where and to whom.
 func (w *Window) servingDialog(s app.Serving, u *gunim.UI) {
 	if s.On {
 		w.servedDialog(s, u)
 		return
 	}
-	form := widget.NewForm().Add("", widget.NewLabel("A connected window can open shells here, use the ones running, and read and write files as you."))
+	form := widget.NewForm().Add("", widget.NewLabel(remoteAccessSays))
 	addAllowed(form, s)
 	onPort := widget.NewCheckbox("On a port of this machine")
 	onPort.SetChecked(!s.NoPort, nil)
@@ -60,15 +64,15 @@ func (w *Window) servingDialog(s app.Serving, u *gunim.UI) {
 		form.Add("", widget.NewLabel("The server the relay was reached through is no longer saved, so this machine reaches it now."))
 	}
 	form.Add("", widget.NewLabel(relayCodeSays(s)))
-	d := widget.NewDialog("Serve This Window")
+	d := widget.NewDialog("Remote Access")
 	d.Body = form
-	d.SetButtons("Serve", "Cancel")
+	d.SetButtons("Turn On", "Cancel")
 	w.keyActions(d, s)
 	d.Check = func() string {
 		n, err := strconv.Atoi(strings.TrimSpace(port.Text()))
 		switch {
 		case !onPort.Checked() && !onRelay.Checked():
-			return "Serve on a port, through a relay, or both."
+			return "Choose a port, a relay, or both."
 		case onPort.Checked() && (err != nil || n < 0 || n > 65535):
 			return "The port is a number from 0 to 65535."
 		case onRelay.Checked() && strings.TrimSpace(relayURL.Text()) == "":
@@ -84,8 +88,8 @@ func (w *Window) servingDialog(s app.Serving, u *gunim.UI) {
 		return ""
 	}
 	d.OnAccept = func(u *gunim.UI) gunim.Intent {
-		// Shown once it is served: the host key, to check from the
-		// other end. Nothing, if serving did not start.
+		// Shown once it is on: the host key, to check from the other
+		// end. Nothing, if it did not start.
 		w.servingAsked, w.servingTries = true, s.Tries
 		return app.StartServing{Port: port.Text(), Anywhere: where.Selected() == 1,
 			NoPort: !onPort.Checked(), Relay: onRelay.Checked(), RelayURL: relayURL.Text(),
@@ -95,27 +99,27 @@ func (w *Window) servingDialog(s app.Serving, u *gunim.UI) {
 	w.openDialog(d, u)
 }
 
-// relayCodeSays is what the Serve dialog says of the code the window
-// is served under on a relay.
+// relayCodeSays is what the Remote Access dialog says of the code kakel
+// has on a relay.
 func relayCodeSays(s app.Serving) string {
 	if s.Code == "" {
-		return "Kakel makes a code for the other end to type, and keeps it."
+		return "A code is made for the other end to type. It stays the same each time."
 	}
 	return "The other end types the code " + s.Code + ". It stays the same each time."
 }
 
-// relaySays is how serving through the relay is going.
+// relaySays is how remote access through the relay is going.
 func relaySays(s app.Serving) string {
 	switch {
 	case s.Reached:
-		return "Reached. Windows connect with the code."
+		return "Reached. Other kakels connect with the code."
 	case s.RelayTrouble != "":
 		return "Not reached: " + s.RelayTrouble + ". Trying again."
 	}
 	return "Reaching the relay…"
 }
 
-// servedDialog says where the window is served and who is connected.
+// servedDialog says where remote access is on and who is connected.
 func (w *Window) servedDialog(s app.Serving, u *gunim.UI) {
 	form := widget.NewForm()
 	if s.Addr != "" {
@@ -130,7 +134,7 @@ func (w *Window) servedDialog(s app.Serving, u *gunim.UI) {
 	who := widget.NewLabel(connectedSays(s))
 	form.Add("Connected", who)
 	addAllowed(form, s)
-	d := widget.NewDialog("Serving This Window")
+	d := widget.NewDialog("Remote Access")
 	d.Body = form
 	d.SetButtons("Done", "")
 	w.keyActions(d, s)
@@ -144,7 +148,7 @@ func (w *Window) servedDialog(s app.Serving, u *gunim.UI) {
 		d.AddAction("New Code", func(u *gunim.UI) gunim.Intent { return app.NewRelayCode{} })
 	}
 	d.AddButton("Disconnect All", func(u *gunim.UI) gunim.Intent { return app.DisconnectClients{} })
-	d.AddButton("Stop Serving", func(u *gunim.UI) gunim.Intent { return app.StopServing{} })
+	d.AddButton("Turn Off", func(u *gunim.UI) gunim.Intent { return app.StopServing{} })
 	d.OnAccept, d.OnDismiss = widget.Sends(app.DialogClosed{}), widget.Sends(app.DialogClosed{})
 	w.served = &servedShown{d: d, who: who, code: code, state: state}
 	w.openDialog(d, u)
@@ -178,9 +182,9 @@ func shortPrint(fp string) string {
 	return fp
 }
 
-// keyActions adds Add Key… and Remove Key… to d, a dialog of serving,
-// which close it and open their own; the serving dialog opens again
-// once the change has been tried.
+// keyActions adds Add Key… and Remove Key… to d, a Remote Access
+// dialog, which close it and open their own; the Remote Access dialog
+// opens again once the change has been tried.
 func (w *Window) keyActions(d *widget.Dialog, s app.Serving) {
 	if s.Problem != "" {
 		return
@@ -200,7 +204,7 @@ func (w *Window) keyActions(d *widget.Dialog, s app.Serving) {
 }
 
 // addKeyDialogFrom asks for a key that may connect: pasted, or one of
-// this machine's. With again, the serving dialog opens again once the
+// this machine's. With again, the Remote Access dialog opens again once the
 // key has been tried, as for one asked from there.
 func (w *Window) addKeyDialogFrom(s app.Serving, again bool, u *gunim.UI) {
 	text := widget.NewTextArea()
@@ -254,7 +258,7 @@ func (w *Window) removeKeyPickerFrom(s app.Serving, again bool, u *gunim.UI) {
 	p.Open(w, geom.Rc(0, 48, w.size.W, 0), u)
 }
 
-// connectedSays is who is connected to the window served, one a line.
+// connectedSays is who is connected by remote access, one a line.
 func connectedSays(s app.Serving) string {
 	if len(s.Clients) == 0 {
 		return "Nobody yet."
@@ -275,19 +279,19 @@ func connectedSays(s app.Serving) string {
 	return strings.Join(lines, "\n")
 }
 
-// servedShown is the dialog saying the window is served, while it is
+// servedShown is the dialog saying remote access is on, while it is
 // open, and its line of who is connected.
 type servedShown struct {
 	d   *widget.Dialog
 	who *widget.Label
 	// code and state are the code on the relay and how reaching it is
-	// going, nil when the window is not served through one.
+	// going, nil when remote access goes through none.
 	code, state *widget.Label
 }
 
-// showServed keeps the dialog saying the window is served up to date
-// as windows connect and go, closes it once serving stops, and opens
-// it once serving asked for has started.
+// showServed keeps the dialog saying remote access is on up to date as
+// others connect and go, closes it once it is turned off, and opens it
+// once turning it on was asked for and has worked.
 func (w *Window) showServed(s app.Serving, u *gunim.UI) {
 	if sh := w.served; sh != nil {
 		switch {
@@ -304,7 +308,7 @@ func (w *Window) showServed(s app.Serving, u *gunim.UI) {
 			u.Invalidate()
 		}
 	}
-	// A key added or taken off, once it has been tried: the serving
+	// A key added or taken off, once it has been tried: the Remote Access
 	// dialog again, with the keys as they are now.
 	if w.keysAsked && s.Edits > w.keysEdits && (w.dialog == nil || u.Presence(w.dialog) == gunim.Exiting) {
 		w.keysAsked = false
@@ -322,7 +326,7 @@ func (w *Window) showServed(s app.Serving, u *gunim.UI) {
 	}
 }
 
-// connectWindowDialog asks for a served window to connect to: at an
+// connectWindowDialog asks for another kakel to connect to: at an
 // address, or through a relay by its code.
 func (w *Window) connectWindowDialog(u *gunim.UI) {
 	how := widget.NewDropdown(widget.Labels("Directly", "Through a relay"))
@@ -365,9 +369,9 @@ func (w *Window) connectWindowDialog(u *gunim.UI) {
 		return nil
 	}
 	how.OnChange = func(int, *gunim.UI) gunim.Intent { applies(); return nil }
-	d := widget.NewDialog("Connect to Window")
+	d := widget.NewDialog("Connect to Another kakel")
 	d.Body = widget.NewForm().
-		Add("", widget.NewLabel("The other window must be served, with this machine's public key in its authorized keys.")).
+		Add("", widget.NewLabel("Remote access must be on in the other kakel, with this machine's public key in its authorized keys.")).
 		Add("Connect", how).Add("Address", addr).Add("Relay", relayURL).Add("Code", code).Add("Through", via).Add("Key file", key)
 	d.SetButtons("Connect", "Cancel")
 	link := func() (string, string) {
@@ -387,7 +391,7 @@ func (w *Window) connectWindowDialog(u *gunim.UI) {
 			return why
 		}
 		if strings.TrimSpace(addr.Text()) == "" {
-			return "Type the other window's address."
+			return "Type the other kakel's address."
 		}
 		return ""
 	}
@@ -404,7 +408,7 @@ func (w *Window) connectWindowDialog(u *gunim.UI) {
 
 // throughPicker offers the saved servers to reach something through,
 // after "This machine", with picked chosen, and their IDs in the same
-// order, "" for this machine. A kakel window is not offered.
+// order, "" for this machine. Another kakel is not offered.
 func (w *Window) throughPicker(picked machines.ID) (*widget.Dropdown, []machines.ID) {
 	labels := []string{"This machine"}
 	ids := []machines.ID{""}
@@ -424,7 +428,7 @@ func (w *Window) throughPicker(picked machines.ID) (*widget.Dropdown, []machines
 	return d, ids
 }
 
-// sshDialog explains plain ssh's tunnels through this window, with the
+// sshDialog explains plain ssh's tunnels through this kakel, with the
 // commands as they would be typed on another machine: this one's port,
 // name, relay and saved machines, each with a Copy beside it.
 func (w *Window) sshDialog(s app.Serving, u *gunim.UI) {
@@ -444,7 +448,7 @@ func (w *Window) sshDialog(s app.Serving, u *gunim.UI) {
 	// column of names would stand empty beside all of it.
 	var parts []gunim.Node
 	say := func(text string) { parts = append(parts, widget.NewLabel(text)) }
-	say("Plain ssh, on any machine, can make tunnels through this window, with the same keys a kakel window connects with. There is no shell, so -N is always given.")
+	say("Plain ssh, on any machine, can make tunnels through this kakel, with the same keys another kakel connects with. There is no shell, so -N is always given.")
 	example := func(title, cmd string) {
 		line := selectable(cmd)
 		line.Face = widget.MonoFont
@@ -462,7 +466,7 @@ func (w *Window) sshDialog(s app.Serving, u *gunim.UI) {
 		example("Port 8080 on the other machine reaches intranet port 80, as this machine finds it:",
 			"ssh -p "+port+" -N -L 8080:intranet:80 kakel@"+host)
 		if !s.Anywhere {
-			say("The port listens on this machine only. For another machine, serve on all networks, or through a relay.")
+			say("The port listens on this machine only. For another machine, choose all networks, or a relay.")
 		}
 	}
 	if relayed {
@@ -474,7 +478,7 @@ func (w *Window) sshDialog(s app.Serving, u *gunim.UI) {
 			`ssh -o ProxyCommand="kakel -relay-pipe `+link+`" -N -L 8080:intranet:80 kakel@`+host)
 	}
 	if !direct && !relayed {
-		say("Serve this window on a port or through a relay first.")
+		say("Turn on remote access first, on a port or through a relay.")
 	}
 	say("The user name says where the tunnel goes out from: kakel for this machine, or a machine saved here, by its name in lower case with dashes for spaces.")
 	var names []string
@@ -490,16 +494,16 @@ func (w *Window) sshDialog(s app.Serving, u *gunim.UI) {
 		parts = append(parts, selectable("Saved here: "+strings.Join(names, ", ")))
 	}
 	if s.TunnelsConnect {
-		say("A saved server that is not connected is connected to on the way, when that needs nothing asked here: a key, or a password in the secrets while they are open. Otherwise the tunnel is refused, saying to connect it here first. A kakel window connected here can be gone through too.")
+		say("A saved server that is not connected is connected to on the way, when that needs nothing asked here: a key, or a password in the secrets while they are open. Otherwise the tunnel is refused, saying to connect it here first. Another kakel connected here can be gone through too.")
 	} else {
-		say("A saved server has to be connected here already. Settings › Sharing › Tunnels may connect lets a tunnel connect it on the way, when that needs nothing asked here, and go through kakel windows connected here.")
+		say("A saved server has to be connected here already. Settings › Sharing › Tunnels may connect lets a tunnel connect it on the way, when that needs nothing asked here, and go through other kakels connected here.")
 	}
 	if direct {
-		example("-J and -W work the same way. To reach intranet's own ssh through this window:",
+		example("-J and -W work the same way. To reach intranet's own ssh through this kakel:",
 			"ssh -J kakel@"+host+":"+port+" user@intranet")
 	}
 	if s.Fingerprint != "" {
-		say("ssh asks to trust this window's host key the first time; it should be this one:")
+		say("ssh asks to trust this kakel's host key the first time; it should be this one:")
 		parts = append(parts, selectable(s.Fingerprint))
 	}
 	d := widget.NewDialog("Tunnels with ssh")

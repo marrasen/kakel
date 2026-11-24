@@ -69,7 +69,7 @@ func (a *app) dialThrough(via machines.ID, refused *throughRefused) func(ctx con
 				return
 			}
 			if a.machines.IsWindow(via) {
-				answer(dialled{err: fmt.Errorf("%s is a kakel window: a relay or a window is reached through a server", a.machines.Name(via))})
+				answer(dialled{err: fmt.Errorf("%s is another kakel: a relay or a kakel is reached through a server", a.machines.Name(via))})
 				return
 			}
 			if refused != nil && refused.err != nil {
@@ -82,7 +82,7 @@ func (a *app) dialThrough(via machines.ID, refused *throughRefused) func(ctx con
 			err := a.connectThen(ConnectTo{Server: via, Quiet: true, Only: true, NoAsk: noAsk}, func(err error) {
 				if err != nil && refused != nil && (errors.Is(err, errDeclined) || errors.Is(err, context.Canceled) ||
 					errors.Is(err, remote.ErrHostKeyRefused)) {
-					refused.err = fmt.Errorf("signing in to %s was turned down; serve again to be asked again", a.machines.Name(via))
+					refused.err = fmt.Errorf("signing in to %s was turned down; turn remote access on again to be asked again", a.machines.Name(via))
 				}
 				if err != nil {
 					answer(dialled{err: fmt.Errorf("connect to %s: %w", a.machines.Name(via), err)})

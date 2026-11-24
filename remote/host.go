@@ -219,10 +219,10 @@ func (h Host) Validate() error {
 	case h.Via != "" && (h.Via == h.ID || strings.EqualFold(h.Via, h.Name)):
 		return fmt.Errorf("%q cannot be reached through itself", h.Name)
 	case h.Code != "" && !h.Window:
-		return fmt.Errorf("only a kakel window is reached by a code")
+		return fmt.Errorf("only another kakel is reached by a code")
 	case h.Code == "" && strings.ContainsAny(h.Address, "/"):
 		// A relay's URL, most likely, with its code left out.
-		return fmt.Errorf("the address is a machine's name; a window through a relay needs its code too")
+		return fmt.Errorf("the address is a machine's name; a kakel through a relay needs its code too")
 	case CommandName(h.Name) == "":
 		return fmt.Errorf("the name has to have something in it a command can be named after")
 	}

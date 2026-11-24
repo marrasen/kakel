@@ -45,7 +45,7 @@ func Main(ctx context.Context, args []string, dir string, out io.Writer) error {
 	fs.StringVar(&dir, "dir", dir, "where the relay keeps its secret, and its certificates with -domain")
 	newSecret := fs.Bool("new-secret", false, "make a new secret: the URL printed before stops working")
 	fs.Usage = func() {
-		_, _ = fmt.Fprintln(out, "kakel -relay joins served kakel windows and the windows connecting to them, with no window of its own.")
+		_, _ = fmt.Fprintln(out, "kakel -relay joins kakels with remote access on and the kakels connecting to them, with no window of its own.")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args[1:]); err != nil {

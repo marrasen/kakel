@@ -176,16 +176,16 @@ func (w *Window) fileLocationsDialog(u *gunim.UI) {
 	form := widget.NewForm()
 	for _, f := range []struct{ what, name string }{
 		{"Settings", settings.File}, {"Saved servers", remote.BookFile}, {"Themes", themes.File},
-		{"Shortcuts", keys.File}, {"Authorized keys", serve.AuthFile}, {"Known windows", app.KnownWindowsFile},
+		{"Shortcuts", keys.File}, {"Authorized keys", serve.AuthFile}, {"Known kakels", app.KnownWindowsFile},
 	} {
 		form.Add(f.what, selectable(filepath.Join(dir, f.name)))
 	}
 	if key, err := serve.HostKeyPath(); err == nil {
-		form.Add("Serving key", selectable(key))
+		form.Add("Remote access key", selectable(key))
 	}
 	form.Add("", widget.NewLabel("SSH keys and known_hosts stay in ~/.ssh."))
 	if own, beside, err := conf.CarriesItsOwn(); err == nil && own {
-		form.Add("", widget.NewLabel("Portable: the files are kept beside kakel, in "+beside+". The serving key is in there too, and is only as private as that folder."))
+		form.Add("", widget.NewLabel("Portable: the files are kept beside kakel, in "+beside+". The remote access key is in there too, and is only as private as that folder."))
 	}
 	d := widget.NewDialog("File Locations")
 	d.Body = form

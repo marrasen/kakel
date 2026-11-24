@@ -55,45 +55,46 @@ The whole list. The [README](README.md) has the short version.
   rather than a second login. A command runs on a channel of the same
   connection, in a pane named by what it runs. Connect from inside the
   window with `Ctrl+Shift+N`.
-- **One kakel window working in another.** A window can serve itself
-  on a port you opt into, and another window on another machine can take
-  it over: what it has open appears in the Machines pane under that
-  window's name, and a pane
-  opened there is drawn here. Key authentication only, from a list of
-  keys you add in the Serve dialog, pasted or picked from this
-  machine's; there is no password and no way past an unknown host
-  key but saying yes to its fingerprint, and a host key that changed is a
-  hard failure. The window being served keeps drawing and says who is
-  working in it. Closing the connection gives it its screen back.
+- **Remote access from another kakel.** Turn it on, and a kakel on
+  another machine can connect on a port you opt into and use this whole
+  kakel: the panes of every window, shells, files and tunnels, also
+  with no window open. What it has open appears in the other's Machines
+  pane under its name, and a pane opened there is drawn here. Key
+  authentication only, from a list of keys you add in the Remote Access
+  dialog, pasted or picked from this machine's; there is no password and
+  no way past an unknown host key but saying yes to its fingerprint, and
+  a host key that changed is a hard failure. The kakel connected to
+  keeps drawing and says who is working in it. Closing the connection
+  gives it its screen back.
 - **Through a relay, when neither can reach the other.** `kakel -relay`
-  runs on a server with no screen. A window served through it gets a
-  code, kept from one run to the next, and a window connecting gives the
-  relay that code. Both reach it over WebSockets on HTTPS, which gets
-  through HTTP proxies. The relay only carries bytes: the windows speak
-  SSH through it, the keys allowed in are the same, and the host key is
-  checked as for any window.
+  runs on a server with no screen. A kakel with remote access through it
+  gets a code, kept from one run to the next, and a kakel connecting
+  gives the relay that code. Both reach it over WebSockets on HTTPS,
+  which gets through HTTP proxies. The relay only carries bytes: the two
+  kakels speak SSH through it, the keys allowed in are the same, and the
+  host key is checked as for any kakel.
 - **Tunnels for plain ssh.** `ssh -N -L`, `-J` and `-W` work against a
-  served window, with the keys it allows. The user name picks where the
-  tunnel goes out from: the served machine, or a machine saved there,
-  connected to on the way when nothing has to be asked.
-- **Working in a shell that is already running over there.** The served
-  window says what it has open, and choosing one of those rows opens a
+  kakel with remote access on, with the keys it allows. The user name
+  picks where the tunnel goes out from: its machine, or a machine saved
+  there, connected to on the way when nothing has to be asked.
+- **Working in a shell that is already running over there.** The other
+  kakel says what it has open, and choosing one of those rows opens a
   pane here on the program that is already running there, starting with
   the screen as it stands. Both people see it and either can type. It
-  keeps running over there when this window lets go. A pane already
+  keeps running over there when this kakel disconnects. A pane already
   watching something comes forward rather than opening a second one, and
   the row says when somebody elsewhere is reading it.
-- **The files of the window taken over.** The same connection carries
+- **The files of another kakel's machine.** The same connection carries
   them, as SFTP on a channel of its own, so a file manager pane on that
-  machine costs no second login. A window that would rather not offer
-  its files refuses the channel by name.
-- **The machines beyond a connected window.** The servers that window
-  is connected to get a heading each under its name, and their plus
-  offers what a server of your own does: a terminal, a command, files
-  and its saved folders, a tunnel or SOCKS proxy, its connection log, and
-  Disconnect, which asks that window to close its connection. Each
-  rides the one connection to the window. A tunnel through a window
-  listens here; a remote forward needs a connection of your own. An
+  machine costs no second login. A kakel that would rather not offer its
+  files refuses the channel by name.
+- **The machines beyond another kakel.** The servers it is connected to
+  get a heading each under its name, and their plus offers what a server
+  of your own does: a terminal, a command, files and its saved folders,
+  a tunnel or SOCKS proxy, its connection log, and Disconnect, which
+  asks that kakel to close its connection. Each rides the one connection
+  to that kakel. A tunnel through it listens here; a remote forward
+  needs a connection of your own. An
   agent handed a pane out there works in it as in any other.
 - **Panes shared with an agent.** Set the panes up -- through whatever
   machines, as whatever user, with whatever credentials -- put them in a
@@ -116,10 +117,10 @@ The whole list. The [README](README.md) has the short version.
   behind another one. The second connection is carried inside a channel
   of the first, so no local port is opened for it and nothing else on
   the machine can use it. Closing the one in the middle closes what
-  rides on it. A saved server can be behind a kakel window too, served
-  directly or through a relay: the window opens the stream from its own
+  rides on it. A saved server can be behind another kakel too, reached
+  directly or through a relay: that kakel opens the stream from its own
   machine, so a server on that machine's network is reached from
-  anywhere the window is.
+  anywhere the kakel is.
 - **Tabs in each pane.** A window is split into panes, and each pane
   holds tabs, as an editor's do. A window's tabs stand in the title bar,
   even with only one tab, so a lone pane can be dragged by its tab to
@@ -181,12 +182,11 @@ The whole list. The [README](README.md) has the short version.
   and starts every pane afresh: nothing that ran is kept. Each server is
   connected to once for all its panes; one that cannot be reached fails
   only its own panes, which say why and offer Retry. A pane through
-  another kakel window is kept too, by the window and the machine beyond
-  it: the window is connected to once, and a pane the layout opened
-  there that is still open is watched again, program and screen as they
-  are; otherwise a new one opens, in the same folder on the window's own
-  machine. Closing it here leaves it open there. A terminal can hold
-  start lines, which kakel types into its shell as the layout opens it,
+  another kakel is kept too, by that kakel and the machine beyond it: it
+  is connected to once, and a pane the layout opened there that is still
+  open is watched again, program and screen as they are; otherwise a new
+  one opens, in the same folder on that kakel's own machine. Closing it
+  here leaves it open there. A terminal can hold start lines, which kakel types into its shell as the layout opens it,
   one at each prompt, so they land in the shell's history; anything
   typed or pasted into the pane cancels the lines left, except the
   answer to a password question. Start Lines… on a layout's card in
@@ -388,7 +388,7 @@ The whole list. The [README](README.md) has the short version.
   answered.
 - **A window log.** Help → Window Log shows what the window did: when
   it started, each pane opened and closed, how a shell ended,
-  connections made and lost, serving turned on and off, and every
+  connections made and lost, remote access turned on and off, and every
   failure a pop-up told of. It keeps the last 2,000 lines, until the
   window closes. Find in Scrollback searches it, and a connection log,
   as it does a terminal.

@@ -170,7 +170,7 @@ func (a *app) whatIsOpen() []string {
 		out = append(out, "an agent share")
 	}
 	if a.serving.server != nil {
-		out = append(out, "this window, served")
+		out = append(out, "remote access")
 	}
 	return out
 }

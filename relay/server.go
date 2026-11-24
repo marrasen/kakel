@@ -214,7 +214,7 @@ func (s *Server) serveHost(w http.ResponseWriter, r *http.Request) {
 	}
 	token := r.Header.Get(tokenHeader)
 	if len(token) < 16 {
-		http.Error(w, "a served window gives a token with its code", http.StatusBadRequest)
+		http.Error(w, "a kakel registering gives a token with its code", http.StatusBadRequest)
 		return
 	}
 	from := clientAddr(r)
@@ -260,7 +260,7 @@ func (s *Server) serveHost(w http.ResponseWriter, r *http.Request) {
 	case <-h.replaced:
 		// Not waited for: a connection that went dead takes a while to
 		// close, and the one that replaced it is served meanwhile.
-		go func() { _ = ws.Close(websocket.StatusNormalClosure, "the same window registered again") }()
+		go func() { _ = ws.Close(websocket.StatusNormalClosure, "the same kakel registered again") }()
 	}
 	s.logf("relay: %s left", code)
 }
@@ -299,13 +299,13 @@ func (s *Server) mayRegisterLocked(code, token, from string) (string, int) {
 	old := s.hosts[code]
 	if old != nil {
 		if !same(old.token, token) {
-			return "that code is in use by another window; make a new code", http.StatusConflict
+			return "that code is in use by another kakel; make a new code", http.StatusConflict
 		}
 		// Taking its own place back takes no more room.
 		return "", 0
 	}
 	if len(s.hosts) >= mostHosts {
-		return "the relay has as many windows as it takes", http.StatusServiceUnavailable
+		return "the relay has as many kakels as it takes", http.StatusServiceUnavailable
 	}
 	n := 0
 	for _, h := range s.hosts {
@@ -314,7 +314,7 @@ func (s *Server) mayRegisterLocked(code, token, from string) (string, int) {
 		}
 	}
 	if n >= mostHostsFrom {
-		return fmt.Sprintf("the relay takes %d windows from one address", mostHostsFrom), http.StatusServiceUnavailable
+		return fmt.Sprintf("the relay takes %d kakels from one address", mostHostsFrom), http.StatusServiceUnavailable
 	}
 	return "", 0
 }
@@ -358,7 +358,7 @@ func (s *Server) missing(from string, now time.Time) bool {
 func (s *Server) serveJoin(w http.ResponseWriter, r *http.Request, code string) {
 	from := clientAddr(r)
 	if s.missing(from, time.Now()) {
-		http.Error(w, "too many codes that nobody serves were asked for from here; wait a minute", http.StatusTooManyRequests)
+		http.Error(w, "too many codes not on this relay were asked for from here; wait a minute", http.StatusTooManyRequests)
 		return
 	}
 	code, err := ParseCode(code)
@@ -374,11 +374,11 @@ func (s *Server) serveJoin(w http.ResponseWriter, r *http.Request, code string) 
 	case h == nil:
 		s.mu.Unlock()
 		s.missed(from, time.Now())
-		http.Error(w, "no window is served with code "+code+" on this relay", http.StatusNotFound)
+		http.Error(w, "no kakel has code "+code+" on this relay", http.StatusNotFound)
 		return
 	case h.waiting >= mostWaiting || len(s.tickets) >= mostTickets:
 		s.mu.Unlock()
-		http.Error(w, "too many windows are connecting to "+code+" at once; try again", http.StatusServiceUnavailable)
+		http.Error(w, "too many kakels are connecting to "+code+" at once; try again", http.StatusServiceUnavailable)
 		return
 	}
 	t.host = h
@@ -401,7 +401,7 @@ func (s *Server) serveJoin(w http.ResponseWriter, r *http.Request, code string) 
 	select {
 	case h.knocks <- line:
 	default:
-		http.Error(w, "too many windows are connecting to "+code+" at once; try again", http.StatusServiceUnavailable)
+		http.Error(w, "too many kakels are connecting to "+code+" at once; try again", http.StatusServiceUnavailable)
 		return
 	}
 	wctx, cancel := context.WithTimeout(r.Context(), s.within)
@@ -410,15 +410,15 @@ func (s *Server) serveJoin(w http.ResponseWriter, r *http.Request, code string) 
 	select {
 	case far = <-t.brought:
 	case <-h.gone:
-		http.Error(w, "the window served with code "+code+" left the relay", http.StatusBadGateway)
+		http.Error(w, "the kakel with code "+code+" left the relay", http.StatusBadGateway)
 		return
 	case <-wctx.Done():
-		http.Error(w, "the window served with code "+code+" did not answer", http.StatusGatewayTimeout)
+		http.Error(w, "the kakel with code "+code+" did not answer", http.StatusGatewayTimeout)
 		return
 	}
 	near, err := accept(w, r)
 	if err != nil {
-		_ = far.Close(websocket.StatusGoingAway, "the window connecting went")
+		_ = far.Close(websocket.StatusGoingAway, "the kakel connecting left")
 		return
 	}
 	s.logf("relay: %s joined from %s", code, from)
@@ -441,7 +441,7 @@ func (s *Server) serveAccept(w http.ResponseWriter, r *http.Request, id string) 
 	}
 	s.mu.Unlock()
 	if t == nil {
-		http.Error(w, "no window is waiting for that", http.StatusNotFound)
+		http.Error(w, "no kakel is waiting for that", http.StatusNotFound)
 		return
 	}
 	ws, err := accept(w, r)
