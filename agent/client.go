@@ -220,10 +220,14 @@ func (c *Client) answerWithin(want ask) time.Duration {
 	// A secret waits for a person to type.
 	if want.Do == "secret" {
 		asked := time.Duration(want.WaitMS) * time.Millisecond
-		if asked <= 0 || asked > SecretCallWait {
-			asked = SecretCallWait
+		if asked <= 0 || asked > LongestCall {
+			asked = LongestCall
 		}
 		return asked + patience
+	}
+	// The window gives a pane a minute to open, and a restart 30 seconds.
+	if want.Do == "open" || want.Do == "restart" {
+		return time.Minute + patience
 	}
 	if want.Do != "wait" {
 		return patience

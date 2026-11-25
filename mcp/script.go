@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -10,13 +11,8 @@ import (
 	"github.com/marrasen/kakel/steps"
 )
 
-// longestList is how long a whole list of steps may take.
-//
-// One wait may be five minutes and a list may hold sixty-four of them,
-// which is a window goroutine parked for an afternoon -- the thing the
-// wait's own cap exists to prevent. The budget is the list's, spent by
-// its waits and its sleeps alike.
-const longestList = steps.LongestWait
+// longestList is how long a whole list of steps may take, spent by its waits and its sleeps alike.
+const longestList = agent.LongestCall
 
 // runSteps works a list of steps in a pane, in order, and says how far
 // it got.
@@ -30,7 +26,7 @@ const longestList = steps.LongestWait
 // It stops at the first step that does not do what it says. Carrying on
 // would type the rest into whatever is there instead, which is the one
 // thing this is for avoiding.
-func (s *server) runSteps(pane string, list []steps.Step, lines int, clamped bool,
+func (s *server) runSteps(ctx context.Context, pane string, list []steps.Step, lines int, clamped bool,
 	timeoutMS int) (result, *rpcError) {
 
 	// Everything a step can be refused for is refused here, before the
@@ -65,24 +61,28 @@ func (s *server) runSteps(pane string, list []steps.Step, lines int, clamped boo
 	)
 	ends := time.Now().Add(longestList)
 	for i, step := range list {
+		if ctx.Err() != nil {
+			return stoppedAt(i, step, "the call was cancelled", last, read)
+		}
 		if left := time.Until(ends); left <= 0 {
 			return stoppedAt(i, step, "the list had run for "+longestList.String()+
-				", which is as long as one may take", last, read)
+				", which is as long as one call may take. What it started may still be running:"+
+				" call wait_for to keep waiting", last, read)
 		}
 		switch step.Kind {
 		case steps.Type:
 			if err := s.panes.Send(pane, step.Text, nil); err != nil {
-				return stoppedAt(i, step, err.Error(), last, read)
+				return stoppedAt(i, step, failed(err), last, read)
 			}
 			typed = true
 		case steps.Key:
 			if err := s.panes.Send(pane, "", []string{step.Chord}); err != nil {
-				return stoppedAt(i, step, err.Error(), last, read)
+				return stoppedAt(i, step, failed(err), last, read)
 			}
 			typed = true
 		case steps.Wait:
-			if !s.rest(min(step.Wait, time.Until(ends))) {
-				return stoppedAt(i, step, "the window is closing", last, read)
+			if !s.rest(ctx, min(step.Wait, time.Until(ends))) {
+				return stoppedAt(i, step, "the call was cancelled or the window is closing", last, read)
 			}
 		case steps.Until:
 			screen, ended, err := s.panes.Wait(pane, lines, Until{
@@ -94,7 +94,7 @@ func (s *server) runSteps(pane string, list []steps.Step, lines int, clamped boo
 				TimeoutMS: waitFor(timeoutMS, time.Until(ends)),
 			})
 			if err != nil {
-				return stoppedAt(i, step, err.Error(), last, read)
+				return stoppedAt(i, step, failed(err), last, read)
 			}
 			// Taken now rather than at the end of the list: what a
 			// command printed is what it printed at the time, and a
@@ -129,7 +129,7 @@ func (s *server) runSteps(pane string, list []steps.Step, lines int, clamped boo
 			// is still above it.
 			screen, whole, err := s.printedNow(pane, lines)
 			if err != nil {
-				return stoppedAt(i, step, err.Error(), last, read)
+				return stoppedAt(i, step, failed(err), last, read)
 			}
 			last, read = screen, true
 			looked := " in what the pane has said since you typed"
@@ -194,7 +194,7 @@ func checkList(list []steps.Step) (at int, why string) {
 
 // rest sleeps, and reports whether it slept the whole way rather than
 // the window going while it did.
-func (s *server) rest(d time.Duration) bool {
+func (s *server) rest(ctx context.Context, d time.Duration) bool {
 	if d <= 0 {
 		return true
 	}
@@ -204,6 +204,8 @@ func (s *server) rest(d time.Duration) bool {
 	case <-t.C:
 		return true
 	case <-s.stop:
+		return false
+	case <-ctx.Done():
 		return false
 	case <-s.broke:
 		return false

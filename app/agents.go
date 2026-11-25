@@ -708,7 +708,7 @@ func (w agentWindow) Secret(id, what string, wait time.Duration) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	ended, answered := got.t.AwaitSecret(got.ask, min(max(wait, 5*time.Second), agent.SecretCallWait), w.a.ctx.Done())
+	ended, answered := got.t.AwaitSecret(got.ask, min(max(wait, 5*time.Second), agent.LongestCall), w.a.ctx.Done())
 	switch {
 	case answered:
 		return true, nil

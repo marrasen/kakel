@@ -18,6 +18,19 @@ could drop the connection to kakel altogether. One ask now waits at most
 45 seconds. The line asking you stays on the pane for up to 10 minutes,
 and the agent asks again to go on waiting.
 
+**Stopping an agent stops what it is typing.** An agent's list of steps
+went on typing after you pressed Esc in the agent program, or after the
+program gave up on the call. It now stops before the next step. It also
+stops when the agent program exits.
+
+**One slow call no longer cuts an agent off.** A wait could hold up
+every other call for up to 5 minutes, and enough of them made the agent
+program drop kakel. A wait and a list of steps now take at most 45
+seconds each, and the agent calls `wait_for` to go on waiting. A call
+past the limit of 8 at once is turned away instead of stalling the rest.
+Opening or restarting a slow pane no longer drops the connection. When
+the connection is lost, the agent is told to use the same code again.
+
 ## v0.12.2-beta.19
 
 ### Added

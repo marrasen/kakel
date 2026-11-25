@@ -13,6 +13,7 @@ package mcp
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -259,14 +260,16 @@ type Until struct {
 // close it.
 //
 // Questions are answered as they come rather than one after another,
-// because a wait can be minutes long and an agent has to be able to ask
-// something else meanwhile. Only answersAtOnce run at a time; past that
-// the next waits its turn, which stops reading and so slows the client
-// down.
+// so an agent can ask something else during a wait. Only answersAtOnce
+// tool calls run at a time, and one past that is turned away. A tool call
+// is cancelled by notifications/cancelled and when Serve returns.
 func Serve(ctx context.Context, in io.Reader, out io.Writer, panes Panes) (err error) {
 	r := bufio.NewReaderSize(in, 4096)
 	s := &server{panes: panes, out: json.NewEncoder(out),
-		broke: make(chan struct{}), stop: ctx.Done()}
+		broke: make(chan struct{}), stop: ctx.Done(), calls: map[string]context.CancelFunc{}}
+
+	// Calls still running when this returns are cancelled, so a list of steps types nothing more.
+	callCtx, cancelCalls := context.WithCancel(ctx)
 
 	// Whatever is still being answered is waited for. The panes are not
 	// closed here: they were handed in and whoever handed them in lets
@@ -276,6 +279,7 @@ func Serve(ctx context.Context, in io.Reader, out io.Writer, panes Panes) (err e
 	done := make(chan struct{})
 	defer func() {
 		close(done)
+		cancelCalls()
 		running.Wait()
 		if err == nil {
 			// An answer written on one of those goroutines may have been
@@ -337,18 +341,39 @@ func Serve(ctx context.Context, in io.Reader, out io.Writer, panes Panes) (err e
 			line = got
 		}
 
+		// A notification is answered here, so a cancel takes effect before anything sent after it.
+		var peek request
+		if json.Unmarshal(line, &peek) == nil && len(peek.ID) == 0 && peek.Method != "tools/call" {
+			s.answerOne(callCtx, line)
+			continue
+		}
+
 		select {
 		case atOnce <- struct{}{}:
 			running.Go(func() {
 				defer func() { <-atOnce }()
-				s.answerOne(line)
+				s.answerOne(callCtx, line)
 			})
 		default:
-			// As many are being answered as this will answer at once.
-			// Done here instead, which stops reading until it is over.
-			s.answerOne(line)
+			s.answerBusy(callCtx, line)
 		}
 	}
+}
+
+// answerBusy answers a message that arrived with answersAtOnce already running: a tool call is turned away, and
+// anything else, which is quick, is answered here.
+func (s *server) answerBusy(ctx context.Context, line []byte) {
+	var req request
+	if json.Unmarshal(line, &req) == nil && req.Method == "tools/call" {
+		if len(req.ID) == 0 {
+			return
+		}
+		answer, _ := wrong(fmt.Sprintf("%d of your calls are still running, which is as many as run at once."+
+			" Call again when one has finished.", answersAtOnce))
+		s.send(response{JSONRPC: "2.0", ID: req.ID, Result: answer})
+		return
+	}
+	s.answerOne(ctx, line)
 }
 
 // answersAtOnce is how many questions are answered at the same time:
@@ -358,8 +383,8 @@ func Serve(ctx context.Context, in io.Reader, out io.Writer, panes Panes) (err e
 const answersAtOnce = 8
 
 // answerOne does one message and sends the answer, if it has one.
-func (s *server) answerOne(line []byte) {
-	answer, reply := s.handle(line)
+func (s *server) answerOne(ctx context.Context, line []byte) {
+	answer, reply := s.handle(ctx, line)
 	if !reply {
 		return
 	}
@@ -440,11 +465,53 @@ type server struct {
 	// written under.
 	broken error
 	broke  chan struct{}
+
+	// calls cancels each tool call still running, by its request id.
+	callsMu sync.Mutex
+	calls   map[string]context.CancelFunc
+}
+
+// track keeps the cancel for a tool call, and gives back what forgets it again.
+func (s *server) track(id json.RawMessage, cancel context.CancelFunc) (forget func()) {
+	key := idKey(id)
+	s.callsMu.Lock()
+	s.calls[key] = cancel
+	s.callsMu.Unlock()
+	return func() {
+		s.callsMu.Lock()
+		delete(s.calls, key)
+		s.callsMu.Unlock()
+	}
+}
+
+// cancel cancels the tool call a notifications/cancelled names.
+func (s *server) cancel(params json.RawMessage) {
+	var p struct {
+		RequestID json.RawMessage `json:"requestId"`
+	}
+	if json.Unmarshal(params, &p) != nil || len(p.RequestID) == 0 {
+		return
+	}
+	s.callsMu.Lock()
+	cancel := s.calls[idKey(p.RequestID)]
+	s.callsMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
+// idKey is a request id as a map key, with any spacing taken out.
+func idKey(id json.RawMessage) string {
+	var b bytes.Buffer
+	if json.Compact(&b, id) != nil {
+		return string(id)
+	}
+	return b.String()
 }
 
 // handle answers one message, and reports whether there is an answer to
 // send: a notification is acted on and not answered.
-func (s *server) handle(line []byte) (response, bool) {
+func (s *server) handle(ctx context.Context, line []byte) (response, bool) {
 	// Several messages in one array, which this protocol does not take.
 	if trimmed := strings.TrimSpace(string(line)); strings.HasPrefix(trimmed, "[") {
 		return fail(nil, codeInvalidRequest, "send one message at a time"), true
@@ -470,9 +537,23 @@ func (s *server) handle(line []byte) (response, bool) {
 		return fail(nil, codeInvalidRequest, "a question cannot call itself null"), true
 	}
 	notice := len(req.ID) == 0
+	if notice && req.Method == "tools/call" {
+		// A tool call has to be answered, so one sent as a notification is not run.
+		return response{}, false
+	}
+	if req.Method == "tools/call" {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithCancel(ctx)
+		defer s.track(req.ID, cancel)()
+		defer cancel()
+	}
 
-	result, rerr := s.call(req)
+	result, rerr := s.call(ctx, req)
 	if notice {
+		return response{}, false
+	}
+	if req.Method == "tools/call" && ctx.Err() != nil {
+		// Cancelled, and a cancelled request is not answered.
 		return response{}, false
 	}
 	if rerr != nil {
@@ -482,7 +563,7 @@ func (s *server) handle(line []byte) (response, bool) {
 }
 
 // call does what a message asks.
-func (s *server) call(req request) (any, *rpcError) {
+func (s *server) call(ctx context.Context, req request) (any, *rpcError) {
 	switch req.Method {
 	case "initialize":
 		return map[string]any{
@@ -496,7 +577,11 @@ func (s *server) call(req request) (any, *rpcError) {
 			"instructions": instructions,
 		}, nil
 
-	case "notifications/initialized", "notifications/cancelled":
+	case "notifications/initialized":
+		return map[string]any{}, nil
+
+	case "notifications/cancelled":
+		s.cancel(req.Params)
 		return map[string]any{}, nil
 
 	case "ping":
@@ -513,7 +598,7 @@ func (s *server) call(req request) (any, *rpcError) {
 		if err := json.Unmarshal(req.Params, &params); err != nil {
 			return nil, &rpcError{Code: codeInvalidParams, Message: "that is not a tool call"}
 		}
-		got, rerr := s.runTool(params.Name, params.Arguments)
+		got, rerr := s.runTool(ctx, params.Name, params.Arguments)
 		if rerr != nil {
 			return nil, rerr
 		}

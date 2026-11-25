@@ -1,7 +1,9 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -170,7 +172,7 @@ func toolList() []tool {
 				" by then the ask stays on the pane, and calling again with the same"+
 				" pane and what waits on it again. A program that echoes what is typed puts it on the"+
 				" screen, where you can read it: this hides what you are told, not what"+
-				" the pane shows.", int(agent.SecretCallWait.Seconds())),
+				" the pane shows.", int(agent.LongestCall.Seconds())),
 			InputSchema: schema{
 				Type: "object",
 				Properties: map[string]field{
@@ -179,7 +181,7 @@ func toolList() []tool {
 						` such as "the sudo password for prod". It is shown to the user.`},
 					"wait_ms": {Type: "integer", Description: fmt.Sprintf(
 						"how long this call waits for them, in milliseconds, up to %d seconds."+
-							" Left out, it waits that long.", int(agent.SecretCallWait.Seconds()))},
+							" Left out, it waits that long.", int(agent.LongestCall.Seconds()))},
 				},
 				Required: []string{"pane", "what"},
 			},
@@ -282,7 +284,7 @@ func toolList() []tool {
 // does not have, arguments it cannot read, a call that does not say
 // which pane -- is a failure of the message, which is what the protocol
 // asks for.
-func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) {
+func (s *server) runTool(ctx context.Context, name string, args json.RawMessage) (result, *rpcError) {
 	var in struct {
 		Code      string   `json:"code"`
 		Pane      string   `json:"pane"`
@@ -314,20 +316,20 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 		}
 		panes, err := s.panes.Use(in.Code)
 		if err != nil {
-			return wrong(err.Error())
+			return wrong(failed(err))
 		}
 		return say(sharedWithYou(panes))
 
 	case "list_panes":
 		panes, err := s.panes.List()
 		if err != nil && len(panes) == 0 {
-			return wrong(err.Error())
+			return wrong(failed(err))
 		}
 		if len(panes) == 0 {
 			return say("You have no panes. The user has not given you a session code" +
 				" yet, or they have taken every pane out of the share you used, or" +
-				" the kakel window has closed." +
-				" Ask them for a code and use it with use_session_code.")
+				" the connection to the kakel window was lost." +
+				" If you have a code, call use_session_code with it again; if not, ask the user for one.")
 		}
 		var out strings.Builder
 		for _, p := range panes {
@@ -348,7 +350,7 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 		lines, clamped := atMostLines(in.Lines)
 		screen, err := s.panes.Read(in.Pane, lines)
 		if err != nil {
-			return wrong(err.Error())
+			return wrong(failed(err))
 		}
 		return say(showScreen(screen, Ending{}, clamped))
 
@@ -362,7 +364,7 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 		}
 		screen, err := s.panes.Output(in.Pane, most)
 		if err != nil {
-			return wrong(err.Error())
+			return wrong(failed(err))
 		}
 		return say(showScreen(screen, Ending{}, clamped))
 
@@ -380,10 +382,10 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 			if err != nil {
 				// Refused before anything is typed: a list that stopped
 				// halfway is worse than one that never started.
-				return wrong(err.Error())
+				return wrong(failed(err))
 			}
 			lines, clamped := atMostLines(in.Lines)
-			return s.runSteps(in.Pane, list, lines, clamped, in.TimeoutMS)
+			return s.runSteps(ctx, in.Pane, list, lines, clamped, in.TimeoutMS)
 		}
 		if in.Text == "" && len(in.Keys) == 0 {
 			return missing("text, keys and no steps")
@@ -391,13 +393,13 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 		// Refused before anything is typed, so an agent that spelled a
 		// key wrong is told which names there are and has sent nothing.
 		if err := agent.CheckKeys(in.Keys); err != nil {
-			return wrong(err.Error())
+			return wrong(failed(err))
 		}
 		if why := escapedEnding(in.Text); why != "" {
 			return wrong(why)
 		}
 		if err := s.panes.Send(in.Pane, in.Text, in.Keys); err != nil {
-			return wrong(err.Error())
+			return wrong(failed(err))
 		}
 		return say("Sent. Use wait_for to see what happens: the screen has not" +
 			" caught up yet, and wait_for ends when what you sent finishes. On a" +
@@ -414,7 +416,7 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 		typed, err := s.panes.Secret(in.Pane, in.What,
 			time.Duration(in.WaitMS)*time.Millisecond)
 		if err != nil {
-			return wrong(err.Error())
+			return wrong(failed(err))
 		}
 		if !typed {
 			return say(fmt.Sprintf("The user has not typed anything into the pane yet. The"+
@@ -433,7 +435,7 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 		}
 		pane, err := s.panes.Restart(in.Pane)
 		if err != nil {
-			return wrong(err.Error())
+			return wrong(failed(err))
 		}
 		return say(fmt.Sprintf(
 			"%s is running again, as pane %q. What it printed before is still above it,"+
@@ -446,7 +448,7 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 		}
 		pane, err := s.panes.Open(in.Pane)
 		if err != nil {
-			return wrong(err.Error())
+			return wrong(failed(err))
 		}
 		return say(fmt.Sprintf(
 			"You have a second pane on %s: a new shell, a %dx%d screen, as pane %q."+
@@ -463,10 +465,10 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 			Contains:  in.Contains,
 			SinceKeys: in.SinceKeys,
 			QuietMS:   in.QuietMS,
-			TimeoutMS: in.TimeoutMS,
+			TimeoutMS: min(in.TimeoutMS, longestCallMS),
 		})
 		if err != nil {
-			return wrong(err.Error())
+			return wrong(failed(err))
 		}
 		return say(s.afterWaiting(in.Pane, screen, ended, lines, clamped, in.Screen))
 	}
@@ -601,7 +603,10 @@ var stepsArg = fmt.Sprintf(" Each step is a word, a colon and the rest of it, wh
 // one, because an agent that is not told a default sets one on every
 // call to be sure.
 var timeoutArg = fmt.Sprintf("how long to wait before giving up, in milliseconds."+
-	" Without one it is %d.", giveUpAfterMS)
+	" Without one it is %d, and at most %d.", giveUpAfterMS, longestCallMS)
+
+// longestCallMS is agent.LongestCall in the milliseconds the tools take.
+var longestCallMS = int(agent.LongestCall.Milliseconds())
 
 // giveUpAfterMS is how long the window gives a wait that asked for no
 // timeout, in the milliseconds the tools take. Asked of the window's own
@@ -677,7 +682,7 @@ func showScreen(s Screen, ended Ending, clamped bool) string {
 	var notes []string
 	if ended.GaveUp {
 		notes = append(notes, "This is the screen as time ran out;"+
-			" what you were waiting for has not happened.")
+			" what you were waiting for has not happened. Call wait_for to keep waiting.")
 	} else if ended.Because != "" {
 		notes = append(notes, "The waiting ended because "+ended.Because+".")
 	}
@@ -880,4 +885,12 @@ func withNote(had, add string) string {
 		return add
 	}
 	return had + "\n" + add
+}
+
+// failed is what an agent is told about an error, with how to get the panes back when the window stopped answering.
+func failed(err error) string {
+	if errors.Is(err, agent.ErrGone) {
+		return err.Error() + ". Call use_session_code again with the same code."
+	}
+	return err.Error()
 }
