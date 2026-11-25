@@ -47,9 +47,9 @@ import (
 // does not sit on the pane for good.
 const LongestSecretWait = 10 * time.Minute
 
-// SecretCallWait is the most one ask for a secret waits before saying the user has not typed yet; it stays under the
-// 60 seconds an agent program commonly allows a tool call.
-const SecretCallWait = 45 * time.Second
+// LongestCall is the most one agent call waits, for a secret, a command or a list of steps; it stays under the 60
+// seconds an agent program commonly allows a tool call.
+const LongestCall = 45 * time.Second
 
 // Window is what an agent may do with the panes it has been handed.
 //

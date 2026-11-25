@@ -438,8 +438,8 @@ func (s *Server) answer(want ask, held map[uint64]bool) said {
 			return said{Error: notHanded(want.Pane)}
 		}
 		wait := time.Duration(want.WaitMS) * time.Millisecond
-		if wait <= 0 || wait > SecretCallWait {
-			wait = SecretCallWait
+		if wait <= 0 || wait > LongestCall {
+			wait = LongestCall
 		}
 		typed, err := s.cfg.Window.Secret(want.Pane, want.Text, wait)
 		if err != nil {

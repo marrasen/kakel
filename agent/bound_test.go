@@ -109,12 +109,22 @@ func TestAWaitIsGivenTheTimeItAskedFor(t *testing.T) {
 	}
 }
 
-// An ask for a secret holds the connection for at most SecretCallWait, however long it asks to wait.
+// Opening and restarting a pane get longer than the window itself allows them.
+func TestOpeningAPaneIsGivenLongerThanTheWindowTakes(t *testing.T) {
+	c := &Client{patience: promptly}
+	for _, do := range []string{"open", "restart"} {
+		if got := c.answerWithin(ask{Do: do}); got <= time.Minute {
+			t.Errorf("%s gets %v, which the window may take", do, got)
+		}
+	}
+}
+
+// An ask for a secret holds the connection for at most LongestCall, however long it asks to wait.
 func TestAnAskForASecretHoldsTheConnectionBriefly(t *testing.T) {
 	c := &Client{patience: promptly}
 	for _, waitMS := range []int{0, 1 << 30} {
-		if got := c.answerWithin(ask{Do: "secret", WaitMS: waitMS}); got != SecretCallWait+promptly {
-			t.Errorf("a secret asking to wait %dms gets %v, want %v", waitMS, got, SecretCallWait+promptly)
+		if got := c.answerWithin(ask{Do: "secret", WaitMS: waitMS}); got != LongestCall+promptly {
+			t.Errorf("a secret asking to wait %dms gets %v, want %v", waitMS, got, LongestCall+promptly)
 		}
 	}
 }
