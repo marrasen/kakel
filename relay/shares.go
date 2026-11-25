@@ -156,6 +156,9 @@ type pastShare struct {
 	from  string
 	at    time.Time
 	ended bool
+	// turn counts the shares remembered, which the clock may not tell
+	// apart.
+	turn uint64
 }
 
 // is reports whether token is the past share's.
@@ -177,12 +180,12 @@ func (s *Server) rememberLocked(id, token, from string, ended bool) {
 			delete(s.past, k)
 			continue
 		}
-		if oldest == "" || p.at.Before(s.past[oldest].at) {
+		if oldest == "" || p.turn < s.past[oldest].turn {
 			oldest = k
 		}
 		if p.from == key {
 			n++
-			if oldestFrom == "" || p.at.Before(s.past[oldestFrom].at) {
+			if oldestFrom == "" || p.turn < s.past[oldestFrom].turn {
 				oldestFrom = k
 			}
 		}
@@ -193,7 +196,8 @@ func (s *Server) rememberLocked(id, token, from string, ended bool) {
 	case len(s.past) >= mostPast:
 		delete(s.past, oldest)
 	}
-	s.past[id] = pastShare{token: sha256.Sum256([]byte(token)), from: key, at: now, ended: ended}
+	s.pastTurn++
+	s.past[id] = pastShare{token: sha256.Sum256([]byte(token)), from: key, at: now, ended: ended, turn: s.pastTurn}
 }
 
 // pastLocked is the past share id, and whether there was one that is
