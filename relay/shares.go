@@ -167,6 +167,12 @@ func (p pastShare) is(token string) bool {
 	return subtle.ConstantTimeCompare(p.token[:], sum[:]) == 1
 }
 
+// turnLocked is the next turn. s.mu is held.
+func (s *Server) turnLocked() uint64 {
+	s.turn++
+	return s.turn
+}
+
 // rememberLocked remembers a share there was. s.mu is held.
 func (s *Server) rememberLocked(id, token, from string, ended bool) {
 	now, key := time.Now(), addrKey(from)
@@ -196,8 +202,7 @@ func (s *Server) rememberLocked(id, token, from string, ended bool) {
 	case len(s.past) >= mostPast:
 		delete(s.past, oldest)
 	}
-	s.pastTurn++
-	s.past[id] = pastShare{token: sha256.Sum256([]byte(token)), from: key, at: now, ended: ended, turn: s.pastTurn}
+	s.past[id] = pastShare{token: sha256.Sum256([]byte(token)), from: key, at: now, ended: ended, turn: s.turnLocked()}
 }
 
 // pastLocked is the past share id, and whether there was one that is
