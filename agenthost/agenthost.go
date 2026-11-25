@@ -1,6 +1,6 @@
 // Package agenthost knows the agent programs kakel hands panes to:
-// how to add kakel's MCP server to each, the prompt that hands a share
-// over, and where each reads the skill that says how to work in panes.
+// how to add kakel's MCP server to each, and the prompt that hands a
+// share over.
 package agenthost
 
 import (
@@ -28,15 +28,11 @@ const (
 // and ConfigAt is where one without a command keeps its servers.
 type Host struct {
 	Name, Called, Cmd, ConfigAt string
-	// skillIn is where under home it reads skills from, and skillEnv
-	// the setting that moves that.
-	skillIn  []string
-	skillEnv string
 }
 
 // All are the agent programs kakel knows how to set up.
 var All = []Host{
-	{Name: ClaudeCode, Called: ClaudeCode, Cmd: "claude", skillIn: []string{".claude", "skills", "kakel"}, skillEnv: "CLAUDE_CONFIG_DIR"},
+	{Name: ClaudeCode, Called: ClaudeCode, Cmd: "claude"},
 	{Name: codex, Called: codex, Cmd: "codex"},
 	{Name: cursor, Called: cursor, ConfigAt: "~/.cursor/mcp.json"},
 	{Name: other, Called: "the host"},
@@ -140,34 +136,31 @@ The server's own instructions say how the tools work, and say this again.
 `, h.setupForAgent(exe), code, mcp.Short)
 }
 
-// skillFile is what a skill's file is called.
-const skillFile = "SKILL.md"
-
-// Skill is the skill for the agent program h.
-func (h Host) Skill(exe string) string { return mcp.Skill(h.setupForAgent(exe)) }
-
-// SkillPath is where the agent program's skill goes: where it reads
-// skills from, or beside the settings for one that has no such place.
-func (h Host) SkillPath() (string, error) {
-	if len(h.skillIn) > 0 {
-		if dir := os.Getenv(h.skillEnv); h.skillEnv != "" && dir != "" {
-			dir, err := fromHome(dir)
-			if err != nil {
-				return "", err
-			}
-			return filepath.Join(append(append([]string{dir}, h.skillIn[1:]...), skillFile)...), nil
+// OldSkills are where an earlier kakel wrote its skill: Claude Code's skills folder, and beside kakel's settings
+// for the agent programs that have none.
+func OldSkills() ([]string, error) {
+	claude := os.Getenv("CLAUDE_CONFIG_DIR")
+	if claude != "" {
+		dir, err := fromHome(claude)
+		if err != nil {
+			return nil, err
 		}
+		claude = dir
+	} else {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return "", err
+			return nil, err
 		}
-		return filepath.Join(append(append([]string{home}, h.skillIn...), skillFile)...), nil
+		claude = filepath.Join(home, ".claude")
 	}
 	dir, err := settings.Dir()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return filepath.Join(dir, "skills", "kakel", skillFile), nil
+	return []string{
+		filepath.Join(claude, "skills", "kakel", "SKILL.md"),
+		filepath.Join(dir, "skills", "kakel", "SKILL.md"),
+	}, nil
 }
 
 // fromHome is a directory an agent program's own setting named, as an
@@ -188,8 +181,3 @@ func fromHome(dir string) (string, error) {
 	rest = strings.TrimPrefix(rest, "/")
 	return filepath.Join(home, rest), nil
 }
-
-// ReadsSkills reports whether the agent program reads skills from a
-// place of its own; for one that does not, SkillPath is beside kakel's
-// settings, for the user to copy from.
-func (h Host) ReadsSkills() bool { return len(h.skillIn) > 0 }

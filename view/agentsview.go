@@ -81,7 +81,6 @@ func (w *Window) shareDialog(st app.Share, u *gunim.UI) {
 		return nil
 	})
 	d.AddAction("Setup…", func(u *gunim.UI) gunim.Intent { w.setupDialog(agenthost.Named(hostName()), u); return nil })
-	d.AddAction("Write Skill", func(u *gunim.UI) gunim.Intent { u.Send(w, app.WriteSkill{Host: hostName()}); return nil })
 	d.AddButton("Stop Sharing", func(u *gunim.UI) gunim.Intent { return app.StopSharing{} })
 	d.OnAccept, d.OnDismiss = widget.Sends(app.DialogClosed{}), widget.Sends(app.DialogClosed{})
 	w.openDialog(d, u)

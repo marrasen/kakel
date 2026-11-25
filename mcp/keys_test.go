@@ -59,9 +59,8 @@ func TestAKeyNameThisDoesNotHaveIsRefusedWithTheOnesItHas(t *testing.T) {
 	}
 }
 
-// A call with neither text nor keys says so: there is nothing in it to
-// send.
-func TestSendingNeitherTextNorKeysIsRefused(t *testing.T) {
+// A call with no steps says so: there is nothing in it to send.
+func TestSendingNoStepsIsRefused(t *testing.T) {
 	panes := &fakePanes{code: "gt1-2222-abc", screen: "$ "}
 	answers := talk(t, panes, use,
 		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":`+
@@ -70,7 +69,7 @@ func TestSendingNeitherTextNorKeysIsRefused(t *testing.T) {
 	if answers[1].Error == nil {
 		t.Fatalf("a call with nothing to send was taken: %+v", answers[1].Result)
 	}
-	if !strings.Contains(answers[1].Error.Message, "keys") {
+	if !strings.Contains(answers[1].Error.Message, "steps") {
 		t.Errorf("it said %q", answers[1].Error.Message)
 	}
 }
@@ -133,19 +132,16 @@ func TestTheToolsSayWhatKeysAndLinesAreFor(t *testing.T) {
 	for _, tl := range listed.Tools {
 		switch tl.Name {
 		case "send_keys":
-			if !strings.Contains(tl.Description, "keys") {
-				t.Errorf("send_keys does not mention keys: %q", tl.Description)
-			}
-			keys, there := tl.InputSchema.Properties["keys"]
+			steps, there := tl.InputSchema.Properties["steps"]
 			if !there {
-				t.Fatalf("send_keys does not take keys: %+v", tl.InputSchema.Properties)
+				t.Fatalf("send_keys does not take steps: %+v", tl.InputSchema.Properties)
 			}
-			if keys.Type != "array" || keys.Items == nil || keys.Items.Type != "string" {
-				t.Errorf("keys is %+v, want an array of strings", keys)
+			if steps.Type != "array" || steps.Items == nil || steps.Items.Type != "string" {
+				t.Errorf("steps is %+v, want an array of strings", steps)
 			}
 			for _, want := range []string{"Escape", "Tab", "F5", "Ctrl+<letter>"} {
-				if !strings.Contains(keys.Description, want) {
-					t.Errorf("keys does not list %s: %q", want, keys.Description)
+				if !strings.Contains(steps.Description, want) {
+					t.Errorf("steps does not list %s: %q", want, steps.Description)
 				}
 			}
 		case "read_pane", "wait_for":
@@ -168,7 +164,7 @@ func TestTheToolsSayWhatKeysAndLinesAreFor(t *testing.T) {
 		if tl.Name != "wait_for" {
 			continue
 		}
-		for _, want := range []string{"never goes quiet", "top", "contains"} {
+		for _, want := range []string{"keeps drawing", "top", "contains"} {
 			if !strings.Contains(tl.Description, want) {
 				t.Errorf("wait_for does not say %q: %q", want, tl.Description)
 			}
@@ -176,124 +172,48 @@ func TestTheToolsSayWhatKeysAndLinesAreFor(t *testing.T) {
 	}
 }
 
-// The rules say what the pane is and who is watching, and stop there.
-//
-// They are not a list of prohibitions. What the tools refuse is refused
-// in the tools; what is left is the part an agent cannot work out for
-// itself, which is that this is somebody's live machine and that some of
-// what a shell does cannot be taken back.
-func TestTheRulesSayWhatThePaneIsAndStopThere(t *testing.T) {
-	for _, want := range []string{
-		"trusted with live machines", "cannot undo", "take a pane back",
-	} {
-		if !strings.Contains(Rules, want) {
-			t.Errorf("the rules do not say %q: %q", want, Rules)
+// The instructions open with the rule, and fit in the 2,048 characters older Claude Code kept of them.
+func TestTheInstructionsSayTheRuleFirstAndFit(t *testing.T) {
+	first, _, _ := strings.Cut(instructions, "\n\n")
+	for _, want := range []string{"real shells", "watches", "cannot undo"} {
+		if !strings.Contains(first, want) {
+			t.Errorf("the first paragraph does not say %q: %q", want, first)
 		}
 	}
-	// Short enough to be read rather than skimmed past.
-	if lines := strings.Count(strings.TrimRight(Rules, "\n"), "\n") + 1; lines > 6 {
-		t.Errorf("the rules are %d lines long", lines)
+	if n := len(instructions); n > 2048 {
+		t.Errorf("the instructions are %d characters", n)
 	}
-	// The short form the pasted prompt carries says the same, in less.
 	for _, want := range []string{"trusted with live machines", "cannot undo"} {
 		if !strings.Contains(Short, want) {
 			t.Errorf("the short rules do not say %q: %q", want, Short)
 		}
 	}
-	if lines := strings.Count(strings.TrimRight(Short, "\n"), "\n") + 1; lines > 3 {
-		t.Errorf("the short rules are %d lines long", lines)
-	}
 }
 
-// A code names a share of panes, and the words say so everywhere an
-// agent reads them.
-//
-// An agent reads the tool schema before it reads any answer. Told it has
-// one pane, it has no reason to call list_panes again, and a share it
-// never looks at again is a share of one pane.
-func TestTheWordsSayACodeNamesAShare(t *testing.T) {
-	for _, want := range []string{"share", "list_panes", "adds panes and takes them out"} {
+// The instructions say what no agent can guess: how to start, how to run a command, where the pane's text ends,
+// and what traps a shell sets.
+func TestTheInstructionsSayWhatAnAgentCannotGuess(t *testing.T) {
+	for _, want := range []string{
+		"use_session_code", "list_panes", `"key:Enter"`, "until", "never a newline",
+		notesMarker, "shell integration", "--no-pager", "clear",
+	} {
 		if !strings.Contains(instructions, want) {
-			t.Errorf("the server's instructions do not say %q:\n%s", want, instructions)
+			t.Errorf("the instructions do not say %q:\n%s", want, instructions)
 		}
 	}
-	if strings.Contains(instructions, "one terminal pane at a time") {
-		t.Errorf("the server's instructions still hand out one pane:\n%s", instructions)
-	}
+}
 
-	said := map[string]string{}
+// The tool descriptions stay short, as an agent reads them all on every turn.
+func TestTheToolDescriptionsStayShort(t *testing.T) {
+	total := 0
 	for _, tl := range toolList() {
-		said[tl.Name] = tl.Description
-	}
-	for _, want := range []string{"share", "lists the panes"} {
-		if !strings.Contains(said["use_session_code"], want) {
-			t.Errorf("use_session_code does not say %q: %q", want, said["use_session_code"])
+		total += len(tl.Description)
+		for _, f := range tl.InputSchema.Properties {
+			total += len(f.Description)
 		}
 	}
-	// The set changes under the agent, which is the one thing it cannot
-	// find out by being careful.
-	for _, want := range []string{"share", "takes them out while you work"} {
-		if !strings.Contains(said["list_panes"], want) {
-			t.Errorf("list_panes does not say %q: %q", want, said["list_panes"])
-		}
-	}
-}
-
-// The workflow says what keys and lines are, so an agent that only ever
-// reads the instructions knows they exist.
-func TestTheWorkflowMentionsKeysAndLines(t *testing.T) {
-	for _, want := range []string{"keys", "lines"} {
-		if !strings.Contains(Workflow, want) {
-			t.Errorf("the workflow does not mention %s: %q", want, Workflow)
-		}
-	}
-}
-
-// read_pane and wait_for say that every answer carries what is known
-// about the command line, and that one of the two sources is a guess.
-//
-// It is the only place an agent is told those fields exist at all.
-func TestTheToolsSayWhatIsKnownAboutTheCommand(t *testing.T) {
-	want := map[string][]string{
-		"read_pane": {"command line", "shell integration", "guess"},
-		// And what ends a wait, including the thing that ends it whatever
-		// else it was told to watch for.
-		"wait_for": {"command line", "shell integration", "guess",
-			"ends when the command you sent finishes", "the quiet is switched off",
-			"a command that finishes still ends it"},
-	}
-	for _, tl := range toolList() {
-		for _, say := range want[tl.Name] {
-			if !strings.Contains(tl.Description, say) {
-				t.Errorf("%s does not say %q: %q", tl.Name, say, tl.Description)
-			}
-		}
-	}
-}
-
-// The workflow says how to run a command, which no agent can guess and
-// nothing else it reads says.
-//
-// It names the key rather than the character: an agent writing JSON
-// escapes a return twice as often as not, and then types a backslash and
-// has to undo it.
-//
-// The hand-over prompt used to say it as well. It stopped, so this is
-// the only telling left.
-func TestTheWorkflowSaysWhatSendsACommand(t *testing.T) {
-	for _, want := range []string{`keys ["Enter"]`, "escape twice"} {
-		if !strings.Contains(Workflow, want) {
-			t.Errorf("the workflow does not say %q: %q", want, Workflow)
-		}
-	}
-}
-
-// And it says not to bother clearing the screen. An agent that clears
-// before every command fills the record the user reads with noise, and
-// read_output already gives it the last command on its own.
-func TestTheWorkflowSaysNotToBotherClearing(t *testing.T) {
-	if !strings.Contains(Workflow, "Avoid clear") {
-		t.Errorf("the workflow does not say to avoid clear: %q", Workflow)
+	if total > 4500 {
+		t.Errorf("the tools' descriptions come to %d characters", total)
 	}
 }
 
@@ -320,7 +240,7 @@ func TestAReadCutToTheMostLinesSaysSo(t *testing.T) {
 		if failed {
 			t.Fatalf("%s with %s failed: %q", tc.what, tc.args, told)
 		}
-		if got := strings.Contains(told, "more lines than a read gives"); got != tc.clamped {
+		if got := strings.Contains(told, "capped at"); got != tc.clamped {
 			t.Errorf("%s with %s said %q", tc.what, tc.args, told)
 		}
 	}
@@ -350,15 +270,13 @@ func TestTheToolsSayHowManyLinesAReadGives(t *testing.T) {
 		if said == "" {
 			t.Fatalf("there is no %s", name)
 		}
-		if !strings.Contains(said, strconv.Itoa(mostLines)) ||
-			!strings.Contains(said, "the answer says so") {
+		if !strings.Contains(said, strconv.Itoa(mostLines)) {
 			t.Errorf("%s never says what happens past %d lines: %q", name, mostLines, said)
 		}
 	}
 }
 
-// An agent is told where the cursor is, and told when the screen is all
-// there is because a full-screen program is drawing.
+// An agent is told where the cursor is when a full-screen program is drawing, and that the screen is all there is.
 func TestTheAnswerSaysWhereTheCursorIsAndWhetherTheScreenIsAllThereIs(t *testing.T) {
 	for _, tc := range []struct {
 		what string
@@ -377,10 +295,7 @@ func TestTheAnswerSaysWhereTheCursorIsAndWhetherTheScreenIsAllThereIs(t *testing
 		if failed {
 			t.Fatalf("%s failed: %q", tc.what, told)
 		}
-		if !strings.Contains(told, "Cursor at row 7, column 2 of the screen.") {
-			t.Errorf("%s did not say where the cursor is: %q", tc.what, told)
-		}
-		if strings.Contains(told, "full-screen program") {
+		if strings.Contains(told, "Cursor") || strings.Contains(told, "full-screen program") {
 			t.Errorf("%s called an ordinary screen full-screen: %q", tc.what, told)
 		}
 
@@ -394,8 +309,7 @@ func TestTheAnswerSaysWhereTheCursorIsAndWhetherTheScreenIsAllThereIs(t *testing
 		if failed {
 			t.Fatalf("%s failed: %q", tc.what, told)
 		}
-		if !strings.Contains(told, "This is a full-screen program: the screen is all there is,"+
-			" and lines above it cannot be read.") {
+		if !strings.Contains(told, "full-screen program: the screen is all there is. Cursor at row 0, column 0") {
 			t.Errorf("%s did not say the screen is all there is: %q", tc.what, told)
 		}
 	}
@@ -452,29 +366,6 @@ func TestMoreKeysThanOneCallPressesIsRefused(t *testing.T) {
 	if len(panes.pressed) > 0 {
 		t.Errorf("the window was told to press %v", panes.pressed)
 	}
-
-	// And the tool says the cap, so an agent need not find it by being
-	// refused.
-	listed := talk(t, &fakePanes{}, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
-	raw, err := json.Marshal(listed[0].Result)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	var got struct {
-		Tools []tool `json:"tools"`
-	}
-	if err := json.Unmarshal(raw, &got); err != nil {
-		t.Fatalf("that is not a tool list: %s", raw)
-	}
-	for _, have := range got.Tools {
-		if have.Name != "send_keys" {
-			continue
-		}
-		if said := have.InputSchema.Properties["keys"].Description; !strings.Contains(
-			said, strconv.Itoa(agent.MostKeys)) {
-			t.Errorf("send_keys does not say how many keys it takes: %q", said)
-		}
-	}
 }
 
 // A read that reached the top of what the pane has kept says so, rather
@@ -499,7 +390,7 @@ func TestAReadOfEverythingThereIsSaysSo(t *testing.T) {
 		if failed {
 			t.Fatalf("the read failed: %q", told)
 		}
-		if got := strings.Contains(told, "everything the pane has kept"); got != tc.says {
+		if got := strings.Contains(told, "nothing above this"); got != tc.says {
 			t.Errorf("all=%v alt=%v said %q", tc.all, tc.alt, told)
 		}
 	}
@@ -527,32 +418,12 @@ func TestTheNotesComeAfterAMarkerTheToolsName(t *testing.T) {
 	if screen != panes.screen {
 		t.Errorf("the screen came back as %q, want %q", screen, panes.screen)
 	}
-	if !strings.Contains(notes, "Cursor at row") {
+	if !strings.Contains(notes, "no shell integration") {
 		t.Errorf("the notes are %q", notes)
 	}
 
-	// And the tools name the marker, so the agent is not left to notice
-	// it.
-	listed := talk(t, &fakePanes{}, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
-	raw, err := json.Marshal(listed[0].Result)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	var got struct {
-		Tools []tool `json:"tools"`
-	}
-	if err := json.Unmarshal(raw, &got); err != nil {
-		t.Fatalf("that is not a tool list: %s", raw)
-	}
-	for _, name := range []string{"read_pane", "wait_for"} {
-		var said string
-		for _, have := range got.Tools {
-			if have.Name == name {
-				said = have.Description
-			}
-		}
-		if !strings.Contains(said, notesMarker) {
-			t.Errorf("%s never names the marker: %q", name, said)
-		}
+	// And the instructions name the marker, so the agent is not left to notice it.
+	if !strings.Contains(instructions, notesMarker) {
+		t.Errorf("the instructions never name the marker")
 	}
 }

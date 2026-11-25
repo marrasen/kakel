@@ -2,8 +2,6 @@ package app
 
 import (
 	"errors"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -213,34 +211,17 @@ func TestAnAskForASecretOutlivesTheCallThatGaveUp(t *testing.T) {
 		t.Fatal("the ask left the pane when the call gave up")
 	}
 
-	// Asking again waits on the same ask, and the user's answer reaches it.
-	second := make(chan bool, 1)
-	go func() {
-		ok, err := c.Secret(sh.Panes[0].ID, "the sudo password", 10*time.Second)
-		second <- ok && err == nil
-	}()
-	// Run the window for a second, so the second call reaches the pane before the user answers.
-	joined := time.Now().Add(time.Second)
-	waitFor(t, a, "the second call", func() bool { return time.Now().After(joined) })
-	if !a.terminal(pane).AskedForASecret() {
-		t.Fatal("the ask is gone before the user answered it")
-	}
-	if n := strings.Count(strings.ReplaceAll(a.terminal(pane).Text(), "\n", ""), "It asked for"); n != 1 {
-		t.Errorf("the pane asks %d times:\n%s", n, a.terminal(pane).Text())
-	}
+	// The user answers between the two calls, and the next call is told at once.
 	_, _ = a.terminal(pane).HandleKey(input.Event{Kind: input.Text, Rune: 'x', NormalText: true})
 	_, _ = a.terminal(pane).HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyEnter})
 	var ok bool
-	waitFor(t, a, "the answer", func() bool {
-		select {
-		case ok = <-second:
-			return true
-		default:
-			return false
-		}
-	})
-	if !ok {
-		t.Fatal("the user typed, and the second call was not told")
+	var err error
+	asAgent(t, a, func() { ok, err = c.Secret(sh.Panes[0].ID, "the sudo password", 10*time.Second) })
+	if err != nil || !ok {
+		t.Fatalf("the user typed between the calls, and the second call said %v, %v", ok, err)
+	}
+	if n := strings.Count(strings.ReplaceAll(a.terminal(pane).Text(), "\n", ""), "It asked for"); n != 1 {
+		t.Errorf("the pane asks %d times:\n%s", n, a.terminal(pane).Text())
 	}
 }
 
@@ -272,39 +253,6 @@ func TestAnAgentOpensAPaneBesideOneItWasGiven(t *testing.T) {
 	}
 }
 
-func TestTheSkillIsWrittenAndAnEditedOneAskedAbout(t *testing.T) {
-	a, _ := agentApp(t)
-	t.Setenv("CLAUDE_CONFIG_DIR", "")
-	set, err := settings.Load(filepath.Join(t.TempDir(), "settings.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	a.settings = set
-	a.handle(WriteSkill{Host: agenthost.ClaudeCode})
-	// The agent picked is kept, as Copy Prompt and Setup keep it.
-	if host, ok := set.AgentHost(); !ok || host != agenthost.ClaudeCode {
-		t.Fatalf("written, the agent kept is %q, %v", host, ok)
-	}
-	path := filepath.Join(os.Getenv("HOME"), ".claude", "skills", "kakel", "SKILL.md")
-	body, err := os.ReadFile(path)
-	if err != nil || !strings.Contains(string(body), "use_session_code") {
-		t.Fatalf("the skill reads %q, %v", body, err)
-	}
-	if err := os.WriteFile(path, []byte("mine"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	a.handle(WriteSkill{Host: agenthost.ClaudeCode})
-	waitFor(t, a, "the question", func() bool { return len(a.st.Asks) == 1 })
-	if q := a.st.Asks[0]; q.Title != "Replace the skill?" || !q.Danger {
-		t.Fatalf("the question is %+v", q)
-	}
-	a.handle(AskAnswered{ID: a.st.Asks[0].ID, Yes: true})
-	waitFor(t, a, "the skill replaced", func() bool {
-		body, _ := os.ReadFile(path)
-		return strings.Contains(string(body), "use_session_code")
-	})
-}
-
 func TestWhatAnAgentTypedIsKept(t *testing.T) {
 	a, code := agentApp(t)
 	c, sh := dial(t, a, code)
@@ -324,16 +272,12 @@ func TestWhatAnAgentTypedIsKept(t *testing.T) {
 	}
 }
 
-// With the path to the program unknown, the skill is refused and a
-// copied prompt warns.
-func TestAnUnknownPathRefusesTheSkill(t *testing.T) {
+// With the path to the program unknown, a copied prompt warns.
+func TestAnUnknownPathWarnsInThePrompt(t *testing.T) {
 	a, _ := agentApp(t)
 	was := exeKnown
 	exeKnown = func() (string, bool) { return "", false }
 	t.Cleanup(func() { exeKnown = was })
-	if err := a.writeSkill(WriteSkill{Host: agenthost.ClaudeCode}); err == nil {
-		t.Fatal("with no path, the skill was written")
-	}
 	a.copyAgentPrompt(agenthost.ClaudeCode)
 	if !slices.ContainsFunc(a.st.Notices, func(n Notice) bool { return n.Title == "kakel path not found" }) {
 		t.Fatalf("with no path, the prompt said %+v", a.st.Notices)

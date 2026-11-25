@@ -431,19 +431,15 @@ func TestWhatTheShellSaidReachesTheAgent(t *testing.T) {
 			`{"name":"read_pane","arguments":{"pane":"`+pane.ID+`"}}}`,
 		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":`+
 			`{"name":"wait_for","arguments":{"pane":"`+pane.ID+`","quiet_ms":30,`+
-			`"timeout_ms":5000}}}`,
-		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":`+
-			`{"name":"read_output","arguments":{"pane":"`+pane.ID+`"}}}`)
+			`"timeout_ms":5000}}}`)
 
 	said := byID(t, answers)
 	screen, failed := textOf(t, said[2])
 	if failed {
 		t.Fatalf("reading failed: %q", screen)
 	}
-	for _, want := range []string{"exit status 1", "That is what you sent"} {
-		if !strings.Contains(screen, want) {
-			t.Errorf("the read does not say %q:\n%s", want, screen)
-		}
+	if !strings.Contains(screen, "exit 1") || strings.Contains(screen, "not yours") {
+		t.Errorf("the read does not say the agent's command exited 1:\n%s", screen)
 	}
 
 	// And the wait says why it ended, which is the window's word for it
@@ -452,16 +448,12 @@ func TestWhatTheShellSaidReachesTheAgent(t *testing.T) {
 	if failed {
 		t.Fatalf("waiting failed: %q", waited)
 	}
-	if !strings.Contains(waited, agent.EndedOnMarks) {
-		t.Errorf("the wait does not say why it ended:\n%s", waited)
+	if !strings.Contains(waited, "exit 1") {
+		t.Errorf("the wait does not say how the command ended:\n%s", waited)
 	}
 
-	// And the last command's output comes back through the same layers,
-	// carrying what the window said about where it began.
-	printed, failed := textOf(t, said[4])
-	if failed {
-		t.Fatalf("reading the output failed: %q", printed)
-	}
+	// And the wait carries the last command's output through the same layers, with what the window said about it.
+	printed := waited
 	if !strings.Contains(printed, "shell.png") {
 		t.Errorf("the output never reached the agent:\n%s", printed)
 	}

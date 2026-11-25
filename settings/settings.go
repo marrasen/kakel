@@ -185,6 +185,8 @@ type stored struct {
 	// TrayHinted says kakel has told the user, once, that it started in
 	// the tray with no window.
 	TrayHinted bool `json:"trayHinted,omitempty"`
+	// OldSkillOffered says kakel has offered, once, to remove the skill an earlier kakel wrote.
+	OldSkillOffered bool `json:"oldSkillOffered,omitempty"`
 	// ServeAtStart is what kakel does at start about serving its window
 	// again, when it was served as it last closed: ask, as when empty,
 	// ServeAlways or ServeNever.
@@ -1904,6 +1906,29 @@ func (s *Settings) PutTrayHinted() error {
 	}
 	before := s.have
 	s.have.TrayHinted = true
+	if err := s.saveLocked(); err != nil {
+		s.have = before
+		return err
+	}
+	return nil
+}
+
+// OldSkillOffered reports whether kakel has offered to remove the skill an earlier kakel wrote.
+func (s *Settings) OldSkillOffered() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.have.OldSkillOffered
+}
+
+// PutOldSkillOffered keeps that kakel offered to remove the old skill, and saves.
+func (s *Settings) PutOldSkillOffered() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.rereadLocked(); err != nil {
+		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
+	}
+	before := s.have
+	s.have.OldSkillOffered = true
 	if err := s.saveLocked(); err != nil {
 		s.have = before
 		return err

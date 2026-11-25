@@ -47,9 +47,9 @@ func (h *Typing) OutputFrom(at uiterm.Reading) (uint64, string, error) {
 	mine := at.Cmd.Running || (h.sent && at.Cmd.Done > h.done)
 	switch {
 	case marked && (!h.sent || mine):
-		return from, "This is what the last command printed, from where the shell said its output began.", nil
+		return from, "", nil
 	case h.sent:
-		return h.typedOn(), "This shell does not say where a command's output begins, so this is everything the pane has said since you last typed. It starts on the line you typed at, so the first line is the prompt with your command echoed after it.", nil
+		return h.typedOn(), "everything since you last typed, starting with your command line", nil
 	}
 	return 0, "", errors.New("nothing here knows where the last command's output began: this shell does not mark its commands, and you have typed nothing in this pane. Read the pane with read_pane instead")
 }

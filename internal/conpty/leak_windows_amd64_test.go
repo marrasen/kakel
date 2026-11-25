@@ -45,13 +45,27 @@ func openConsoles(t *testing.T) int {
 	return n
 }
 
+// settledConsoles is openConsoles once the consoles earlier tests closed have finished exiting, as nothing in
+// this package runs in parallel.
+func settledConsoles(t *testing.T) int {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		n := openConsoles(t)
+		if n == 0 || time.Now().After(deadline) {
+			return n
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
 // A console closed while its program runs, and the program then
 // killed, as a pane closes, leaves no OpenConsole running.
 func TestAConsoleClosedUnderItsProgramEndsItsHost(t *testing.T) {
 	if chosen() == system {
 		t.Skip("OpenConsole is not in use")
 	}
-	before := openConsoles(t)
+	before := settledConsoles(t)
 	c, err := New(80, 24)
 	if err != nil {
 		t.Fatal(err)
@@ -113,7 +127,7 @@ func TestAConsoleNeverUsedEndsItsHost(t *testing.T) {
 	if chosen() == system {
 		t.Skip("OpenConsole is not in use")
 	}
-	before := openConsoles(t)
+	before := settledConsoles(t)
 	c, err := New(80, 24)
 	if err != nil {
 		t.Fatal(err)

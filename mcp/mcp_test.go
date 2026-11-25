@@ -360,7 +360,7 @@ func TestItSaysWhatItIsAndWhatItCanDo(t *testing.T) {
 
 	raw, _ = json.Marshal(answers[1].Result)
 	for _, want := range []string{
-		"use_session_code", "list_panes", "read_pane", "read_output", "send_keys",
+		"use_session_code", "list_panes", "read_pane", "send_keys",
 		"ask_for_secret", "restart_pane", "open_pane", "wait_for",
 	} {
 		if !strings.Contains(string(raw), want) {
@@ -375,7 +375,7 @@ func TestItSaysWhatItIsAndWhatItCanDo(t *testing.T) {
 	if err := json.Unmarshal(raw, &listed); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if len(listed.Tools) != 9 {
+	if len(listed.Tools) != 8 {
 		var names []string
 		for _, tl := range listed.Tools {
 			names = append(names, tl.Name)
@@ -513,7 +513,7 @@ func TestWaitingSaysWhenItGaveUp(t *testing.T) {
 	if !strings.Contains(text, "still going") {
 		t.Errorf("it did not give back the screen: %q", text)
 	}
-	if !strings.Contains(text, "time ran out") {
+	if !strings.Contains(text, "timed out") {
 		t.Errorf("it did not say it gave up: %q", text)
 	}
 }
@@ -529,7 +529,7 @@ func TestAFinishedProgramIsSaidPlainly(t *testing.T) {
 			`{"name":"read_pane","arguments":{"pane":"1.1"}}}`)
 
 	text, _ := textOf(t, answers[1])
-	if !strings.Contains(text, "has finished") {
+	if !strings.Contains(text, "the program has exited") {
 		t.Errorf("it said %q", text)
 	}
 }
@@ -689,7 +689,7 @@ func TestItSaysWhatAClientNeedsToKnow(t *testing.T) {
 		said.ServerInfo.Version == "" {
 		t.Errorf("it did not say what it is: %s", raw)
 	}
-	if !strings.Contains(said.Instructions, "session code") {
+	if !strings.Contains(said.Instructions, "use_session_code") {
 		t.Errorf("it did not say how to get a pane: %q", said.Instructions)
 	}
 }
@@ -717,11 +717,8 @@ func TestTheInitializeAnswerCarriesTheWorkflow(t *testing.T) {
 			t.Errorf("the instructions never mention %s: %q", want, said.Instructions)
 		}
 	}
-	if !strings.Contains(said.Instructions, Workflow) {
-		t.Errorf("the instructions do not carry the workflow: %q", said.Instructions)
-	}
-	if !strings.Contains(said.Instructions, Rules) {
-		t.Errorf("the instructions do not carry the rules: %q", said.Instructions)
+	if said.Instructions != instructions {
+		t.Errorf("the instructions are %q", said.Instructions)
 	}
 }
 
@@ -748,18 +745,17 @@ func TestEveryToolSaysWhatItTakes(t *testing.T) {
 	if err := json.Unmarshal(raw, &listed); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if len(listed.Tools) != 9 {
+	if len(listed.Tools) != 8 {
 		t.Fatalf("it offers %d tools", len(listed.Tools))
 	}
 	needs := map[string][]string{
 		"use_session_code": {"code"},
 		"list_panes":       nil,
 		"read_pane":        {"pane"},
-		"read_output":      {"pane"},
 		"ask_for_secret":   {"pane", "what"},
 		"restart_pane":     {"pane"},
 		"open_pane":        {"pane"},
-		"send_keys":        {"pane"},
+		"send_keys":        {"pane", "steps"},
 		"wait_for":         {"pane"},
 	}
 	for _, tl := range listed.Tools {
@@ -975,48 +971,48 @@ func TestAScreenSaysWhatIsKnownAboutTheCommand(t *testing.T) {
 	}{{
 		what: "a shell that says nothing, before the agent has typed",
 		pane: func(f *fakePanes) { f.screen = "$ " },
-		says: []string{"does not tell kakel", "Nothing has been typed here yet"},
-		not:  []string{"exit status", "still running"},
+		says: []string{"no shell integration", "nothing typed here yet"},
+		not:  []string{"exit", "still running"},
 	}, {
 		what: "a shell that says nothing, while what was sent runs",
 		pane: func(f *fakePanes) { f.screen, f.watching = "$ make", true },
-		says: []string{"does not tell kakel", "has not come back", "still running"},
+		says: []string{"no shell integration", "prompt is not back", "still running"},
 	}, {
 		what: "a shell that says nothing, with the prompt back",
 		pane: func(f *fakePanes) { f.screen, f.watching, f.back = "$ ", true, true },
-		says: []string{"does not tell kakel", "prompt you last typed at is back", "usually"},
+		says: []string{"no shell integration", "prompt is back", "probably"},
 	}, {
 		what: "a command running",
 		pane: func(f *fakePanes) { f.screen, f.marks, f.running = "$ make", true, true },
-		says: []string{"a command is running", "call wait_for again"},
-		not:  []string{"does not tell kakel"},
+		says: []string{"a command is still running", "call wait_for"},
+		not:  []string{"no shell integration"},
 	}, {
 		what: "a command the agent sent, finished",
 		pane: func(f *fakePanes) {
 			f.screen, f.marks, f.done = "$ ", true, 1
 			f.status, f.hasStatus, f.yours = 2, true, true
 		},
-		says: []string{"finished with exit status 2", "That is what you sent"},
-		not:  []string{"does not tell kakel", "may be the user's"},
+		says: []string{"exit 2"},
+		not:  []string{"no shell integration", "not yours"},
 	}, {
 		what: "a command that finished before the agent typed",
 		pane: func(f *fakePanes) {
 			f.screen, f.marks, f.done, f.hasStatus = "$ ", true, 1, true
 		},
-		says: []string{"exit status 0", "may be the user's rather than yours"},
+		says: []string{"exit 0, from a command that is not yours"},
 	}, {
 		what: "a shell that marks but gave no status",
 		pane: func(f *fakePanes) { f.screen, f.marks, f.done = "$ ", true, 1 },
-		says: []string{"gave no exit status"},
+		says: []string{"no exit status"},
 	}, {
 		what: "a full-screen program, which has no command line to report",
 		pane: func(f *fakePanes) { f.screen, f.alt = "~ VIM ~", true },
-		not:  []string{"does not tell kakel", "command is running", "exit status"},
+		not:  []string{"no shell integration", "command is still running", "exit"},
 	}, {
 		what: "a pane whose program has gone",
 		pane: func(f *fakePanes) { f.screen, f.gone = "logout", true },
-		says: []string{"has finished"},
-		not:  []string{"does not tell kakel", "Read the screen and judge"},
+		says: []string{"the program has exited"},
+		not:  []string{"no shell integration", "judge from the screen"},
 	}} {
 		t.Run(tc.what, func(t *testing.T) {
 			panes := &fakePanes{code: "gt1-2222-abc"}
@@ -1062,91 +1058,80 @@ func TestAWaitSaysWhyItEnded(t *testing.T) {
 	if failed {
 		t.Fatalf("waiting failed: %s", text)
 	}
-	if !strings.Contains(text, agent.EndedOnMarks) {
-		t.Errorf("the answer does not say why the waiting ended:\n%s", text)
+	if !strings.Contains(text, "exit 0") {
+		t.Errorf("the answer does not say how the command ended:\n%s", text)
 	}
-	if strings.Contains(text, "time ran out") {
+	if strings.Contains(text, "timed out") {
 		t.Errorf("the answer says the time ran out:\n%s", text)
 	}
 }
 
-// read_output asks the window for the last command's output and hands it
-// back with what the window said about it.
-func TestReadingTheOutputOfTheLastCommand(t *testing.T) {
-	panes := &fakePanes{
-		code: "gt1-2222-abc", screen: "$ ", output: "altscreen.png\nshell.png",
-		marks: true, done: 1, hasStatus: true, yours: true,
-	}
-	answers := talk(t, panes,
-		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":`+
-			`{"name":"use_session_code","arguments":{"code":"gt1-2222-abc"}}}`,
-		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":`+
-			`{"name":"read_output","arguments":{"pane":"1.1"}}}`)
-
-	text, failed := textOf(t, answers[1])
-	if failed {
-		t.Fatalf("reading the output failed: %s", text)
-	}
-	if !strings.Contains(text, "shell.png") {
-		t.Errorf("the answer does not carry the output:\n%s", text)
-	}
-	if !strings.Contains(text, "this is what the last command printed") {
-		t.Errorf("the answer drops what the window said about it:\n%s", text)
-	}
-	// And the screen the pane is showing is not what came back.
-	if strings.Contains(text, "$ ") {
-		t.Errorf("the answer carries the screen as well:\n%s", text)
-	}
-
-	// None asked for is as much as one read gives.
-	panes.mu.Lock()
-	most := panes.mostOutput
-	panes.mu.Unlock()
-	if most != mostLines {
-		t.Errorf("it asked for %d lines, want %d", most, mostLines)
-	}
-}
-
-// A pane with no boundary says so, and the failure is the tool's answer
-// rather than a broken call: the agent can act on it.
-func TestReadingTheOutputWithNoBoundarySaysSo(t *testing.T) {
-	panes := &fakePanes{code: "gt1-2222-abc", screen: "$ "}
-	answers := talk(t, panes,
-		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":`+
-			`{"name":"use_session_code","arguments":{"code":"gt1-2222-abc"}}}`,
-		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":`+
-			`{"name":"read_output","arguments":{"pane":"1.1"}}}`)
-
-	text, failed := textOf(t, answers[1])
-	if !failed {
-		t.Fatalf("it answered as though it had the output: %s", text)
-	}
-	if !strings.Contains(text, "where the last command's output began") {
-		t.Errorf("it does not say why: %q", text)
-	}
-}
-
-// An agent may ask for fewer lines, and too many are cut to what one
-// read gives.
-func TestReadingTheOutputTakesALineCount(t *testing.T) {
-	for _, tc := range []struct {
-		asked string
-		want  int
-	}{
-		{`,"lines":20`, 20},
-		{`,"lines":100000`, mostLines},
-	} {
-		panes := &fakePanes{code: "gt1-2222-abc", screen: "$ ", output: "one\ntwo"}
-		talk(t, panes,
-			`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":`+
-				`{"name":"use_session_code","arguments":{"code":"gt1-2222-abc"}}}`,
-			`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":`+
-				`{"name":"read_output","arguments":{"pane":"1.1"`+tc.asked+`}}}`)
+// A wait that ends on the shell's marks, or on the prompt coming back, gives what the command printed, not the screen.
+func TestAWaitGivesWhatTheCommandPrinted(t *testing.T) {
+	for _, because := range []string{agent.EndedOnMarks, agent.EndedOnPrompt} {
+		panes := &fakePanes{code: "gt1-2222-abc", screen: "$ ", output: "altscreen.png\nshell.png", because: because}
+		answers := talk(t, panes, useCode,
+			`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"wait_for","arguments":{"pane":"1.1"}}}`)
+		text, failed := textOf(t, answers[1])
+		if failed {
+			t.Fatalf("waiting failed: %s", text)
+		}
+		if !strings.Contains(text, "shell.png") || strings.Contains(text, "$ ") {
+			t.Errorf("ended because %s, the answer is not the output:\n%s", because, text)
+		}
 		panes.mu.Lock()
 		most := panes.mostOutput
 		panes.mu.Unlock()
-		if most != tc.want {
-			t.Errorf("asked%s: it asked the window for %d lines, want %d", tc.asked, most, tc.want)
+		if most != mostLines {
+			t.Errorf("it asked for %d lines of output, want %d", most, mostLines)
+		}
+	}
+}
+
+// A wait that ended some other way gives the screen, and so does one whose output cannot be picked out.
+func TestAWaitGivesTheScreenWhenThereIsNoOutput(t *testing.T) {
+	for _, tc := range []struct {
+		because, output string
+	}{
+		{agent.EndedOnQuiet, "shell.png"},
+		{agent.EndedOnMarks, ""},
+	} {
+		panes := &fakePanes{code: "gt1-2222-abc", screen: "$ ", output: tc.output, because: tc.because}
+		answers := talk(t, panes, useCode,
+			`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"wait_for","arguments":{"pane":"1.1"}}}`)
+		text, failed := textOf(t, answers[1])
+		if failed {
+			t.Fatalf("waiting failed: %s", text)
+		}
+		if !strings.HasPrefix(text, "$ ") {
+			t.Errorf("ended because %s with output %q, the answer is not the screen:\n%s", tc.because, tc.output, text)
+		}
+	}
+}
+
+// An agent on an older protocol is answered in its own version, and one asking for an unknown version gets ours.
+func TestInitializeAnswersInTheVersionAskedFor(t *testing.T) {
+	for asked, want := range map[string]string{
+		"2024-11-05": "2024-11-05", "2025-03-26": "2025-03-26", "2025-06-18": "2025-06-18", "2099-01-01": protocolVersion,
+	} {
+		answers := talk(t, &fakePanes{}, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":`+
+			`{"protocolVersion":"`+asked+`","capabilities":{},"clientInfo":{"name":"x","version":"1"}}}`)
+		raw, _ := json.Marshal(answers[0].Result)
+		var said struct {
+			Version string `json:"protocolVersion"`
+		}
+		if err := json.Unmarshal(raw, &said); err != nil || said.Version != want {
+			t.Errorf("asked for %s, it answered %s", asked, raw)
+		}
+	}
+}
+
+// Only the tools that look at a pane say they are read only, so a client may let those through without asking.
+func TestOnlyTheReadingToolsAreReadOnly(t *testing.T) {
+	reading := map[string]bool{"use_session_code": true, "list_panes": true, "read_pane": true, "wait_for": true}
+	for _, tl := range toolList() {
+		if tl.Annotations.ReadOnly != reading[tl.Name] {
+			t.Errorf("%s says read only %v", tl.Name, tl.Annotations.ReadOnly)
 		}
 	}
 }
@@ -1162,8 +1147,8 @@ func TestTheAnswerToAnAskForASecretSaysWhatHappened(t *testing.T) {
 		says  string
 		not   string
 	}{
-		{true, "The user typed something", "not typed anything"},
-		{false, "has not typed anything", "typed something into the pane"},
+		{true, "The user typed it", "Not typed yet"},
+		{false, "Not typed yet", "The user typed it"},
 	} {
 		panes := &fakePanes{code: "gt1-2222-abc", screen: "$ ", typesSecret: tc.typed}
 		answers := talk(t, panes,
@@ -1244,7 +1229,7 @@ func TestListingPanesSaysWhatEachOneAllows(t *testing.T) {
 			t.Errorf("the list does not say %q: %q", want, text)
 		}
 	}
-	if !strings.Contains(text, "send_keys is refused") {
+	if !strings.Contains(text, "1.2: bash on nyx, 100x30 (read only)") {
 		t.Errorf("the list does not say the second pane is read only: %q", text)
 	}
 }

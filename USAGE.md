@@ -320,8 +320,6 @@ The dialog's buttons:
 - **Copy Code** copies the code alone.
 - **Setup…** shows the command line, or the JSON for a host set up by a
   file, that adds the server, with a button to copy it.
-- **Write Skill** saves a `SKILL.md` where that host reads skills from,
-  and says where it went. `kakel -mcp-skill` prints the same file.
 - **Stop Sharing** ends the share, and the code stops working. Taking
   the last pane out does the same.
 

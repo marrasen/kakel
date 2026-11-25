@@ -19,7 +19,7 @@ GOOS=linux   GOARCH=amd64 go build -o kakel .
 On Windows, `-ldflags -H=windowsgui` links kakel as a windowed program.
 Without it kakel is a console program: started from a shortcut, Windows
 gives it a console window, which flashes up before kakel lets it go.
-Built that way, `kakel -list-fonts` and `kakel -mcp-skill` still print
+Built that way, `kakel -list-fonts` still prints
 to the terminal they are run from.
 
 `arm64` builds too, on both, though nobody has run one.

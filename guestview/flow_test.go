@@ -547,8 +547,9 @@ func TestWhyAConnectionIsNotBack(t *testing.T) {
 func TestAWakeTriesNow(t *testing.T) {
 	quick(t)
 	paces.tries = []time.Duration{time.Hour}
-	// Longer than twenty sleeps of a millisecond, which are 16 on Windows.
-	paces.wakes = 600 * time.Millisecond
+	paces.wakes = time.Second
+	// A dial on its way is never stuck here, however slow the machine.
+	paces.stuck = time.Hour
 	s := newFake(in("p1"))
 	c := newCourse(t, true, nil, s)
 	c.on(PageWindow)
@@ -556,12 +557,13 @@ func TestAWakeTriesNow(t *testing.T) {
 	s.end(guest.ErrLost)
 	c.until("lost", func() bool { return c.state().Lost })
 	time.Sleep(paces.wakes + 50*time.Millisecond)
-	n := c.dials()
+	n := c.begun()
+	// Each wake comes once the dial before it is over, when a try is due again.
 	for range 20 {
 		c.wake <- struct{}{}
-		time.Sleep(time.Millisecond)
+		c.begun()
 	}
-	if got := c.dials() - n; got != 1 {
+	if got := c.begun() - n; got != 1 {
 		t.Errorf("twenty wakes at once tried %d times", got)
 	}
 	// With the connection there, a wake is nothing.
@@ -569,11 +571,10 @@ func TestAWakeTriesNow(t *testing.T) {
 	time.Sleep(paces.wakes + 50*time.Millisecond)
 	c.wake <- struct{}{}
 	c.until("back", func() bool { return !c.state().Lost })
-	n = c.dials()
+	n = c.begun()
 	time.Sleep(paces.wakes + 50*time.Millisecond)
 	c.wake <- struct{}{}
-	time.Sleep(50 * time.Millisecond)
-	if c.dials() != n {
+	if c.begun() != n {
 		t.Error("a wake dialled over a connection there is")
 	}
 }
@@ -769,10 +770,10 @@ func TestLeaving(t *testing.T) {
 	away := newCourse(t, true, nil, errors.New("no network"))
 	away.do(Leave{})
 	away.on(PageOver)
-	n := away.dials()
+	n := away.begun()
 	time.Sleep(20 * time.Millisecond)
-	if away.keep.kept() || away.dials() != n {
-		t.Errorf("having left with no connection, it dials on: %d after %d", away.dials(), n)
+	if got := away.begun(); away.keep.kept() || got != n {
+		t.Errorf("having left with no connection, it dials on: %d after %d", got, n)
 	}
 }
 
@@ -984,6 +985,26 @@ func names(n int) []string {
 	return out
 }
 
+// begun is how many dials the flow has begun, once it has taken every wake sent and has no dial on its way.
+func (c *course) begun() int {
+	type at struct {
+		dial     int
+		dialling bool
+	}
+	for {
+		if len(c.wake) > 0 {
+			runtime.Gosched()
+			continue
+		}
+		got := make(chan at)
+		c.f.post(func() { got <- at{c.f.dial, c.f.drop != nil} })
+		if a := <-got; !a.dialling {
+			return a.dial
+		}
+		runtime.Gosched()
+	}
+}
+
 // made are the panes with a terminal, and taken what they all take.
 func (c *course) made() (ids []string, taken int) {
 	done := make(chan struct{})
@@ -1178,8 +1199,10 @@ func TestDialsKeepToAPace(t *testing.T) {
 	// a relay of as many at once, and one each so often, lets through.
 	within := func(t *testing.T, c *course, began time.Time) {
 		t.Helper()
+		// Wait for the first dial, whose goroutine a busy machine may run late.
+		c.until("dialled", func() bool { return c.dials() > 0 })
 		took := time.Since(began)
-		if n, most := c.dials(), 10+int(took/(40*ms)); n > most || n == 0 {
+		if n, most := c.dials(), 10+int(took/(40*ms)); n > most {
 			t.Errorf("it dialled %d times in %v, and a relay takes %d", n, took, most)
 		}
 	}

@@ -1133,6 +1133,7 @@ func (a *app) run(ctx context.Context) error {
 	a.takeLauncherKey()
 	a.startUpdates()
 	a.sayCrashed()
+	a.offerOldSkillRemoval()
 	a.startPings()
 	a.startGit()
 	switch {
@@ -1483,8 +1484,6 @@ func failedTitle(in gunim.Intent) string {
 		return "Couldn't change what ssh tunnels may connect"
 	case SharePane, UnsharePane, StopSharing:
 		return "Couldn't change what is shared"
-	case WriteSkill:
-		return "Couldn't write the skill"
 	case ShowScrollback:
 		return "Couldn't show the scrollback"
 	case MakeKey:
@@ -1819,8 +1818,6 @@ func (a *app) handle(in gunim.Intent) {
 		a.setAgentMay(in)
 	case CopyAgentPrompt:
 		a.copyAgentPrompt(in.Host)
-	case WriteSkill:
-		err = a.writeSkill(in)
 	case CopyAgentSetup:
 		a.copyAgentSetup(in.Host)
 	case StartServing:

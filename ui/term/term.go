@@ -817,13 +817,15 @@ func (t *Terminal) pastedSecret(text string) {
 	t.answer(ask)
 }
 
-// EndSecret ends an ask that nobody answered, and says so on the pane so
-// that a line asking for a password is not left sitting there with
-// nothing behind it.
+// EndSecret ends an ask that nobody answered and forgets an answer nobody collected. It says so on the pane when an
+// ask was waiting, so a line asking for a password is not left with nothing behind it.
 //
 // A later ask is left alone: this ends the one it was given.
 func (t *Terminal) EndSecret(which *SecretAsk) {
 	t.secretMu.Lock()
+	if which == nil || t.answered == which {
+		t.answered = nil
+	}
 	if which != nil && t.secret != which {
 		t.secretMu.Unlock()
 		return
@@ -2168,9 +2170,7 @@ func (t *Terminal) finish(r *run) {
 	t.endWatchers()
 	// And anything waiting for the user to type into that program:
 	// typing into a pane whose program has gone tells nobody anything.
-	if t.AskedForASecret() {
-		t.EndSecret(nil)
-	}
+	t.EndSecret(nil)
 	t.tellHost()
 	go t.collect(r)
 }

@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -27,10 +28,12 @@ import (
 	"github.com/marrasen/kakel/internal/build"
 )
 
-// protocolVersion is the one version this speaks. An agent that asks
-// for another is answered with this one, which is what the protocol
-// says to do when the version asked for is not on offer.
+// protocolVersion is the newest version this speaks, and the answer to a client asking for one it does not.
 const protocolVersion = "2025-06-18"
+
+// protocolVersions are the versions this speaks: the tools are the same in each, and an older client ignores the
+// fields it does not know.
+var protocolVersions = []string{"2025-06-18", "2025-03-26", "2024-11-05"}
 
 // longestLine caps one message, so a client that sends no newline
 // cannot make this process hold an unbounded buffer.
@@ -263,7 +266,12 @@ type Until struct {
 // so an agent can ask something else during a wait. Only answersAtOnce
 // tool calls run at a time, and one past that is turned away. A tool call
 // is cancelled by notifications/cancelled and when Serve returns.
-func Serve(ctx context.Context, in io.Reader, out io.Writer, panes Panes) (err error) {
+func Serve(ctx context.Context, in io.Reader, out io.Writer, panes Panes) error {
+	return serve(ctx, in, out, panes, nil)
+}
+
+// serve is Serve, running onCancelled once it has cancelled the calls still running, for a test to act then.
+func serve(ctx context.Context, in io.Reader, out io.Writer, panes Panes, onCancelled func()) (err error) {
 	r := bufio.NewReaderSize(in, 4096)
 	s := &server{panes: panes, out: json.NewEncoder(out),
 		broke: make(chan struct{}), stop: ctx.Done(), calls: map[string]context.CancelFunc{}}
@@ -280,6 +288,9 @@ func Serve(ctx context.Context, in io.Reader, out io.Writer, panes Panes) (err e
 	defer func() {
 		close(done)
 		cancelCalls()
+		if onCancelled != nil {
+			onCancelled()
+		}
 		running.Wait()
 		if err == nil {
 			// An answer written on one of those goroutines may have been
@@ -350,9 +361,21 @@ func Serve(ctx context.Context, in io.Reader, out io.Writer, panes Panes) (err e
 
 		select {
 		case atOnce <- struct{}{}:
+			// Tracked here, before its goroutine runs, so a cancel sent right after it finds it.
+			ctx, cancel := callCtx, context.CancelFunc(func() {})
+			forget := func() {}
+			if peek.Method == "tools/call" && len(peek.ID) > 0 {
+				ctx, cancel = context.WithCancel(callCtx)
+				forget = s.track(peek.ID, cancel)
+			}
 			running.Go(func() {
-				defer func() { <-atOnce }()
-				s.answerOne(callCtx, line)
+				answer, reply := s.handle(ctx, line)
+				forget()
+				cancel()
+				<-atOnce
+				if reply {
+					s.send(answer)
+				}
 			})
 		default:
 			s.answerBusy(callCtx, line)
@@ -541,13 +564,6 @@ func (s *server) handle(ctx context.Context, line []byte) (response, bool) {
 		// A tool call has to be answered, so one sent as a notification is not run.
 		return response{}, false
 	}
-	if req.Method == "tools/call" {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithCancel(ctx)
-		defer s.track(req.ID, cancel)()
-		defer cancel()
-	}
-
 	result, rerr := s.call(ctx, req)
 	if notice {
 		return response{}, false
@@ -566,8 +582,15 @@ func (s *server) handle(ctx context.Context, line []byte) (response, bool) {
 func (s *server) call(ctx context.Context, req request) (any, *rpcError) {
 	switch req.Method {
 	case "initialize":
+		var params struct {
+			Version string `json:"protocolVersion"`
+		}
+		version := protocolVersion
+		if json.Unmarshal(req.Params, &params) == nil && slices.Contains(protocolVersions, params.Version) {
+			version = params.Version
+		}
 		return map[string]any{
-			"protocolVersion": protocolVersion,
+			"protocolVersion": version,
 			"capabilities":    map[string]any{"tools": map[string]any{}},
 			"serverInfo": map[string]any{
 				"name":    "kakel",
@@ -615,50 +638,16 @@ func fail(id json.RawMessage, code int, why string) response {
 	return response{JSONRPC: "2.0", ID: id, Error: &rpcError{Code: code, Message: why}}
 }
 
-// instructions is what an agent is told about this server when it
-// connects: what a share is, how to work in a pane of one, and the
-// rules. It is the only place an agent is told those, so the prompt the
-// user pastes says none of it.
-var instructions = strings.Join([]string{
-	`kakel hands you terminal panes to work in.
+// instructions is what an agent is told about this server when it connects, with the rule first.
+const instructions = `kakel gives you terminal panes the user shares with you. They are real shells on real machines. The user watches them and can take one back at any time. Ask before anything you cannot undo.
 
-The user puts panes into a share -- on whatever machines, as whatever
-user -- and gives you one session code for the whole share. Call
-use_session_code with it before anything else. The answer lists the
-panes in the share, and every other tool takes a pane's name.
+Call use_session_code first, with the code the user gave you. It lists the panes, and every other tool takes a pane name. The user adds and removes panes while you work, so list_panes shows what you have now.
 
-The share is not a fixed set. The user adds panes and takes them out
-while you work, so call list_panes when you want to know what you have
-now.`,
-	Workflow,
-	Rules,
-}, "\n\n")
+Run a command with send_keys and steps ["type:<command>", "key:Enter", "until"]. The answer is what the command printed and its exit status. Enter is a key, never a newline in the text. read_pane reads the screen. wait_for waits for something already running. ask_for_secret has the user type a password you must not see: start the command that prompts for it first, with steps ending in "until:<its prompt>", then ask, then wait_for.
 
-// Workflow is how an agent works in a pane of its share. This
-// server's initialize answer and the skill kakel writes both carry
-// it, so the two cannot drift apart.
-const Workflow = `read_pane gives you the pane's screen as plain text, and takes lines to read that many,
-back through what has scrolled off the top. read_output gives you what the last command
-printed instead of a rectangle of the screen, which is what you want after running one. send_keys types text in exactly as given, and
-presses the keys named in keys: Enter, Escape, Tab, the arrows, F1 to F12, Ctrl+C. Run a
-command with keys ["Enter"] rather than a return in the text, which is easy to escape twice
-and then types a backslash; text ending in one is refused rather than typed. It does not
-wait, so call wait_for before you read again.
-wait_for on its own ends when the command you sent finishes, and then gives you what that
-command printed rather than the screen. Failing that it ends when the pane has said
-nothing for quiet_ms, which is about three quarters of a second unless you ask for another.
-A shell with shell integration on says when a command finishes and what it exited with. A
-shell without it says nothing, and then the prompt coming back is all there is to go on,
-which is a guess: read the screen before you report a result. Give contains when you know
-what the screen will say, and it ends on that text instead. Every answer says which of
-those ended the waiting, and says when the time ran out instead. A command whose output goes through a pager -- systemctl, journalctl, git log,
-man -- needs --no-pager or a pipe to cat, or you will be stuck in less, where q gets you out.
-list_panes is the panes in your share now, and that is all it lists: the user can put
-one in or take one back while you work. In an answer with
-a screen, the screen ends at a line reading -- kakel --, and the rest is kakel talking.
-Avoid clear: read_output already gives you the last command's output on its own. Clearing
-hides nothing either way -- these tools stop reading above it, and the user can still
-scroll up to everything that was there.`
+In an answer, the pane's text ends at the line "-- kakel --", and kakel's notes follow it. Without shell integration kakel cannot tell when a command ends, so the notes say it is a guess: read the screen before you report a result.
+
+Add --no-pager or pipe to cat, because a pager traps you (q leaves less). Do not run clear.`
 
 // Short is the rules in one paragraph, for the prompt the user pastes.
 //
@@ -668,16 +657,3 @@ scroll up to everything that was there.`
 // with a cost in it either way.
 const Short = `You are being trusted with live machines. A pane is a real shell and it does
 whatever you type into it. Ask before anything you cannot undo.`
-
-// Rules is what an agent may do in the panes it has been given, and
-// what it may not.
-//
-// It is short on purpose. A list of prohibitions invites an agent to
-// work out what is not on it; being told plainly that this is somebody's
-// machine and that the trust is real does the same work in fewer words.
-// What the tools refuse is refused in the tools, not here, and the user
-// is watching and deciding as it goes.
-const Rules = `You are being trusted with live machines. A pane is a real shell, running as whoever
-the user set it up as, and it does whatever you type into it. Do not spend that trust: ask
-before anything you cannot undo. They are watching these screens and can take a pane back
-at any moment.`

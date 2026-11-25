@@ -3,6 +3,7 @@
 package webbundle_test
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"slices"
@@ -31,10 +32,7 @@ func TestTheEmbeddedBundleIsSound(t *testing.T) {
 func TestABuildForABrowserEmbedsNothing(t *testing.T) {
 	cmd := exec.Command("go", "list", "-tags", "webclient", "-f", "{{.GoFiles}} {{.EmbedPatterns}}", ".")
 	cmd.Env = append(os.Environ(), "GOOS=js", "GOARCH=wasm", "CGO_ENABLED=0", "GOFLAGS=")
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatal(err)
-	}
+	out := goOutput(t, cmd)
 	if got := strings.TrimSpace(string(out)); got != "[none.go webbundle.go] []" {
 		t.Errorf("it is built of %s", got)
 	}
@@ -42,22 +40,34 @@ func TestABuildForABrowserEmbedsNothing(t *testing.T) {
 
 // What a release ships has the bundle in it: kakel itself is built of
 // this package, on each of its systems, with the tag and without. With
-// the tag, and no bundle built here, go list says what it can, with -e.
+// the tag, and no bundle built here, go list says what it can, with -e. It
+// downloads nothing, and a module not yet fetched is an error in its own packages.
 func TestKakelIsBuiltOfIt(t *testing.T) {
 	const self = "github.com/marrasen/kakel/webbundle"
 	for _, goos := range []string{"linux", "windows"} {
 		for _, tags := range []string{"", "webclient"} {
 			cmd := exec.Command("go", "list", "-e", "-deps", "-tags", tags, "github.com/marrasen/kakel")
-			cmd.Env = append(os.Environ(), "GOOS="+goos, "GOARCH=amd64", "CGO_ENABLED=0", "GOFLAGS=")
-			out, err := cmd.Output()
-			if err != nil {
-				t.Fatal(err)
-			}
+			cmd.Env = append(os.Environ(), "GOOS="+goos, "GOARCH=amd64", "CGO_ENABLED=0", "GOFLAGS=", "GOPROXY=off")
+			out := goOutput(t, cmd)
 			if !slices.Contains(strings.Fields(string(out)), self) {
 				t.Errorf("kakel for %s with the tags %q has no web client to share a window with", goos, tags)
 			}
 		}
 	}
+}
+
+// goOutput runs cmd and is what it printed, and fails t with what it said on error.
+func goOutput(t *testing.T, cmd *exec.Cmd) []byte {
+	t.Helper()
+	out, err := cmd.Output()
+	var exit *exec.ExitError
+	if errors.As(err, &exit) {
+		t.Fatalf("%s: %v\n%s", strings.Join(cmd.Args, " "), err, exit.Stderr)
+	}
+	if err != nil {
+		t.Fatalf("%s: %v", strings.Join(cmd.Args, " "), err)
+	}
+	return out
 }
 
 // It reports whether there is one without reading it.
