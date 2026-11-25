@@ -1,3 +1,5 @@
+//go:build !js
+
 package relay
 
 import (
@@ -17,18 +19,6 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-)
-
-// The doors of a relay, after its secret.
-const (
-	// doorHost is where a served window registers its code and hears
-	// of each window that wants it.
-	doorHost = "host"
-	// doorJoin, then the code, is where a window connecting comes in.
-	doorJoin = "join"
-	// doorAccept, then the ticket, is where a served window brings the
-	// stream for one window connecting.
-	doorAccept = "accept"
 )
 
 // tokenHeader carries a served window's token: kept with its code, so

@@ -1,4 +1,4 @@
-package view
+package termview
 
 import (
 	"os"
@@ -12,7 +12,6 @@ import (
 	"github.com/marrasen/gunim/gunimtest"
 	gi "github.com/marrasen/gunim/input"
 
-	"github.com/marrasen/kakel/app"
 	"github.com/marrasen/kakel/grid"
 	"github.com/marrasen/kakel/internal/sessiontest"
 	"github.com/marrasen/kakel/screen"
@@ -25,42 +24,29 @@ import (
 // written there too, to see it move.
 func TestADoubleClickedWordGrowsOutInThePane(t *testing.T) {
 	dir := os.Getenv("KAKEL_SHOTS")
-	win, sh, publish := windowStageOf(t, geom.Sz(700, 240))
-	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
-	sh.Set("p1", screen.Open(sessiontest.NewPrinted([]byte("$ cat /home/someone/projects/notes.txt | less")), vt.DefaultPalette(), quiet))
-	t.Cleanup(func() { _ = sh.Get("p1").T.Close() })
-	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1"}}, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1"}
-	publish(st)
-	tm := win.terms["p1"]
+	tm := onStage(t, geom.Sz(700, 240), sessiontest.NewPrinted([]byte("$ cat /home/someone/projects/notes.txt | less")), screen.Hooks{})
 	pal := vt.DefaultPalette()
-	deadline := time.Now().Add(5 * time.Second)
-	for !strings.Contains(topRowOf(sh.Get("p1")), "less") {
-		if time.Now().After(deadline) {
-			t.Fatal("the program's output never arrived")
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	publish(st)
+	tm.await(t, "the program's output never arrived", func() bool { return strings.Contains(topRowOf(tm.sh), "less") })
 
-	box, _ := lastUI.Bounds(tm)
+	box, _ := tm.stage.u.Bounds(tm.Term)
 	cell := tm.cells.CellSize()
 	// On the r of someone, the 14th cell.
 	at := geom.Pt(box.Min.X+13.5*cell.W, box.Min.Y+0.5*cell.H)
 	shot := func(name string) {
 		if dir != "" {
-			gunimtest.WritePNG(t, filepath.Join(dir, name+".png"), gunimtest.Pixels(t, lastWindow))
+			gunimtest.WritePNG(t, filepath.Join(dir, name+".png"), gunimtest.Pixels(t, tm.win))
 		}
 	}
 	press := func(n int) {
 		now := time.Now()
-		lastWindow.Input(gi.PointerDown{Pos: at, Button: gi.ButtonPrimary, Clicks: n, Time: now})
-		lastWindow.Input(gi.PointerUp{Pos: at, Button: gi.ButtonPrimary, Time: now})
+		tm.win.Input(gi.PointerDown{Pos: at, Button: gi.ButtonPrimary, Clicks: n, Time: now})
+		tm.win.Input(gi.PointerUp{Pos: at, Button: gi.ButtonPrimary, Time: now})
 	}
 	// shown is the first and last cell of the top row drawn in the
 	// selection's colour, -1 for none.
 	shown := func() (from, to int) {
 		from, to = -1, -1
-		sh.Get("p1").Drawn(func(g *grid.Grid) {
+		tm.sh.Drawn(func(g *grid.Grid) {
 			cols, _ := g.Size()
 			for x := range cols {
 				if g.BGOf(x, 0) == pal.Selection {
@@ -75,19 +61,19 @@ func TestADoubleClickedWordGrowsOutInThePane(t *testing.T) {
 	}
 
 	press(1)
-	lastWindow.Frame(time.Second / 60)
+	tm.win.Frame(time.Second / 60)
 	press(2)
-	if got := sh.Get("p1").T.SelectionText(); got != "/home/someone/projects/notes.txt" {
+	if got := tm.sh.T.SelectionText(); got != "/home/someone/projects/notes.txt" {
 		t.Fatalf("a double click picked %q", got)
 	}
-	lastWindow.Frame(time.Second / 60)
+	tm.win.Frame(time.Second / 60)
 	from, to := shown()
 	if from <= 6 && to >= 37 {
 		t.Fatalf("the word showed whole, %d to %d, at the first frame: it popped in", from, to)
 	}
 	wasFrom, wasTo := from, to
 	for i := range 30 {
-		lastWindow.Frame(time.Second / 60)
+		tm.win.Frame(time.Second / 60)
 		from, to := shown()
 		if from > wasFrom || to < wasTo {
 			t.Fatalf("frame %d: the word shrank, %d to %d after %d to %d", i, from, to, wasFrom, wasTo)
@@ -102,20 +88,20 @@ func TestADoubleClickedWordGrowsOutInThePane(t *testing.T) {
 	}
 
 	press(3)
-	if got := sh.Get("p1").T.SelectionText(); got != "$ cat /home/someone/projects/notes.txt | less" {
+	if got := tm.sh.T.SelectionText(); got != "$ cat /home/someone/projects/notes.txt | less" {
 		t.Fatalf("a triple click picked %q", got)
 	}
-	lastWindow.Frame(time.Second / 60)
+	tm.win.Frame(time.Second / 60)
 	if from, to := shown(); from < 1 {
 		t.Fatalf("the line showed %d to %d at the first frame: it popped in", from, to)
 	}
 	for i := range 30 {
-		lastWindow.Frame(time.Second / 60)
+		tm.win.Frame(time.Second / 60)
 		if i < 4 {
 			shot("line-" + strconv.Itoa(i))
 		}
 	}
-	if growingIn(sh.Get("p1")) {
+	if growingIn(tm.sh) {
 		t.Fatal("the line is still growing after half a second")
 	}
 }

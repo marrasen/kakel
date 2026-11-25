@@ -158,7 +158,7 @@ func TestAnUnreadableClipboardIsSaid(t *testing.T) {
 	for len(lastWindow.Client().Intents()) > 0 {
 		<-lastWindow.Client().Intents()
 	}
-	win.terms["p1"].pasteClipboard(lastUI)
+	win.terms["p1"].PasteClipboard(lastUI)
 	if in, ok := nextIntent(t).(app.ClipboardUnreadable); !ok || in.Why != "No display." {
 		t.Fatalf("the paste sent %#v", in)
 	}
@@ -282,17 +282,17 @@ func TestTheCursorHidesWhileTheWindowIsInactive(t *testing.T) {
 		lastWindow.Frame(time.Second / 60)
 	}
 	term := win.terms["p1"]
-	if !term.cursorShown {
+	if !term.CursorShown() {
 		t.Fatal("with the keyboard, the pane shows no cursor")
 	}
 	lastWindow.Input(gi.WindowFocusLost{})
 	lastWindow.Frame(time.Second / 60)
-	if term.cursorShown {
+	if term.CursorShown() {
 		t.Fatal("with the window in the background, the pane still shows its cursor")
 	}
 	lastWindow.Input(gi.WindowFocusGained{})
 	lastWindow.Frame(time.Second / 60)
-	if !term.cursorShown {
+	if !term.CursorShown() {
 		t.Fatal("with the keyboard back, the pane shows no cursor")
 	}
 }

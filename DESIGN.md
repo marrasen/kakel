@@ -15,6 +15,12 @@ The window and the program:
   as `State`, and carries out what they ask for as intents.
 - `view`: the window. It draws the `State` with gunim and turns what
   the user does into intents.
+- `termview`: a terminal as the window draws it and takes what is typed
+  and clicked in it. It knows nothing of the program round it, and is
+  built for a browser too.
+- `webclient`: kakel in a browser, built for `js/wasm`: for now one
+  terminal with a made-up program in it. `internal/webtest` runs it in
+  headless Chrome for its tests.
 - `look`: kakel's themes turned into gunim's, and the colours of the
   window's own parts.
 - `winkeys`: keys as gunim hears them, turned into kakel's keys and
@@ -52,7 +58,8 @@ Machines and connections:
   the client, and what they say to each other. The code calls it serving
   a window; the words a user reads do not.
 - `relay`: `kakel -relay`, which joins a kakel with remote access on and
-  one connecting to it over WebSockets, and both kakels' ends of it.
+  one connecting to it over WebSockets, and both kakels' ends of it. The
+  connecting end is built for a browser too.
 - `vfs`: a filesystem kakel reads files through: this machine, or one
   over SFTP.
 - `jobs`: copying, moving and deleting in the background.
@@ -87,10 +94,11 @@ Keeping things:
 the keymap and what `ui/term` and `ui/files` are built on. `internal`
 holds the build stamp, test helpers and the icon writer.
 
-gunim is imported by `app`, `view`, `look`, `winkeys`,
-`internal/sound` and `main`. The terminal packages, `serve`, `remote`,
-`vfs`, `jobs` and `settings` do not import it. So everything fiddly is
-testable without a display, which is how the emulator got written.
+gunim is imported by `app`, `view`, `termview`, `webclient`, `look`,
+`winkeys`, `internal/sound` and `main`. The terminal packages, `serve`,
+`remote`, `vfs`, `jobs` and `settings` do not import it. So everything
+fiddly is testable without a display, which is how the emulator got
+written.
 
 ## The notes
 

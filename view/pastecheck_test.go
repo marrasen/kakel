@@ -83,7 +83,7 @@ func pasteArea(t *testing.T, win *Window) *widget.CodeEditor {
 func TestALinePastedGoesStraightIn(t *testing.T) {
 	win, typed := pasteStage(t, true)
 	lastUI.SetClipboard("ls -la\n")
-	win.terms["p1"].pasteClipboard(lastUI)
+	win.terms["p1"].PasteClipboard(lastUI)
 	frames(5)
 	if win.dialog != nil {
 		t.Fatal("one line opened a dialog")
@@ -96,7 +96,7 @@ func TestALinePastedGoesStraightIn(t *testing.T) {
 func TestLinesPastedOpenInAnEditorFirst(t *testing.T) {
 	win, typed := pasteStage(t, true)
 	lastUI.SetClipboard("echo one\r\necho two\r\n")
-	win.terms["p1"].pasteClipboard(lastUI)
+	win.terms["p1"].PasteClipboard(lastUI)
 	frames(5)
 	area := pasteArea(t, win)
 	if win.dialog.Title != "Paste 2 Lines" {
@@ -129,7 +129,7 @@ func TestLinesPastedOpenInAnEditorFirst(t *testing.T) {
 func TestAPasteCancelledSendsNothing(t *testing.T) {
 	win, typed := pasteStage(t, true)
 	lastUI.SetClipboard("rm -rf build\nmake\n")
-	win.terms["p1"].pasteClipboard(lastUI)
+	win.terms["p1"].PasteClipboard(lastUI)
 	frames(5)
 	pasteArea(t, win)
 	pressKey(gi.KeyEscape, 0)
@@ -183,7 +183,7 @@ func TestAPastesEditorTakesItsPanesShell(t *testing.T) {
 	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1", ShellKind: shellsetup.PowerShell}},
 		Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1", PasteCheck: true})
 	lastUI.SetClipboard("$x = 1\nWrite-Host $x")
-	win.terms["p1"].pasteClipboard(lastUI)
+	win.terms["p1"].PasteClipboard(lastUI)
 	frames(5)
 	if got := kindsOf(pasteArea(t, win)); got != "variable operator number function variable" {
 		t.Fatalf("the paste is coloured %q, want PowerShell's colours", got)
@@ -202,7 +202,7 @@ func kindsOf(c *widget.CodeEditor) string {
 func TestPasteCheckOffPastesLinesStraightIn(t *testing.T) {
 	win, typed := pasteStage(t, false)
 	lastUI.SetClipboard("echo one\necho two")
-	win.terms["p1"].pasteClipboard(lastUI)
+	win.terms["p1"].PasteClipboard(lastUI)
 	frames(5)
 	if win.dialog != nil {
 		t.Fatal("with the check off, a dialog opened")
@@ -224,7 +224,7 @@ func TestAPasteForAnotherShellIsMarked(t *testing.T) {
 	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1", ShellKind: shellsetup.PowerShell}},
 		Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1", PasteCheck: true})
 	lastUI.SetClipboard("cd project\nexport GOOS=windows\ngo build ./... 2>/dev/null")
-	win.terms["p1"].pasteClipboard(lastUI)
+	win.terms["p1"].PasteClipboard(lastUI)
 	frames(5)
 	area := pasteArea(t, win)
 	marks := area.Marks()

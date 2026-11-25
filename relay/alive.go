@@ -78,9 +78,12 @@ func (c movingConn) Write(p []byte) (int, error) {
 	return n, err
 }
 
-// carried is ws as a stream of bytes, pinged while quiet until ctx ends.
+// carried is ws as a stream of bytes, pinged while quiet until ctx ends,
+// where this end can ping.
 func carried(ctx context.Context, ws *websocket.Conn) net.Conn {
 	moved := newSeen()
-	go keepUp(ctx, ws, moved)
+	if canPing {
+		go keepUp(ctx, ws, moved)
+	}
 	return movingConn{Conn: websocket.NetConn(ctx, ws, websocket.MessageBinary), moved: moved}
 }

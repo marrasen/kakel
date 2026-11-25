@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/marrasen/kakel/app"
+	"github.com/marrasen/kakel/termview"
 
 	"github.com/marrasen/kakel/look"
 
@@ -58,12 +59,9 @@ var (
 
 // Window is the view the program's state drives.
 type Window struct {
-	// wrote is set, to the window's UI, once shells of its panes wrote,
-	// until its terminals copy their screens as it next lays out.
-	// retrying is set while a copy that found a screen still being
-	// written waits to try again.
-	wrote    *gunim.UI
-	retrying bool
+	// output has its terminals copy their screens, as it next lays out,
+	// once shells of its panes wrote.
+	output termview.Output
 	anim.Group
 	top gunim.Node
 	bar *widget.Menubar
@@ -104,7 +102,7 @@ type Window struct {
 	terms   map[string]*term
 	// termPads hold the terminals, by pane, a little in from the pane's
 	// edges.
-	termPads map[string]*termPad
+	termPads map[string]*termview.Pad
 	// readers are the readers, by pane.
 	readers  map[string]*reader
 	choosers map[string]*chooser
@@ -387,7 +385,7 @@ func NewWindow(sh *screen.Shells, keys *ui.Keymap, all []look.Themed) *Window {
 		shells:       sh,
 		keys:         keys,
 		terms:        map[string]*term{},
-		termPads:     map[string]*termPad{},
+		termPads:     map[string]*termview.Pad{},
 		readers:      map[string]*reader{},
 		choosers:     map[string]*chooser{},
 		waitViews:    map[string]*waitView{},
@@ -736,18 +734,18 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 	switch id {
 	case "edit.paste":
 		if t, ok := w.terms[w.focused]; ok {
-			t.pasteClipboard(u)
+			t.PasteClipboard(u)
 		}
 		return true
 	case "edit.copy":
 		if t, ok := w.terms[w.focused]; ok {
-			t.copySelection(u)
+			t.CopySelection(u)
 		}
 		return true
 	case "edit.selectAll":
 		if t, ok := w.terms[w.focused]; ok {
-			t.sh.T.SelectAll()
-			t.sync()
+			t.Shell().T.SelectAll()
+			t.Sync()
 			u.Invalidate()
 		}
 		return true
@@ -762,7 +760,7 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 	// The terminal in front's own, as the palette and the menus run
 	// them: copying, pasting, scrolling back.
 	if t, ok := w.terms[w.focused]; ok {
-		return t.command(id, u)
+		return t.Command(id, u)
 	}
 	if rd, ok := w.readers[w.focused]; ok && rd.r != nil && (id == "view.scrollUp" || id == "view.scrollDown") {
 		page := -1
@@ -782,8 +780,7 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 // lays out, once a frame however often the word comes. It is the part
 // of Update that output needs, at a fraction of its cost.
 func (w *Window) OutputArrived(u *gunim.UI) {
-	w.wrote = u
-	u.Invalidate()
+	w.output.Arrived(u)
 }
 
 // Children implements [gunim.Composite].
@@ -795,28 +792,13 @@ func (w *Window) Layout(c gunim.Constraints, f gunim.Frame, kids gunim.Children)
 	w.size = c.Max
 	// The next step of the title row's change, once the last is done.
 	w.settleTitleRow(f.Theme)
-	if u := w.wrote; u != nil {
-		w.wrote = nil
-		late := false
+	w.output.Copy(func(yield func(*termview.Term) bool) {
 		for _, t := range w.terms {
-			t.sync()
-			t.lookAgain(u)
-			// The program may have asked for a blinking cursor just now,
-			// as an editor does leaving a mode with a steady one.
-			t.blink(u)
-			late = late || t.sh.T.Dirty()
+			if !yield(t.Term) {
+				return
+			}
 		}
-		if late && !w.retrying {
-			// A screen was still being written, and shows as it was.
-			// Its writer says when it is done; a key press or a theme,
-			// which say nothing, are caught a moment later.
-			w.retrying = true
-			u.After(4*time.Millisecond, func(u *gunim.UI) {
-				w.retrying = false
-				w.OutputArrived(u)
-			})
-		}
-	}
+	})
 	for k := range kids.All {
 		if k.Node() == w.toasts {
 			// The toasts sit in the bottom right corner.
@@ -880,7 +862,7 @@ const zoomNotch = 40
 func (w *Window) showFonts(st app.State) {
 	if st.Font.Name != w.font.Name {
 		for _, t := range w.terms {
-			t.cells.Faces = st.Font.Faces
+			t.Cells().Faces = st.Font.Faces
 		}
 		for _, r := range w.readers {
 			r.cells.Faces = st.Font.Faces
@@ -1847,7 +1829,7 @@ func (w *Window) closeSwitcher(back bool, u *gunim.UI) {
 // under the pointer lights or unlights its link.
 func (w *Window) ctrlHeld(k input.Key, mods input.Mods, down bool, u *gunim.UI) {
 	for _, t := range w.terms {
-		t.ctrlHeld(k, mods, down, u)
+		t.CtrlHeld(k, mods, down, u)
 	}
 }
 
@@ -1891,7 +1873,7 @@ func (w *Window) Handle(e input.Event, u *gunim.UI) bool {
 	case input.WindowFocusGained:
 		w.away = false
 		for _, t := range w.terms {
-			t.setAway(false, u)
+			t.SetAway(false, u)
 		}
 		if w.behind {
 			u.Send(w, app.WindowFocused{})
@@ -1899,7 +1881,7 @@ func (w *Window) Handle(e input.Event, u *gunim.UI) bool {
 	case input.WindowFocusLost:
 		w.away = true
 		for _, t := range w.terms {
-			t.setAway(true, u)
+			t.SetAway(true, u)
 		}
 		// Another program took the keyboard, as a screenshot tool does,
 		// and no release of Ctrl will come: the walk ends where it is,
@@ -1984,7 +1966,7 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 	if st.FontSize != w.fontSize {
 		w.fontSize = st.FontSize
 		for _, t := range w.terms {
-			t.cells.Size = st.FontSize
+			t.Cells().Size = st.FontSize
 		}
 		for _, r := range w.readers {
 			r.cells.Size = st.FontSize
@@ -2286,10 +2268,10 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 			delete(w.termPads, id)
 			continue
 		}
-		t.sync()
-		t.lookAgain(u)
+		t.Sync()
+		t.LookAgain(u)
 		if id == st.Focus {
-			t.blink(u)
+			t.Blink(u)
 		}
 	}
 	if w.dialog != nil && u.Presence(w.dialog) == gunim.Exiting {
@@ -2618,8 +2600,8 @@ func (w *Window) bareNode(id string) gunim.Node {
 	}
 	t := w.term(id)
 	pad, ok := w.termPads[id]
-	if !ok || pad.term != t {
-		pad = &termPad{term: t}
+	if !ok || pad.Term != t {
+		pad = &termview.Pad{Term: t}
 		w.termPads[id] = pad
 	}
 	return pad
@@ -2730,15 +2712,14 @@ func (w *Window) term(id string) *term {
 	if t, ok := w.terms[id]; ok {
 		return t
 	}
-	t := newTerm(id, w.shells.Get(id), w.keys)
-	t.ctrl = w.ctrlHeld
-	t.away = w.away
-	t.alongWith = func() []*term { return w.typingAlong(t) }
-	t.checkPaste = func(s string, u *gunim.UI) bool { return w.checkPaste(t, s, u) }
-	if w.fontSize > 0 {
-		t.cells.Size = w.fontSize
+	t := w.newTerm(id)
+	if w.away {
+		t.SetAway(true, nil)
 	}
-	t.cells.Faces = w.font.Faces
+	if w.fontSize > 0 {
+		t.Cells().Size = w.fontSize
+	}
+	t.Cells().Faces = w.font.Faces
 	w.terms[id] = t
 	return t
 }
@@ -4057,13 +4038,13 @@ func (w *Window) showTypeAll(u *gunim.UI) {
 		}
 	}
 	for id, t := range w.terms {
-		t.setAlong(on[id], u)
+		t.SetAlong(on[id], u)
 	}
 }
 
 // typingAlong is the other terminals what is typed in t goes to: those
 // in the split on stage with it, while Type in All Panes is on.
-func (w *Window) typingAlong(t *term) []*term {
+func (w *Window) typingAlong(t *term) []*termview.Term {
 	if !w.typeAll {
 		return nil
 	}
@@ -4071,10 +4052,10 @@ func (w *Window) typingAlong(t *term) []*term {
 	if !slices.Contains(leaves, t.id) {
 		return nil
 	}
-	var out []*term
+	var out []*termview.Term
 	for _, id := range leaves {
-		if o, ok := w.terms[id]; ok && o != t && !o.sh.T.Exited() {
-			out = append(out, o)
+		if o, ok := w.terms[id]; ok && o != t && !o.Shell().T.Exited() {
+			out = append(out, o.Term)
 		}
 	}
 	return out

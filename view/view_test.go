@@ -11,6 +11,7 @@ import (
 
 	"github.com/marrasen/kakel/app"
 	"github.com/marrasen/kakel/machines"
+	"github.com/marrasen/kakel/termview"
 
 	"github.com/marrasen/kakel/internal/sessiontest"
 	"github.com/marrasen/kakel/screen"
@@ -186,7 +187,7 @@ func TestAPaneSlidingInKeepsItsShellAUsableSize(t *testing.T) {
 	for i, s := range got {
 		s.mu.Lock()
 		for _, size := range s.seen {
-			if size[0] < leastCols || size[1] < leastRows {
+			if size[0] < termview.LeastCols || size[1] < termview.LeastRows {
 				t.Errorf("shell %d was given %dx%d on the way", i+1, size[0], size[1])
 			}
 		}

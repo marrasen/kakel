@@ -31,7 +31,7 @@ func TestANewWindowOpensOnATerminalOf80By30(t *testing.T) {
 	for range 10 {
 		publish(st)
 	}
-	if cols, rows := win.terms["p1"].cells.Fit(); cols != 80 || rows != 30 {
+	if cols, rows := win.terms["p1"].Cells().Fit(); cols != 80 || rows != 30 {
 		t.Fatalf("the window opens on a terminal of %d by %d", cols, rows)
 	}
 }
@@ -48,7 +48,7 @@ func TestTheWindowDrawsInTheFontAndZoomsWithCtrlAndTheWheel(t *testing.T) {
 	font := app.Font{Name: dosFamily, Faces: [4]*text.Face{face}}
 	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1"}}, Layout: boxLayout(&app.Box{Pane: "p1"}), Focus: "p1", Fonts: []string{bundledFamily, dosFamily}, Font: font, FontSize: defaultSize}
 	publish(st)
-	if win.terms["p1"].cells.Faces != font.Faces {
+	if win.terms["p1"].Cells().Faces != font.Faces {
 		t.Fatal("the terminal is not drawn in the font picked")
 	}
 	for len(lastWindow.Client().Intents()) > 0 {

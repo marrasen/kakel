@@ -37,7 +37,7 @@ func TestTypingGoesToEveryPaneInTheSplit(t *testing.T) {
 	win.run("pane.typeAll", lastUI)
 	lastWindow.Frame(time.Second / 60)
 	for _, id := range []string{"p1", "p2", "p3"} {
-		if !win.terms[id].cursorShown {
+		if !win.terms[id].CursorShown() {
 			t.Fatalf("typing in all panes, %s shows no cursor", id)
 		}
 	}
@@ -63,8 +63,8 @@ func TestTypingGoesToEveryPaneInTheSplit(t *testing.T) {
 	// The × on the chip turns it off.
 	win.chips.chips[0].off(lastUI)
 	lastWindow.Frame(time.Second / 60)
-	if win.typeAll || win.terms["p2"].cursorShown || len(win.chips.chips) != 0 {
-		t.Fatalf("turned off, typing in all is %v, p2's cursor %v, chips %+v", win.typeAll, win.terms["p2"].cursorShown, win.chips.chips)
+	if win.typeAll || win.terms["p2"].CursorShown() || len(win.chips.chips) != 0 {
+		t.Fatalf("turned off, typing in all is %v, p2's cursor %v, chips %+v", win.typeAll, win.terms["p2"].CursorShown(), win.chips.chips)
 	}
 	lastWindow.Input(gi.TextInput{Text: "pwd"})
 	lastWindow.Frame(time.Second / 60)

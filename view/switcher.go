@@ -11,6 +11,7 @@ import (
 	"github.com/marrasen/kakel/look"
 	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/screen"
+	"github.com/marrasen/kakel/termview"
 	"github.com/marrasen/kakel/ui"
 	"github.com/marrasen/kakel/winkeys"
 
@@ -489,8 +490,8 @@ func (s *switcher) slotAt(t *tile, u *gunim.UI) (geom.Rect, bool) {
 // its last drawing, or size when it has neither.
 func (w *Window) natural(id string, size geom.Size) geom.Size {
 	if term, ok := w.terms[id]; ok {
-		cell := term.cells.CellSize()
-		cols, rows := term.cells.GridSize()
+		cell := term.Cells().CellSize()
+		cols, rows := term.Cells().GridSize()
 		if n := geom.Sz(cell.W*float32(cols), cell.H*float32(rows)); n.W > 0 && n.H > 0 {
 			return n
 		}
@@ -518,7 +519,7 @@ func (w *Window) paintMiniature(p *paint.Painter, f gunim.Frame, id string, r ge
 	defer p.Push(paint.Translate(r.Min))()
 	defer p.Push(paint.Scale(scale, geom.Point{}))()
 	if live {
-		term.cells.Paint(p, f, nat, gunim.Children{})
+		term.Cells().Paint(p, f, nat, gunim.Children{})
 	} else {
 		p.Replay(d.Recording())
 	}
@@ -1222,7 +1223,7 @@ func (s *switcher) padOf(t *tile, th *theme.Live) float32 {
 	switch s.byID[t.id].Kind {
 	case app.KindTerminal, app.KindLog:
 		// Drawn by a terminal, which bareNode holds in from the edges.
-		return termPadding.Get(th)
+		return termview.Padding.Get(th)
 	}
 	return 0
 }
