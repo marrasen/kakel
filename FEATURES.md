@@ -66,6 +66,14 @@ The whole list. The [README](README.md) has the short version.
   a host key that changed is a hard failure. The kakel connected to
   keeps drawing and says who is working in it. Closing the connection
   gives it its screen back.
+- **A window shared with a link.** Somebody with a web browser and no
+  kakel opens a link and works in the terminals of one window with you,
+  typing too if you allow it. The link works once, expires in 15
+  minutes, and lets nobody in until you press Allow. They see that
+  window's terminals and nothing else. A chip, rings round the panes and
+  the guest's name say who is there, and Stop ends it at once. It goes
+  through a relay of yours, which carries what passes encrypted from end
+  to end and serves a page signed with kakel's release key.
 - **Through a relay, when neither can reach the other.** `kakel -relay`
   runs on a server with no screen. A kakel with remote access through it
   gets a code, kept from one run to the next, and a kakel connecting
@@ -388,8 +396,9 @@ The whole list. The [README](README.md) has the short version.
   answered.
 - **A window log.** Help → Window Log shows what the window did: when
   it started, each pane opened and closed, how a shell ended,
-  connections made and lost, remote access turned on and off, and every
-  failure a pop-up told of. It keeps the last 2,000 lines, until the
+  connections made and lost, remote access turned on and off, windows
+  shared with a link and the guests let in or refused, and every failure
+  a pop-up told of. It keeps the last 2,000 lines, until the
   window closes. Find in Scrollback searches it, and a connection log,
   as it does a terminal.
 - **A crash log.** Should kakel crash, what it said as it died is kept

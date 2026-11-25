@@ -455,7 +455,6 @@ func TestTheWebClientLongestUnusedMakesRoom(t *testing.T) {
 		if !s.keepBundle(b, from(i)) {
 			t.Fatalf("no room for %d", i)
 		}
-		s.bundles[b.Hash].used = time.Now().Add(time.Duration(i-100) * time.Second)
 	}
 	// The first is in use, and the second asked for just now: the third
 	// is the one.

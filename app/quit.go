@@ -8,6 +8,7 @@ import (
 
 	"github.com/marrasen/gunim/driver"
 	"github.com/marrasen/gunim/geom"
+	"github.com/marrasen/kakel/guest"
 	"github.com/marrasen/kakel/jobs"
 	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/settings"
@@ -78,6 +79,8 @@ func (a *app) leave() {
 	a.closeOverview()
 	a.keepPlaces()
 	a.flushRecords()
+	// Told as the windows animate out, with their panes still there.
+	a.endLinks(guest.ReasonQuitting)
 	for _, w := range a.wins {
 		if !w.gone {
 			w.c.Leave()
@@ -101,6 +104,9 @@ const hangUpWait = 2 * time.Second
 // other windows, so each far end hears goodbye rather than a socket that
 // went. It waits hangUpWait at most.
 func (a *app) hangUp() {
+	// First: a guest hears why over the connections that go next.
+	a.endLinks(guest.ReasonQuitting)
+	a.waitForLinks()
 	var closers []func() error
 	a.machines.Each(func(_ machines.ID, m *machines.Machine) {
 		if m.Conn != nil {
@@ -168,6 +174,9 @@ func (a *app) whatIsOpen() []string {
 	}
 	if len(a.agents.by) > 0 {
 		out = append(out, "an agent share")
+	}
+	if n := a.sharedWindows(); n > 0 {
+		out = append(out, words.ManyOf(n, "shared window", "shared windows"))
 	}
 	if a.serving.server != nil {
 		out = append(out, "remote access")

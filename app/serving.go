@@ -704,7 +704,8 @@ func (a *app) tellServed() {
 		if _, saved := a.machines.Saved(p.Machine); saved {
 			hostID = string(p.Machine)
 		}
-		o := serve.Open{ID: p.ID, Host: host, HostID: hostID, Kind: kind, Label: p.Title, State: meter.Opened.String(), Ended: p.Ended}
+		o := serve.Open{ID: p.ID, Host: host, HostID: hostID, Kind: kind, Label: p.Title, State: meter.Opened.String(), Ended: p.Ended,
+			Shell: !a.serving.older && p.Kind == KindTerminal && !p.Command && !p.MaybeCommand}
 		if t := a.terminal(p.ID); t != nil {
 			size := t.Size()
 			o.Cols, o.Rows = size.Cols, size.Rows

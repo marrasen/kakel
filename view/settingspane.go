@@ -118,6 +118,10 @@ type settingsPane struct {
 	keys    *widget.Label
 	serving *widget.Button
 	removeK *widget.Button
+	// linkName, linkMay and linkRelay are what a window is shared with a
+	// link with.
+	linkName, linkRelay *savedLine
+	linkMay             *widget.Segmented
 
 	// shortcuts is the Shortcuts tab.
 	shortcuts *shortcutsPane
@@ -497,7 +501,32 @@ func (p *settingsPane) sharing() gunim.Node {
 		p.w.run("serve.window", u)
 		return nil
 	}
+	setLink := func(change func(*app.SetLinkSetup)) app.SetLinkSetup {
+		l := p.st.LinkSetup
+		in := app.SetLinkSetup{Name: l.Name, Watch: l.Watch, Relay: l.Relay, Via: l.Via}
+		change(&in)
+		return in
+	}
+	p.linkName = p.newSavedLine("Optional", 180, nil, func(s string) gunim.Intent {
+		return setLink(func(in *app.SetLinkSetup) { in.Name = s })
+	})
+	p.linkRelay = p.newSavedLine(relayFormat, 220, func(s string) string {
+		if _, err := relay.ParseURL(s); s != "" && err != nil {
+			return "Invalid relay URL"
+		}
+		return ""
+	}, func(s string) gunim.Intent { return setLink(func(in *app.SetLinkSetup) { in.Relay = s }) })
+	p.linkMay = newGuestMay(true)
+	p.linkMay.OnChange = func(i int, u *gunim.UI) gunim.Intent {
+		return setLink(func(in *app.SetLinkSetup) { in.Watch = !mayType(i) })
+	}
 	return settingsPage(
+		settingsSection("Sharing with a link",
+			faintLabel(linkSays),
+			settingRow("Your name", "What a guest is told you are called.", p.linkName.node),
+			settingRow("Guest can", linkTypeSays, p.linkMay),
+			settingRow("Relay", linkRelaySays, p.linkRelay.node),
+			settingRow("This window", "", p.settingButton("Open", "share.link"))),
 		settingsSection("Remote access",
 			faintLabel(remoteAccessSays),
 			settingRow("Now", "", p.serving),
@@ -626,6 +655,15 @@ func (p *settingsPane) show(st app.State, u *gunim.UI) {
 		p.rings[i].SetChecked(*r.field(&st.Rings), nil)
 	}
 	// Sharing.
+	p.linkName.show(st.LinkSetup.Name, u)
+	p.linkRelay.show(st.LinkSetup.Relay, u)
+	if !u.HasFocus(p.linkRelay.field) {
+		// The relay's machine, and not its secret at the URL's end.
+		p.linkRelay.field.Select(0, 0)
+	}
+	if i := mayIndex(!st.LinkSetup.Watch); p.linkMay.Selected() != i {
+		p.linkMay.SetSelected(i, u)
+	}
 	s := st.Serving
 	for i, c := range serveAtStart {
 		if c.value == s.AtStart && p.atStart.Selected() != i {

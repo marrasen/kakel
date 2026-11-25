@@ -17,10 +17,10 @@ const (
 	// user types goes in between, so it waits for no more than this.
 	laneChunk = 1 << 10
 
-	// laneHold is how long the start of a character or of a key waits for
+	// laneHeld is how long the start of a character or of a key waits for
 	// the rest of it. The Esc key waits that long too, as it is how other
 	// keys begin.
-	laneHold = 10 * time.Millisecond
+	laneHeld = 10 * time.Millisecond
 )
 
 // Lane types into a terminal for somebody who is not at it, as a guest of
@@ -114,7 +114,7 @@ func (l *lane) next() []byte {
 	}
 	if n == 0 {
 		// The start of something, and nothing else.
-		wait := laneHold
+		wait := l.t.laneHold
 		if l.held.IsZero() {
 			l.held = time.Now()
 		} else {

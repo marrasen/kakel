@@ -48,10 +48,10 @@ type keptBundle struct {
 	*Bundle
 	// from is the address it was uploaded from, as addrKey has it.
 	from string
-	// shares is how many shares it is in use by, and used is when it was
+	// shares is how many shares it is in use by, and used is the turn it was
 	// last asked for.
 	shares int
-	used   time.Time
+	used   uint64
 }
 
 // About is what a relay can do.
@@ -231,7 +231,7 @@ func (s *Server) touchBundle(hash string) bool {
 	if b == nil {
 		return false
 	}
-	b.used = time.Now()
+	b.used = s.turnLocked()
 	return true
 }
 
@@ -242,7 +242,7 @@ func (s *Server) keepBundle(b *Bundle, key string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if old := s.bundles[b.Hash]; old != nil {
-		old.used = time.Now()
+		old.used = s.turnLocked()
 		return true
 	}
 	// Seen to first that there is room to make, so one that is not kept
@@ -277,7 +277,7 @@ func (s *Server) keepBundle(b *Bundle, key string) bool {
 	for _, o := range out {
 		delete(s.bundles, o.Hash)
 	}
-	s.bundles[b.Hash] = &keptBundle{Bundle: b, from: key, used: time.Now()}
+	s.bundles[b.Hash] = &keptBundle{Bundle: b, from: key, used: s.turnLocked()}
 	s.bundleBytes = used + b.size
 	return true
 }
@@ -289,7 +289,7 @@ func (s *Server) longestUnusedLocked(key string, but []*keptBundle) *keptBundle 
 	var oldest *keptBundle
 	for _, o := range s.bundles {
 		if o.shares == 0 && (key == "" || o.from == key) && !slices.Contains(but, o) &&
-			(oldest == nil || o.used.Before(oldest.used)) {
+			(oldest == nil || o.used < oldest.used) {
 			oldest = o
 		}
 	}
@@ -301,7 +301,7 @@ func (s *Server) longestUnusedLocked(key string, but []*keptBundle) *keptBundle 
 func (s *Server) useLocked(sh *share, b *keptBundle) {
 	if old := sh.bundle; old != nil {
 		old.shares--
-		old.used = time.Now()
+		old.used = s.turnLocked()
 	}
 	if b != nil {
 		b.shares++

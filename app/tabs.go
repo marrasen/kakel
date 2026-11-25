@@ -40,6 +40,7 @@ func (a *app) handleTab(in any) bool {
 	case ShiftTab:
 		a.shiftTab(in.Back)
 	case MoveTab:
+		a.links.byHand = in.Pane
 		a.moveTab(in.Pane, in.To)
 	default:
 		return false

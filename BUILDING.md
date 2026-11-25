@@ -68,8 +68,8 @@ bundle into `webbundle/client`, which the repository ignores. It needs
 nothing but Go, so it is the same on Windows, with no `make`. Run it
 again after changing anything the web client is made of: `go build`
 embeds the one there is. `make client` does the same, and signs it when
-`GUNIM_SIGN_KEY` is set. A build without the tag has no web client, and
-cannot share windows.
+`GUNIM_SIGN_KEY` is set. A build without the tag has no web client: Share
+Window with Link… opens and says so, and shares nothing.
 
 Relays take only a web client signed with kakel's release key. One built
 here is not signed, so try it with a relay of your own:

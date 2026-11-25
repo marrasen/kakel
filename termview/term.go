@@ -311,13 +311,9 @@ func (t *Term) TextCaret() geom.Rect {
 	return geom.Rc(at.X+float32(t.cursorAt.X)*cell.W, at.Y+float32(t.cursorAt.Y)*cell.H, cell.W, cell.H)
 }
 
-// ClaimsKeys says the terminal wants every key the platform can give up,
-// as a browser can the keys it reloads and finds with: a program in it
-// may want any of them.
-//
-// Nothing asks yet. It waits for gunim's KeyClaimer, which is on its way
-// and has this method; until kakel uses a gunim that has it, a browser
-// keeps those keys.
+// ClaimsKeys implements [gunim.KeyClaimer]: the terminal wants every key
+// the platform can give up, as a browser can the keys it reloads, finds
+// and pastes with. A program in it may want any of them.
 func (t *Term) ClaimsKeys() bool { return true }
 
 // Children implements [gunim.Composite].

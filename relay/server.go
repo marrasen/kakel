@@ -97,8 +97,9 @@ type Server struct {
 	// shares are the shares by id, and past those there were.
 	shares map[string]*share
 	past   map[string]pastShare
-	// pastTurn is how many have been remembered.
-	pastTurn uint64
+	// turn counts what is remembered and used, in the order it was, which
+	// the clock may not tell apart.
+	turn uint64
 	// bundles are the web clients kept, by hash, and bundleBytes how
 	// much that is.
 	bundles     map[string]*keptBundle

@@ -296,6 +296,24 @@ type Window struct {
 	revealed string
 	// chips are what the menu bar says the window is doing for others.
 	chips *chipBar
+	// links are the windows shared with a link, and linkSetup what the
+	// next is shared with, as last published. linkBox is the Share Window
+	// with Link dialog while it is open, and guestAsk the one that asks
+	// about a guest; answered are the shares answered about, and calledFor
+	// those the user was told of outside the window.
+	links               []app.WindowLink
+	linkSetup           app.LinkSetup
+	linkBox             *linkBox
+	guestAsk            *guestAsk
+	answered, calledFor map[string]bool
+	// askFirst is the share whose guest is asked about before the rest,
+	// and askingLater says another dialog keeps a question back.
+	askFirst    string
+	askingLater bool
+	// guestAt is where each guest is, and stopTags cancels the wake for
+	// the next guest's name to go.
+	guestAt  map[string]cameTo
+	stopTags func()
 	// permsAfter is a pane whose permissions open once it is shared.
 	permsAfter string
 	size       geom.Size
@@ -679,6 +697,16 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 		} else {
 			w.toast(widget.Toast{Title: "This pane is on this computer", Body: "Disconnect closes the connection to a server or another kakel."}, u)
 		}
+		return true
+	case "share.link":
+		w.linkDialog(u)
+		return true
+	case "share.stop":
+		if len(w.liveLinks()) == 0 {
+			w.toast(widget.Toast{Title: "This window is not shared"}, u)
+			return true
+		}
+		u.Send(w, app.StopLinks{Window: w.winID})
 		return true
 	case "serve.window":
 		w.servingDialog(w.serving, u)
@@ -1872,6 +1900,9 @@ func (w *Window) Handle(e input.Event, u *gunim.UI) bool {
 	switch k := e.(type) {
 	case input.WindowFocusGained:
 		w.away = false
+		if w.guestAsk != nil {
+			w.guestAsk.hold(u)
+		}
 		for _, t := range w.terms {
 			t.SetAway(false, u)
 		}
@@ -1880,6 +1911,9 @@ func (w *Window) Handle(e input.Event, u *gunim.UI) bool {
 		}
 	case input.WindowFocusLost:
 		w.away = true
+		if w.guestAsk != nil {
+			w.guestAsk.hold(u)
+		}
 		for _, t := range w.terms {
 			t.SetAway(true, u)
 		}
@@ -2004,6 +2038,7 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 				local: func(u *gunim.UI) { w.servingDialog(w.serving, u) }})
 		}
 	}
+	rows = w.guestRows(rows, st)
 	rows = w.markRows(rows, st)
 	rows = windowNotes(rows, st.AllPanes, st.Window)
 	w.rows = rows
@@ -2134,6 +2169,9 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 		w.accounts = st.Accounts
 		w.servers(w.saved)
 	}
+	w.links, w.linkSetup = st.Links, st.LinkSetup
+	w.showLinkBox(u)
+	w.showGuestAsk(u)
 	w.showAsk(st.Asks, u)
 	// Every field: Edit This Server fills its form from these.
 	if !reflect.DeepEqual(st.Saved, w.saved) {
@@ -2226,6 +2264,7 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 			t.marks = st.Marks
 		}
 	}
+	w.showGuests(st, u)
 	w.glow(u)
 	w.keepDrawings(st, u)
 	if st.AllPanes != nil {
@@ -2390,6 +2429,8 @@ func (w *Window) applies(id string) bool {
 		return term || reader && rd.r != nil
 	case "pane.close", "pane.rename":
 		return w.focused != ""
+	case "share.stop":
+		return len(w.liveLinks()) > 0
 	case "sshkey.forget":
 		return len(w.keyFiles) > 0
 	case "tab.next", "tab.previous", "tab.moveLeft", "tab.moveRight", "tab.newWindow":
@@ -2957,6 +2998,8 @@ type sideItem struct {
 	// their colours, as the pane's rings do.
 	shared func() (agent, watched bool)
 	hues   look.Marks
+	// guests says a guest of the window the pane is in sees it.
+	guests bool
 }
 
 // sidebarRows lists the panes under their machines, this computer
@@ -3206,7 +3249,8 @@ func (w *Window) newSideRow(it sideItem) *sideRow {
 	}
 	r.set(it)
 	r.ring = anim.NewFloat(0)
-	r.Add(r.active, r.hover, r.ring)
+	r.marks.guested = anim.NewFloat(anim.OnOff(it.guests))
+	r.Add(r.active, r.hover, r.ring, r.marks.guested)
 	return r
 }
 
@@ -3275,6 +3319,10 @@ func (r *sideRow) Layout(c gunim.Constraints, f gunim.Frame, kids gunim.Children
 	}
 	// As tall, and with as much room at the ends, as the theme says.
 	const gap = 8
+	if to := anim.OnOff(r.marks.guests); r.marks.guested.Target() != to {
+		r.marks.guested.Animate(to, widget.Settle.Get(f.Theme))
+		f.RedrawAt(f.Now)
+	}
 	padX, height := look.SidebarPad.Get(f.Theme), look.SidebarRow.Get(f.Theme)
 	// Room at the end for the cross a closing row shows on hover, and
 	// for a traffic graph.
@@ -3741,6 +3789,7 @@ var askIcons = map[string]*icon.Icon{
 	"log-in":       icon.LogIn,
 	"unplug":       icon.Unplug,
 	"lock":         icon.Lock,
+	"user-round":   icon.UserRound,
 }
 
 // toastKinds are the toasts for the kinds of notice.

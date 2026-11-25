@@ -211,7 +211,7 @@ func (s *startLines) faceOf(slot string, p settings.SavedPane, known bool) *pane
 	f := newPaneFace(slot)
 	f.kind = p.Kind
 	f.editable = known && p.Kind == settings.LayoutTerminal && !p.Window
-	f.icon = kindIcons[p.Kind]
+	f.icon = look.KindIcons[p.Kind]
 	if !known || f.icon == nil {
 		f.icon = icon.SquareDashed
 	}

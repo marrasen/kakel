@@ -343,6 +343,66 @@ at the agent's asking is not in it, because you typed that yourself.
 The record lives as long as the pane: it is capped, it says how many of
 the oldest entries it has dropped, and it goes when the pane closes.
 
+## Sharing a window with a link
+
+Somebody with a web browser, and no kakel, can work in one of your
+windows with you. They see its terminals as you do, and type in them if
+you let them.
+
+1. Choose Share → Share Window with Link….
+2. Give the name the guest is told you have, and choose whether the guest
+   can type or only watch. Paste the URL of a relay (see Running a
+   relay). What you choose is offered again the next time.
+3. Press Create. kakel gives the relay the page the guest opens, if it
+   does not have it, makes the link and copies it. The dialog shows the
+   link and how it stands.
+4. Send the link to one person. It works once, and expires after 15
+   minutes if nobody joins with it. Opening it uses nothing up: pressing
+   Join does.
+5. When the guest joins, kakel asks you. The question shows the name the
+   guest wrote, the address they came from and their browser. Anybody can
+   write any name, so check with them if you are not sure. Choose Type or
+   Only watch, and press Allow or Refuse. Nothing in the question works
+   until no key and no mouse button has been pressed for a second, so it
+   cannot be answered by accident. After that Enter and Escape refuse.
+   You have ten minutes to answer.
+
+The guest sees the terminals of that window and nothing else: no other
+window, no files, no settings and no dialogs. Of a pane that is no
+terminal they see what kind it is. A terminal you open in the window
+later, or move into it, is shared too, and kakel says so when you did not
+move it there yourself. A terminal you asked for in another window opens
+in that window, also when its server answers after you went to the shared
+one. One that you move out of the shared window, or close, is gone from
+the guest's page at once. A terminal running a command is called Command
+there, as a command line may hold a password.
+
+A guest who can type can do anything you can in those terminals.
+Whoever runs the relay could see everything: the page the guest opens
+comes from it.
+
+While the window is shared:
+
+- A chip on its menu bar says Shared, or who is in it. A click on it
+  lists the links, with Type or Only watch, and Stop, for each. Add makes
+  another, for another guest.
+- Each terminal a guest sees has a gold ring, bright round the one the
+  guest is in. The guest's name shows at its corner as they come to it
+  and while they type.
+- The Machines pane lists each guest under This computer. The × on the
+  row ends that share.
+- The size of the terminals stays yours. The guest's text is scaled to
+  fit.
+
+A guest who loses the connection, or reloads the page, comes back by
+itself for 30 minutes. Sharing ends when you choose Stop Sharing Window,
+when the guest leaves, when the window closes, and when kakel exits. The
+Window Log keeps when a window was shared, who asked, what you answered
+and how it ended, and never the link.
+
+Settings › Sharing › Sharing with a link has the name, the choice and the
+relay that the next link starts with.
+
 ## Remote access, and connecting to another kakel
 
 Remote access lets a kakel on another machine, with an allowed key, use
@@ -456,6 +516,23 @@ The secret is kept in `relay_secret` in kakel's private directory (or
 The relay only carries bytes. The two kakels speak SSH to each other
 through it, so it cannot read what passes, and the one connected to
 still lets in only the keys it lists.
+
+A relay also serves windows shared with a link, under `/s/`. The links
+it serves do not hold its secret. A proxy in front of it has to:
+
+- pass on everything under the relay's address, `/s/` and what follows it
+  too, and not `/k/` alone;
+- pass on the Host header and WebSocket upgrades;
+- add the caller's address as `X-Forwarded-For`;
+- run on the same machine as the relay. The relay believes
+  `X-Forwarded-For` from this machine alone. From any other, every guest
+  has the proxy's own address, and they share what the relay allows one
+  address.
+
+A kakel that shares a window gives the relay the page its guests open.
+The relay takes only one signed with kakel's release key. `-allow-unsigned`
+takes any, for trying a kakel you built, and lets anyone with the
+relay's URL put a page of their own on its domain.
 
 ## Where kakel keeps its files
 

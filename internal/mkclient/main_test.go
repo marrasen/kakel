@@ -106,8 +106,7 @@ func TestTheClientInTheProgramsIsChecked(t *testing.T) {
 		ok       bool
 	}{
 		{"one client, signed", [][]byte{with(string(one.zipped), sig), with(sig, string(one.zipped))}, true},
-		// Until kakel has one in it.
-		{"no client", [][]byte{with(), with()}, true},
+		{"no client", [][]byte{with(), with()}, false},
 		{"not signed", [][]byte{with(string(one.zipped))}, false},
 		{"signed with another key", [][]byte{with(string(one.zipped), signOther(one.manifest))}, false},
 		{"another client's signature", [][]byte{with(string(two.zipped), sig)}, false},

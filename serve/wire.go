@@ -317,6 +317,12 @@ type Open struct {
 	Label string `json:"label"`
 	Note  string `json:"note"`
 
+	// Shell says it is a terminal with a shell in it, so its label is
+	// what the shell calls itself. Any other's may be a command line,
+	// which may hold a password: a command's, and one of a window of an
+	// older build, which never says.
+	Shell bool `json:"shell,omitempty"`
+
 	// State is what it is doing: opened, active, settled or closed.
 	State string `json:"state"`
 

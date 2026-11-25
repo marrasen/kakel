@@ -367,6 +367,13 @@ func TestTypingReachesTheProgramAndShows(t *testing.T) {
 		{"Ctrl+D", webtest.Key{Name: "d", Code: "KeyD", Number: 'D', Mods: webtest.Ctrl}, "\x04"},
 		{"Ctrl+Z", webtest.Key{Name: "z", Code: "KeyZ", Number: 'Z', Mods: webtest.Ctrl}, "\x1a"},
 		{"Ctrl+A", webtest.Key{Name: "a", Code: "KeyA", Number: 'A', Mods: webtest.Ctrl}, "\x01"},
+		// Those a browser would reload, find and paste with.
+		{"Ctrl+R", webtest.Key{Name: "r", Code: "KeyR", Number: 'R', Mods: webtest.Ctrl}, "\x12"},
+		{"Ctrl+L", webtest.Key{Name: "l", Code: "KeyL", Number: 'L', Mods: webtest.Ctrl}, "\x0c"},
+		{"Ctrl+F", webtest.Key{Name: "f", Code: "KeyF", Number: 'F', Mods: webtest.Ctrl}, "\x06"},
+		{"Ctrl+V", webtest.Key{Name: "v", Code: "KeyV", Number: 'V', Mods: webtest.Ctrl, Commands: []string{"paste"}}, "\x16"},
+		{"F5", webtest.Key{Name: "F5", Code: "F5", Number: 116}, "\x1b[15~"},
+		{"Alt+Left", webtest.Key{Name: "ArrowLeft", Code: "ArrowLeft", Number: 37, Mods: webtest.Alt}, "\x1b[1;3D"},
 		{"Ctrl+Space", webtest.Key{Name: " ", Code: "Space", Number: ' ', Mods: webtest.Ctrl}, "\x00"},
 		{"Up", webtest.Key{Name: "ArrowUp", Code: "ArrowUp", Number: 38}, "\x1b[A"},
 		{"Down", webtest.Key{Name: "ArrowDown", Code: "ArrowDown", Number: 40}, "\x1b[B"},
@@ -404,7 +411,8 @@ func TestAnInputMethodTypes(t *testing.T) {
 	awaitSent(t, p, 0, "éx", "typing after it")
 }
 
-// Text pasted reaches the program.
+// Text pasted reaches the program, by the keys a terminal pastes with.
+// Ctrl+V is a program's own key: see TestTypingReachesTheProgramAndShows.
 func TestAPasteReachesTheProgram(t *testing.T) {
 	p := demoPage(t)
 	p.Eval(`navigator.clipboard.writeText("pasted words")`, nil)
@@ -412,8 +420,9 @@ func TestAPasteReachesTheProgram(t *testing.T) {
 		what string
 		key  webtest.Key
 	}{
-		{"Ctrl+V", webtest.Key{Name: "v", Code: "KeyV", Number: 'V', Mods: webtest.Ctrl, Commands: []string{"paste"}}},
-		{"Ctrl+Shift+V", webtest.Key{Name: "V", Code: "KeyV", Number: 'V', Mods: webtest.Ctrl | webtest.Shift, Commands: []string{"pasteAndMatchStyle"}}},
+		// Chrome pastes on this one by itself: told to as well, it pastes
+		// twice.
+		{"Ctrl+Shift+V", webtest.Key{Name: "V", Code: "KeyV", Number: 'V', Mods: webtest.Ctrl | webtest.Shift}},
 		{"Shift+Insert", webtest.Key{Name: "Insert", Code: "Insert", Number: 45, Mods: webtest.Shift, Commands: []string{"paste"}}},
 	} {
 		n := len(sent(t, p, 0))

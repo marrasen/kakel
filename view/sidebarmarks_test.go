@@ -113,14 +113,14 @@ func TestSharingShowsChipsAndOpensThePermissions(t *testing.T) {
 		t.Fatal("shared, the pane's permissions did not open")
 	}
 	var said []string
-	for _, c := range win.chips.chips {
+	for _, c := range win.chips.shown() {
 		said = append(said, c.text)
 	}
 	for range 3 {
 		lastWindow.Frame(time.Second / 60)
 	}
-	if len(win.chips.boxes) != 2 {
-		t.Fatalf("the chips are laid out at %v", win.chips.boxes)
+	if len(win.chips.order) != 2 {
+		t.Fatalf("the chips are laid out as %v", win.chips.order)
 	}
 	if len(said) != 2 || said[0] != "Agent Share" || said[1] != "Remote Access · 1" {
 		t.Fatalf("the chips say %v", said)

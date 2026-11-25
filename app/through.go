@@ -21,6 +21,9 @@ import (
 // goroutine.
 type throughRefused struct {
 	err error
+	// again is what to do to be asked again, empty for turning remote
+	// access on.
+	again string
 	// noAsk connects the server gone through only when nothing has to
 	// be asked, as ConnectTo.NoAsk.
 	noAsk bool
@@ -82,7 +85,11 @@ func (a *app) dialThrough(via machines.ID, refused *throughRefused) func(ctx con
 			err := a.connectThen(ConnectTo{Server: via, Quiet: true, Only: true, NoAsk: noAsk}, func(err error) {
 				if err != nil && refused != nil && (errors.Is(err, errDeclined) || errors.Is(err, context.Canceled) ||
 					errors.Is(err, remote.ErrHostKeyRefused)) {
-					refused.err = fmt.Errorf("signing in to %s was turned down; turn remote access on again to be asked again", a.machines.Name(via))
+					again := refused.again
+					if again == "" {
+						again = "turn remote access on again"
+					}
+					refused.err = fmt.Errorf("signing in to %s was turned down; %s to be asked again", a.machines.Name(via), again)
 				}
 				if err != nil {
 					answer(dialled{err: fmt.Errorf("connect to %s: %w", a.machines.Name(via), err)})

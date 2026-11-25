@@ -20,7 +20,7 @@ first time rather than being rewritten later.
 5. **Buttons are one verb**, from a small fixed set: `OK` `Add` `Cancel`
    `Close` `Retry` `Wait` `Save` `Create` `Delete` `Remove` `Replace`
    `Skip` `Open` `Run` `Connect` `Generate` `Show` `Type` `Turn On`
-   `Turn Off`. No pronouns:
+   `Turn Off` `Allow` `Refuse` `Copy` `Stop`. No pronouns:
    never `Make it`, `Close it`, `Keep them`, `Leave it`. And never a
    button that renames itself to say what the next press does: that is
    rule 9. Use a tick box.
@@ -66,6 +66,11 @@ turned on and off. The other end is **another kakel**, or *a kakel on
 \<machine\>*, and one saved in the server list a *saved kakel*. In what
 the program shows, kakel is lower case everywhere, at the start of a
 sentence and in a title too.
+
+A window is **shared with a link**. A **guest** is somebody who opened
+the link and joins with it, and **the host** is who shares the window.
+The host *allows* or *refuses* a guest. A guest *can type*, or *can only
+watch*. A guest *joins*, *leaves* or *is disconnected*. Sharing *stops*.
 
 A **layout** is one window saved to open again: its splits, tabs and the
 recipe of each pane. It is never a "saved window", nor a "workspace" or

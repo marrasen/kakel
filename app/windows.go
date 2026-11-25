@@ -69,6 +69,8 @@ type (
 		// InPlace opens no pane of the log while it connects, as
 		// ConnectTo.InPlace.
 		InPlace bool
+		// win is the window it was asked in, once it is under way.
+		win int
 	}
 	// DisconnectWindow lets go of a window, by its ID, closing the
 	// panes on it.
@@ -151,6 +153,9 @@ func (a *app) connectWindow(in ConnectWindow) error { return a.reachWindow(in, f
 // questions still come, the secrets answering them where they can.
 func (a *app) reachWindow(in ConnectWindow, quiet bool, then func(error)) error {
 	terminal := then == nil && !in.Only
+	if in.win == 0 {
+		in.win = a.askedIn()
+	}
 	addr := serveAddr(in.Addr)
 	if addr == "" {
 		return errors.New("type the address of the kakel to connect to")
@@ -291,7 +296,7 @@ func (a *app) reachWindow(in ConnectWindow, quiet bool, then func(error)) error 
 				a.done()
 			}
 			a.holdWindow(name, addr, in.KeyFile, in.Via, win)
-			a.dialed(logPane, name, terminal)
+			a.dialed(logPane, name, terminal, in.win)
 			a.openAutoTunnels(name)
 		}
 	}()
@@ -556,6 +561,7 @@ type throughHow struct {
 
 // openThroughHow is openThrough, asking as how says.
 func (a *app) openThroughHow(window machines.ID, key string, cmd command, id, title string, at Placement, how throughHow, then func(string, error)) error {
+	at = a.asked(at)
 	w := a.machines.Get(window).Window
 	if w == nil {
 		delete(a.commands, id)
@@ -732,9 +738,15 @@ func (a *app) attachWindow(in AttachWindow) error {
 	if !ok {
 		return fmt.Errorf("%s no longer has that open", a.machines.Name(in.Window))
 	}
-	if !open.HasScreen() {
-		return fmt.Errorf("%q on %s has no screen to work in", open.Label, a.machines.Name(in.Window))
+	// A label that may be a command line is not for the Window Log.
+	called := fmt.Sprintf("%q", oneLine(open.Label))
+	if !open.Shell {
+		called = "a terminal"
 	}
+	if !open.HasScreen() {
+		return fmt.Errorf("%s on %s has no screen to work in", called, a.machines.Name(in.Window))
+	}
+	at := a.asked(Placement{})
 	a.next++
 	id := "p" + strconv.Itoa(a.next)
 	a.claimed[claim] = ""
@@ -743,7 +755,7 @@ func (a *app) attachWindow(in AttachWindow) error {
 		a.events <- func() {
 			delete(a.claimed, claim)
 			if err != nil {
-				a.failed("Couldn't work in "+open.Label, err.Error())
+				a.failed("Couldn't work in "+called+" on "+a.machines.Name(in.Window), err.Error())
 				return
 			}
 			// Its links and paths are followed where it runs: beyond the
@@ -752,7 +764,8 @@ func (a *app) attachWindow(in AttachWindow) error {
 			if open.Key() != "" {
 				on = machines.FarID(in.Window, open.Key())
 			}
-			a.addPane(Pane{ID: id, Title: open.Label, Machine: in.Window, On: open.Key()}, screen.Open(sess, a.palette, a.withLinks(a.hooks(id), id, on)), Placement{})
+			a.addPane(Pane{ID: id, Title: open.Label, Machine: in.Window, On: open.Key(), MaybeCommand: !open.Shell},
+				screen.Open(sess, a.palette, a.withLinks(a.hooks(id), id, on)), at)
 			if open.Key() != "" {
 				a.farHost[id] = open.Key()
 				a.machines.NameFar(in.Window, open.Key(), open.Host)

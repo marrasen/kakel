@@ -67,7 +67,8 @@ func ParseURL(s string) (URL, error) {
 	}
 	u, err := url.Parse(s)
 	if err != nil {
-		return URL{}, fmt.Errorf("%q is not a URL", s)
+		// Without what was typed: it holds the relay's secret.
+		return URL{}, errors.New("that is not a URL")
 	}
 	switch strings.ToLower(u.Scheme) {
 	case "https", "wss":
@@ -75,10 +76,10 @@ func ParseURL(s string) (URL, error) {
 	case "http", "ws":
 		u.Scheme = "http"
 	default:
-		return URL{}, fmt.Errorf("a relay is reached over https, not %s", u.Scheme)
+		return URL{}, errors.New("a relay is reached over https")
 	}
 	if u.Host == "" || u.Hostname() == "" {
-		return URL{}, fmt.Errorf("%q names no machine", s)
+		return URL{}, errors.New("the URL names no machine")
 	}
 	u.Host = strings.ToLower(u.Host)
 	u.Path = strings.TrimRight(u.Path, "/")
