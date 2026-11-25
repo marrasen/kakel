@@ -39,13 +39,17 @@ import (
 	"time"
 )
 
-// LongestSecretWait is the most an agent may be left waiting for the
-// user to type a secret.
+// LongestSecretWait is how long an ask for a secret stays on a pane with
+// nobody answering it.
 //
 // It is long because the user may be fetching the password from
-// somewhere, and bounded because a window that never answers would park
-// a goroutine of the agent's for the rest of the process.
+// somewhere, and bounded so that a line nobody is waiting on any more
+// does not sit on the pane for good.
 const LongestSecretWait = 10 * time.Minute
+
+// SecretCallWait is the most one ask for a secret waits before saying the user has not typed yet; it stays under the
+// 60 seconds an agent program commonly allows a tool call.
+const SecretCallWait = 45 * time.Second
 
 // Window is what an agent may do with the panes it has been handed.
 //
@@ -73,7 +77,8 @@ const LongestSecretWait = 10 * time.Minute
 // Secret asks the user to type something into the pane and waits for
 // them to. It reports whether they did before the time ran out, and
 // never what they typed: the characters go to the program in the pane
-// and nowhere else.
+// and nowhere else. An ask the time ran out on stays on the pane, and
+// asking again for the same thing waits on it again.
 //
 // Restart starts a pane's program again, for a pane whose program has
 // finished and whose hand-over allows it. The pane is the same pane, so

@@ -163,13 +163,14 @@ func toolList() []tool {
 		{
 			Name:  "ask_for_secret",
 			Title: "Ask the user to type a secret",
-			Description: "Ask the user to type something into the pane without showing it" +
-				" to you: a password, a passphrase, a one-time code. They type it on the" +
-				" pane and it goes to the program there; you are told that they typed and" +
-				" never what. It waits for them, and nothing else of yours is answered" +
-				" while it waits. A program that echoes what is typed puts it on the" +
-				" screen, where you can read it: this hides what you are told, not what" +
-				" the pane shows.",
+			Description: fmt.Sprintf("Ask the user to type something into the pane without showing it"+
+				" to you: a password, a passphrase, a one-time code. They type it on the"+
+				" pane and it goes to the program there; you are told that they typed and"+
+				" never what. One call waits at most %d seconds. If they have not typed"+
+				" by then the ask stays on the pane, and calling again with the same"+
+				" pane and what waits on it again. A program that echoes what is typed puts it on the"+
+				" screen, where you can read it: this hides what you are told, not what"+
+				" the pane shows.", int(agent.SecretCallWait.Seconds())),
 			InputSchema: schema{
 				Type: "object",
 				Properties: map[string]field{
@@ -177,8 +178,8 @@ func toolList() []tool {
 					"what": {Type: "string", Description: "what to ask for, in a few words," +
 						` such as "the sudo password for prod". It is shown to the user.`},
 					"wait_ms": {Type: "integer", Description: fmt.Sprintf(
-						"how long to wait for them, in milliseconds. Left out, it waits up"+
-							" to %d minutes.", int(agent.LongestSecretWait.Minutes()))},
+						"how long this call waits for them, in milliseconds, up to %d seconds."+
+							" Left out, it waits that long.", int(agent.SecretCallWait.Seconds()))},
 				},
 				Required: []string{"pane", "what"},
 			},
@@ -416,9 +417,12 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 			return wrong(err.Error())
 		}
 		if !typed {
-			return say("The user has not typed anything into the pane. They may not have" +
-				" seen the line, or may not want to: read the pane to see where it is," +
-				" and ask them in your own words before asking again.")
+			return say(fmt.Sprintf("The user has not typed anything into the pane yet. The"+
+				" ask is still on the pane, for up to %d minutes. To keep waiting, call"+
+				" ask_for_secret again with the same pane and what. They may not have"+
+				" seen the line, or may not want to answer it: if a few calls go by with"+
+				" nothing, read the pane and ask them in your own words.",
+				int(agent.LongestSecretWait.Minutes())))
 		}
 		return say("The user typed something into the pane. You were not told what," +
 			" and you will not be. Use wait_for to see what the program does with it.")

@@ -109,6 +109,16 @@ func TestAWaitIsGivenTheTimeItAskedFor(t *testing.T) {
 	}
 }
 
+// An ask for a secret holds the connection for at most SecretCallWait, however long it asks to wait.
+func TestAnAskForASecretHoldsTheConnectionBriefly(t *testing.T) {
+	c := &Client{patience: promptly}
+	for _, waitMS := range []int{0, 1 << 30} {
+		if got := c.answerWithin(ask{Do: "secret", WaitMS: waitMS}); got != SecretCallWait+promptly {
+			t.Errorf("a secret asking to wait %dms gets %v, want %v", waitMS, got, SecretCallWait+promptly)
+		}
+	}
+}
+
 // A read of a big screen comes back whole rather than closing the
 // connection.
 //
