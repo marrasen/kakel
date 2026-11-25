@@ -54,7 +54,7 @@ true.
 Keep those names. `install.ps1`, `install.sh` and kakel's own updates
 find the archive by them, and check it against `SHA256SUMS`. An
 installed kakel runs an update only when `SHA256SUMS.sig` matches the
-public key in `app/install.go`. An
+public key in `internal/build/build.go`. An
 installed kakel updates only from a release: a build that calls itself
 `dev-…` or `v…-N-g…` never looks.
 
@@ -71,7 +71,7 @@ over MCP. A build from a working tree calls itself `dev-<commit>`, and
 
 CI signs `SHA256SUMS` with `make sign`, which takes the private key
 from the repository's `GUNIM_SIGN_KEY` secret. Its public key is
-`UpdateKey` in `app/install.go`. To sign by hand, after `make release`:
+`ReleaseKey` in `internal/build/build.go`. To sign by hand, after `make release`:
 
 ```
 GUNIM_SIGN_KEY=$(cat kakel.key) make sign
@@ -81,9 +81,57 @@ Never commit the private key. Lose it, and installed copies can take no
 more updates: their users must download the next release by hand. To
 change it, make a new pair with
 `go run github.com/marrasen/gunim/tools/gunimsign -keygen new.key`,
-put the new public key in `app/install.go`, and sign that one release
+put the new public key in `internal/build/build.go`, and sign that one release
 with the old key; every release after it is signed with the new one.
 Then replace the secret with `gh secret set GUNIM_SIGN_KEY < new.key`.
+
+### The web client's signature
+
+From the first release that shares windows with a link, both programs
+hold the web client a window's guests open. A relay takes it only with a
+signature by the release key. CI makes that signature as it builds, from
+the same secret. By hand, give both commands the key:
+
+```
+GUNIM_SIGN_KEY=$(cat kakel.key) make release VERSION=v0.1.0
+GUNIM_SIGN_KEY=$(cat kakel.key) make sign
+```
+
+`make sign` looks inside the finished programs. It fails, and nothing is
+published, when one holds a web client that is not signed with
+`ReleaseKey`, or they hold different ones. For a program that holds none
+it warns, until kakel shares windows.
+
+gunimsign makes the signature, and is the only program given the key.
+What it signs is `client.manifest`: the list of the client's files under
+a line that says what it is, so the signature of a `SHA256SUMS` is never
+one of a web client, nor the other way round.
+
+The key a relay looks for is the `ReleaseKey` it was built with. A relay
+takes the web client of any release signed with that key, older or newer
+than itself. Changing the key splits them:
+
+- **A relay from before the change** turns away the web clients of
+  releases after it. Update the relay.
+- **A relay from after the change** turns away the web clients of
+  releases before it. Update the kakel that shares.
+
+The release that changes the key is signed with both. Its `SHA256SUMS`
+is signed with the old key, which installed copies check. Its web client
+is signed with the new one, which its own relays check. Before its tag:
+
+```
+gh secret set GUNIM_CLIENT_KEY < new.key
+```
+
+and after it, once `GUNIM_SIGN_KEY` is the new key:
+
+```
+gh secret delete GUNIM_CLIENT_KEY
+```
+
+`GUNIM_CLIENT_KEY` is used in place of `GUNIM_SIGN_KEY` for the web
+client alone, whenever it is set. Tell whoever runs a relay to update it.
 
 ## What is not automated
 

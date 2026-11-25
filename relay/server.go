@@ -4,9 +4,9 @@ package relay
 
 import (
 	"context"
-	"crypto/rand"
+	"crypto/ed25519"
 	"crypto/subtle"
-	"encoding/base32"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,11 +14,14 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/coder/websocket"
+
+	"github.com/marrasen/kakel/internal/build"
 )
 
 // tokenHeader carries a served window's token: kept with its code, so
@@ -61,21 +64,47 @@ type knock struct {
 }
 
 // Server is a relay: an http.Handler joining served windows and the
-// windows connecting to them.
+// windows connecting to them, and shared windows and their guests.
 type Server struct {
 	secret string
 	// Log is told what happened, a line at a time. A nil one is quiet.
 	Log func(format string, args ...any)
+	// AllowUnsigned takes a web client no release key has signed: for
+	// trying one that is not released. Whoever has the relay's URL can
+	// then put a page of their own on its domain.
+	AllowUnsigned bool
 
-	// within is answerWithin as it was when the relay was made.
-	within time.Duration
+	// within is answerWithin as it was when the relay was made, as grace
+	// is graceFor and back is backWithin.
+	within, grace, back time.Duration
+	// key is whose signature a web client needs.
+	key ed25519.PublicKey
+	// settled is when a share the relay does not know is one it will not
+	// hear of: the hosts of a relay that started again come back to it
+	// first.
+	settled time.Time
+	// shareJoins and guestJoins are how often a share may be joined, and
+	// how often from one address.
+	shareJoins, guestJoins pace
 
 	mu      sync.Mutex
 	hosts   map[string]*host
 	tickets map[string]*ticket
 	// misses counts, by address, the codes asked for that nobody
-	// serves.
-	misses map[string]*misses
+	// serves, and lost the links no share has. They are counted apart,
+	// as a code takes the relay's secret to ask for.
+	misses, lost map[string]*misses
+	// shares are the shares by id, and past those there were.
+	shares map[string]*share
+	past   map[string]pastShare
+	// bundles are the web clients kept, by hash, and bundleBytes how
+	// much that is.
+	bundles     map[string]*keptBundle
+	bundleBytes int
+	// uploading are the addresses a web client is being uploaded from,
+	// and uploaded is closed, and made again, as one of them is done.
+	uploading map[string]bool
+	uploaded  chan struct{}
 }
 
 // misses are the codes one address asked for that nobody serves, since
@@ -85,43 +114,59 @@ type misses struct {
 	count int
 }
 
-// host is a served window registered on the relay.
+// host is a served window, or the host of a shared one, registered on
+// the relay.
 type host struct {
-	code, token string
+	// name is what the log calls it.
+	name, token string
 	// from is the address it registered from.
 	from string
 	// knocks are the knocks waiting to be written to it, by the one
 	// goroutine that writes them.
 	knocks chan []byte
-	// waiting counts the tickets made for it not yet answered.
-	waiting int
-	// gone is closed once it has left the relay, and replaced when the
-	// same window has registered again in its place.
-	gone, replaced chan struct{}
+	// waiting counts the tickets made for it not yet answered, and most
+	// is how many there may be.
+	waiting, most int
+	// gone is closed once it has left the relay, and out when the relay
+	// is to let it go, for the reason why.
+	gone, out chan struct{}
+	why       string
 }
 
-// ticket is one window connecting, waiting for the stream the served
-// window brings for it.
+// newHost is a host the relay is told of under name.
+func newHost(name, token, from string, most int) *host {
+	return &host{name: name, token: token, from: from, most: most, knocks: make(chan []byte, most),
+		gone: make(chan struct{}), out: make(chan struct{})}
+}
+
+// turnOut has the relay let h go, once.
+func (h *host) turnOut(why string) {
+	h.why = why
+	close(h.out)
+}
+
+// ticket is one window connecting, or one guest, waiting for the stream
+// the host brings for it.
 type ticket struct {
 	host *host
-	// brought is where the served window's stream arrives.
+	// brought is where the host's stream arrives.
 	brought chan *websocket.Conn
 	// done is closed once the two are no longer joined, for the
-	// handler holding the served window's stream.
+	// handler holding the host's stream.
 	done chan struct{}
 }
 
-// NewServer makes a relay answering under secret.
+// NewServer makes a relay answering under secret. It takes the web
+// clients kakel's release key has signed.
 func NewServer(secret string) *Server {
-	return &Server{secret: secret, hosts: map[string]*host{}, tickets: map[string]*ticket{},
-		misses: map[string]*misses{}, within: answerWithin}
-}
-
-// NewSecret makes a secret for a relay's URL.
-func NewSecret() string {
-	var b [16]byte
-	_, _ = rand.Read(b[:])
-	return strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(b[:]))
+	key, _ := base64.StdEncoding.DecodeString(build.ReleaseKey)
+	return &Server{secret: secret, key: key,
+		within: answerWithin, grace: graceFor, back: backWithin,
+		shareJoins: pace{burst: 20, every: 2 * time.Second}, guestJoins: pace{burst: 10, every: 4 * time.Second},
+		uploading: map[string]bool{}, uploaded: make(chan struct{}),
+		hosts: map[string]*host{}, tickets: map[string]*ticket{},
+		misses: map[string]*misses{}, lost: map[string]*misses{},
+		shares: map[string]*share{}, past: map[string]pastShare{}, bundles: map[string]*keptBundle{}}
 }
 
 // logf says what happened, when anybody is listening.
@@ -132,10 +177,15 @@ func (s *Server) logf(format string, args ...any) {
 }
 
 // ServeHTTP answers a request on any of the relay's doors. The path
-// may have anything before /k/, for a relay behind a proxy that hands
-// it a folder of its own.
+// may have anything before /k/ or /s/, for a relay behind a proxy that
+// hands it a folder of its own.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	holdToTime(w, r)
 	at := strings.LastIndex(r.URL.Path, secretPath)
+	if sat := strings.LastIndex(r.URL.Path, sharePath); sat > at {
+		s.serveGuest(w, r, r.URL.Path[sat+len(sharePath):])
+		return
+	}
 	if at < 0 {
 		http.NotFound(w, r)
 		return
@@ -148,7 +198,20 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	door, arg, _ := strings.Cut(door, "/")
-	if door != doorHost && door != doorJoin && door != doorAccept {
+	switch door {
+	case doorAbout:
+		s.serveAbout(w, r)
+		return
+	case doorBundle:
+		s.serveBundle(w, r, arg)
+		return
+	case doorShare:
+		if r.Method == http.MethodDelete {
+			s.endShare(w, r)
+			return
+		}
+	case doorHost, doorJoin, doorAccept:
+	default:
 		http.NotFound(w, r)
 		return
 	}
@@ -156,17 +219,41 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// that does not pass WebSockets on would have the served window
 	// bring a stream for every try.
 	if !upgrading(r) {
-		http.Error(w, "the relay was reached without a WebSocket upgrade: a proxy in front of it has to pass the Upgrade and Connection headers on", http.StatusUpgradeRequired)
+		http.Error(w, noUpgrade, http.StatusUpgradeRequired)
 		return
 	}
 	switch door {
 	case doorHost:
 		s.serveHost(w, r)
+	case doorShare:
+		s.serveShare(w, r)
 	case doorJoin:
 		s.serveJoin(w, r, arg)
 	case doorAccept:
 		s.serveAccept(w, r, arg)
 	}
+}
+
+// noUpgrade is said to a request for a WebSocket that is not one.
+const noUpgrade = "the relay was reached without a WebSocket upgrade: a proxy in front of it has to pass the Upgrade and Connection headers on"
+
+// bodyWithin and replyWithin are how long a request may take that is no
+// upload, no download and no stream: what it sends, and its answer.
+var (
+	bodyWithin  = 10 * time.Second
+	replyWithin = time.Minute
+)
+
+// holdToTime bounds a request that does not say how long it takes: a
+// caller sending its body a byte at a time, or never reading its answer,
+// does not hold a connection for as long as it likes. A WebSocket taken
+// is bound by neither, and the doors that carry much set their own.
+func holdToTime(w http.ResponseWriter, r *http.Request) {
+	c := http.NewResponseController(w)
+	if r.ContentLength != 0 {
+		_ = c.SetReadDeadline(time.Now().Add(bodyWithin))
+	}
+	_ = c.SetWriteDeadline(time.Now().Add(replyWithin))
 }
 
 // same compares two secrets in a time that says nothing of where they
@@ -194,6 +281,17 @@ func accept(w http.ResponseWriter, r *http.Request) (*websocket.Conn, error) {
 	return websocket.Accept(w, r, &websocket.AcceptOptions{CompressionMode: websocket.CompressionDisabled})
 }
 
+// hostToken is the token a request to register gives, or "" once it has
+// been told it gave none.
+func hostToken(w http.ResponseWriter, r *http.Request) string {
+	token := r.Header.Get(tokenHeader)
+	if len(token) < 16 {
+		http.Error(w, "a kakel registering gives a token with its code", http.StatusBadRequest)
+		return ""
+	}
+	return token
+}
+
 // serveHost registers a served window under its code, and tells it of
 // each window connecting until it leaves.
 func (s *Server) serveHost(w http.ResponseWriter, r *http.Request) {
@@ -202,19 +300,16 @@ func (s *Server) serveHost(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	token := r.Header.Get(tokenHeader)
-	if len(token) < 16 {
-		http.Error(w, "a kakel registering gives a token with its code", http.StatusBadRequest)
+	token := hostToken(w, r)
+	if token == "" {
 		return
 	}
-	from := clientAddr(r)
 	// Registered before the WebSocket is taken, so the window can be
 	// joined the moment it hears it has been: a window connecting a
 	// moment later finds it, and its knock waits until it is told.
-	h := &host{code: code, token: token, from: from, knocks: make(chan []byte, mostWaiting),
-		gone: make(chan struct{}), replaced: make(chan struct{})}
+	h := newHost(code, token, clientAddr(r), mostWaiting)
 	s.mu.Lock()
-	why, status := s.mayRegisterLocked(code, token, from)
+	why, status := s.mayRegisterLocked(code, token, h.from)
 	if why != "" {
 		s.mu.Unlock()
 		http.Error(w, why, status)
@@ -224,7 +319,7 @@ func (s *Server) serveHost(w http.ResponseWriter, r *http.Request) {
 	s.hosts[code] = h
 	if old != nil {
 		// The same window, back before the relay noticed it had gone.
-		close(old.replaced)
+		old.turnOut(registeredAgain)
 	}
 	s.mu.Unlock()
 	defer func() {
@@ -235,24 +330,34 @@ func (s *Server) serveHost(w http.ResponseWriter, r *http.Request) {
 		close(h.gone)
 		s.mu.Unlock()
 	}()
+	s.hold(w, r, h)
+}
+
+// registeredAgain is why a host is let go that came back before the
+// relay noticed it had gone.
+const registeredAgain = "the same kakel registered again"
+
+// hold takes the WebSocket of a host registered, and tells it of
+// whoever asks for it until it leaves or the relay lets it go.
+func (s *Server) hold(w http.ResponseWriter, r *http.Request, h *host) {
 	ws, err := accept(w, r)
 	if err != nil {
 		return
 	}
 	defer func() { _ = ws.CloseNow() }()
-	s.logf("relay: %s registered from %s", code, from)
+	s.logf("relay: %s registered from %s", h.name, h.from)
 
 	ctx := ws.CloseRead(r.Context())
 	go keepUp(ctx, ws, nil)
 	go s.tell(ctx, h, ws)
 	select {
 	case <-ctx.Done():
-	case <-h.replaced:
+	case <-h.out:
 		// Not waited for: a connection that went dead takes a while to
 		// close, and the one that replaced it is served meanwhile.
-		go func() { _ = ws.Close(websocket.StatusNormalClosure, "the same kakel registered again") }()
+		go func() { _ = ws.Close(websocket.StatusNormalClosure, h.why) }()
 	}
-	s.logf("relay: %s left", code)
+	s.logf("relay: %s left", h.name)
 }
 
 // tell writes h's knocks to it, one at a time, until ctx ends. Writing
@@ -297,9 +402,9 @@ func (s *Server) mayRegisterLocked(code, token, from string) (string, int) {
 	if len(s.hosts) >= mostHosts {
 		return "the relay has as many kakels as it takes", http.StatusServiceUnavailable
 	}
-	n := 0
+	n, key := 0, addrKey(from)
 	for _, h := range s.hosts {
-		if h.from == from {
+		if addrKey(h.from) == key {
 			n++
 		}
 	}
@@ -309,45 +414,100 @@ func (s *Server) mayRegisterLocked(code, token, from string) (string, int) {
 	return "", 0
 }
 
-// missed counts a code asked for from the address from that nobody
-// serves.
-func (s *Server) missed(from string, now time.Time) {
+// missed counts in all a code asked for from the address from that
+// nobody serves, or a link no share has.
+func (s *Server) missed(all map[string]*misses, from string, now time.Time) {
+	from = addrKey(from)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	m := s.misses[from]
+	m := all[from]
 	if m == nil || now.Sub(m.from) > missWindow {
-		if len(s.misses) >= mostMissing {
-			for k, old := range s.misses {
+		if len(all) >= mostMissing {
+			for k, old := range all {
 				if now.Sub(old.from) > missWindow {
-					delete(s.misses, k)
+					delete(all, k)
 				}
 			}
-			if len(s.misses) >= mostMissing {
+			if len(all) >= mostMissing {
 				// Too many to count: this one goes uncounted rather than
 				// the relay growing without end.
 				return
 			}
 		}
 		m = &misses{from: now}
-		s.misses[from] = m
+		all[from] = m
 	}
 	m.count++
 }
 
-// missing reports whether the address from has asked for too many codes
-// nobody serves to be answered now.
-func (s *Server) missing(from string, now time.Time) bool {
+// missing reports whether the address from has asked for too much that
+// is not there, as all counts it, to be answered now.
+func (s *Server) missing(all map[string]*misses, from string, now time.Time) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	m := s.misses[from]
+	m := all[addrKey(from)]
 	return m != nil && now.Sub(m.from) <= missWindow && m.count >= mostMisses
+}
+
+// Why a host brought no stream for somebody.
+var (
+	errBusy   = errors.New("relay: as many as may are waiting")
+	errLeft   = errors.New("relay: the host left")
+	errSilent = errors.New("relay: the host did not answer")
+)
+
+// ask has h bring a stream for somebody at the address from, or says
+// why it did not. The stream is done with once done is called, which is
+// nil with an error.
+func (s *Server) ask(ctx context.Context, h *host, from string) (far *websocket.Conn, done func(), err error) {
+	id := NewSecret()
+	t := &ticket{host: h, brought: make(chan *websocket.Conn, 1), done: make(chan struct{})}
+	s.mu.Lock()
+	if h.waiting >= h.most || len(s.tickets) >= mostTickets {
+		s.mu.Unlock()
+		return nil, nil, errBusy
+	}
+	h.waiting++
+	s.tickets[id] = t
+	s.mu.Unlock()
+	// Taken back however this ends: a stream brought late finds no
+	// ticket and is turned away.
+	defer func() {
+		s.mu.Lock()
+		delete(s.tickets, id)
+		h.waiting--
+		s.mu.Unlock()
+		if err != nil {
+			close(t.done)
+		}
+	}()
+
+	line, _ := json.Marshal(knock{Ticket: id, From: from})
+	// Room for it: no more knocks wait than tickets do, and those are
+	// held to most.
+	select {
+	case h.knocks <- line:
+	default:
+		return nil, nil, errBusy
+	}
+	wctx, cancel := context.WithTimeout(ctx, s.within)
+	defer cancel()
+	select {
+	case far = <-t.brought:
+		return far, func() { close(t.done) }, nil
+	case <-h.gone:
+	case <-h.out:
+	case <-wctx.Done():
+		return nil, nil, errSilent
+	}
+	return nil, nil, errLeft
 }
 
 // serveJoin joins a window connecting to the served window registered
 // under code, once that window has brought a stream for it.
 func (s *Server) serveJoin(w http.ResponseWriter, r *http.Request, code string) {
 	from := clientAddr(r)
-	if s.missing(from, time.Now()) {
+	if s.missing(s.misses, from, time.Now()) {
 		http.Error(w, "too many codes not on this relay were asked for from here; wait a minute", http.StatusTooManyRequests)
 		return
 	}
@@ -356,73 +516,47 @@ func (s *Server) serveJoin(w http.ResponseWriter, r *http.Request, code string) 
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	id := NewSecret()
-	t := &ticket{brought: make(chan *websocket.Conn, 1), done: make(chan struct{})}
 	s.mu.Lock()
 	h := s.hosts[code]
-	switch {
-	case h == nil:
-		s.mu.Unlock()
-		s.missed(from, time.Now())
+	s.mu.Unlock()
+	if h == nil {
+		s.missed(s.misses, from, time.Now())
 		http.Error(w, "no kakel has code "+code+" on this relay", http.StatusNotFound)
 		return
-	case h.waiting >= mostWaiting || len(s.tickets) >= mostTickets:
-		s.mu.Unlock()
+	}
+	far, done, err := s.ask(r.Context(), h, from)
+	switch err {
+	case nil:
+	case errBusy:
 		http.Error(w, "too many kakels are connecting to "+code+" at once; try again", http.StatusServiceUnavailable)
 		return
-	}
-	t.host = h
-	h.waiting++
-	s.tickets[id] = t
-	s.mu.Unlock()
-	defer close(t.done)
-	// Taken back however this ends: a stream brought late finds no
-	// ticket and is turned away.
-	defer func() {
-		s.mu.Lock()
-		delete(s.tickets, id)
-		h.waiting--
-		s.mu.Unlock()
-	}()
-
-	line, _ := json.Marshal(knock{Ticket: id, From: from})
-	// Room for it: no more knocks wait than tickets do, and those are
-	// held to mostWaiting.
-	select {
-	case h.knocks <- line:
-	default:
-		http.Error(w, "too many kakels are connecting to "+code+" at once; try again", http.StatusServiceUnavailable)
-		return
-	}
-	wctx, cancel := context.WithTimeout(r.Context(), s.within)
-	defer cancel()
-	var far *websocket.Conn
-	select {
-	case far = <-t.brought:
-	case <-h.gone:
+	case errLeft:
 		http.Error(w, "the kakel with code "+code+" left the relay", http.StatusBadGateway)
 		return
-	case <-wctx.Done():
+	default:
 		http.Error(w, "the kakel with code "+code+" did not answer", http.StatusGatewayTimeout)
 		return
 	}
+	defer done()
 	near, err := accept(w, r)
 	if err != nil {
 		_ = far.Close(websocket.StatusGoingAway, "the kakel connecting left")
 		return
 	}
 	s.logf("relay: %s joined from %s", code, from)
-	join(r.Context(), near, far)
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+	join(cancel, carried(ctx, near), carried(ctx, far))
 }
 
-// serveAccept takes the stream a served window brings for a ticket, and
-// holds it while it is joined.
+// serveAccept takes the stream a host brings for a ticket, and holds it
+// while it is joined.
 func (s *Server) serveAccept(w http.ResponseWriter, r *http.Request, id string) {
 	token := r.Header.Get(tokenHeader)
 	s.mu.Lock()
 	t := s.tickets[id]
 	if t != nil && !same(token, t.host.token) {
-		// Not the window it was made for: left for that one.
+		// Not the host it was made for: left for that one.
 		t = nil
 	}
 	if t != nil {
@@ -440,16 +574,14 @@ func (s *Server) serveAccept(w http.ResponseWriter, r *http.Request, id string) 
 	}
 	t.brought <- ws
 	<-t.done
-	// Closed here too, for one brought just as the window connecting
-	// gave up waiting, which nothing joined.
+	// Closed here too, for one brought just as whoever it was for gave up
+	// waiting, which nothing joined.
 	_ = ws.CloseNow()
 }
 
-// join carries one stream into the other until either ends.
-func join(ctx context.Context, a, b *websocket.Conn) {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	na, nb := carried(ctx, a), carried(ctx, b)
+// join carries one stream into the other until either ends, and ends
+// both with cancel.
+func join(cancel context.CancelFunc, a, b net.Conn) {
 	var wg sync.WaitGroup
 	carry := func(to, from net.Conn) {
 		defer wg.Done()
@@ -457,11 +589,11 @@ func join(ctx context.Context, a, b *websocket.Conn) {
 		cancel()
 	}
 	wg.Add(2)
-	go carry(na, nb)
-	go carry(nb, na)
+	go carry(a, b)
+	go carry(b, a)
 	wg.Wait()
-	_ = na.Close()
-	_ = nb.Close()
+	_ = a.Close()
+	_ = b.Close()
 }
 
 // clientAddr is where a request came from: for a proxy on this machine,
@@ -469,19 +601,76 @@ func join(ctx context.Context, a, b *websocket.Conn) {
 // and the address that connected otherwise. Only the last is the
 // proxy's own word; the rest are whatever the caller sent.
 func clientAddr(r *http.Request) string {
+	if fromThisMachine(r) {
+		if last := lastOf(r, "X-Forwarded-For"); last != "" {
+			return last
+		}
+	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr
 	}
-	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
-		if fwd := r.Header.Values("X-Forwarded-For"); len(fwd) > 0 {
-			all := strings.Split(fwd[len(fwd)-1], ",")
-			if last := strings.TrimSpace(all[len(all)-1]); last != "" {
-				return last
-			}
-		}
-	}
 	return host
+}
+
+// addrKey is what an address is counted under where there is a limit to
+// an address: the address itself, and for IPv6 its first 64 bits, as
+// one machine has every address that begins with them.
+func addrKey(addr string) string {
+	ip, err := netip.ParseAddr(addr)
+	if err != nil {
+		// As some proxies write it, with a port.
+		ap, perr := netip.ParseAddrPort(addr)
+		if perr != nil {
+			return addr
+		}
+		ip = ap.Addr()
+	}
+	ip = ip.Unmap().WithZone("")
+	if ip.Is4() {
+		return ip.String()
+	}
+	net64, err := ip.Prefix(64)
+	if err != nil {
+		return addr
+	}
+	return net64.String()
+}
+
+// fromThisMachine reports whether a request was connected from this
+// machine, as a proxy on it does.
+func fromThisMachine(r *http.Request) bool {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+// lastOf is the last of a header's values, each a list with commas, or
+// "".
+func lastOf(r *http.Request, header string) string {
+	all := r.Header.Values(header)
+	if len(all) == 0 {
+		return ""
+	}
+	parts := strings.Split(all[len(all)-1], ",")
+	return strings.TrimSpace(parts[len(parts)-1])
+}
+
+// answered is a relay's answer that turned a request away: its status,
+// and why in words.
+type answered struct {
+	status int
+	why    string
+}
+
+func (a answered) Error() string { return a.why }
+
+// Is reports whether target is the error this answer stands for.
+func (a answered) Is(target error) bool {
+	return target == ErrNoBundle && a.status == http.StatusFailedDependency
 }
 
 // said turns a relay's refusal into a sentence: the text it answered
@@ -500,9 +689,9 @@ func said(resp *http.Response, err error) error {
 	}
 	switch {
 	case resp.StatusCode == http.StatusNotFound && (text == "404 page not found" || text == ""):
-		return errors.New("the relay does not know that URL: check its secret, the part after /k/")
-	case text != "":
-		return errors.New(text)
+		text = "the relay does not know that URL: check its secret, the part after /k/"
+	case text == "":
+		text = "the relay answered " + resp.Status
 	}
-	return fmt.Errorf("the relay answered %s", resp.Status)
+	return answered{resp.StatusCode, text}
 }

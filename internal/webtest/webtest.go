@@ -25,64 +25,23 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/marrasen/kakel/internal/clientbuild"
 )
 
-// Build builds the client into dir, with the page and the files it
-// needs.
+// Build builds the client with its demo into dir, with the page and the
+// files it needs.
 func Build(dir string) error {
-	mod, err := output("go", "env", "GOMOD")
+	files, err := clientbuild.Build(clientbuild.Demo)
 	if err != nil {
 		return err
 	}
-	if mod == "" || mod == os.DevNull {
-		return errors.New("building the client: not in kakel's source")
-	}
-	root := filepath.Dir(mod)
-	cmd := exec.Command("go", "build", "-trimpath", "-ldflags", "-s -w", "-o", filepath.Join(dir, "kakel.wasm"), "./webclient")
-	cmd.Dir = root
-	cmd.Env = append(os.Environ(), "GOOS=js", "GOARCH=wasm", "CGO_ENABLED=0", "GOFLAGS="+forWasm(os.Getenv("GOFLAGS")))
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("building the client: %w\n%s", err, out)
-	}
-	goroot, err := output("go", "env", "GOROOT")
-	if err != nil {
-		return err
-	}
-	for from, to := range map[string]string{
-		filepath.Join(goroot, "lib", "wasm", "wasm_exec.js"): "wasm_exec.js",
-		filepath.Join(root, "webclient", "index.html"):       "index.html",
-	} {
-		b, err := os.ReadFile(from)
-		if err != nil {
-			return err
-		}
-		if err := os.WriteFile(filepath.Join(dir, to), b, 0o600); err != nil {
+	for name, data := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o600); err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-// forWasm is flags for every go command, less those a build for a
-// browser has no support for.
-func forWasm(flags string) string {
-	var out []string
-	for _, f := range strings.Fields(flags) {
-		name, _, _ := strings.Cut(strings.TrimLeft(f, "-"), "=")
-		if !slices.Contains([]string{"race", "msan", "asan", "cover", "covermode", "coverpkg"}, name) {
-			out = append(out, f)
-		}
-	}
-	return strings.Join(out, " ")
-}
-
-// output is what a command prints, trimmed.
-func output(name string, args ...string) (string, error) {
-	out, err := exec.Command(name, args...).Output()
-	if err != nil {
-		return "", fmt.Errorf("%s %s: %w", name, strings.Join(args, " "), err)
-	}
-	return strings.TrimSpace(string(out)), nil
 }
 
 // ErrNoChrome says there is no Chrome here to run the tests in.
@@ -183,9 +142,10 @@ type message struct {
 // busy with a flood of output answers once it has a moment.
 const answerWithin = time.Minute
 
-// Start starts a headless Chrome, until it is closed. The error is
-// ErrNoChrome where there is none.
-func Start() (*Browser, error) {
+// Start starts a headless Chrome, with flags of its own after the ones
+// the tests all have, until it is closed. The error is ErrNoChrome where
+// there is none.
+func Start(flags ...string) (*Browser, error) {
 	chrome, err := FindChrome()
 	if err != nil {
 		return nil, err
@@ -225,7 +185,7 @@ func Start() (*Browser, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	b := &Browser{to: commandsW, cancel: cancel, dir: dir, ended: make(chan struct{}),
 		answers: map[int]chan message{}, pages: map[string]*Page{}}
-	cmd := exec.CommandContext(ctx, chrome, append(args, "about:blank")...)
+	cmd := exec.CommandContext(ctx, chrome, slices.Concat(args, flags, []string{"about:blank"})...)
 	// Headless, and with no display to show itself on besides.
 	cmd.Env = slices.DeleteFunc(os.Environ(), func(v string) bool {
 		return strings.HasPrefix(v, "DISPLAY=") || strings.HasPrefix(v, "WAYLAND_DISPLAY=")

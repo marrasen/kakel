@@ -10,16 +10,28 @@
 // key of the window it reaches.
 //
 // A relay's URL carries a secret, /k/<secret>, which the relay makes on
-// its first run. Without it the relay answers nothing, so a relay found
-// by a stranger is not a free tunnel for their traffic.
+// its first run. Without it the relay answers nothing but the links
+// below, so a relay found by a stranger is not a free tunnel for their
+// traffic.
 //
 // A served window registers with a code. A window connecting gives the
 // relay the same code, and the relay asks the served window for a
 // stream of its own to join to that one.
+//
+// A window shared with a link registers a share, under the link's id,
+// with the same secret. Its guests have a web browser and no secret of
+// the relay's: /s/<id>/ is kakel's web client, which the host gave the
+// relay beforehand as a bundle signed with the key of kakel's releases,
+// and /s/<id>/join is the guest's stream, joined to the host's as a
+// window's is. The id is 128 random bits, and an id no share has is
+// answered with a page that says the link has expired. What follows the
+// # in a link is the guest's and the host's own secret, and no browser
+// sends it to the relay.
 package relay
 
 import (
 	"crypto/rand"
+	"encoding/base32"
 	"errors"
 	"fmt"
 	"net"
@@ -29,6 +41,14 @@ import (
 
 // secretPath is the part of a relay's URL before its secret.
 const secretPath = "/k/"
+
+// NewSecret makes a secret for a relay's URL: 128 random bits, in lower
+// case.
+func NewSecret() string {
+	var b [16]byte
+	_, _ = rand.Read(b[:])
+	return strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(b[:]))
+}
 
 // URL is a relay's address with its secret, made sound: https when
 // nothing was said, no query, no fragment and no slash at the end.

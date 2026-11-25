@@ -14,3 +14,5 @@
 /gridterm-arm64.exe
 /gridterm-linux
 /gunimterm
+# The web client, which internal/mkclient builds.
+/webbundle/client/

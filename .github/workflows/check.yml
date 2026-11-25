@@ -64,7 +64,18 @@ jobs:
         env:
           GOOS: js
           GOARCH: wasm
-        run: go vet ./webclient/... ./termview ./relay
+        run: |
+          go vet ./webclient/... ./termview ./relay
+          go vet -tags demo ./webclient/...
+
+      # The web client as a release has it in it, though not signed: no
+      # key is here. The tests below build it too, serve it from a relay
+      # and open it in Chrome.
+      - name: Web client bundle
+        run: |
+          go run ./internal/mkclient
+          go vet -tags webclient ./webbundle
+          go test -tags webclient ./webbundle
 
       # On Linux only. The release workflow runs the suite on Windows as
       # well, which is where the interesting differences are; running

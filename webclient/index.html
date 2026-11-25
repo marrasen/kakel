@@ -3,20 +3,32 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#14171c" media="(prefers-color-scheme: dark)">
+<meta name="robots" content="noindex">
+<meta name="kakel-size" content="0">
 <title>kakel</title>
-<link rel="icon" href="data:,">
-<style>
-  html, body { margin: 0; height: 100%; background: #14171c; overflow: hidden; }
-  #gunim { display: block; width: 100%; height: 100vh; height: 100dvh; opacity: 0; transition: opacity .2s; }
-  .ready #gunim { opacity: 1; }
-</style>
+<link rel="icon" type="image/png" href="icon.png">
+<link rel="stylesheet" href="page.css">
 </head>
 <body>
 <canvas id="gunim"></canvas>
-<script src="wasm_exec.js"></script>
-<script>
-  const go = new Go();
-  WebAssembly.instantiateStreaming(fetch("kakel.wasm"), go.importObject).then(r => go.run(r.instance));
-</script>
+<div id="loading">
+<main>
+<img id="icon" src="icon.png" alt="" width="72" height="72">
+<div id="card">
+<div role="status">
+<h1 id="title"></h1>
+<p id="text"></p>
+</div>
+<div id="bar" role="progressbar" aria-label="Loading"><div id="fill"></div></div>
+<button id="retry" type="button">Retry</button>
+</div>
+<p id="stuck">Loading failed. Reload the page, or open the link in a newer browser.</p>
+<noscript><p id="noscript">kakel needs JavaScript. Turn it on for this page, then reload it.</p></noscript>
+</main>
+</div>
+<script src="start.js"></script>
 </body>
 </html>

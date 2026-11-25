@@ -32,7 +32,7 @@ build needs no graphics headers either.
 tests draw into gunim's offscreen window.
 
 `make` has the rest: `make windows`, `make linux`, `make test`,
-`make vet`, `make fmt`, `make icon`, `make release`.
+`make vet`, `make fmt`, `make icon`, `make client`, `make release`.
 
 CI's gate is `gofmt -l .`, `golangci-lint` and `go test ./...`
 ([.github/workflows/check.yml](.github/workflows/check.yml)). Run all
@@ -52,6 +52,44 @@ Builds then take gunim from `../gunim`. `go.mod` names the gunim commit
 a build uses without the workspace; after pushing gunim, move kakel onto
 it with `go get github.com/marrasen/gunim@<commit>`.
 
+### The web client
+
+A window shared with a link is opened in a browser by kakel's web
+client, which the host gives to the relay. It is in a kakel built with
+the tag `webclient`, once it has been built itself:
+
+```
+go run ./internal/mkclient
+go build -tags webclient -o kakel .
+```
+
+The first command builds `webclient` for the browser and writes the
+bundle into `webbundle/client`, which the repository ignores. It needs
+nothing but Go, so it is the same on Windows, with no `make`. Run it
+again after changing anything the web client is made of: `go build`
+embeds the one there is. `make client` does the same, and signs it when
+`GUNIM_SIGN_KEY` is set. A build without the tag has no web client, and
+cannot share windows.
+
+Relays take only a web client signed with kakel's release key. One built
+here is not signed, so try it with a relay of your own:
+
+```
+kakel -relay -allow-unsigned
+```
+
+With `-allow-unsigned` anyone with the relay's URL can put a page of
+their own on its domain. Never use it on a relay others use.
+
+The page the client starts in is `webclient/index.html`, `page.css` and
+`start.js`. A relay serves them under a policy that lets nothing inline
+run, so every script and style is a file. Built with the tag `demo`, as
+the tests build it, the client shows a made-up terminal when the page's
+address says `?demo=1`. The one a release has in it does not.
+
+`KAKEL_SHOTS=<folder> go test ./relay -run TheWebClient` writes pictures
+of the page as it loads and of each way it can fail.
+
 ## Building a release
 
 `make release` writes everything a release ships into `dist/`: a zip for
@@ -67,6 +105,12 @@ make release VERSION=v0.1.0
 CI runs the same target on a tag. See
 [.github/workflows/release.yml](.github/workflows/release.yml) and
 [RELEASING.md](RELEASING.md).
+
+It builds the web client first, once, for both programs to embed, which
+they do as soon as kakel shares windows with a link. Without
+`GUNIM_SIGN_KEY` that web client is not signed, and `make` warns of it.
+`make sign` looks inside both programs, and fails when they hold a web
+client that is not signed.
 
 ## Looking at the pixels
 

@@ -165,6 +165,10 @@ type Terminal struct {
 	// long reads the sequences carrying an image, which are longer
 	// than the parser will hold.
 	long longOSC
+
+	// tail is the start of the sequence the parser is part way through,
+	// for Replay.
+	tail []byte
 }
 
 // New returns a terminal of the given size.
@@ -206,7 +210,7 @@ func (t *Terminal) Command() Command { return t.cmd }
 // Write feeds bytes to the emulator. It never returns an error: a
 // terminal has no way to reject what a program sends it.
 func (t *Terminal) Write(p []byte) (int, error) {
-	t.long.feed(p, t.parser.AdvanceBytes, t.longOSCDone)
+	t.long.feed(p, t.advance, t.longOSCDone)
 	return len(p), nil
 }
 

@@ -6,8 +6,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/marrasen/kakel/grid"
 	"github.com/marrasen/kakel/meter"
 	"github.com/marrasen/kakel/session"
+	"github.com/marrasen/kakel/vt"
 )
 
 // fakeSession reads what it holds and takes what is written.
@@ -59,5 +61,44 @@ func TestCountingKeepsAMirror(t *testing.T) {
 	}
 	if session.Mirrors(counted(nil, meter.New())) {
 		t.Error("a counted session is a mirror")
+	}
+}
+
+// screensOf hands over one screen, and then nothing.
+type screensOf struct {
+	mirrored
+	scr  chan *session.Screen
+	gone chan struct{}
+}
+
+func (s screensOf) ReadScreen([]byte) (int, *session.Screen, error) {
+	select {
+	case scr := <-s.scr:
+		return 0, scr, nil
+	case <-s.gone:
+		return 0, nil, io.EOF
+	}
+}
+
+// A session that hands over whole screens does so through the shell's
+// counting of it, and the shell is drawn at the screen's size at once.
+func TestAShellHasTheSizeOfItsSessionsScreens(t *testing.T) {
+	s := screensOf{mirrored: mirrored{&fakeSession{}}, scr: make(chan *session.Screen, 1), gone: make(chan struct{})}
+	wrote := make(chan struct{}, 8)
+	sh := Open(s, vt.DefaultPalette(), Hooks{Output: func() { wrote <- struct{}{} }})
+	defer close(s.gone)
+	s.scr <- &session.Screen{Cols: 31, Rows: 7, Draw: []byte("hello")}
+	<-wrote
+	sh.Drawn(func(g *grid.Grid) {
+		if cols, rows := g.Size(); cols != 31 || rows != 7 || g.At(0, 0).Rune != 'h' {
+			t.Errorf("it is drawn %dx%d, beginning with %q", cols, rows, g.At(0, 0).Rune)
+		}
+	})
+	sh.Resize(80, 24)
+	if size := sh.T.Size(); size.Cols != 31 || size.Rows != 7 {
+		t.Errorf("a layout made it %v", size)
+	}
+	if in, _ := sh.Traffic().Totals(); in != 5 {
+		t.Errorf("%d bytes were counted", in)
 	}
 }

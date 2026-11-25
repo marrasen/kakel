@@ -120,7 +120,30 @@ type countedSession struct {
 }
 
 func counted(sess session.Session, m *meter.Meter) session.Session {
-	return countedSession{Session: sess, m: m}
+	c := countedSession{Session: sess, m: m}
+	if r, ok := sess.(session.ScreenReader); ok {
+		return countedScreens{countedSession: c, screens: r}
+	}
+	return c
+}
+
+// countedScreens is countedSession for a session that hands over whole
+// screens, which count as what they took to draw.
+type countedScreens struct {
+	countedSession
+	screens session.ScreenReader
+}
+
+func (c countedScreens) ReadScreen(b []byte) (int, *session.Screen, error) {
+	n, scr, err := c.screens.ReadScreen(b)
+	moved := n
+	if scr != nil {
+		moved += len(scr.Draw)
+	}
+	if moved > 0 {
+		c.m.Moved(moved, 0, time.Now())
+	}
+	return n, scr, err
 }
 
 // Mirrors passes on whether the session it counts mirrors another
@@ -157,11 +180,18 @@ func (c countedSession) Write(b []byte) (int, error) {
 func (sh *Shell) Drawn(f func(*grid.Grid)) {
 	sh.mu.Lock()
 	defer sh.mu.Unlock()
-	size := sh.T.Size()
-	if cols, rows := sh.view.Size(); cols != size.Cols || rows != size.Rows {
-		sh.view.Resize(size.Cols, size.Rows)
+	// Twice when the drawing itself finds the screen has another size, as
+	// one whose session sets it does.
+	for range 2 {
+		size := sh.T.Size()
+		if cols, rows := sh.view.Size(); cols != size.Cols || rows != size.Rows {
+			sh.view.Resize(size.Cols, size.Rows)
+		}
+		sh.T.DrawScreen(sh.view.View())
+		if sh.T.Size() == size {
+			break
+		}
 	}
-	sh.T.DrawScreen(sh.view.View())
 	f(sh.view)
 }
 

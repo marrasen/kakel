@@ -125,23 +125,11 @@ func (t *Terminal) Snapshot(g *grid.Grid) bool {
 // scrolled back into history, and what a watcher wants is the screen
 // that the next output will land on.
 func (t *Terminal) liveScreen() string {
-	cols, rows := t.g.Size()
-	g := grid.New(cols, rows, t.g.DefaultFG, t.g.DefaultBG)
-	t.term.RenderLive(g)
-	full := t.term.Screenful()
-	if full.Alt {
-		// And the screen the full-screen program is covering, so that
-		// the watcher has something to go back to when it quits.
-		under := grid.New(cols, rows, t.g.DefaultFG, t.g.DefaultBG)
-		if t.term.RenderUnder(under) {
-			full.Under = under
-		}
+	screen, whole := t.term.Replay()
+	if !whole {
+		t.owed = true
 	}
-	// The images of the ordinary screen, which travel as the escape
-	// sequence that draws one: the watcher's emulator reads it, so
-	// nothing new is needed on the wire.
-	full.Images = t.term.LivePlaced()
-	return vt.Repaint(g, full)
+	return screen
 }
 
 // sendScreen hands everyone watching the screen again. The emulator's
@@ -207,6 +195,9 @@ func (t *Terminal) tell(b []byte) {
 			t.forget(w)
 		}
 	}
+	for _, f := range t.followers {
+		f.Write(b)
+	}
 }
 
 // endWatchers tells everyone watching that the program has gone.
@@ -219,6 +210,9 @@ func (t *Terminal) endWatchers() {
 	t.ended = true
 	watching := t.watchers
 	t.watchers = nil
+	for _, f := range t.followers {
+		f.Ended()
+	}
 	t.watchMu.Unlock()
 	for _, w := range watching {
 		w.Ended()
@@ -228,13 +222,16 @@ func (t *Terminal) endWatchers() {
 // revive lets watchers attach again, after a restart has put another
 // program in the pane.
 //
-// Nobody is carried across: the watchers this terminal had were told the
+// No watcher is carried across: the watchers this terminal had were told the
 // program had gone and dropped when it did. One arriving now is given
 // the screen as it stands, with the old transcript above where the new
-// program is writing.
+// program is writing. The followers are still here, and are told.
 func (t *Terminal) revive() {
 	t.watchMu.Lock()
 	t.ended = false
+	for _, f := range t.followers {
+		f.Started()
+	}
 	t.watchMu.Unlock()
 }
 
@@ -303,7 +300,7 @@ func (t *Terminal) Progress() vt.Progress {
 func (t *Terminal) AllText() string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	_, rows := t.g.Size()
+	_, rows := t.term.Screen().Size()
 	return t.textLinesLocked(rows + t.term.History())
 }
 
@@ -395,7 +392,7 @@ func (t *Terminal) ReadLines(n int) Reading {
 func (t *Terminal) ReadFrom(line uint64, most int) (Reading, int) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	_, rows := t.g.Size()
+	_, rows := t.term.Screen().Size()
 	if rows <= 0 {
 		return Reading{}, 0
 	}
@@ -473,7 +470,7 @@ func (t *Terminal) readingLocked(n int) Reading {
 	scr := t.term.Screen()
 	col, row := scr.CursorPos()
 	text, before := t.linesLocked(n, row, col)
-	_, rows := t.g.Size()
+	_, rows := scr.Size()
 	return Reading{
 		Text:   text,
 		Row:    row,
@@ -503,7 +500,9 @@ func (t *Terminal) textLinesLocked(n int) string {
 // twice and make the window paint the whole pane again afterwards. A row
 // of less than zero asks for no such text.
 func (t *Terminal) linesLocked(n, row, col int) (text, before string) {
-	cols, rows := t.g.Size()
+	// The emulator's size, which a session's screen sets before the grid
+	// the pane draws from has it.
+	cols, rows := t.term.Screen().Size()
 	if rows <= 0 {
 		// A terminal with no rows has nothing to read, and the walk back
 		// through history below would step by nothing and never end.
