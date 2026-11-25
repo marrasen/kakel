@@ -46,8 +46,13 @@ func Main(ctx context.Context, args []string, dir string, out io.Writer) error {
 	httpAt := fs.String("http", ":80", "with -domain, where Let's Encrypt checks the domain is this machine's")
 	fs.StringVar(&dir, "dir", dir, "where the relay keeps its secret, and its certificates with -domain")
 	newSecret := fs.Bool("new-secret", false, "make a new secret: the URL printed before stops working")
+	unsigned := fs.Bool("allow-unsigned", false,
+		"take a web client no kakel release has signed: anyone with the relay's URL can then put a page of their own on its domain")
 	fs.Usage = func() {
 		_, _ = fmt.Fprintln(out, "kakel -relay joins kakels with remote access on and the kakels connecting to them, with no window of its own.")
+		_, _ = fmt.Fprintln(out, "It also serves windows shared with a link to their guests' browsers. A proxy in front of it has to pass on")
+		_, _ = fmt.Fprintln(out, "WebSockets and the Host header, add X-Forwarded-For, and run on this machine: from any other, everyone behind")
+		_, _ = fmt.Fprintln(out, "it has the proxy's own address, and shares what the relay allows one address.")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args[1:]); err != nil {
@@ -75,11 +80,21 @@ func Main(ctx context.Context, args []string, dir string, out io.Writer) error {
 	logger := log.New(out, "", log.LstdFlags)
 	s := NewServer(secret)
 	s.Log = logger.Printf
+	s.AllowUnsigned = *unsigned
+	if *unsigned {
+		logger.Print("kakel relay: WARNING: -allow-unsigned is on. This relay takes ANY web client, signed or not:" +
+			" anyone with its URL can put a page of their own on its domain")
+	}
+	// The shares there were when it stopped come back to it, and their
+	// guests may be here first.
+	s.settled = time.Now().Add(graceFor)
 
 	// IdleTimeout too: a caller turned away could otherwise hold its
-	// connection open, saying nothing, for as long as it liked.
+	// connection open, saying nothing, for as long as it liked. How long
+	// a request and its answer may take is the relay's own to say, door
+	// by door: see holdToTime.
 	srv := &http.Server{Handler: s, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: time.Minute,
-		ErrorLog: log.New(io.Discard, "", 0)}
+		MaxHeaderBytes: 64 << 10, ErrorLog: log.New(io.Discard, "", 0)}
 	ln, err := net.Listen("tcp", *listen)
 	if err != nil {
 		return fmt.Errorf("kakel -relay: listen on %s: %w", *listen, err)

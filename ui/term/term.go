@@ -155,6 +155,13 @@ type Terminal struct {
 	// dedicated goroutine absorbs the block.
 	out chan []byte
 
+	// lanes are who types here from elsewhere, laneReady has word that one
+	// holds something, and laneTurn, writeLoop's own, is whose turn it is.
+	laneMu    sync.Mutex
+	lanes     []*lane
+	laneReady chan struct{}
+	laneTurn  int
+
 	// pending is set by the reader when new output has been parsed, so a
 	// frame with nothing to show can skip re-rendering.
 	pending atomic.Bool
@@ -228,6 +235,16 @@ type Terminal struct {
 	// held says the size is somebody else's. The layout stops setting
 	// it while it is, or this window would take it straight back.
 	held bool
+
+	// sized says the session hands over whole screens, which set the
+	// size. screens counts those taken, under mu, and drawnScreens how
+	// many had been at the last draw.
+	sized                 bool
+	screens, drawnScreens uint64
+
+	// owed says, under mu, that a screen was sent which left out the
+	// sequence the program was part way through.
+	owed bool
 
 	// elsewhere says the host paints the screen somewhere other than the
 	// room the layout gave it, so Draw leaves that room blank.
@@ -309,6 +326,8 @@ type Terminal struct {
 	// goroutine is carrying the connection they are on.
 	watchMu  sync.Mutex
 	watchers []Watcher
+	// followers are told the same way, and stay when the program goes.
+	followers []Follower
 
 	// ended records that the program has gone, so a watcher arriving
 	// afterwards is told at once rather than waiting for output from a
@@ -323,6 +342,9 @@ type Terminal struct {
 // session that was swapped under it.
 type run struct {
 	sess session.Session
+	// screens is sess, when it hands over whole screens, and nil for one
+	// that does not.
+	screens session.ScreenReader
 
 	// stop ends writeLoop. Close and Restart both end a run, and either
 	// may follow the other, so it is closed once and no more.
@@ -363,6 +385,8 @@ func New(cfg Config) (*Terminal, error) {
 		cfg: cfg,
 		pal: pal,
 		out: make(chan []byte, outQueue),
+
+		laneReady: make(chan struct{}, 1),
 	}
 	t.start = newStarter(t.send, t.cursorLine, t.hasText)
 	r := t.adopt(cfg.Session)
@@ -430,6 +454,9 @@ func New(cfg Config) (*Terminal, error) {
 // before anything reads it.
 func (t *Terminal) adopt(sess session.Session) *run {
 	r := &run{sess: sess, stop: make(chan struct{})}
+	r.screens, _ = sess.(session.ScreenReader)
+	t.sized = r.screens != nil
+	t.held = t.held && !t.sized
 	t.mirror.Store(session.Mirrors(sess))
 	// A resize that fails does so after the drag that asked for it, so
 	// the session hands it here rather than to a caller that has gone.
@@ -555,7 +582,7 @@ func (t *Terminal) Restart(sess session.Session) error {
 // restartSize is the size a restarted terminal takes: the room the
 // layout has for it, unless somebody watching holds the size.
 func (t *Terminal) restartSize() ui.Size {
-	if t.held || !t.haveSize {
+	if t.Held() || !t.haveSize {
 		return t.size
 	}
 	return t.screenBox(t.box)
@@ -567,6 +594,7 @@ func (t *Terminal) drain() {
 		select {
 		case <-t.out:
 		default:
+			t.dropLanes()
 			return
 		}
 	}
@@ -584,10 +612,12 @@ func (t *Terminal) Dirty() bool { return t.pending.Load() }
 //
 // It is for what the host has to tell the user about the pane itself.
 // Nobody watching is told: a watcher reads the program, not this
-// window's remarks about it.
+// window's remarks about it. A follower is, as it is shown the screen,
+// and the program's next words land under the line.
 func (t *Terminal) Say(line string) {
 	t.mu.Lock()
 	_, _ = t.term.Write([]byte("\r\n" + line + "\r\n"))
+	t.staleFollowers()
 	// Counted like anything else that moved the screen, so a reader
 	// holding the last one knows to take it again.
 	t.said.Add(1)
@@ -737,7 +767,7 @@ func (t *Terminal) AskedForASecret() bool {
 func (t *Terminal) Layout(size ui.Size) {
 	t.box = size
 	size = t.screenBox(size)
-	if t.held {
+	if t.Held() {
 		// The size belongs to somebody watching. The screen keeps the
 		// size they asked for and is drawn in whatever room this window
 		// has for it, which is what lets their screen be the right shape
@@ -774,6 +804,7 @@ func (t *Terminal) setSize(size ui.Size) {
 		moved = func(line uint64, col int) (uint64, int) { return uint64(max(int64(line)+by, 0)), col }
 	}
 	t.moveSelection(moved)
+	t.staleFollowers()
 	t.mu.Unlock()
 	t.pending.Store(true)
 
@@ -842,7 +873,7 @@ func (t *Terminal) SetCaption(text string) {
 		return
 	}
 	t.caption = text
-	if t.held {
+	if t.Held() {
 		// The size belongs to somebody watching, the same reason Layout
 		// leaves it alone.
 		return
@@ -969,7 +1000,12 @@ func (t *Terminal) draw(v grid.View, whole bool) {
 		}
 		t.term.Render(t.g)
 		t.drawnTop = t.term.Screen().ViewTop()
+		adopted := t.screens != t.drawnScreens
+		t.drawnScreens = t.screens
 		t.mu.Unlock()
+		if adopted {
+			t.showScreens()
+		}
 		t.showSelection(t.drawnTop)
 	}
 	// Copying cell by cell rather than handing the emulator the view
@@ -1103,7 +1139,13 @@ func (t *Terminal) acrossARepaint(cur grid.Cursor) grid.Cursor {
 // It is the difference between looking over somebody's shoulder and
 // taking a machine over. The first must not resize a screen somebody
 // may be sitting in front of; the second is the case where nobody is.
+//
+// A terminal whose session hands over whole screens has the size they
+// have, and no other.
 func (t *Terminal) Hold(cols, rows int) {
+	if t.sized {
+		return
+	}
 	t.held = true
 	t.resize(ui.Size{Cols: max(cols, 1), Rows: max(rows, 1)})
 }
@@ -1117,8 +1159,10 @@ func (t *Terminal) Release() {
 	t.resize(t.screenBox(t.box))
 }
 
-// Held reports whether somebody else has this terminal's size.
-func (t *Terminal) Held() bool { return t.held }
+// Held reports whether somebody else has this terminal's size: one
+// watching from elsewhere, or the session itself, see
+// session.ScreenReader.
+func (t *Terminal) Held() bool { return t.held || t.sized }
 
 // ScreenRoom is the room the program's screen is drawn in: the pane's
 // own room, less the line above it when there is one.
@@ -1833,18 +1877,42 @@ func (t *Terminal) send(b []byte) {
 func (t *Terminal) writeLoop(r *run) {
 	defer r.wg.Done()
 	for {
+		b := t.nextInput(r)
+		if b == nil {
+			return
+		}
+		if readsDebug {
+			log.Printf("kakel writes: %d bytes %q", len(b), b[:min(len(b), 64)])
+		}
+		if _, err := r.sess.Write(b); err != nil {
+			t.fail(fmt.Errorf("write session: %w", err))
+			t.finish(r)
+			return
+		}
+	}
+}
+
+// nextInput waits for something to write to the session: what is queued,
+// and only when nothing is, what a lane holds. It is nil once the run
+// ends.
+func (t *Terminal) nextInput(r *run) []byte {
+	for {
 		select {
 		case <-r.stop:
-			return
+			return nil
 		case b := <-t.out:
-			if readsDebug {
-				log.Printf("kakel writes: %d bytes %q", len(b), b[:min(len(b), 64)])
-			}
-			if _, err := r.sess.Write(b); err != nil {
-				t.fail(fmt.Errorf("write session: %w", err))
-				t.finish(r)
-				return
-			}
+			return b
+		default:
+		}
+		if b := t.nextTyped(); b != nil {
+			return b
+		}
+		select {
+		case <-r.stop:
+			return nil
+		case b := <-t.out:
+			return b
+		case <-t.laneReady:
 		}
 	}
 }
@@ -1868,6 +1936,7 @@ func (t *Terminal) readLoop(r *run) {
 		// lock, so a chunk cannot be handed on after a screen that was
 		// taken once it was parsed.
 		t.tell(b)
+		t.payOwed()
 		// Counted under the lock, so a reader that takes the lock sees
 		// the screen and the count from the same moment.
 		t.said.Add(1)
@@ -1880,7 +1949,10 @@ func (t *Terminal) readLoop(r *run) {
 	}, cells: func() int { return int(t.cells.Load()) }}
 	var lastRead time.Time
 	for {
-		n, err := r.sess.Read(buf)
+		n, scr, err := r.read(buf)
+		if scr != nil {
+			t.takeScreen(updates, scr)
+		}
 		if readsDebug && n > 0 {
 			logRead(buf[:n], &lastRead)
 		}
@@ -2041,6 +2113,7 @@ func (t *Terminal) SetPalette(pal vt.Palette) {
 	t.g.SelectionBG = pal.Selection
 	t.g.MarkAllDirty()
 	t.sendScreen()
+	t.staleFollowers()
 	t.mu.Unlock()
 	t.pending.Store(true)
 }

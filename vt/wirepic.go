@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf8"
+
+	"github.com/marrasen/kakel/grid"
 )
 
 // WirePicBudget is how many bytes of image one repaint carries.
@@ -27,6 +30,9 @@ const WirePicBudget = 4 << 20
 // Only inline images ever come this way, so the same caps apply as to
 // the sequence a program sends: the same decoder, the same size limit
 // and the same count.
+//
+// "last;rune" says which character REP repeats, as the number it is: a
+// screen drawn from a Replay would otherwise repeat the last one drawn.
 func (t *Terminal) setWirePic(params [][]byte) {
 	if len(params) < 2 {
 		return
@@ -37,6 +43,10 @@ func (t *Terminal) setWirePic(params [][]byte) {
 		t.images = t.images[:0]
 	case "place":
 		t.placeWirePic(params)
+	case "last":
+		if n, ok := wireNum(params[len(params)-1]); ok && (n == 0 || utf8.ValidRune(rune(n)) && grid.RuneWidth(rune(n)) > 0) {
+			t.lastRune = rune(n)
+		}
 	}
 }
 

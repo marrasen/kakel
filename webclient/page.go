@@ -1,11 +1,10 @@
-//go:build js && wasm
+//go:build js && wasm && demo
 
 package main
 
 import (
 	"log"
 	"sync"
-	"syscall/js"
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
@@ -38,7 +37,6 @@ type page struct {
 	term   *termview.Term
 	body   *widget.Themed
 	output termview.Output
-	shown  bool
 
 	// mu guards at and cell, where the terminal's cells are on the page,
 	// which the tests ask for.
@@ -117,12 +115,7 @@ func (p *page) Paint(pt *paint.Painter, f gunim.Frame, box geom.Size, kids gunim
 	p.mu.Lock()
 	p.at, p.cell = at.Add(geom.Pt(pad, pad)), cell
 	p.mu.Unlock()
-	if !p.shown {
-		// The page fades in once there is something to see on it.
-		p.shown = true
-		js.Global().Get("document").Get("body").Get("classList").Call("add", "ready")
-		js.Global().Get("performance").Call("mark", "kakel-first-frame")
-	}
+	drawn()
 }
 
 // cells is where the top left cell is on the page, and a cell's size.

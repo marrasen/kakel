@@ -55,11 +55,20 @@ jobs:
       # One target builds both, so what CI ships and what `make release`
       # gives you by hand are the same thing. Both cross-compile, so this
       # runs on one runner.
+      #
+      # The web client for both is signed as it is built, so this step has
+      # the key too. The Makefile gives it to gunimsign alone.
+      # GUNIM_CLIENT_KEY is there for the one release that changes the
+      # key: see RELEASING.md.
       - name: Build the release
-        run: make release VERSION=${{ github.ref_name }}
+        env:
+          GUNIM_SIGN_KEY: ${{ secrets.GUNIM_CLIENT_KEY || secrets.GUNIM_SIGN_KEY }}
+          VERSION: ${{ github.ref_name }}
+        run: make release VERSION="$VERSION"
 
       # Installed copies run an update only with this signature. Without
-      # the secret this fails, before anything is published.
+      # the secret this fails, before anything is published. So it does
+      # when the programs hold a web client the release key did not sign.
       - name: Sign the release
         env:
           GUNIM_SIGN_KEY: ${{ secrets.GUNIM_SIGN_KEY }}

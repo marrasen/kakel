@@ -1,5 +1,5 @@
-// Package build says what this program calls itself, and which build it
-// is.
+// Package build says what this program calls itself, which build it is,
+// and whose key its releases are signed with.
 package build
 
 import (
@@ -10,6 +10,11 @@ import (
 // Name is what kakel calls itself to the programs it runs and to
 // anything that asks what terminal this is.
 const Name = "kakel"
+
+// ReleaseKey is the public key kakel's releases are signed with, as
+// gunimsign -keygen prints it: see RELEASING.md. The web client of a
+// release is signed with it too, over a manifest that says it is one.
+const ReleaseKey = "j2nZwJ7kHSNj2JxWTwQs/GrWL1n+Zqg8F4tAybrtwIY="
 
 // devVersion is what a build that was never tagged calls itself.
 const devVersion = "dev"

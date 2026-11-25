@@ -19,6 +19,13 @@ const (
 	// doorAccept, then the ticket, is where a served window brings the
 	// stream for one window connecting.
 	doorAccept = "accept"
+	// doorAbout says what the relay can do.
+	doorAbout = "about"
+	// doorBundle, then its hash, is where a host gives the relay the web
+	// client its guests are sent.
+	doorBundle = "bundle"
+	// doorShare is where a host registers a share, and ends it.
+	doorShare = "share"
 )
 
 // dialWithin bounds reaching the relay and its answer: the connection,

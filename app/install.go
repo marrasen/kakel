@@ -16,6 +16,7 @@ import (
 	"github.com/marrasen/gunim/single"
 	"github.com/marrasen/kakel/appicon"
 	"github.com/marrasen/kakel/conf"
+	"github.com/marrasen/kakel/internal/build"
 	"github.com/marrasen/kakel/settings"
 )
 
@@ -46,7 +47,7 @@ func Installer() install.App {
 		Folders: &install.Folders{Args: []string{"-files"}},
 		Updates: releases{},
 		// The public key the releases are signed with: see RELEASING.md.
-		UpdateKey: "j2nZwJ7kHSNj2JxWTwQs/GrWL1n+Zqg8F4tAybrtwIY=",
+		UpdateKey: build.ReleaseKey,
 		// kakel kept its own Updates setting before gunim kept the mode:
 		// an install taken on goes on as its user had it.
 		UpdateMode:   install.UpdateMode(updatesSetting()),

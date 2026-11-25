@@ -31,8 +31,9 @@ func (Dialer) open(ctx context.Context, to string, header http.Header) (*websock
 	case ctx.Err() != nil:
 		if err == nil {
 			// Opened just as its time ran out. A close waits for the
-			// other end's.
-			go func() { _ = ws.CloseNow() }()
+			// other end's. Not CloseNow, whose code no browser takes
+			// from a page.
+			go func() { _ = ws.Close(websocket.StatusNormalClosure, "") }()
 		}
 		return nil, ctx.Err()
 	case err != nil:

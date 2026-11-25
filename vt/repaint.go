@@ -49,13 +49,24 @@ func Repaint(g *grid.Grid, m Screenful) string {
 	// program quits, and nothing else is ever going to send it: a shell
 	// coming back to its prompt does not redraw.
 	b.WriteString("\x1b[?1049l")
+	if m.rest != nil {
+		b.WriteString(clean)
+	}
 	if m.Under != nil {
-		writeCells(&b, m.Under)
+		writeCells(&b, m.Under, m.rest)
+		if m.rest != nil {
+			// Where the ordinary screen's saved cursor is, which the far
+			// end saves as it goes to the alternate one.
+			m.rest.writeCursorState(&b, m.Under, m.rest.saved[0], 0)
+		}
 	}
 	if m.Alt {
 		b.WriteString("\x1b[?1049h")
+		if m.rest != nil {
+			b.WriteString(clean)
+		}
 	}
-	writeCells(&b, g)
+	writeCells(&b, g, m.rest)
 
 	// The images after the text, because the text is what they sit
 	// over. They are placed by row rather than at the cursor, so it
@@ -63,17 +74,26 @@ func Repaint(g *grid.Grid, m Screenful) string {
 	// left it.
 	writeImages(&b, m.Images)
 
+	if m.rest != nil {
+		m.rest.writeSavedBoth(&b, g, m.Alt)
+	}
+
 	// The cursor last, so it is left where the program had it rather
 	// than after whatever was written last. Put where it belongs even
 	// when it is hidden: the moment the program shows it again without
 	// moving it, one left at the end of the text would appear in the
 	// wrong place.
 	writeCursor(&b, g, m)
+	if m.rest != nil {
+		m.rest.writeEnd(&b, g)
+	}
 	return b.String()
 }
 
-// writeCells draws one screenful, from a clear to a reset.
-func writeCells(b *strings.Builder, g *grid.Grid) {
+// writeCells draws one screenful, from a clear to a reset. With r, a row
+// that runs on to the next is written so that it does on the far end too,
+// which has to be one that wraps, and the links are written.
+func writeCells(b *strings.Builder, g *grid.Grid, r *rest) {
 	cols, rows := g.Size()
 	// Home, and no scrollback of the far end's own left showing
 	// through underneath what is written over it.
@@ -81,9 +101,26 @@ func writeCells(b *strings.Builder, g *grid.Grid) {
 
 	var last grid.Cell
 	first := true
+	style := func(c grid.Cell) {
+		if first || !sameStyle(c, last) || r != nil && c.Link != last.Link {
+			b.WriteString(sgr(c, g))
+			b.WriteString(r.link(c.Link))
+			last, first = c, false
+		}
+	}
+	// ran says the row before runs on to this one.
+	ran := false
 	for y := range rows {
-		if y > 0 {
+		if y > 0 && !ran {
 			b.WriteString("\r\n")
+		}
+		end := lastShowing(g, y, cols, r != nil)
+		if ran {
+			// At least the one cell that makes it wrap.
+			end = max(end, 0)
+		}
+		if ran = r != nil && y < rows-1 && g.At(cols-1, y).Wrapped; ran {
+			end = cols - 1
 		}
 		// Up to the last cell that would show something. What follows
 		// it on the row is what the clear above already left there, and
@@ -92,18 +129,21 @@ func writeCells(b *strings.Builder, g *grid.Grid) {
 		// Everything up to it is written, blank or not: a space under a
 		// style that underlines is an underlined space, so a blank
 		// cannot simply take whatever style the cell before it had.
-		for x := 0; x <= lastShowing(g, y, cols); x++ {
+		for x := 0; x <= end; x++ {
 			c := g.At(x, y)
 			if c.Width == 0 {
 				// The second half of a double-width character, already
 				// written by the first.
 				continue
 			}
-			if first || !sameStyle(c, last) {
-				b.WriteString(sgr(c, g))
-				last, first = c, false
-			}
+			style(c)
 			writeCell(b, c)
+		}
+		if ran && cols > 1 && g.At(cols-1, y).Rune == 0 && g.At(0, y+1).Width == 2 && g.At(cols-1, y).Width != 0 {
+			// The column a wide character left over as it moved down:
+			// written, for its colours, and then gone back to, for the
+			// character to leave over again.
+			fmt.Fprintf(b, "\x1b[%dG", cols)
 		}
 	}
 	b.WriteString("\x1b[0m")
@@ -132,11 +172,7 @@ func writeCursor(b *strings.Builder, g *grid.Grid, m Screenful) {
 	cols, _ := g.Size()
 	cur := g.Cursor()
 	if m.WrapNext && cur.X == cols-1 {
-		fmt.Fprintf(b, "\x1b[%d;%dH", cur.Y+1, cur.X+1)
-		c := g.At(cur.X, cur.Y)
-		b.WriteString(sgr(c, g))
-		writeCell(b, c)
-		b.WriteString("\x1b[0m")
+		writeOwedWrap(b, g, m.rest, cur.X, cur.Y, cur.Y)
 	} else {
 		fmt.Fprintf(b, "\x1b[%d;%dH", cur.Y+1, cur.X+1)
 	}
@@ -160,13 +196,25 @@ func writeCursor(b *strings.Builder, g *grid.Grid, m Screenful) {
 	fmt.Fprintf(b, "\x1b[%d q", shape)
 }
 
+// writeOwedWrap writes the cell at x and y again, on row as the far end
+// counts them, which leaves the cursor owing a wrap, with its pen reset.
+func writeOwedWrap(b *strings.Builder, g *grid.Grid, r *rest, x, y, row int) {
+	if x > 0 && g.At(x, y).Width == 0 {
+		// The second half of a wide character: its first is written.
+		x--
+	}
+	c := g.At(x, y)
+	fmt.Fprintf(b, "\x1b[%d;%dH", row+1, x+1)
+	b.WriteString(sgr(c, g))
+	b.WriteString(r.link(c.Link))
+	writeCell(b, c)
+	b.WriteString("\x1b[0m")
+}
+
 // Screenful is what a screen carries that its grid does not.
 //
-// Only the few that change what is drawn or how the keys are spelled
-// back. The scroll region, origin mode, insert mode, bracketed paste
-// and the mouse modes do not travel: a program that set one of them set
-// it on the terminal it was talking to, and what is sent here is a
-// image of that terminal rather than a copy of it.
+// What its fields say is what changes what is drawn. Replay sends the
+// rest of the terminal with it.
 type Screenful struct {
 	// Alt says the program is drawing in the alternate buffer, which is
 	// where a full-screen program draws.
@@ -196,13 +244,17 @@ type Screenful struct {
 	// reason Under does: the full-screen program quitting leaves them
 	// behind.
 	Images []Placement
+
+	// rest is the state of the terminal that Replay sends besides.
+	rest *rest
 }
 
 // lastShowing is the rightmost cell of a row that would show anything,
-// or -1 when the row is empty.
-func lastShowing(g *grid.Grid, y, cols int) int {
+// or -1 when the row is empty. With inks, one that would show once the
+// screen is reversed does too.
+func lastShowing(g *grid.Grid, y, cols int, inks bool) int {
 	for x := cols - 1; x >= 0; x-- {
-		if !blank(g.At(x, y), g) {
+		if c := g.At(x, y); !blank(c, g) || inks && c.FG != g.DefaultFG {
 			return x
 		}
 	}

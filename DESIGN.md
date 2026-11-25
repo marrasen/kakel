@@ -60,6 +60,11 @@ Machines and connections:
 - `relay`: `kakel -relay`, which joins a kakel with remote access on and
   one connecting to it over WebSockets, and both kakels' ends of it. The
   connecting end is built for a browser too.
+- `guest`: a window shared by a link: what its host and its guest say to
+  each other, and both ends of it. The guest's is built for a browser.
+- `webclient`: the program a guest runs, in a browser, and the page it
+  starts in. `webbundle`: the same, built and in this kakel, to give to a
+  relay.
 - `vfs`: a filesystem kakel reads files through: this machine, or one
   over SFTP.
 - `jobs`: copying, moving and deleting in the background.
@@ -92,11 +97,12 @@ Keeping things:
 
 `ui` is the old app's text-mode toolkit. What is left of it in use is
 the keymap and what `ui/term` and `ui/files` are built on. `internal`
-holds the build stamp, test helpers and the icon writer.
+holds the build stamp, test helpers, the icon writer, and what builds
+the web client into a bundle.
 
 gunim is imported by `app`, `view`, `termview`, `webclient`, `look`,
 `winkeys`, `internal/sound` and `main`. The terminal packages, `serve`,
-`remote`, `vfs`, `jobs` and `settings` do not import it. So everything
+`guest`, `remote`, `vfs`, `jobs` and `settings` do not import it. So everything
 fiddly is testable without a display, which is how the emulator got
 written.
 

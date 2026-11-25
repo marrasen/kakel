@@ -98,18 +98,19 @@ func echoServer(t *testing.T) string {
 }
 
 // waitFor runs what the app's goroutines send it until ok, as its loop
-// would, and fails after five seconds.
+// would, and fails after twenty seconds, as a machine building
+// other tests' programs meanwhile is slow.
 func waitFor(t *testing.T, a *app, what string, ok func() bool) {
 	t.Helper()
-	defer stuckAfter(what, 15*time.Second)()
-	deadline := time.After(5 * time.Second)
+	defer stuckAfter(what, 30*time.Second)()
+	deadline := time.After(20 * time.Second)
 	for !ok() {
 		select {
 		case f := <-a.events:
 			f()
 		case <-time.After(10 * time.Millisecond):
 		case <-deadline:
-			t.Fatalf("waited five seconds for %s", what)
+			t.Fatalf("waited twenty seconds for %s", what)
 		}
 	}
 }
