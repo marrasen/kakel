@@ -547,14 +547,15 @@ func TestWhyAConnectionIsNotBack(t *testing.T) {
 func TestAWakeTriesNow(t *testing.T) {
 	quick(t)
 	paces.tries = []time.Duration{time.Hour}
-	paces.wakes = 40 * time.Millisecond
+	// Longer than twenty sleeps of a millisecond, which are 16 on Windows.
+	paces.wakes = 600 * time.Millisecond
 	s := newFake(in("p1"))
 	c := newCourse(t, true, nil, s)
 	c.on(PageWindow)
 	c.then(errors.New("no network"))
 	s.end(guest.ErrLost)
 	c.until("lost", func() bool { return c.state().Lost })
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(paces.wakes + 50*time.Millisecond)
 	n := c.dials()
 	for range 20 {
 		c.wake <- struct{}{}
@@ -565,13 +566,13 @@ func TestAWakeTriesNow(t *testing.T) {
 	}
 	// With the connection there, a wake is nothing.
 	c.then(newFake(in("p1")))
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(paces.wakes + 50*time.Millisecond)
 	c.wake <- struct{}{}
 	c.until("back", func() bool { return !c.state().Lost })
 	n = c.dials()
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(paces.wakes + 50*time.Millisecond)
 	c.wake <- struct{}{}
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
 	if c.dials() != n {
 		t.Error("a wake dialled over a connection there is")
 	}
@@ -1251,18 +1252,16 @@ func TestDialsKeepToAPace(t *testing.T) {
 	t.Run("one that held", func(t *testing.T) {
 		paced(t)
 		paces.held = 20 * ms
+		// What the fifth try would wait, had it not started over.
+		paces.tries[4] = time.Minute
 		s := newFake(in("p1"))
 		c := newCourse(t, true, nil, errors.New("no network"), errors.New("no network"), errors.New("no network"), errors.New("no network"), s)
 		c.on(PageWindow)
 		time.Sleep(50 * ms)
 		c.then(newFake(in("p1")))
-		lost := time.Now()
+		n := c.dials()
 		s.end(guest.ErrLost)
-		c.until("lost", func() bool { return c.state().Lost })
-		c.until("back", func() bool { return !c.state().Lost })
-		if took := time.Since(lost); took > 45*ms {
-			t.Errorf("it was made again after %v", took)
-		}
+		c.until("back", func() bool { return c.dials() > n && !c.state().Lost })
 	})
 }
 
