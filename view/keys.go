@@ -461,7 +461,7 @@ var commandAlso = map[string][]string{
 	"serve.ssh":             {"serve", "ssh", "tunnel", "port forward", "-L", "-J", "jump", "proxycommand", "relay pipe", "openssh"},
 	"agent.hand":            {"hand over", "add this pane to the share"},
 	"agent.take":            {"take this pane out of the share", "remove", "unshare"},
-	"agent.share":           {"show the share", "code", "prompt", "skill", "setup"},
+	"agent.share":           {"show the share", "code", "prompt", "setup"},
 	"agent.typed":           {"what the agent typed", "input", "sent"},
 	"view.theme":            {"colour", "color", "colors", "scheme"},
 	"view.editTheme":        {"theme editor", "cursor", "glide", "animation", "motion", "colour", "color", "corners"},

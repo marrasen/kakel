@@ -54,18 +54,6 @@ func TestDashEOpensTheCommandInsteadOfAShell(t *testing.T) {
 	}
 }
 
-// -mcp-skill refuses to print a skill when kakel's own path cannot be
-// found, as Write Skill refuses to write one.
-func TestTheSkillIsNotPrintedWithNoPathToKakel(t *testing.T) {
-	was := exeKnown
-	exeKnown = func() (string, bool) { return "", false }
-	t.Cleanup(func() { exeKnown = was })
-	did, err := RunAlone(t.Context(), Options{mcpSkill: true})
-	if !did || err == nil {
-		t.Fatalf("it did %v, and said %v", did, err)
-	}
-}
-
 // Font sizes run from 8 to 96 logical pixels, 6 to 72 points, as the
 // old app took.
 func TestFontSizesRunFrom8To96(t *testing.T) {

@@ -440,10 +440,8 @@ func TestWhatTheShellSaidReachesTheAgent(t *testing.T) {
 	if failed {
 		t.Fatalf("reading failed: %q", screen)
 	}
-	for _, want := range []string{"exit status 1", "That is what you sent"} {
-		if !strings.Contains(screen, want) {
-			t.Errorf("the read does not say %q:\n%s", want, screen)
-		}
+	if !strings.Contains(screen, "exit 1") || strings.Contains(screen, "not yours") {
+		t.Errorf("the read does not say the agent's command exited 1:\n%s", screen)
 	}
 
 	// And the wait says why it ended, which is the window's word for it
@@ -452,8 +450,8 @@ func TestWhatTheShellSaidReachesTheAgent(t *testing.T) {
 	if failed {
 		t.Fatalf("waiting failed: %q", waited)
 	}
-	if !strings.Contains(waited, agent.EndedOnMarks) {
-		t.Errorf("the wait does not say why it ended:\n%s", waited)
+	if !strings.Contains(waited, "exit 1") {
+		t.Errorf("the wait does not say how the command ended:\n%s", waited)
 	}
 
 	// And the last command's output comes back through the same layers,

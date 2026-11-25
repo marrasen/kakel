@@ -16,8 +16,7 @@ import (
 )
 
 // Vars are the variables that say where the user's own folders are.
-// CLAUDE_CONFIG_DIR is among them: Claude Code reads its skills from
-// there, and kakel writes its skill there when it is set.
+// CLAUDE_CONFIG_DIR is among them, as an earlier kakel wrote its skill there.
 var Vars = []string{"HOME", "USERPROFILE", "XDG_CONFIG_HOME", "APPDATA", "LOCALAPPDATA", "CLAUDE_CONFIG_DIR"}
 
 // made is the folder Main gave the package's tests.

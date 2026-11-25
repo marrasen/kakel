@@ -23,13 +23,19 @@ func TestTheTestsKeepTheirFilesInAHomeOfTheirOwn(t *testing.T) {
 		t.Fatal("TestMain gave the tests no home")
 	}
 	places := map[string]func() (string, error){
-		"home":            os.UserHomeDir,
-		"settings":        conf.Dir,
-		"private files":   conf.Private,
-		"settings file":   settings.Path,
-		"saved servers":   remote.BookPath,
-		"host key":        serve.HostKeyPath,
-		"Claude's skills": func() (string, error) { return agenthost.Named(agenthost.ClaudeCode).SkillPath() },
+		"home":          os.UserHomeDir,
+		"settings":      conf.Dir,
+		"private files": conf.Private,
+		"settings file": settings.Path,
+		"saved servers": remote.BookPath,
+		"host key":      serve.HostKeyPath,
+		"old skills": func() (string, error) {
+			paths, err := agenthost.OldSkills()
+			if err != nil {
+				return "", err
+			}
+			return paths[0], nil
+		},
 	}
 	for what, where := range places {
 		got, err := where()

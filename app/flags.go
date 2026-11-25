@@ -14,7 +14,6 @@ import (
 
 	"github.com/marrasen/gunim/driver"
 	"github.com/marrasen/gunim/geom"
-	"github.com/marrasen/kakel/agenthost"
 	"github.com/marrasen/kakel/mcp"
 	"github.com/marrasen/kakel/screen"
 	"github.com/marrasen/kakel/serve"
@@ -36,7 +35,6 @@ type Options struct {
 	fontFiles  string
 	fontFamily string
 	listFonts  bool
-	mcpSkill   bool
 	asMCP      bool
 	stats      bool
 	shot       string
@@ -73,9 +71,6 @@ func ParseOptions(args []string) (Options, error) {
 	fs.StringVar(&o.fontFamily, "font-family", "",
 		"use this installed monospace family instead of the bundled Go Mono")
 	fs.BoolVar(&o.listFonts, "list-fonts", false, "print the installed monospace families and exit")
-	fs.BoolVar(&o.mcpSkill, "mcp-skill", false,
-		"print the skill that tells an agent how to work in a pane handed over,"+
-			" and exit; the share dialog writes it for you")
 	fs.BoolVar(&o.asMCP, "mcp", false,
 		"serve this machine's panes to an agent over the Model Context Protocol,"+
 			" on standard input and output, instead of opening a window")
@@ -273,7 +268,7 @@ func (o Options) StartsInTray() bool { return o.tray || o.bare() }
 // command, no server, no launcher, no screenshots.
 func (o Options) bare() bool {
 	return o.command == "" && o.ssh == "" && !o.launcher && !o.filesSet && o.shot == "" &&
-		!o.quit && !o.asMCP && !o.listFonts && !o.mcpSkill
+		!o.quit && !o.asMCP && !o.listFonts
 }
 
 // StartsHidden reports whether this kakel's first window opens hidden:
@@ -293,7 +288,7 @@ func (o Options) Trays() bool { return o.shot == "" }
 const ProgramName = "kakel"
 
 // RunAlone does what opts asks for that opens no window: serving an
-// agent program over MCP, or printing the skill or the fonts. It
+// agent program over MCP, or printing the fonts. It
 // reports whether there was such a thing to do.
 func RunAlone(ctx context.Context, opts Options) (bool, error) {
 	switch {
@@ -301,16 +296,6 @@ func RunAlone(ctx context.Context, opts Options) (bool, error) {
 		// kakel's MCP server, for an agent program to start: it holds
 		// nothing and reaches nothing until the agent gives it a code.
 		return true, mcp.Serve(ctx, os.Stdin, os.Stdout, mcp.NewWindow())
-	case opts.mcpSkill:
-		quiet.ToParentConsole()
-		// Refused rather than printed with the bare name, as Write Skill
-		// refuses: a skill naming no program to start goes on failing
-		// long after this is forgotten.
-		if _, ok := exeKnown(); !ok {
-			return true, errors.New("-mcp-skill: the path to kakel could not be found, so the skill would name no program to start")
-		}
-		_, err := io.WriteString(os.Stdout, agenthost.Named(agenthost.ClaudeCode).Skill(exePath()))
-		return true, err
 	case opts.listFonts:
 		quiet.ToParentConsole()
 		return true, printFonts(os.Stdout)

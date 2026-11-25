@@ -163,8 +163,7 @@ func (s *server) runSteps(ctx context.Context, pane string, list []steps.Step, l
 		// answer them, and that reading is the answer.
 		return say(allStepsSent(list) + "\n\n" + showScreen(last, Ending{}, clamped))
 	}
-	return say(allStepsSent(list) + " Nothing was waited for, so the screen" +
-		" has not caught up: end a list with until, or call wait_for.")
+	return say(allStepsSent(list) + " Nothing waited, so end a list with until or call wait_for.")
 }
 
 // checkList is why a list cannot be run at all, and which step it is.
@@ -319,9 +318,7 @@ func allStepsSent(list []steps.Step) string {
 // counts them, so an agent reading this can point at the element of the
 // list it sent.
 func stoppedAt(at int, step steps.Step, why string, last Screen, read bool) (result, *rpcError) {
-	said := fmt.Sprintf("Stopped at step %d, %q: %s."+
-		" The steps after it were not run, because they would have gone to"+
-		" whatever is in the pane now rather than to what you were waiting for.",
+	said := fmt.Sprintf("Stopped at step %d, %q: %s. Later steps did not run.",
 		at+1, step.String(), strings.TrimRight(why, "."))
 	if !read {
 		return wrong(said)

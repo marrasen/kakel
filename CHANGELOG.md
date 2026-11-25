@@ -9,6 +9,28 @@ change how something behaves.
 
 ## Unreleased
 
+### Changed
+
+**kakel tells agents less, and they spend fewer tokens on it.** The MCP
+server's instructions are 60% shorter, and its tool descriptions 70%
+shorter. The notes after each screen are a line or two, such as `exit 0`,
+in place of a paragraph. The instructions now open with the rule to ask
+before anything that cannot be undone. Older Claude Code cut the
+instructions short before they reached that rule.
+
+**send_keys takes steps.** The older `text` and `keys` arguments are no
+longer offered to agents, though a call that uses them still works.
+
+**A wrong argument is named.** A call with `"lines":"50"`, or an argument
+no tool takes, now says which argument is wrong.
+
+### Removed
+
+**Write Skill and `kakel -mcp-skill`.** The skill repeated what the MCP
+server already tells every agent that connects, and went stale when
+kakel was updated. kakel offers once to remove a skill an earlier
+version wrote, and leaves it if you say Keep.
+
 ### Fixed
 
 **An agent's ask for a secret no longer stalls its other tools.** While

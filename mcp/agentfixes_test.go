@@ -58,7 +58,7 @@ func TestNothingTellsTheCallerToPutAReturnInTheText(t *testing.T) {
 	if send.Name == "" {
 		t.Fatal("there is no send_keys tool")
 	}
-	said := []string{send.Description, keysArg, instructions}
+	said := []string{send.Description, stepsArg, instructions}
 	if text, ok := send.InputSchema.Properties["text"]; ok {
 		said = append(said, text.Description)
 	}
@@ -71,8 +71,8 @@ func TestNothingTellsTheCallerToPutAReturnInTheText(t *testing.T) {
 	if strings.Contains(send.Description, "named keys instead") {
 		t.Error("the tool still says the keys go instead of the text")
 	}
-	if !strings.Contains(keysArg, "once the text has gone in") {
-		t.Errorf("the keys argument says %q", keysArg)
+	if !strings.Contains(stepsArg, "Enter is a key, not a newline") {
+		t.Errorf("the steps argument says %q", stepsArg)
 	}
 }
 
@@ -85,11 +85,8 @@ func TestAnImageIsNamedInTheTrailer(t *testing.T) {
 		Images: []Image{{Top: 2, Rows: 13, Cols: 40, Width: 400, Height: 200}},
 	}, Ending{}, false)
 
-	if !strings.Contains(got, "Rows 2 to 14 of the screen hold an image, 400 by 200, sent as OSC 1337") {
+	if !strings.Contains(got, "rows 2 to 14: a 400x200 image (OSC 1337), blank here") {
 		t.Errorf("the trailer says:\n%s", got)
-	}
-	if !strings.Contains(got, "read as blank") {
-		t.Error("it does not say the cells read as blank")
 	}
 }
 
@@ -111,15 +108,5 @@ func TestAScreenWithNoImagesSaysNothing(t *testing.T) {
 
 	if strings.Contains(got, "image") {
 		t.Errorf("the trailer mentions an image:\n%s", got)
-	}
-}
-
-// The trailer says when the blank rows were left out, so an answer
-// shorter than the lines asked for is not a puzzle.
-func TestTheTrailerSaysTheBlankRowsWereLeftOut(t *testing.T) {
-	got := showScreen(Screen{Screen: "one\ntwo", Trimmed: true}, Ending{}, false)
-
-	if !strings.Contains(got, "blank rows") {
-		t.Errorf("the trailer says:\n%s", got)
 	}
 }

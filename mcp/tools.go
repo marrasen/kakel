@@ -1,10 +1,12 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -55,65 +57,45 @@ type content struct {
 
 // toolList is what this server offers.
 func toolList() []tool {
+	pane := field{Type: "string", Description: "pane name"}
+	lines := field{Type: "integer", Description: linesArg}
 	return []tool{
 		{
-			Name:  "use_session_code",
-			Title: "Use a session code",
-			Description: "Open the share a session code names. A share holds one or more" +
-				" panes, on whatever machines the user put in it. Call this before any" +
-				" other tool: the answer lists the panes, and every other tool takes a" +
-				" pane's name.",
+			Name:        "use_session_code",
+			Title:       "Use a session code",
+			Description: "Open the share a session code names. Call this first. The answer lists the panes, and every other tool takes a pane name.",
 			InputSchema: schema{
-				Type: "object",
-				Properties: map[string]field{
-					"code": {Type: "string",
-						Description: "the session code the user gave you, like gt1-<port>-<letters>"},
-				},
-				Required: []string{"code"},
+				Type:       "object",
+				Properties: map[string]field{"code": {Type: "string", Description: "the session code the user gave you"}},
+				Required:   []string{"code"},
 			},
 		},
 		{
-			Name:  "list_panes",
-			Title: "List the panes you have",
-			Description: "The panes in your share now, each with the name the other tools" +
-				" take and the size of its screen. The user adds panes and takes them out" +
-				" while you work, so call it again when you want to know what you have.",
+			Name:        "list_panes",
+			Title:       "List the panes you have",
+			Description: "The panes in your share now: name, size and what each allows. The user adds and removes panes while you work.",
 			InputSchema: schema{Type: "object", Properties: map[string]field{}},
 		},
 		{
-			Name:  "read_pane",
-			Title: "Read a pane",
-			Description: "What is on the pane's screen now, as plain text. After sending a" +
-				" command that nothing waited for, use wait_for instead -- a list of steps" +
-				" ending in until has already waited and answers with the screen: a read straight afterwards shows the screen" +
-				" before the command has done anything." +
-				status + marked,
+			Name:        "read_pane",
+			Title:       "Read a pane",
+			Description: "The pane's screen now, as plain text. To get a command's output, use the answer from send_keys or wait_for instead.",
 			InputSchema: schema{
-				Type: "object",
-				Properties: map[string]field{
-					"pane":  {Type: "string", Description: "which pane, from use_session_code or list_panes"},
-					"lines": {Type: "integer", Description: linesArg},
-				},
-				Required: []string{"pane"},
+				Type:       "object",
+				Properties: map[string]field{"pane": pane, "lines": lines},
+				Required:   []string{"pane"},
 			},
 		},
 		{
 			Name:  "read_output",
 			Title: "Read what the last command printed",
-			Description: "What the last command in the pane printed, without the screen" +
-				" around it. Use it after wait_for rather than read_pane. A shell with shell" +
-				" integration on says where each command's output began; without it, this is" +
-				" everything the pane has said since you last typed. It says so when it is" +
-				" neither, and when a full-screen program has no command output at all." +
-				status + marked,
+			Description: "What the last command printed, without the screen around it." +
+				" Without shell integration: everything printed since you last typed.",
 			InputSchema: schema{
 				Type: "object",
 				Properties: map[string]field{
-					"pane": {Type: "string", Description: "which pane, from use_session_code or list_panes"},
-					"lines": {Type: "integer", Description: fmt.Sprintf(
-						"the most lines to give back, ending at the bottom. Left out, it is"+
-							" %d. A longer output gives the last %d and says so.",
-						mostLines, mostLines)},
+					"pane":  pane,
+					"lines": {Type: "integer", Description: fmt.Sprintf("most lines to return, counted up from the bottom. Default and max %d.", mostLines)},
 				},
 				Required: []string{"pane"},
 			},
@@ -121,67 +103,34 @@ func toolList() []tool {
 		{
 			Name:  "send_keys",
 			Title: "Type into a pane",
-			Description: "Work in a pane: type, press keys, and wait, in the order you" +
-				" give. Put the whole of a piece of work in steps and it runs here" +
-				" without a gap, so a command, the program it starts, and what you type" +
-				" into that program are one call:" +
-				" [\"type:cd ~/work\", \"key:Enter\", \"until\", \"fail:No such file\"," +
-				" \"type:vim notes.md\", \"key:Enter\", \"until:[New\", \"type:ihello\"," +
-				" \"key:Escape\", \"type::wq\", \"key:Enter\", \"until\"]." +
-				stepsArg +
-				" A step that does not do what it says stops the list there, and the" +
-				" answer says which one and what the pane looked like: the steps after" +
-				" it are not run, because they would go to whatever is in the pane now" +
-				" rather than to what you were waiting for." +
-				" End a list with until and the answer is the pane once the waiting is" +
-				" over, how the waiting ended, and what is known about its command line" +
-				" the way read_pane's is, so there is nothing to call after it." +
-				" A list may run several commands -- type, Enter, until, then the next" +
-				" one -- and the answer carries what each wait saw, headed by the step" +
-				" and what that command exited with. That is the way to ask three" +
-				" questions at once: chaining them on one line with semicolons runs" +
-				" their output together and leaves one exit status covering all three." +
-				" text and keys are the older way of asking and still work: text goes" +
-				" in letter for letter, then the named keys are pressed, and nothing" +
-				" waits, so call wait_for next.",
+			Description: "Type, press keys and wait in a pane, in order, in one call." +
+				` ["type:make test", "key:Enter", "until"] runs a command and returns what it printed and its exit status.` +
+				" Several commands in one list each get their own output and exit status." +
+				" A step that fails stops the list, and the answer names the step and shows the pane.",
 			InputSchema: schema{
 				Type: "object",
 				Properties: map[string]field{
-					"pane": {Type: "string", Description: "which pane, from use_session_code or list_panes"},
-					"steps": {Type: "array", Items: &items{Type: "string"},
-						Description: stepsArg},
-					"text": {Type: "string", Description: "what to type, letter for letter," +
-						" for a call that sends no steps. No escape is read here: to press" +
-						" Enter put it in keys, not in this"},
-					"keys": {Type: "array", Items: &items{Type: "string"},
-						Description: keysArg},
-					"lines": {Type: "integer", Description: linesArg},
-					"timeout_ms": {Type: "integer", Description: timeoutArg +
-						" It is each until step's own, not the list's."},
+					"pane":       pane,
+					"steps":      {Type: "array", Items: &items{Type: "string"}, Description: stepsArg},
+					"lines":      lines,
+					"timeout_ms": {Type: "integer", Description: fmt.Sprintf("ms each until may wait. Default %d, max %d.", giveUpAfterMS, longestCallMS)},
 				},
-				Required: []string{"pane"},
+				Required: []string{"pane", "steps"},
 			},
 		},
 		{
 			Name:  "ask_for_secret",
 			Title: "Ask the user to type a secret",
-			Description: fmt.Sprintf("Ask the user to type something into the pane without showing it"+
-				" to you: a password, a passphrase, a one-time code. They type it on the"+
-				" pane and it goes to the program there; you are told that they typed and"+
-				" never what. One call waits at most %d seconds. If they have not typed"+
-				" by then the ask stays on the pane, and calling again with the same"+
-				" pane and what waits on it again. A program that echoes what is typed puts it on the"+
-				" screen, where you can read it: this hides what you are told, not what"+
-				" the pane shows.", int(agent.LongestCall.Seconds())),
+			Description: fmt.Sprintf("Ask the user to type a secret into the pane: a password, a passphrase, a one-time code."+
+				" It goes to the program there, and you learn only that they typed."+
+				" One call waits up to %d seconds. Call again with the same pane and what to keep waiting."+
+				" A program that echoes input shows it on the screen.", int(agent.LongestCall.Seconds())),
 			InputSchema: schema{
 				Type: "object",
 				Properties: map[string]field{
-					"pane": {Type: "string", Description: "which pane, from use_session_code or list_panes"},
-					"what": {Type: "string", Description: "what to ask for, in a few words," +
-						` such as "the sudo password for prod". It is shown to the user.`},
-					"wait_ms": {Type: "integer", Description: fmt.Sprintf(
-						"how long this call waits for them, in milliseconds, up to %d seconds."+
-							" Left out, it waits that long.", int(agent.LongestCall.Seconds()))},
+					"pane":    pane,
+					"what":    {Type: "string", Description: `what to ask for, shown to the user, like "the sudo password for prod"`},
+					"wait_ms": {Type: "integer", Description: fmt.Sprintf("ms this call waits. Default and max %d.", longestCallMS)},
 				},
 				Required: []string{"pane", "what"},
 			},
@@ -189,87 +138,45 @@ func toolList() []tool {
 		{
 			Name:  "restart_pane",
 			Title: "Start a pane's program again",
-			Description: "Start the pane's program again after it has finished: the shell" +
-				" that ended, or the command that ran. The same pane, so its name does not" +
-				" change and what it printed before is still above what runs now. On a pane" +
-				" that ran one command this runs that command again." +
-				" It works only if the user ticked \"" + agent.BoxRestart + "\", which" +
-				" use_session_code and list_panes both report.",
+			Description: "Start the pane's program again after it has exited. The pane keeps its name and its earlier output." +
+				" Needs the user's \"" + agent.BoxRestart + "\" box, which list_panes shows.",
 			InputSchema: schema{
-				Type: "object",
-				Properties: map[string]field{
-					"pane": {Type: "string", Description: "which pane, from use_session_code or list_panes"},
-				},
-				Required: []string{"pane"},
+				Type:       "object",
+				Properties: map[string]field{"pane": pane},
+				Required:   []string{"pane"},
 			},
 		},
 		{
 			Name:  "open_pane",
 			Title: agent.BoxOpenMore,
-			Description: "Open a second pane where a pane you have is: another shell on the" +
-				" same machine, handed to you as it opens. The answer names it. It runs" +
-				" nothing, and it opens no connection: kakel must already be connected" +
-				" to that machine. From a pane that runs one command, it opens a shell" +
-				" beside it, not that command again." +
-				" It works only if the user ticked \"" + agent.BoxOpenMore + "\", which" +
-				" use_session_code and list_panes both report.",
+			Description: "Open another shell on the machine a pane of yours is on. The answer names the new pane." +
+				" kakel must already be connected to that machine." +
+				" Needs the user's \"" + agent.BoxOpenMore + "\" box, which list_panes shows.",
 			InputSchema: schema{
-				Type: "object",
-				Properties: map[string]field{
-					"pane": {Type: "string",
-						Description: "a pane you have, from use_session_code or list_panes; the new one" +
-							" opens where it is"},
-				},
-				Required: []string{"pane"},
+				Type:       "object",
+				Properties: map[string]field{"pane": pane},
+				Required:   []string{"pane"},
 			},
 		},
 		{
 			Name:  "wait_for",
 			Title: "Wait for a pane",
-			Description: "Watch a pane until the waiting is over, then give back what" +
-				" it was waiting for: a shell that marks its commands ends the wait when" +
-				" one finishes, and then the answer is what that command printed rather" +
-				" than a rectangle of screen with everything above it still in. Ask for" +
-				" screen to have the screen anyway. Every other ending gives the screen," +
-				" because nobody has said where an output would begin." +
-				" Use it after send_keys. With no contains it ends when the command you" +
-				" sent finishes, or when the pane has said nothing for quiet_ms, which is" +
-				" about three quarters of a second unless you give another. With contains" +
-				" it ends when the screen holds that text, checked against the screen as it" +
-				" already is, so text that is there when the wait begins ends it at once," +
-				" and the quiet is switched off, though a command that finishes still ends" +
-				" it." +
-				" The answer says which of those ended it, or that the time ran out." +
-				" A program that keeps drawing never goes quiet -- top, a progress bar, a" +
-				" log being followed -- so give contains for one of those, or read the pane" +
-				" instead. It takes lines as read_pane does." +
-				status + marked,
+			Description: "Wait for a pane, then return what happened." +
+				" With shell integration it ends when your command finishes and returns that command's output and exit status." +
+				" Otherwise it ends when the prompt returns or the pane goes quiet, and returns the screen. The answer says which." +
+				" For a program that keeps drawing (top, a progress bar, tail -f), give contains.",
 			InputSchema: schema{
 				Type: "object",
 				Properties: map[string]field{
-					"pane": {Type: "string", Description: "which pane, from use_session_code or list_panes"},
-					"contains": {Type: "string", Description: "text to wait for on the screen." +
-						" This matches the screen as it already is, where an until step in" +
-						" send_keys waits for its text to arrive. The two differ because" +
-						" this is a call of its own, landing after the keys it is about: by" +
-						" then a short command has finished and its answer is already there," +
-						" and a wait that insisted on watching it land would miss it. Pass" +
-						" since_keys for a wait that has to see the text arrive"},
-					"since_keys": {Type: "boolean",
-						Description: "wait for contains to arrive rather than matching what" +
-							" is on the screen already, measured against the screen as this" +
-							" call began. Use it when the text you are waiting for is a word" +
-							" you typed: the pane echoes what you type, so \"done\" is on the" +
-							" screen the moment you send \"echo done\"." +
-							" Leave it off for a command that may already have finished by" +
-							" the time this call lands, which is most of them"},
-					"lines": {Type: "integer", Description: linesArg},
-					"quiet_ms": {Type: "integer",
-						Description: "how long the pane must say nothing for, in milliseconds"},
-					"timeout_ms": {Type: "integer", Description: timeoutArg},
-					"screen": {Type: "boolean",
-						Description: "give back the screen even when the shell said a command" +
-							" finished, instead of what that command printed"},
+					"pane": pane,
+					"contains": {Type: "string", Description: "end when the screen has this text. Text already there counts." +
+						" Quiet no longer ends the wait."},
+					"since_keys": {Type: "boolean", Description: "with contains: count only text that appears after this call starts." +
+						" Use it when the text is a word you typed, because the pane echoes it."},
+					"lines":      lines,
+					"quiet_ms":   {Type: "integer", Description: "ms of silence that ends the wait. Default 700."},
+					"timeout_ms": {Type: "integer", Description: fmt.Sprintf("ms before giving up. Default %d, max %d.", giveUpAfterMS, longestCallMS)},
+					"screen":     {Type: "boolean", Description: "return the screen even when a command's output is available"},
 				},
 				Required: []string{"pane"},
 			},
@@ -301,11 +208,8 @@ func (s *server) runTool(ctx context.Context, name string, args json.RawMessage)
 		Screen    bool     `json:"screen"`
 	}
 	if len(args) > 0 {
-		if err := json.Unmarshal(args, &in); err != nil {
-			return result{}, &rpcError{
-				Code:    codeInvalidParams,
-				Message: "those are not arguments this tool understands",
-			}
+		if why := readArgs(args, &in); why != "" {
+			return result{}, &rpcError{Code: codeInvalidParams, Message: why}
 		}
 	}
 
@@ -326,20 +230,16 @@ func (s *server) runTool(ctx context.Context, name string, args json.RawMessage)
 			return wrong(failed(err))
 		}
 		if len(panes) == 0 {
-			return say("You have no panes. The user has not given you a session code" +
-				" yet, or they have taken every pane out of the share you used, or" +
-				" the connection to the kakel window was lost." +
-				" If you have a code, call use_session_code with it again; if not, ask the user for one.")
+			return say("You have no panes. If you have a session code, call use_session_code with it again;" +
+				" if not, ask the user for one.")
 		}
 		var out strings.Builder
 		for _, p := range panes {
-			fmt.Fprintf(&out, "%s: %s, %dx%d. %s%s\n",
-				p.ID, p.Label, p.Cols, p.Rows, whatItTakes(p), alsoAllowed(p.May))
+			out.WriteString(paneLine(p) + "\n")
 		}
 		if err != nil {
 			// The panes that did answer, and then what went wrong.
-			out.WriteString("\nA window could not be asked, so this may not be all" +
-				" of it: " + err.Error())
+			out.WriteString("\nA window could not be asked, so this may not be all of them: " + failed(err))
 		}
 		return say(out.String())
 
@@ -388,7 +288,7 @@ func (s *server) runTool(ctx context.Context, name string, args json.RawMessage)
 			return s.runSteps(ctx, in.Pane, list, lines, clamped, in.TimeoutMS)
 		}
 		if in.Text == "" && len(in.Keys) == 0 {
-			return missing("text, keys and no steps")
+			return missing("steps")
 		}
 		// Refused before anything is typed, so an agent that spelled a
 		// key wrong is told which names there are and has sent nothing.
@@ -401,10 +301,7 @@ func (s *server) runTool(ctx context.Context, name string, args json.RawMessage)
 		if err := s.panes.Send(in.Pane, in.Text, in.Keys); err != nil {
 			return wrong(failed(err))
 		}
-		return say("Sent. Use wait_for to see what happens: the screen has not" +
-			" caught up yet, and wait_for ends when what you sent finishes. On a" +
-			" shell that marks its commands wait_for gives you what this one" +
-			" printed, so there is nothing to call after it.")
+		return say("Sent. Nothing waited, so call wait_for.")
 
 	case "ask_for_secret":
 		if in.Pane == "" {
@@ -419,15 +316,11 @@ func (s *server) runTool(ctx context.Context, name string, args json.RawMessage)
 			return wrong(failed(err))
 		}
 		if !typed {
-			return say(fmt.Sprintf("The user has not typed anything into the pane yet. The"+
-				" ask is still on the pane, for up to %d minutes. To keep waiting, call"+
-				" ask_for_secret again with the same pane and what. They may not have"+
-				" seen the line, or may not want to answer it: if a few calls go by with"+
-				" nothing, read the pane and ask them in your own words.",
+			return say(fmt.Sprintf("Not typed yet. The ask stays on the pane for %d minutes."+
+				" Call again with the same pane and what. After a few tries, ask the user yourself.",
 				int(agent.LongestSecretWait.Minutes())))
 		}
-		return say("The user typed something into the pane. You were not told what," +
-			" and you will not be. Use wait_for to see what the program does with it.")
+		return say("The user typed it. Call wait_for to see what the program does.")
 
 	case "restart_pane":
 		if in.Pane == "" {
@@ -437,10 +330,7 @@ func (s *server) runTool(ctx context.Context, name string, args json.RawMessage)
 		if err != nil {
 			return wrong(failed(err))
 		}
-		return say(fmt.Sprintf(
-			"%s is running again, as pane %q. What it printed before is still above it,"+
-				" and read_output gives you what the new run prints.",
-			pane.Label, pane.ID))
+		return say(fmt.Sprintf("Restarted %s. Same pane name, earlier output still above.", pane.ID))
 
 	case "open_pane":
 		if in.Pane == "" {
@@ -450,11 +340,7 @@ func (s *server) runTool(ctx context.Context, name string, args json.RawMessage)
 		if err != nil {
 			return wrong(failed(err))
 		}
-		return say(fmt.Sprintf(
-			"You have a second pane on %s: a new shell, a %dx%d screen, as pane %q."+
-				" It runs a shell whatever the pane you opened it from runs."+
-				" It is yours the same way the first one is, and the user is watching it too.",
-			pane.Label, pane.Cols, pane.Rows, pane.ID))
+		return say(fmt.Sprintf("Opened %s: a new shell on %s, %dx%d.", pane.ID, pane.Label, pane.Cols, pane.Rows))
 
 	case "wait_for":
 		if in.Pane == "" {
@@ -478,72 +364,43 @@ func (s *server) runTool(ctx context.Context, name string, args json.RawMessage)
 	}
 }
 
-// sharedWithYou is what an agent is told when it uses a code: every pane
-// in the share, and what each one allows.
-//
-// The set is not fixed. The user adds panes and takes them out while the
-// agent works, so it is told to ask again rather than to hold this list
-// as the answer.
+// sharedWithYou is what an agent is told when it uses a code: every pane in the share, then the rule, which a tool
+// answer carries to every client.
 func sharedWithYou(panes []Pane) string {
 	if len(panes) == 0 {
-		return "That code names a share with no panes in it yet." +
-			" Ask the user to add one, and call list_panes to see it."
+		return "That share has no panes yet. Ask the user to add one, then call list_panes."
 	}
 	var out strings.Builder
-	fmt.Fprintf(&out, "The user has shared %s with you:\n", howManyPanes(len(panes)))
 	for _, p := range panes {
-		fmt.Fprintf(&out, "\n%s: %s, a %dx%d screen. %s%s",
-			p.ID, p.Label, p.Cols, p.Rows, whatItTakes(p), alsoAllowed(p.May))
+		out.WriteString(paneLine(p) + "\n")
 	}
-	return out.String() + "\n\nThe user adds panes and takes them out while you work," +
-		" so call list_panes again when you want to know what you have." +
-		" They are watching all of it and can take any of it back at any moment."
+	return out.String() + "\nThe user is watching. Ask before anything you cannot undo."
 }
 
-// howManyPanes counts the panes in a share, in words.
-func howManyPanes(n int) string {
-	if n == 1 {
-		return "one pane"
-	}
-	return fmt.Sprintf("%d panes", n)
-}
-
-// whatItTakes is what an agent may do with one pane of a share.
-func whatItTakes(p Pane) string {
+// paneLine is one pane as an agent is told of it: its name, what it is, its size, and only what differs from a
+// pane it may read and type into.
+func paneLine(p Pane) string {
+	var also []string
 	switch {
 	case p.Ended:
-		return "The program in it has finished, so there is nothing left to type into:" +
-			" read what it printed with read_pane."
+		also = append(also, "program has exited")
 	case p.May.ReadOnly:
-		return "Read it with read_pane and wait for it with wait_for. The user shared it" +
-			" to be read: send_keys is refused."
+		also = append(also, "read only")
 	}
-	return "Read it with read_pane, type into it with send_keys, and wait for it" +
-		" with wait_for."
-}
-
-// alsoAllowed says what the user ticked for this pane, and says nothing
-// when they ticked nothing.
-//
-// An agent is told rather than left to find out by being refused. Being
-// told is not what allows it: the window decides on every call, and a
-// box turned off while the agent is working takes effect at once.
-func alsoAllowed(may May) string {
-	var can []string
-	if may.Restart {
-		can = append(can, "start the program again when it has finished, with restart_pane")
+	if p.May.Restart {
+		also = append(also, "may restart_pane")
 	}
-	if may.OpenMore {
-		can = append(can, "open another pane where this one is, with open_pane")
+	if p.May.OpenMore {
+		also = append(also, "may open_pane")
 	}
-	if may.ReadBack {
-		can = append(can, "read above a clear, so clearing the screen hides nothing from you")
+	if p.May.ReadBack {
+		also = append(also, "may read above a clear")
 	}
-	if len(can) == 0 {
-		return ""
+	line := fmt.Sprintf("%s: %s, %dx%d", p.ID, p.Label, p.Cols, p.Rows)
+	if len(also) > 0 {
+		line += " (" + strings.Join(also, ", ") + ")"
 	}
-	return "\n\nThe user has also allowed you to " + strings.Join(can, "; ") +
-		". They can take any of that back while you work, and then the next call fails."
+	return line
 }
 
 // mostLines caps how many lines one read may ask for. The window's own
@@ -561,61 +418,57 @@ func atMostLines(n int) (lines int, clamped bool) {
 	return min(n, mostLines), n > mostLines
 }
 
-// linesArg says what the lines argument does, for both tools that take
-// it.
-var linesArg = fmt.Sprintf("how many lines to give back, ending at the bottom of the screen"+
-	" and reaching into what has scrolled off. Left out, it is the screen. At most %d:"+
-	" ask for more and you get the last %d, and the answer says so.", mostLines, mostLines)
+// linesArg says what the lines argument does.
+var linesArg = fmt.Sprintf("lines to return, counted up from the bottom, scrollback included."+
+	" Default: the screen. Max %d.", mostLines)
 
-// stepsArg says what a list of steps may hold. It is on the tool and on
-// the argument: an agent reads one or the other, and a list is the
-// whole of what this tool does.
-var stepsArg = fmt.Sprintf(" Each step is a word, a colon and the rest of it, whole:"+
-	" \"type:<text>\" types letter for letter, with nothing read as an escape, so a"+
-	" colon or a backslash in what you type is what it looks like;"+
-	" \"key:<name>\" presses one key;"+
-	" \"wait:<ms>\" waits that long whatever happens, for the moments nothing on"+
-	" screen marks;"+
-	" \"until:<text>\" waits for that text to arrive, measured against the screen as"+
-	" the list last typed -- not as the list began. What you typed has come back by"+
-	" then, so waiting for a word you typed waits for the program to say it rather"+
-	" than for your own typing echoed. A wait before the list has typed anything"+
-	" has nothing to be an answer to and takes the pane as it already is, so a list"+
-	" may open by waiting for the prompt to be up. A wait that ended some"+
-	" other way -- the command finished, the pane went quiet -- without that text"+
-	" in what the command printed stops the list, because a step that says"+
-	" \"until the editor is up\" has not done what it says. What it printed, not"+
-	" what is on the screen: a screen still carrying PASS from the run before"+
-	" must not pass a wait for the run that has just failed;"+
-	" \"until\" on its own waits for whatever is running to finish;"+
-	" \"require:<text>\" goes on only if the pane has said that since you typed,"+
-	" and \"fail:<text>\" stops if it has. The two guards are how a list checks"+
-	" that it is where it thinks it is before it types into it: put a require or"+
-	" a fail after a wait, and a command that failed stops the list there instead"+
-	" of the rest of it going to a shell prompt. They ask about what the pane has"+
-	" said since you last typed rather than about the whole screen, so an error"+
-	" from an hour ago does not stop a list; where nothing can say where that"+
-	" began, the answer says the whole screen was judged instead."+
-	" At most %d steps, typing %d characters in all."+
-	" The keys are the ones keys takes.", steps.MostSteps, steps.MostText)
+// stepsArg says what a list of steps may hold.
+var stepsArg = fmt.Sprintf(`Each step is "word:rest". The rest is literal, with no escapes.
+type:<text> types it. Enter is a key, not a newline.
+key:<name> presses one key: %s.
+until waits for the running command to finish.
+until:<text> waits for that text to appear after the last thing typed. If the command ends without it, the list stops.
+wait:<ms> sleeps.
+require:<text> stops the list unless the output since you typed has that text. fail:<text> stops it if it has.
+Max %d steps and %d typed characters.`, agent.KeyNames(), steps.MostSteps, steps.MostText)
 
-// timeoutArg says what a timeout does and how long there is without
-// one, because an agent that is not told a default sets one on every
-// call to be sure.
-var timeoutArg = fmt.Sprintf("how long to wait before giving up, in milliseconds."+
-	" Without one it is %d, and at most %d.", giveUpAfterMS, longestCallMS)
+// giveUpAfterMS is how long the window gives a wait that asked for no timeout, in milliseconds.
+var giveUpAfterMS = agent.GiveUpAfter.Milliseconds()
 
 // longestCallMS is agent.LongestCall in the milliseconds the tools take.
 var longestCallMS = int(agent.LongestCall.Milliseconds())
 
-// giveUpAfterMS is how long the window gives a wait that asked for no
-// timeout, in the milliseconds the tools take. Asked of the window's own
-// number rather than written again here.
-var giveUpAfterMS = agent.GiveUpAfter.Milliseconds()
+// readArgs reads a tool call's arguments into in, and says which argument is wrong when one is.
+func readArgs(args json.RawMessage, in any) string {
+	d := json.NewDecoder(bytes.NewReader(args))
+	d.DisallowUnknownFields()
+	err := d.Decode(in)
+	var typeErr *json.UnmarshalTypeError
+	switch {
+	case err == nil:
+		return ""
+	case errors.As(err, &typeErr) && typeErr.Field != "":
+		return fmt.Sprintf("argument %q has to be %s, not %s", typeErr.Field, kindOf(typeErr.Type.Kind()), typeErr.Value)
+	case strings.HasPrefix(err.Error(), "json: unknown field "):
+		return "no tool here takes the argument " + strings.TrimPrefix(err.Error(), "json: unknown field ")
+	}
+	return "the arguments are not a JSON object of this tool's arguments"
+}
 
-// keysArg says what the keys argument takes, and how many names.
-var keysArg = fmt.Sprintf("keys to press once the text has gone in, by name, in the"+
-	" order given. At most %d of them. The keys are: %s", agent.MostKeys, agent.KeyNames())
+// kindOf names a Go kind the way a JSON schema does.
+func kindOf(k reflect.Kind) string {
+	switch k {
+	case reflect.Int, reflect.Int64:
+		return "an integer"
+	case reflect.Bool:
+		return "true or false"
+	case reflect.String:
+		return "a string"
+	case reflect.Slice:
+		return "an array"
+	}
+	return k.String()
+}
 
 // missing says a call left out something it had to carry.
 func missing(what string) (result, *rpcError) {
@@ -675,65 +528,72 @@ func (s *server) printedOrScreen(pane string, screen Screen, ended Ending,
 	return screen
 }
 
-// showScreen is a screen as an agent reads it, with what the screen
-// itself cannot say.
+// showScreen is a screen as an agent reads it, with kakel's notes after notesMarker.
 func showScreen(s Screen, ended Ending, clamped bool) string {
-	out := s.Screen
 	var notes []string
 	if ended.GaveUp {
-		notes = append(notes, "This is the screen as time ran out;"+
-			" what you were waiting for has not happened. Call wait_for to keep waiting.")
-	} else if ended.Because != "" {
-		notes = append(notes, "The waiting ended because "+ended.Because+".")
+		notes = append(notes, "timed out before that happened; call wait_for to keep waiting")
+	} else if why := endedNote(ended.Because, s); why != "" {
+		notes = append(notes, why)
 	}
 	if s.Gone {
-		notes = append(notes, "The program in this pane has finished,"+
-			" so nothing more will appear and nothing will read what you type.")
+		notes = append(notes, "the program has exited")
 	}
 	if note := commandNote(s); note != "" {
 		notes = append(notes, note)
 	}
 	if clamped {
-		notes = append(notes, clampNote())
+		notes = append(notes, fmt.Sprintf("capped at %d lines", mostLines))
 	}
-	// Not on the alternate screen, where the note below already says why
-	// there is nothing above the screen.
 	if s.All && !s.Alt {
-		notes = append(notes, allThereIsNote)
-	}
-	if s.Trimmed {
-		notes = append(notes, "The blank rows under the last line with anything on"+
-			" them are left out, so this is shorter than the lines you asked for.")
+		notes = append(notes, "nothing above this")
 	}
 	notes = append(notes, imageNotes(s.Images)...)
 	if s.Note != "" {
 		notes = append(notes, s.Note)
 	}
-	// Of the screen, because the answer may be longer than the screen
-	// and a row of it is not a row of the answer.
-	notes = append(notes, fmt.Sprintf("Cursor at row %d, column %d of the screen.", s.Row, s.Col))
 	if s.Alt {
-		notes = append(notes, fullScreenNote)
+		notes = append(notes, fmt.Sprintf("full-screen program: the screen is all there is. Cursor at row %d, column %d", s.Row, s.Col))
 	}
-	// Behind a marker, so an agent quoting the screen back or comparing
-	// two reads is working on the pane's own text and not on this.
-	return out + "\n\n" + notesMarker + "\n" + strings.Join(notes, "\n")
+	if len(notes) == 0 {
+		return s.Screen
+	}
+	// Behind a marker, so the pane's own text stays apart from these.
+	return s.Screen + "\n\n" + notesMarker + "\n" + strings.Join(notes, "\n")
 }
 
-// commandNote is what the shell said about the command line, and what
-// the window watched for when the shell says nothing.
-//
-// Which of the two this is is said plainly, because one is a report and
-// the other is a guess. A full-screen program has no command line to
-// report on, and a pane whose program has gone has no more to say, so
-// both get nothing.
+// endedNote is how a wait ended, left out where the exit status already says it.
+func endedNote(because string, s Screen) string {
+	switch because {
+	case "":
+		return ""
+	case agent.EndedOnMarks:
+		if s.Marks && !s.Running && s.HasStatus {
+			return ""
+		}
+		return "the command finished"
+	case agent.EndedOnPrompt:
+		return "the prompt came back"
+	case agent.EndedOnQuiet:
+		return "the pane went quiet, which does not mean a command finished"
+	case agent.EndedOnStuck:
+		return "the pane went quiet, but the shell says a command is still running"
+	case agent.EndedOnText:
+		return "the text is on the screen"
+	case agent.EndedOnGone, agent.EndedOnTime:
+		return ""
+	}
+	return because
+}
+
+// commandNote is what the shell said about the command line, or what was guessed when it says nothing.
 func commandNote(s Screen) string {
 	if s.Alt {
 		return ""
 	}
 	if s.Gone {
 		if s.Marks && s.Running {
-			return "The shell was part way through a command when the program went."
+			return "the shell was part way through a command"
 		}
 		return ""
 	}
@@ -741,82 +601,32 @@ func commandNote(s Screen) string {
 		return watchedNote(s)
 	}
 	if s.Running {
-		return "The shell says a command is running now, so call wait_for again rather" +
-			" than acting on what is on the screen."
+		return "a command is still running: call wait_for"
 	}
 	if !s.HasStatus {
-		return "The shell says no command is running, and gave no exit status for the" +
-			" last one."
+		return "no command running, and no exit status for the last one"
 	}
-	whose := " That is the last command anyone ran in this pane, which may be the" +
-		" user's rather than yours."
 	if s.Yours {
-		whose = " That is what you sent."
+		return fmt.Sprintf("exit %d", s.Status)
 	}
-	return fmt.Sprintf(
-		"The shell says the last command finished with exit status %d.", s.Status) + whose
+	return fmt.Sprintf("exit %d, from a command that is not yours", s.Status)
 }
 
-// watchedNote is what an agent is told about a pane whose shell says
-// nothing about its commands.
-//
-// The prompt coming back is the only sign there is, and it is a guess:
-// a prompt that carries the time or a branch name never comes back the
-// same, and a command that prints the prompt's own text looks like one.
-const noMarks = "This shell does not tell kakel when a command starts or stops," +
-	" so nothing here knows for certain whether one is running."
-
+// watchedNote is what an agent is told about a pane whose shell says nothing about its commands.
 func watchedNote(s Screen) string {
 	switch {
 	case !s.Watching:
-		return noMarks + " Nothing has been typed here yet through these tools," +
-			" so there is no prompt to watch for. Read the screen and judge for yourself."
+		return "no shell integration, and nothing typed here yet: judge from the screen"
 	case s.Back:
-		return noMarks + " The prompt you last typed at is back on the screen," +
-			" which usually means what you sent has finished."
+		return "no shell integration: the prompt is back, so it probably finished"
 	}
-	return noMarks + " The prompt you last typed at has not come back," +
-		" which usually means what you sent is still running."
+	return "no shell integration: the prompt is not back, so it is probably still running"
 }
 
 // notesMarker is the line between the pane's own text and what kakel
 // has to say about it. The tools name it, so an agent knows where the
 // screen ends.
 const notesMarker = "-- kakel --"
-
-// status says what an answer carries about the command line, for the
-// tools that answer with a screen.
-//
-// Which of the two it is is always said, because one is the shell
-// reporting and the other is this window guessing from the screen.
-const status = " Every screen says what is known about the command line: with shell" +
-	" integration on, whether one is running and what the last one exited with; without" +
-	" it, only whether the prompt has come back, which is a guess."
-
-// marked says what the marker means, for the tools that answer with a
-// screen.
-var marked = fmt.Sprintf(" The screen ends at the last line reading %q; what follows is"+
-	" kakel, not the pane. The last one, because a pane can print that line itself.",
-	notesMarker)
-
-// allThereIsNote is what an agent is told when the pane had fewer lines
-// than the read asked for.
-const allThereIsNote = "That is everything the pane has kept: there is nothing above it to read."
-
-// clampNote is what an agent is told when it asked for more lines than
-// one read gives.
-//
-// At most, not exactly: the pane may have kept fewer, and allThereIsNote
-// is what says it had.
-func clampNote() string {
-	return fmt.Sprintf("You asked for more lines than a read gives;"+
-		" this is the last %d at most.", mostLines)
-}
-
-// fullScreenNote is what an agent is told about a pane on the alternate
-// screen, where asking for more lines gives the screen and nothing else.
-const fullScreenNote = "This is a full-screen program: the screen is all there is," +
-	" and lines above it cannot be read."
 
 // say is a tool answer.
 func say(text string) (result, *rpcError) {
@@ -856,24 +666,15 @@ func escapedEnding(text string) string {
 	return ""
 }
 
-// imageNotes say what is on the screen in pixels.
-//
-// The cells an image covers read back as spaces, so without this a
-// image that arrived and one that never did look the same. A
-// program that meant to draw one is usually being debugged by whoever
-// is reading, and the size is what says whether the right one came.
+// imageNotes say where the screen holds images, whose cells read as blank.
 func imageNotes(on []Image) []string {
 	out := make([]string, 0, len(on))
 	for _, p := range on {
 		which := "OSC 1337"
 		if p.Wire {
-			// From another window's screen rather than from a program
-			// in this pane.
 			which = "OSC 1338"
 		}
-		out = append(out, fmt.Sprintf(
-			"Rows %d to %d of the screen hold an image, %d by %d, sent as %s."+
-				" Those cells read as blank here.",
+		out = append(out, fmt.Sprintf("rows %d to %d: a %dx%d image (%s), blank here",
 			p.Top, p.Top+p.Rows-1, p.Width, p.Height, which))
 	}
 	return out

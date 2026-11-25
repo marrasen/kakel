@@ -3,9 +3,6 @@ package app
 import (
 	"errors"
 	"fmt"
-	"io/fs"
-	"os"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -718,70 +715,6 @@ func (w agentWindow) Secret(id, what string, wait time.Duration) (bool, error) {
 		return false, errors.New("this window is closing")
 	}
 	return false, nil
-}
-
-// WriteSkill writes the skill for an agent program, which tells it how
-// to work in the panes; Over writes over one edited since.
-type WriteSkill struct {
-	Host string
-	Over bool
-}
-
-// writeSkill writes an agent program's skill, and asks before writing
-// over one edited since.
-func (a *app) writeSkill(in WriteSkill) error {
-	host := agenthost.Named(in.Host)
-	if a.settings != nil {
-		a.keep("the agent picked", a.settings.PutAgentHost(host.Name))
-	}
-	path, err := host.SkillPath()
-	if err != nil {
-		return err
-	}
-	// Refused rather than written with the bare name: a file goes on
-	// saying the wrong thing long after the failure is forgotten.
-	if _, ok := exeKnown(); !ok {
-		return errors.New("the path to kakel could not be found, so the skill would name no program to start")
-	}
-	body := host.Skill(exePath())
-	if was, err := os.ReadFile(path); err == nil && string(was) == body {
-		// Already there as it would be written.
-		a.worked("Skill written", path+" is up to date.", "")
-		return nil
-	}
-	if !in.Over {
-		was, err := os.ReadFile(path)
-		switch {
-		case errors.Is(err, fs.ErrNotExist):
-		case err != nil:
-			return err
-		case string(was) != body:
-			go func() {
-				ans, err := a.ask(a.ctx, Ask{Title: "Replace the skill?", Text: path + " has been edited, and replacing it discards the edits.", Yes: "Replace", Danger: true})
-				if err == nil && ans.Yes {
-					in.Over = true
-					a.events <- func() {
-						if err := a.writeSkill(in); err != nil {
-							a.failed("Couldn't write the skill", err.Error())
-						}
-					}
-				}
-			}()
-			return nil
-		}
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-		return err
-	}
-	how := "Restart " + host.Name + " to load it."
-	if !host.ReadsSkills() {
-		how = "Copy it to where " + host.Called + " reads skills from."
-	}
-	a.worked("Skill written", path+". "+how, "")
-	return nil
 }
 
 // exeKnown is where this program is, and false when the system will not
