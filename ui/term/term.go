@@ -206,6 +206,9 @@ type Terminal struct {
 	secretMu sync.Mutex
 	secret   *SecretAsk
 
+	// answered is an ask the user answered while no caller was waiting on it, kept until one collects it.
+	answered *SecretAsk
+
 	// end is what the session reported when the program stopped, and nil
 	// until it has. Written by whichever goroutine noticed the program
 	// go and read by the one that draws.
@@ -660,9 +663,17 @@ func (t *Terminal) Say(line string) {
 // and goes into the transcript like anything else the window says.
 //
 // A pane already asking for the same line gives back that ask, so a caller
-// can wait on it again. A different line ends that ask and starts this one.
+// can wait on it again, and so does one the user answered with nobody
+// waiting. A different line ends that ask and starts this one.
 func (t *Terminal) WaitForSecret(line string, within time.Duration) *SecretAsk {
 	t.secretMu.Lock()
+	if old := t.answered; old != nil {
+		t.answered = nil
+		if old.line == line && time.Now().Before(old.until) {
+			t.secretMu.Unlock()
+			return old
+		}
+	}
 	was := t.secret
 	if was != nil && was.line == line {
 		t.secretMu.Unlock()
@@ -671,7 +682,7 @@ func (t *Terminal) WaitForSecret(line string, within time.Duration) *SecretAsk {
 	if was != nil {
 		was.finish(false)
 	}
-	ask := &SecretAsk{line: line, done: make(chan struct{})}
+	ask := &SecretAsk{line: line, done: make(chan struct{}), until: time.Now().Add(within)}
 	t.secret = ask
 	ask.giveUp = time.AfterFunc(within, func() { t.EndSecret(ask) })
 	t.secretMu.Unlock()
@@ -690,6 +701,10 @@ type SecretAsk struct {
 	line   string
 	done   chan struct{}
 	giveUp *time.Timer
+	until  time.Time
+
+	// waiting counts the callers in AwaitSecret now.
+	waiting int
 
 	// answered is written before done is closed.
 	answered bool
@@ -700,17 +715,50 @@ type SecretAsk struct {
 	typed bool
 }
 
-// Done is closed when the ask ends.
-func (a *SecretAsk) Done() <-chan struct{} { return a.done }
-
-// Answered reports whether the user typed the answer, once Done is closed.
-func (a *SecretAsk) Answered() bool { return a.answered }
+// AwaitSecret waits up to d, or until stop is closed, for an ask to end, and reports whether it ended and whether
+// the user answered it.
+func (t *Terminal) AwaitSecret(ask *SecretAsk, d time.Duration, stop <-chan struct{}) (ended, answered bool) {
+	t.secretMu.Lock()
+	ask.waiting++
+	t.secretMu.Unlock()
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ask.done:
+		ended = true
+	case <-timer.C:
+	case <-stop:
+	}
+	t.secretMu.Lock()
+	defer t.secretMu.Unlock()
+	ask.waiting--
+	if !ended {
+		select {
+		case <-ask.done:
+			ended = true
+		default:
+		}
+	}
+	if ended && t.answered == ask {
+		t.answered = nil
+	}
+	return ended, ended && ask.answered
+}
 
 // finish ends the ask, with the terminal's secretMu held and the ask already taken off it.
 func (a *SecretAsk) finish(answered bool) {
 	a.giveUp.Stop()
 	a.answered = answered
 	close(a.done)
+}
+
+// answer ends the ask as answered, keeping it for the next caller when nobody is waiting, with secretMu held.
+func (t *Terminal) answer(ask *SecretAsk) {
+	t.secret = nil
+	ask.finish(true)
+	if ask.waiting == 0 {
+		t.answered = ask
+	}
 }
 
 // watchForSecret follows what the user types while the pane is waiting
@@ -728,8 +776,7 @@ func (t *Terminal) watchForSecret(ev input.Event) {
 			// A return with nothing before it. The ask stands.
 			return
 		}
-		t.secret = nil
-		ask.finish(true)
+		t.answer(ask)
 		return
 	}
 	// Anything that puts characters in front of the cursor counts as the
@@ -767,8 +814,7 @@ func (t *Terminal) pastedSecret(text string) {
 	if !strings.ContainsAny(text, "\r\n") {
 		return
 	}
-	t.secret = nil
-	ask.finish(true)
+	t.answer(ask)
 }
 
 // EndSecret ends an ask that nobody answered, and says so on the pane so

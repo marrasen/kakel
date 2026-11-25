@@ -687,36 +687,37 @@ func (w agentWindow) Open(id string) (agent.Pane, error) {
 //
 // The ask stays on the pane for agent.LongestSecretWait after a call stops waiting, so the agent can call again.
 func (w agentWindow) Secret(id, what string, wait time.Duration) (bool, error) {
-	ask, err := onApp(w.a, func() (*uiterm.SecretAsk, error) {
+	type asked struct {
+		t   *uiterm.Terminal
+		ask *uiterm.SecretAsk
+	}
+	got, err := onApp(w.a, func() (asked, error) {
 		h, t, err := w.a.handedPane(id)
 		if err != nil {
-			return nil, err
+			return asked{}, err
 		}
 		if w.a.agents.allowed(h).ReadOnly {
-			return nil, errors.New(`the user handed this pane over to be read, so nothing of yours goes on it. Ask them to turn "` + agent.BoxReadOnly + `" off, or ask them for what you need in your own words`)
+			return asked{}, errors.New(`the user handed this pane over to be read, so nothing of yours goes on it. Ask them to turn "` + agent.BoxReadOnly + `" off, or ask them for what you need in your own words`)
 		}
 		w.a.gave(h)
 		if t.Exited() {
-			return nil, errors.New("the program in that pane has finished, so nothing is waiting to be told anything")
+			return asked{}, errors.New("the program in that pane has finished, so nothing is waiting to be told anything")
 		}
-		return t.WaitForSecret(agentterm.SecretLine(what), agent.LongestSecretWait), nil
+		return asked{t, t.WaitForSecret(agentterm.SecretLine(what), agent.LongestSecretWait)}, nil
 	})
 	if err != nil {
 		return false, err
 	}
-	giveUp := time.NewTimer(min(max(wait, 5*time.Second), agent.SecretCallWait))
-	defer giveUp.Stop()
-	select {
-	case <-ask.Done():
-		if !ask.Answered() {
-			return false, fmt.Errorf("that ask ended without the user answering it: the pane closed, the program in it finished, the user took the pane back, or nobody typed anything for %d minutes", int(agent.LongestSecretWait.Minutes()))
-		}
+	ended, answered := got.t.AwaitSecret(got.ask, min(max(wait, 5*time.Second), agent.SecretCallWait), w.a.ctx.Done())
+	switch {
+	case answered:
 		return true, nil
-	case <-giveUp.C:
-		return false, nil
-	case <-w.a.ctx.Done():
+	case ended:
+		return false, fmt.Errorf("that ask ended without the user answering it: the pane closed, the program in it finished, the user took the pane back, or nobody typed anything for %d minutes", int(agent.LongestSecretWait.Minutes()))
+	case w.a.ctx.Err() != nil:
 		return false, errors.New("this window is closing")
 	}
+	return false, nil
 }
 
 // WriteSkill writes the skill for an agent program, which tells it how
