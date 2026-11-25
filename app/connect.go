@@ -122,6 +122,9 @@ func (a *app) connect(in ConnectTo) error { return a.connectThen(in, nil) }
 // program's goroutine, with why it could not connect or nil; or opens a
 // shell there when then is nil.
 func (a *app) connectThen(in ConnectTo, then func(error)) error {
+	if in.win == 0 {
+		in.win = a.askedIn()
+	}
 	var hops []remote.Config
 	// names are the hops' IDs, the saved servers they are, and empty for
 	// a typed target; shown is what each is called.
@@ -146,7 +149,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 			if len(last.Identities) > 0 {
 				key = last.Identities[0]
 			}
-			return a.reachWindow(ConnectWindow{Addr: last.ServeAddr(), KeyFile: key, ID: machines.ID(last.ID), Only: in.Only, NoAsk: in.NoAsk, InPlace: in.InPlace}, in.Quiet, then)
+			return a.reachWindow(ConnectWindow{Addr: last.ServeAddr(), KeyFile: key, ID: machines.ID(last.ID), Only: in.Only, NoAsk: in.NoAsk, InPlace: in.InPlace, win: in.win}, in.Quiet, then)
 		}
 		// Behind a kakel window: the window first, connected to as a
 		// window, and the hops after it dialled from its machine.
@@ -196,7 +199,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 		// not SSH to the port it serves on. A quick connection made
 		// again stays SSH, as it was made.
 		if h, ok := a.savedWindowAt(cfg); ok && in.As == "" {
-			return a.reachWindow(ConnectWindow{Addr: h.ServeAddr(), KeyFile: h.KeyFile(), ID: machines.ID(h.ID), Only: in.Only, InPlace: in.InPlace}, in.Quiet, then)
+			return a.reachWindow(ConnectWindow{Addr: h.ServeAddr(), KeyFile: h.KeyFile(), ID: machines.ID(h.ID), Only: in.Only, InPlace: in.InPlace, win: in.win}, in.Quiet, then)
 		}
 		hops = []remote.Config{cfg}
 		names, shown = []machines.ID{machines.Local}, []string{cfg.Target()}
@@ -219,7 +222,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 		if in.Only {
 			return nil
 		}
-		return a.open(name, Placement{})
+		return a.open(name, Placement{Win: in.win})
 	}
 	if a.machines.Get(name).Dialing != nil {
 		if in.Quiet && then != nil {
@@ -405,7 +408,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 					a.notify("Disconnected from "+a.machines.Name(name), why, "")
 				}
 			}()
-			a.dialed(logPane, name, then == nil && !in.Only)
+			a.dialed(logPane, name, then == nil && !in.Only, in.win)
 			a.openAutoTunnels(name)
 			if then != nil {
 				then(nil)

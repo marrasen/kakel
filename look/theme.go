@@ -38,6 +38,9 @@ var (
 	// RowActiveInk is the words of the sidebar's row for whatever is in
 	// front: the theme's currentFG, where it wrote a frame down.
 	RowActiveInk = theme.Foreground("kakel.row.active.ink", color.NRGBA{R: 0xe6, G: 0xe9, B: 0xef, A: 0xff})
+	// Guest is the guest of a window shared with a link: the rings round
+	// the panes it sees, its name, and the chip that says it is there.
+	Guest = theme.Color("kakel.guest", color.NRGBA{R: 0xe6, G: 0xb8, B: 0x55, A: 0xff})
 )
 
 var TermBackground = theme.Color("kakel.background", color.NRGBA{R: 0x14, G: 0x17, B: 0x1c, A: 0xff})
@@ -272,6 +275,7 @@ func Of(t themes.Theme) (Themed, error) {
 	field := mix(bg, frameBG, 50)
 	echo = append(echo, codeOf(pal, field, frameFG)...)
 	// The sidebar's rows, which the tabs in the title bar look like.
+	guest := MarksOf(pal).Guest
 	sideFill, rowActive, rowHover, faint := mix(sideBG, sideFG, 4), alpha(accent, 0x40), alpha(sideFG, 0x14), mix(sideFG, sideBG, 45)
 	th := theme.Make(t.Name, append(echo,
 		theme.Set(widget.Background, bg),
@@ -312,6 +316,7 @@ func Of(t themes.Theme) (Themed, error) {
 		theme.Set(RowActiveInk, activeInk),
 		theme.Set(RowHover, rowHover),
 		theme.Set(Faint, faint),
+		theme.Set(Guest, guest),
 		theme.Set(TermBackground, bg),
 		// The tab bar in the title bar: its tabs as the sidebar's rows,
 		// and a tab dragged on the sidebar's fill.
@@ -352,6 +357,7 @@ func Of(t themes.Theme) (Themed, error) {
 		theme.Set(widget.Placeholder, mix(fg, bg, 45)),
 		theme.Set(widget.MenuFill, mix(bg, fg, 8)),
 		theme.Set(Faint, mix(fg, bg, 45)),
+		theme.Set(Guest, guest),
 	)...)
 	edits := EditsOf(t)
 	return Themed{Name: t.Name, Theme: edits.Over(th), Content: edits.Over(content), Palette: pal, Source: t,
@@ -382,8 +388,9 @@ func Register(w *gunim.Window, all []Themed) {
 }
 
 // Marks are the colours of the rings, from the theme's terminal
-// colours: an agent's, and another window's.
-type Marks struct{ Agent, Watched color.NRGBA }
+// colours: an agent's, another window's, and the guest's of a window
+// shared with a link, which is the token Guest too.
+type Marks struct{ Agent, Watched, Guest color.NRGBA }
 
 // MarksOf are the rings' colours in a palette.
 func MarksOf(p vt.Palette) Marks {
@@ -394,7 +401,13 @@ func MarksOf(p vt.Palette) Marks {
 		far = white
 	}
 	nrgba := func(c color.RGBA) color.NRGBA { return color.NRGBA{R: c.R, G: c.G, B: c.B, A: 0xff} }
-	return Marks{Agent: nrgba(p.ANSI[6]), Watched: nrgba(grid.Blend(p.ANSI[9], far, 2, 5))}
+	// The guest's is the bright yellow, moved only as far as reads on the
+	// ground.
+	guest := p.ANSI[11]
+	for at := 1; at <= 6 && grid.Contrast(guest, p.BG) < 3; at++ {
+		guest = grid.Blend(p.ANSI[11], far, at, 8)
+	}
+	return Marks{Agent: nrgba(p.ANSI[6]), Watched: nrgba(grid.Blend(p.ANSI[9], far, 2, 5)), Guest: nrgba(guest)}
 }
 
 // The room tokens a theme's Shape.Room scales, and the corners its

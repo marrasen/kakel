@@ -35,6 +35,7 @@ import (
 
 	"github.com/marrasen/gunim/single"
 	"github.com/marrasen/kakel/glyph"
+	"github.com/marrasen/kakel/guestlook"
 	"github.com/marrasen/kakel/jobs"
 	"github.com/marrasen/kakel/keys"
 	"github.com/marrasen/kakel/remote"
@@ -144,6 +145,10 @@ type State struct {
 	Share Share
 	// Serving is this window served to others.
 	Serving Serving
+	// Links are the windows shared with a link, every window's, and
+	// LinkSetup is what the next is shared with.
+	Links     []WindowLink
+	LinkSetup LinkSetup
 	// Windows are the windows this one is connected to.
 	Windows []RemoteWindow
 	// Machines are what everything else names machines by, their IDs,
@@ -415,6 +420,9 @@ type Pane struct {
 	// Command says the pane runs one command rather than a shell, and
 	// offers to run it again when it finishes.
 	Command bool
+	// MaybeCommand says its title may be a command line all the same: it
+	// watches a pane on another kakel that did not say it is a shell.
+	MaybeCommand bool
 	// ShellKind is the kind of shell a terminal pane runs, as bash or
 	// PowerShell, for colouring code pasted into it. It is NoRoute for a
 	// pane running a command, and for one opened through another kakel
@@ -432,6 +440,49 @@ type Pane struct {
 	// counts the asks, so the same row asked for again is shown again.
 	Row   string
 	RowAt int
+}
+
+// Picture names the image of the pane's kind, in look.KindIcons.
+func (p Pane) Picture() string {
+	switch p.Kind {
+	case KindFileManager:
+		return "files"
+	case KindReader:
+		return "reader"
+	case KindLog:
+		return "log"
+	case KindSecrets:
+		return "secrets"
+	case KindSettings, KindMachine:
+		return "settings"
+	case KindThemeEditor:
+		return "theme"
+	case KindJobs:
+		return "jobs"
+	case KindCopies:
+		return "copy"
+	case KindServers:
+		return "servers"
+	case KindLayouts:
+		return "layouts"
+	case KindTunnel:
+		return "tunnel"
+	case KindChooser:
+		return "split"
+	case KindWaiting:
+		// What it waits to be.
+		switch p.Becomes {
+		case settings.LayoutFiles:
+			return "files"
+		case settings.LayoutCommand:
+			return "command"
+		}
+		return "terminal"
+	}
+	if p.Command {
+		return "command"
+	}
+	return "terminal"
 }
 
 // Box is one part of what a window shows, for All Panes to draw: a
@@ -556,6 +607,8 @@ type (
 	// there. Connected already, it opens another shell. As is the ID of
 	// the quick connection a typed one is made again for.
 	ConnectTo struct {
+		// win is the window it was asked in, once it is under way.
+		win        int
 		Target     string
 		Server, As machines.ID
 		// Quiet connects for a file manager window, which says how it
@@ -761,8 +814,10 @@ type app struct {
 	secretEditing []SecretEdit
 	// agents is the share of panes with an agent.
 	agents agents
-	// serving serves this window to others.
+	// serving serves this window to others, and links shares windows
+	// with guests.
 	serving serving
+	links   linkShares
 	// leaving is set while the window asks whether to close, and
 	// watchingVault while an open secrets pane reads the vault again.
 	leaving       bool
@@ -1414,9 +1469,13 @@ func failedTitle(in gunim.Intent) string {
 		return "Couldn't turn on remote access"
 	case StopServing:
 		return "Couldn't turn off remote access"
+	case ShareWindow:
+		return couldntShare
+	case SetLinkSetup:
+		return "Couldn't change how windows are shared"
 	case NewRelayCode:
 		return "Couldn't make a new code"
-	case CopyRelayLink:
+	case CopyRelayLink, CopyLink:
 		return "Couldn't copy the link"
 	case SetRelayProxy:
 		return "Couldn't set the proxy"
@@ -1504,6 +1563,9 @@ func (a *app) publish() {
 	}
 	a.forgetUnused()
 	a.keepFocusShown()
+	// Before any window shows what changed: a pane that left a shared
+	// window is the guest's no more.
+	a.tellLinks()
 	a.noteMachineUsed()
 	a.st.Machines = a.machines.Infos()
 	a.notePanes()
@@ -1543,6 +1605,7 @@ func (a *app) publish() {
 	st.Share.Panes = slices.Clone(a.st.Share.Panes)
 	st.Serving.Clients = slices.Clone(a.st.Serving.Clients)
 	st.Serving.Allowed = slices.Clone(a.st.Serving.Allowed)
+	st.Links, st.LinkSetup = a.windowLinks(), a.linkSetup()
 	st.Windows = slices.Clone(a.st.Windows)
 	st.SavedCommands = slices.Clone(a.st.SavedCommands)
 	st.Shells = slices.Clone(a.st.Shells)
@@ -1598,6 +1661,7 @@ func (a *app) handle(in gunim.Intent) {
 	case ChooseSplit:
 		a.chooseSplit(in)
 	case MovePane:
+		a.links.byHand = in.Pane
 		a.movePane(in)
 	case ClosePane:
 		id := in.Pane
@@ -1614,6 +1678,7 @@ func (a *app) handle(in gunim.Intent) {
 	case CloseWindow:
 		a.closeWindow(a.cur)
 	case PaneToWindow:
+		a.links.byHand = in.Pane
 		a.moveToWindow(in.Pane, a.cur)
 	case PaneToNewWindow:
 		a.paneToNewWindow(in)
@@ -1776,6 +1841,24 @@ func (a *app) handle(in gunim.Intent) {
 		}
 		err = a.settings.PutTunnelsConnect(in.On)
 		a.showServing()
+	case ShareWindow:
+		err = a.shareWindow(in)
+	case StopLink:
+		a.stopLink(in.ID)
+	case StopLinks:
+		a.stopLinks(in.Window)
+	case CopyLink:
+		err = a.copyLink(in.ID)
+	case SetLinkMay:
+		a.setLinkMay(in)
+	case AnswerGuest:
+		a.answerGuest(in)
+	case GuestUnseen:
+		a.guestUnseen(in.ID)
+	case ClearLinks:
+		a.clearLinks(in.Window)
+	case SetLinkSetup:
+		err = a.setLinkSetup(in)
 	case DisconnectClients:
 		err = a.disconnectClients()
 	case DisconnectClient:
@@ -2072,7 +2155,14 @@ func (a *app) notice(kind NoticeKind, title, body, clip string) {
 }
 
 // post shows n in the window in front, numbered after the last.
-func (a *app) post(n Notice) {
+func (a *app) post(n Notice) { a.postIn(a.frontID(), n) }
+
+// postIn shows n in window win, or in the window in front where win has
+// gone.
+func (a *app) postIn(win int, n Notice) {
+	if w := a.winByID(win); w == nil || w.gone {
+		win = a.frontID()
+	}
 	// Into the Window Log too, where it stays once the toast has gone:
 	// a failure is read again there, or copied. What it puts on the
 	// clipboard is not: that may be a secret.
@@ -2084,7 +2174,7 @@ func (a *app) post(n Notice) {
 	a.notices++
 	// A window shows only the notices meant for it. One that asks, with
 	// no window open, waits for the next: see addWindow.
-	n.ID, n.win = a.notices, a.frontID()
+	n.ID, n.win = a.notices, win
 	if len(n.Buttons) > 0 && len(a.liveWins()) == 0 {
 		n.win = 0
 	}
@@ -2098,11 +2188,14 @@ func (a *app) post(n Notice) {
 // paneForLog says what a pane is, for the window log: its title, its
 // kind when it is no terminal, and where it runs. A command's title is
 // its command line, which may hold a password, so a command is only
-// called one.
+// called one, and what may be one a terminal.
 func (a *app) paneForLog(p Pane) string {
 	s := fmt.Sprintf("%q", oneLine(p.Title))
-	if p.Command {
+	switch {
+	case p.Command:
 		s = "a command"
+	case p.MaybeCommand:
+		s = "a terminal"
 	}
 	if p.Kind != KindTerminal {
 		s += " (" + p.Kind + ")"
@@ -2137,6 +2230,43 @@ type Placement struct {
 	Instead string
 	// Group puts it as a tab of that group, as a bar's + asked.
 	Group string
+	// Win is the window it was asked for in, for one that comes later,
+	// where nothing above says: that window, if it is open still, and
+	// not whichever the user has gone to since.
+	Win int
+}
+
+// asked is at, with the window it is asked for in.
+func (a *app) asked(at Placement) Placement {
+	if at.Win == 0 {
+		at.Win = a.askedIn()
+	}
+	return at
+}
+
+// askedIn is the window something asked for now goes in, 0 where that is
+// settled as it comes: asked in a tool window, it goes in the window
+// worked in.
+func (a *app) askedIn() int {
+	if a.cur == nil || a.cur.gone || a.isTool(a.cur) {
+		return 0
+	}
+	return a.cur.id
+}
+
+// landsIn is the window at puts a pane in, when that is not the one in
+// front: one asked for there before the user went to another.
+func (a *app) landsIn(at Placement) *ownWin {
+	win := at.Win
+	if at.Group != "" {
+		if n, ok := a.layout.Where(at.Group); ok {
+			win = n
+		}
+	}
+	if w := a.winByID(win); w != nil && !w.gone && w != a.cur {
+		return w
+	}
+	return nil
 }
 
 // hooks are what a pane's shell tells the program.
@@ -2238,6 +2368,7 @@ func (a *app) openThen(machine machines.ID, at Placement, then func(id string, e
 	if then == nil {
 		then = func(string, error) {}
 	}
+	at = a.asked(at)
 	// Taken now, so the terminal after this one runs its own; one that
 	// connects first is given it back.
 	run := ""
@@ -2423,9 +2554,14 @@ func (a *app) addPane(p Pane, sh *screen.Shell, at Placement) {
 	if w := a.ownerOf(at.Instead); w != nil && !w.gone {
 		a.front(w)
 	}
+	// Or the window it was asked for in, with the user left where they
+	// are.
+	var there *ownWin
 	if a.ownerOf(at.Beside) == nil && a.ownerOf(at.Instead) == nil {
-		// Asked for in a tool window: in the window worked in.
-		a.workFor(p.Kind)
+		if there = a.landsIn(at); there == nil {
+			// Asked for in a tool window: in the window worked in.
+			a.workFor(p.Kind)
+		}
 	}
 	if p.Kind == KindTerminal && !p.Command {
 		p.ShellKind = a.shellKindOf(p)
@@ -2436,6 +2572,10 @@ func (a *app) addPane(p Pane, sh *screen.Shell, at Placement) {
 	}
 	a.stayEmpty = false
 	a.place(p.ID, at)
+	if there != nil {
+		a.setFocusIn(there, p.ID)
+		return
+	}
 	a.st.Focus = p.ID
 }
 
@@ -2446,7 +2586,7 @@ func (a *app) place(id string, at Placement) {
 	if at.Instead != "" && a.layout.Node(at.Instead) == nil {
 		// The chooser has gone already, to an earlier pick: beside the
 		// pane it was split from, then, in the same split.
-		at = Placement{Beside: a.choosers[at.Instead]}
+		at = Placement{Beside: a.choosers[at.Instead], Win: at.Win}
 	}
 	if g := a.layout.GroupOf(at.Instead); at.Instead != "" && g != nil {
 		// In the chooser's place, which goes, as picked in it.
@@ -2466,6 +2606,10 @@ func (a *app) place(id string, at Placement) {
 			side = dock.Bottom
 		}
 		a.layout.Add(id, dock.Target{At: at.Beside, Side: side})
+		return
+	}
+	if w := a.landsIn(Placement{Win: at.Win}); w != nil {
+		a.putIn(id, w.id)
 		return
 	}
 	a.putIn(id, a.frontID())
@@ -2754,8 +2898,8 @@ func (a *app) setTitle(id, title string) {
 // logical pixels: 6 to 72 points, as the old app took.
 const (
 	defaultFontSize float32 = 15
-	minFontSize     float32 = 8
-	maxFontSize     float32 = 96
+	minFontSize             = guestlook.LeastFontSize
+	maxFontSize             = guestlook.MostFontSize
 )
 
 // fontSizeIn is size kept between the smallest and largest font sizes.
@@ -2784,6 +2928,8 @@ func (a *app) pickTheme(name string) bool {
 		a.st.Theme = name
 		a.palette = t.Palette
 		a.st.Marks = look.MarksOf(t.Palette)
+		// A guest is told the colours before what is drawn in them.
+		a.tellLinks()
 		for _, sh := range a.shells.All() {
 			sh.SetPalette(t.Palette)
 		}

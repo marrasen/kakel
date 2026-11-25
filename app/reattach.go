@@ -249,7 +249,7 @@ func (a *app) reattach(id string, m machines.ID, r settings.SavedPane, still fun
 			case errors.Is(err, serve.ErrNotOpen) || errors.Is(err, serve.ErrCannotAttachIn):
 				// Gone there since the list read here: a new one in its
 				// place, as for one never opened.
-				log.Printf("%q is not open on %s any more, so a new pane opens", open.Label, a.machines.Name(m))
+				log.Printf("a layout's pane is not open on %s any more, so a new one opens", a.machines.Name(m))
 				if errors.Is(err, serve.ErrNotOpen) {
 					a.queueRecords(func(have []settings.LayoutPane) []settings.LayoutPane {
 						return slices.DeleteFunc(have, func(p settings.LayoutPane) bool { return p == rec })

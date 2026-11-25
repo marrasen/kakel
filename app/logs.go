@@ -179,10 +179,11 @@ func (a *app) watchDial(machine machines.ID) string {
 // dialed puts what the connection was for in the place of the log
 // pane watchDial opened: a terminal, when open says so, beside it,
 // with the log folding away so the terminal takes its room. The log
-// stays under the machine's menu.
-func (a *app) dialed(logPane string, machine machines.ID, open bool) {
+// stays under the machine's menu. win is the window the connection was
+// asked for in, for a terminal with no log to stand beside.
+func (a *app) dialed(logPane string, machine machines.ID, open bool, win int) {
 	if open {
-		if err := a.open(machine, Placement{Beside: logPane}); err != nil {
+		if err := a.open(machine, Placement{Beside: logPane, Win: win}); err != nil {
 			a.failed("Couldn't open a shell on "+a.machines.Name(machine), err.Error())
 			return
 		}

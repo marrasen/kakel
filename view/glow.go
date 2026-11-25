@@ -13,7 +13,10 @@ import (
 // A pane shared with an agent, or watched from another window, has a
 // ring round it that glows slowly: so whoever sits at
 // the window can tell at a glance which panes somebody else can see.
-// Shared both ways, it has two rings, the agent's outside.
+// Shared both ways, it has two rings, the agent's outside. Outside those,
+// clear of the text, is the ring of a window shared with a link, round
+// each pane a guest sees, brighter round the one it is in; see
+// guesttags.go.
 
 // glowEvery is how long one glow takes, bright and back.
 const glowEvery = 3 * time.Second
@@ -34,9 +37,16 @@ func (t *term) shared() (agent, watched bool) {
 	return t.agent, t.Shell().T.Watched() > 0
 }
 
+// ringGlow is how strong a ring is at now.
+func ringGlow(now time.Time) uint8 {
+	const dim, bright = 0x70, 0x90
+	return uint8(dim + int(float64(bright-dim)*glowAt(now)+0.5))
+}
+
 // paintRings draws the rings round a shared terminal.
 func (t *term) paintRings(p *paint.Painter, f gunim.Frame, box geom.Size) {
 	agent, watched := t.shared()
+	t.paintGuestRing(p, f, box)
 	if !agent && !watched {
 		return
 	}
@@ -47,8 +57,7 @@ func (t *term) paintRings(p *paint.Painter, f gunim.Frame, box geom.Size) {
 	if watched {
 		hues = append(hues, t.marks.Watched)
 	}
-	const dim, bright = 0x70, 0x90
-	a := uint8(dim + int(float64(bright-dim)*glowAt(f.Now)+0.5))
+	a := ringGlow(f.Now)
 	corner := min(t.Cells().CellSize().W, t.Cells().CellSize().H)
 	for i, c := range hues {
 		in := float32(i)*(markWidth+markGap) + markWidth/2.0
@@ -70,7 +79,7 @@ func (w *Window) glow(u *gunim.UI) {
 	// A shared pane's ring glows, and a busy row's mark breathes.
 	any := w.anyBreathing(time.Now())
 	for _, t := range w.terms {
-		if agent, watched := t.shared(); agent || watched {
+		if agent, watched := t.shared(); agent || watched || t.guests.sees {
 			any = true
 		}
 	}

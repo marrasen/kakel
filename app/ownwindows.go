@@ -319,33 +319,46 @@ func (a *app) closeWindow(w *ownWin) {
 		ids = append(ids, p.ID)
 	}
 	ops := a.fileOpsIn(ids)
-	if len(panes) <= 1 && ops == 0 {
+	guests, waiting := a.guestsIn(w)
+	closeNow := func() {
+		// Before its panes close: the guest hears the window closed, not
+		// that each program ended.
+		a.endLinksOf(w)
 		for _, p := range a.panesIn(w) {
 			a.remove(p.ID)
 		}
 		a.letWindowGo(w)
+	}
+	if len(panes) <= 1 && ops == 0 && guests == 0 && waiting == 0 {
+		closeNow()
 		return
 	}
 	if w.asking {
 		return
 	}
 	w.asking = true
-	open := words.ManyOf(len(panes), "pane", "panes")
+	var open []string
 	if ops > 0 {
-		open = words.ManyOf(ops, "copy running", "copies running") + ", and " + open
+		open = append(open, words.ManyOf(ops, "copy running", "copies running"))
+	}
+	if len(panes) > 0 {
+		open = append(open, words.ManyOf(len(panes), "pane", "panes"))
+	}
+	if guests > 0 {
+		open = append(open, words.ManyOf(guests, "guest", "guests"))
+	}
+	if waiting > 0 {
+		open = append(open, words.ManyOf(waiting, "link nobody has joined with", "links nobody has joined with"))
 	}
 	a.askThen(a.ctx, Ask{
-		Title: "Close this window?", Text: "Still open here: " + open + ".",
+		Title: "Close this window?", Text: "Still open here: " + listOf(open) + ".",
 		Yes: "Close", Danger: true,
 	}, func(ans AskAnswered) {
 		w.asking = false
 		if !ans.Yes || w.gone {
 			return
 		}
-		for _, p := range a.panesIn(w) {
-			a.remove(p.ID)
-		}
-		a.letWindowGo(w)
+		closeNow()
 	})
 }
 
@@ -371,6 +384,7 @@ func (a *app) letWindowGo(w *ownWin) {
 		a.keepPlaceOf(w)
 	}
 	w.gone = true
+	a.endLinksOf(w)
 	w.c.Leave()
 	a.windowLeft(w)
 }
@@ -397,6 +411,7 @@ func (a *app) windowLeft(w *ownWin) {
 // windowClosed forgets w, closed, and closes any panes left in it.
 func (a *app) windowClosed(w *ownWin) {
 	w.gone = true
+	a.endLinksOf(w)
 	a.windowLeft(w)
 	for _, p := range a.panesIn(w) {
 		a.remove(p.ID)

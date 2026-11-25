@@ -53,11 +53,7 @@ func checkPrograms(paths []string, key ed25519.PublicKey) error {
 			case got != hash:
 				return fmt.Errorf("%s and %s do not hold the same web client", first, p.name)
 			case got == "":
-				// THIS MUST FAIL ONCE KAKEL USES WEBBUNDLE, which it does
-				// from step 6 of review/window-link-plan.md on: a release
-				// without the web client can share no window. Until then
-				// there is none in any program, and nothing to sign.
-				fmt.Fprintf(os.Stderr, "mkclient: WARNING: %s holds NO WEB CLIENT\n", p.name)
+				return fmt.Errorf("%s holds no web client, and can share no window with a link: it is built with the tag webclient", p.name)
 			default:
 				fmt.Printf("%s: web client %s, signed with kakel's release key\n", p.name, got)
 			}

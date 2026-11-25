@@ -447,7 +447,7 @@ func (s *switcher) faceTab(t *tile, p app.Pane, ow app.OverWindow, group *app.Bo
 		face = widget.BoldFont.Get(th)
 	}
 	t.tab = face.Shape(titleIn(s.env.machines, p), dock.TabText.Get(th))
-	t.icon = kindIcons[p.Kind]
+	t.icon = look.KindIcons[p.Kind]
 	if t.icon == nil {
 		t.icon = icon.SquareTerminal
 	}

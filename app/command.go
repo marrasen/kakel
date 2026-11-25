@@ -96,14 +96,15 @@ func (a *app) runCommandWith(in RunCommand, still func() bool, then func(id stri
 		a.argvs[id] = argv
 	}
 	title := joinLine(argv)
+	at := a.asked(Placement{Beside: in.Beside, Vertical: in.Vertical, Instead: in.Instead})
 	if a.machines.Get(through).Window != nil {
 		// The window runs it, in a pane of its own, which this one
 		// watches: its own machine's, or one it reaches.
-		return a.openThroughHow(through, key, cmd, id, title, Placement{Beside: in.Beside, Vertical: in.Vertical, Instead: in.Instead}, throughHow{still: still}, then)
+		return a.openThroughHow(through, key, cmd, id, title, at, throughHow{still: still}, then)
 	}
 	return a.startCommand(in.Machine, cmd, commandStart{
 		then: func(sess session.Session) {
-			a.addPane(Pane{ID: id, Title: title, Machine: in.Machine, Command: true}, screen.Open(sess, a.palette, a.withLinks(a.hooks(id), id, in.Machine)), Placement{Beside: in.Beside, Vertical: in.Vertical, Instead: in.Instead})
+			a.addPane(Pane{ID: id, Title: title, Machine: in.Machine, Command: true}, screen.Open(sess, a.palette, a.withLinks(a.hooks(id), id, in.Machine)), at)
 			then(id, nil)
 		},
 		still:  still,

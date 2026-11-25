@@ -4,6 +4,7 @@ package webbundle
 
 import (
 	"embed"
+	"io/fs"
 
 	"github.com/marrasen/kakel/webbundle/names"
 )
@@ -24,4 +25,11 @@ func Bundle() (zipped, sig []byte, ok bool) {
 	}
 	sig, _ = files.ReadFile("client/" + names.Sig)
 	return zipped, sig, true
+}
+
+// Built reports whether this build has a bundle, as Bundle does, without
+// reading it.
+func Built() bool {
+	_, err := fs.Stat(files, "client/"+names.Zip)
+	return err == nil
 }

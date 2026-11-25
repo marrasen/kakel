@@ -9,6 +9,23 @@ change how something behaves.
 
 ## Unreleased
 
+### Added
+
+**Share a window with a link.** Share → Share Window with Link… makes a
+link that somebody with a web browser, and no kakel, opens to work in
+that window's terminals with you. The link works once, expires in 15
+minutes, and lets nobody in until you press Allow. You choose whether
+the guest can type or only watch, and can change it at any time.
+
+- The guest sees the terminals of that one window and nothing else.
+  Those opened in it or moved into it later are shared too, and one
+  moved out is gone from the guest's page at once.
+- A chip on the menu bar, rings round the panes and the guest's name at
+  the corner of the pane they are in say who is there.
+- It goes through a relay: your own, with the kakel of this release or a
+  newer one. Whoever runs the relay could see everything.
+- Stop Sharing Window ends it. So do closing the window and exiting.
+
 ### Changed
 
 **"Serve This Window…" is now "Remote Access…".** Serving never gave

@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/marrasen/kakel/app"
-	"github.com/marrasen/kakel/settings"
 	"github.com/marrasen/kakel/words"
 
 	"github.com/marrasen/kakel/look"
@@ -34,12 +33,16 @@ import (
 
 // rowMarks are a row's marks and where they were laid out.
 type rowMarks struct {
-	kind     string
-	live     func(now time.Time) meter.State
-	fill     float32
-	filling  bool
-	traffic  *meter.Meter
-	shared   func() (agent, watched bool)
+	kind    string
+	live    func(now time.Time) meter.State
+	fill    float32
+	filling bool
+	traffic *meter.Meter
+	shared  func() (agent, watched bool)
+	guests  bool
+	// guested fades the stripe of a guest's in and out, as it is laid
+	// out; nil before the row is made.
+	guested  *anim.Float
 	hues     look.Marks
 	depth    int
 	heading  bool
@@ -58,7 +61,7 @@ func (m *rowMarks) set(it sideItem) {
 		m.rate = meter.Rate{}
 	}
 	m.kind, m.live, m.fill, m.filling, m.traffic = it.kind, it.live, it.fill, it.filling, it.traffic
-	m.shared, m.hues = it.shared, it.hues
+	m.shared, m.guests, m.hues = it.shared, it.guests, it.hues
 	m.depth, m.heading, m.closable = it.depth, it.heading, it.closes != nil && !it.heading
 }
 
@@ -184,13 +187,13 @@ func (m *rowMarks) paint(p *paint.Painter, f gunim.Frame, r *sideRow) {
 }
 
 // paintStripe draws, at the row's start, a stripe for each of an agent
-// working in the pane and another window watching it, glowing in their
-// colours as the pane's rings do.
+// working in the pane, another window watching it and a guest who sees
+// it, glowing in their colours as the pane's rings do.
 func (m *rowMarks) paintStripe(p *paint.Painter, now time.Time) {
-	if m.shared == nil {
-		return
+	var agent, watched bool
+	if m.shared != nil {
+		agent, watched = m.shared()
 	}
-	agent, watched := m.shared()
 	var hues []color.NRGBA
 	if agent {
 		hues = append(hues, m.hues.Agent)
@@ -198,10 +201,20 @@ func (m *rowMarks) paintStripe(p *paint.Painter, now time.Time) {
 	if watched {
 		hues = append(hues, m.hues.Watched)
 	}
+	seen := float32(0)
+	if m.guested != nil {
+		seen = unit(m.guested.Value())
+	}
+	if seen > 0.01 {
+		hues = append(hues, m.hues.Guest)
+	}
 	const dim, bright = 0x90, 0xe0
 	a := uint8(dim + int(float64(bright-dim)*glowAt(now)+0.5))
 	for i, c := range hues {
 		c.A = a
+		if seen > 0.01 && i == len(hues)-1 {
+			c.A = uint8(float32(a) * seen)
+		}
 		p.RRect(geom.Rc(float32(2+3*i), 5, 2, m.height-10), 1, paint.Solid(c))
 	}
 }
@@ -237,35 +250,9 @@ func paintCross(p *paint.Painter, r geom.Rect, c color.NRGBA) {
 	drawIcon(p, icon.X, r, c, 1.5)
 }
 
-// kindIcons are the images for the kinds of row: a terminal, a
-// command, a folder, a page, a log, a tunnel, a lock, a window, and one
-// for each kind of file work.
-var kindIcons = map[string]*icon.Icon{
-	"files":       icon.Folder,
-	"filemanager": icon.Folder,
-	"reader":      icon.FileText,
-	"log":         icon.ScrollText,
-	"tunnel":      icon.Cable,
-	"secrets":     icon.Lock,
-	"jobs":        icon.Files,
-	"copy":        icon.Copy,
-	"move":        icon.FileInput,
-	"delete":      icon.Trash2,
-	"window":      icon.AppWindow,
-	"served":      icon.ScreenShare,
-	"command":     icon.SquareChevronRight,
-	"terminal":    icon.SquareTerminal,
-	"machine":     icon.Settings,
-	"split":       icon.Columns2,
-	"servers":     icon.Server,
-	"settings":    icon.Settings,
-	"theme":       icon.Paintbrush,
-	"layouts":     icon.LayoutPanelLeft,
-}
-
 // paintIcon draws the little image for a kind of row in r.
 func paintIcon(p *paint.Painter, kind string, r geom.Rect, c color.NRGBA) {
-	ic, ok := kindIcons[kind]
+	ic, ok := look.KindIcons[kind]
 	if !ok {
 		ic = icon.SquareTerminal
 	}
@@ -336,6 +323,15 @@ func (w *Window) markRows(rows []sideItem, st app.State) []sideItem {
 		case strings.HasPrefix(r.key, "client:"):
 			r.kind = "served"
 			r.live = func(time.Time) meter.State { return meter.Settled }
+		case strings.HasPrefix(r.key, "guest:"):
+			r.kind = "guest"
+			away := r.dim
+			r.live = func(time.Time) meter.State {
+				if away {
+					return meter.Closed
+				}
+				return meter.Settled
+			}
 		case strings.HasPrefix(r.key, "window:"):
 			r.kind = "terminal"
 		case r.pane != "":
@@ -343,7 +339,7 @@ func (w *Window) markRows(rows []sideItem, st app.State) []sideItem {
 			if !ok {
 				continue
 			}
-			r.kind = paneKindIcon(p)
+			r.kind = p.Picture()
 			if rd, ok := st.Readers[p.ID]; ok && r.note == "" {
 				r.note = readerNote(rd)
 			}
@@ -357,6 +353,7 @@ func (w *Window) markRows(rows []sideItem, st app.State) []sideItem {
 				// only after the rows.
 				r.shared, r.hues = t.shared, st.Marks
 			}
+			r.guests, r.hues = guestSees(st, p), st.Marks
 			ended := p.Ended
 			r.live = func(now time.Time) meter.State {
 				switch {
@@ -395,45 +392,6 @@ func (w *Window) markRows(rows []sideItem, st app.State) []sideItem {
 		rows = slices.Insert(rows, at, item)
 	}
 	return rows
-}
-
-// paneKindIcon is the icon for a pane.
-func paneKindIcon(p app.Pane) string {
-	switch p.Kind {
-	case app.KindFileManager:
-		return "files"
-	case app.KindReader:
-		return "reader"
-	case app.KindLog:
-		return "log"
-	case app.KindSecrets:
-		return "secrets"
-	case app.KindSettings, app.KindMachine:
-		return "settings"
-	case app.KindThemeEditor:
-		return "theme"
-	case app.KindJobs:
-		return "jobs"
-	case app.KindLayouts:
-		return "layouts"
-	case app.KindTunnel:
-		return "tunnel"
-	case app.KindChooser:
-		return "split"
-	case app.KindWaiting:
-		// What it waits to be.
-		switch p.Becomes {
-		case settings.LayoutFiles:
-			return "files"
-		case settings.LayoutCommand:
-			return "command"
-		}
-		return "terminal"
-	}
-	if p.Command {
-		return "command"
-	}
-	return "terminal"
 }
 
 // anyBreathing reports whether a row's mark is moving now, for the

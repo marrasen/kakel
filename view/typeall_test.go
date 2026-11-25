@@ -41,8 +41,8 @@ func TestTypingGoesToEveryPaneInTheSplit(t *testing.T) {
 			t.Fatalf("typing in all panes, %s shows no cursor", id)
 		}
 	}
-	if len(win.chips.chips) == 0 || win.chips.chips[0].text != "Typing in All Panes" || win.chips.chips[0].off == nil {
-		t.Fatalf("the chips are %+v", win.chips.chips)
+	if len(win.chips.shown()) == 0 || win.chips.shown()[0].text != "Typing in All Panes" || win.chips.shown()[0].off == nil {
+		t.Fatalf("the chips are %+v", win.chips.shown())
 	}
 	lastWindow.Input(gi.TextInput{Text: "ls"})
 	lastWindow.Frame(time.Second / 60)
@@ -61,10 +61,10 @@ func TestTypingGoesToEveryPaneInTheSplit(t *testing.T) {
 		t.Fatalf("p4, off stage, was sent %q", got)
 	}
 	// The × on the chip turns it off.
-	win.chips.chips[0].off(lastUI)
+	win.chips.shown()[0].off(lastUI)
 	lastWindow.Frame(time.Second / 60)
-	if win.typeAll || win.terms["p2"].CursorShown() || len(win.chips.chips) != 0 {
-		t.Fatalf("turned off, typing in all is %v, p2's cursor %v, chips %+v", win.typeAll, win.terms["p2"].CursorShown(), win.chips.chips)
+	if win.typeAll || win.terms["p2"].CursorShown() || len(win.chips.shown()) != 0 {
+		t.Fatalf("turned off, typing in all is %v, p2's cursor %v, chips %+v", win.typeAll, win.terms["p2"].CursorShown(), win.chips.shown())
 	}
 	lastWindow.Input(gi.TextInput{Text: "pwd"})
 	lastWindow.Frame(time.Second / 60)
@@ -73,12 +73,10 @@ func TestTypingGoesToEveryPaneInTheSplit(t *testing.T) {
 	}
 	// On again, and a click on the chip's × turns it off.
 	win.run("pane.typeAll", lastUI)
-	for range 3 {
-		lastWindow.Frame(time.Second / 60)
-	}
+	settle()
 	// Handed to the chip bar in its own space: the test's window is too
 	// narrow to hold the whole title bar.
-	at := win.chips.crossOf(0).Center()
+	at := win.chips.order[0].cross().Center()
 	win.chips.Handle(gi.PointerDown{Pos: at, Button: gi.ButtonPrimary, Clicks: 1, Time: time.Now()}, lastUI)
 	lastWindow.Frame(time.Second / 60)
 	if win.typeAll {

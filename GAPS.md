@@ -25,6 +25,20 @@ something.
   SOCKS proxy to a machine beyond another kakel listens here, and works.
   A port that listens on the far machine needs a connection of this
   kakel's own to ask for it, so it is refused.
+- **A window shared with a link shows its terminals alone.** A file
+  manager, a reader, a log or a settings pane in it is a box with its
+  kind on it. A guest opens no pane, moves none, and each link is for one
+  guest. The page draws with the fonts kakel carries, so it has no
+  Chinese, Japanese or Korean text. Nothing is recorded.
+- **Whoever runs the relay could change the page a guest opens.** What
+  passes between the guest's page and the host is encrypted from end to
+  end, and the relay takes only a page signed with kakel's release key.
+  But the guest's browser gets the page from the relay, and checks no
+  signature.
+- **A guest's way back can be held up.** Somebody who has a share's
+  address, without the secret after its #, can ask to join it again and
+  again from several networks at once. They get no further than that, but
+  a guest who lost the connection may have to wait its turn to come back.
 - **An agent is handed a screen, not a session.** It reads what is on
   the pane and types into it, the way a person looking over your
   shoulder would. A shell with shell integration on tells it when a

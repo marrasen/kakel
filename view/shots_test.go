@@ -14,18 +14,24 @@ import (
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/gunimtest"
 	gi "github.com/marrasen/gunim/input"
+	"github.com/marrasen/gunim/theme"
 	"github.com/marrasen/gunim/widget"
 
 	"github.com/marrasen/kakel/app"
 	"github.com/marrasen/kakel/input"
+	"github.com/marrasen/kakel/internal/sessiontest"
 	"github.com/marrasen/kakel/keys"
 	"github.com/marrasen/kakel/logs"
+	"github.com/marrasen/kakel/look"
 	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/meter"
 	"github.com/marrasen/kakel/remote"
+	"github.com/marrasen/kakel/screen"
 	"github.com/marrasen/kakel/serve"
 	"github.com/marrasen/kakel/settings"
+	"github.com/marrasen/kakel/themes"
 	"github.com/marrasen/kakel/ui"
+	"github.com/marrasen/kakel/vt"
 )
 
 // Screenshots of the Machines cards and a machine's pane, for looking
@@ -460,5 +466,191 @@ func TestShotsRemoteAccess(t *testing.T) {
 		win.dialog.Close(lastUI)
 		settle()
 		shot("cards")
+	}
+}
+
+// TestShotsWindowLink writes the Share Window with Link dialog making a
+// link and listing them, the dialog that asks about a guest, the chip,
+// the rings and the names, the Machines pane and Settings › Sharing, wide
+// and narrow, and frames of the dialog turning and of a name coming.
+func TestShotsWindowLink(t *testing.T) {
+	dir := os.Getenv("KAKEL_SHOTS")
+	if dir == "" {
+		t.Skip("KAKEL_SHOTS names no folder to write the screenshots to")
+	}
+	now := time.Now()
+	link := "https://relay.example.com/s/kaestp3m5q7w2x4y6z8abcdefg/#Zm9vYmFyYmF6cXV4Zm9vYmFyYmF6cXV4Zm9vYmFyYg"
+	waiting := app.WindowLink{ID: "l1", Link: link, CanType: true, Stands: app.LinkWaiting, Until: now.Add(14*time.Minute + 32*time.Second), Relay: "relay.example.com"}
+	asking := app.WindowLink{ID: "l2", CanType: true, Stands: app.LinkAsking, Until: now.Add(9*time.Minute + 41*time.Second), Guest: "Bob", From: "203.0.113.7", About: "Firefox on Linux", Relay: "relay.example.com"}
+	in := asking
+	in.Stands, in.Until, in.Since, in.In = app.LinkIn, time.Time{}, now.Add(-3*time.Minute), "p1"
+	away := app.WindowLink{ID: "l3", Stands: app.LinkAway, Guest: "Maria Alexandra Fernández", From: "2001:db8:85a3::8a2e:370:7334", About: "Safari on macOS", Relay: "relay.example.com", Until: now.Add(28 * time.Minute)}
+	over := app.WindowLink{ID: "l4", Stands: app.LinkEnded, Over: "expired", Relay: "relay.example.com"}
+	lost := waiting
+	lost.ID, lost.Trouble = "l5", "connection refused"
+	reaching := app.WindowLink{ID: "l1", CanType: true, Stands: app.LinkReaching, Relay: "relay.example.com"}
+	sending := reaching
+	sending.Stands = app.LinkSending
+	for _, size := range []geom.Size{geom.Sz(1100, 760), geom.Sz(480, 760)} {
+		shot := func(name string) {
+			gunimtest.WritePNG(t, filepath.Join(dir, "windowlink-"+strconv.Itoa(int(size.W))+"-"+name+".png"), gunimtest.Pixels(t, lastWindow))
+		}
+		win, sh, publish := windowStageOf(t, size)
+		quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
+		for id, text := range map[string]string{"p1": "anna@desk:~/src$ make test\r\nok   app    4.2s\r\nok   view   8.1s\r\nanna@desk:~/src$ ", "p2": "anna@desk:~$ tail -f log\r\n10:04 up\r\n10:05 ready\r\n"} {
+			sh.Set(id, screen.Open(sessiontest.NewPrinted([]byte(text)), vt.DefaultPalette(), quiet))
+			t.Cleanup(func() { _ = sh.Get(id).T.Close() })
+		}
+		st := app.State{Panes: []app.Pane{{ID: "p1", Title: "make test"}, {ID: "p2", Title: "log"}}, Focus: "p1", Marks: look.MarksOf(vt.DefaultPalette()),
+			Layout:    boxLayout(&app.Box{ID: "s", Share: 0.5, A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "p2"}}),
+			LinkSetup: app.LinkSetup{Name: "Anna", Relay: "https://relay.example.com/k/0123456789abcdef"}}
+		publish(st)
+		settle()
+		win.linkDialog(lastUI)
+		frames(5)
+		shot("dialog-opening")
+		settle()
+		shot("dialog")
+		for i, to := range []gi.Key{gi.KeyRight, gi.KeyLeft} {
+			lastUI.Focus(win.linkBox.may)
+			lastWindow.Input(gi.KeyPress{Key: to})
+			frames(6)
+			shot("may-" + strconv.Itoa(i+1))
+			settle()
+		}
+		win.linkBox.relay.SetText("", lastUI)
+		win.linkBox.make(lastUI)
+		settle()
+		shot("dialog-wrong")
+		win.linkBox.relay.SetText(st.LinkSetup.Relay, lastUI)
+		win.linkBox.may.SetSelected(1, lastUI)
+		win.linkBox.make(lastUI)
+		st.Links, st.LinkSetup.Tries = []app.WindowLink{reaching}, 1
+		publish(st)
+		for i := 1; i <= 8; i++ {
+			frames(2)
+			shot("turning-" + strconv.Itoa(i))
+		}
+		settle()
+		shot("reaching")
+		st.Links = []app.WindowLink{sending}
+		publish(st)
+		settle()
+		shot("sending")
+		st.Links = []app.WindowLink{waiting}
+		publish(st)
+		for i := 1; i <= 4; i++ {
+			frames(3)
+			shot("link-coming-" + strconv.Itoa(i))
+		}
+		settle()
+		shot("link")
+		st.Links = []app.WindowLink{lost, in, away, over}
+		publish(st)
+		frames(8)
+		shot("list-changing")
+		settle()
+		shot("list")
+		win.dialog.Close(lastUI)
+		settle()
+
+		// A guest asks, over the terminals.
+		st.Links = []app.WindowLink{asking}
+		publish(st)
+		frames(6)
+		shot("asking-opening")
+		frames(30)
+		shot("asking")
+		for range 3 {
+			lastWindow.Frame(time.Second / 2)
+		}
+		settle()
+		shot("asking-ready")
+		win.guestAsk.d.Close(lastUI)
+		win.answered["l2"] = true
+		settle()
+		shot("chip-asking")
+
+		// In: the chip, the rings and the name.
+		in.TypedIn, in.TypedAt = "p1", time.Now()
+		st.Links = []app.WindowLink{in}
+		publish(st)
+		for i := 1; i <= 5; i++ {
+			frames(2)
+			shot("tag-coming-" + strconv.Itoa(i))
+		}
+		settle()
+		shot("in")
+		other := in
+		other.ID, other.Guest, other.In = "l9", "Maria", "p1"
+		st.Links = []app.WindowLink{in, other}
+		publish(st)
+		frames(5)
+		shot("two-in-coming")
+		settle()
+		shot("two-in")
+		in.In, in.TypedIn = "p2", ""
+		st.Links = []app.WindowLink{in}
+		publish(st)
+		frames(6)
+		shot("moved-panes")
+		settle()
+		shot("moved")
+
+		// On a light ground.
+		light, ok := themes.Named(themes.Built(), "Paper")
+		if !ok {
+			t.Fatal("there is no light theme")
+		}
+		made, err := look.Of(light)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lastWindow.RegisterTheme(made.Theme)
+		if err := lastWindow.Client().SetTheme(made.Name); err != nil {
+			t.Fatal(err)
+		}
+		win.onStage.Use(made.Content)
+		for _, id := range []string{"p1", "p2"} {
+			sh.Get(id).SetPalette(made.Palette)
+		}
+		publish(st)
+		settle()
+		shot("light")
+		lastWindow.RegisterTheme(theme.Make("plain"))
+		if err := lastWindow.Client().SetTheme("plain"); err != nil {
+			t.Fatal(err)
+		}
+		win.onStage.Use(widget.Dark())
+		for _, id := range []string{"p1", "p2"} {
+			sh.Get(id).SetPalette(vt.DefaultPalette())
+		}
+
+		// With an agent in it too, two rings and no text under either.
+		st.Share = app.Share{Panes: []app.SharedPane{{Pane: "p1"}, {Pane: "p2"}}}
+		publish(st)
+		settle()
+		shot("with-agent")
+		st.Share = app.Share{}
+		publish(st)
+
+		// The Machines pane lists the guest.
+		st = withServers(st)
+		st.Panes = append(st.Panes, app.Pane{ID: "ps", Title: "Machines", Kind: app.KindServers})
+		st.AllPanes = st.Panes
+		st.Layout, st.Focus = boxLayout(&app.Box{Pane: "ps"}), "ps"
+		publish(st)
+		settle()
+		shot("machines")
+		st.Panes = append(st.Panes, app.Pane{ID: "p9", Kind: app.KindSettings, Title: "Settings"})
+		st.Layout, st.Focus, st.SettingsTab, st.SettingsAsked = boxLayout(&app.Box{Pane: "p9"}), "p9", "Sharing", 1
+		publish(st)
+		settle()
+		shot("settings")
+		st.Links, st.LinkSetup.NoClient = nil, true
+		publish(st)
+		win.linkDialog(lastUI)
+		settle()
+		shot("no-client")
 	}
 }

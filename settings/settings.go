@@ -67,6 +67,9 @@ type stored struct {
 	// Relay is how the window is served through a relay.
 	Relay *Relay `json:"relay,omitempty"`
 
+	// ShareLink is what a window is shared with a link with.
+	ShareLink *ShareLink `json:"shareLink,omitempty"`
+
 	// RelayLast is the relay last connected to a window through, with
 	// its secret, to offer again.
 	RelayLast string `json:"relayLast,omitempty"`
@@ -265,6 +268,33 @@ type Relay struct {
 	// Via is the ID of the saved server the relay is reached through,
 	// empty for this machine.
 	Via string `json:"via,omitempty"`
+}
+
+// ShareLink is what a window is shared with a link with, as last set.
+type ShareLink struct {
+	// Name is what the guest is told the host is called.
+	Name string `json:"name,omitempty"`
+	// Watch says the guest only watches until it is let type.
+	Watch bool `json:"watch,omitempty"`
+	// Relay is the relay it goes through, with its secret, and Via the ID
+	// of the saved server that is reached through, empty for this machine.
+	Relay string `json:"relay,omitempty"`
+	Via   string `json:"via,omitempty"`
+}
+
+// ShareLink is what a window is shared with a link with, as last set.
+func (s *Settings) ShareLink() ShareLink {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.have.ShareLink == nil {
+		return ShareLink{}
+	}
+	return *s.have.ShareLink
+}
+
+// PutShareLink keeps what a window is shared with a link with, and saves.
+func (s *Settings) PutShareLink(l ShareLink) error {
+	return s.put(func(f *stored) { f.ShareLink = &l })
 }
 
 // Relay is how the window is served through a relay, as last set.

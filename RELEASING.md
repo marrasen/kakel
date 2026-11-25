@@ -87,8 +87,8 @@ Then replace the secret with `gh secret set GUNIM_SIGN_KEY < new.key`.
 
 ### The web client's signature
 
-From the first release that shares windows with a link, both programs
-hold the web client a window's guests open. A relay takes it only with a
+Both programs hold the web client that the guests of a shared window
+open. A relay takes it only with a
 signature by the release key. CI makes that signature as it builds, from
 the same secret. By hand, give both commands the key:
 
@@ -98,9 +98,8 @@ GUNIM_SIGN_KEY=$(cat kakel.key) make sign
 ```
 
 `make sign` looks inside the finished programs. It fails, and nothing is
-published, when one holds a web client that is not signed with
-`ReleaseKey`, or they hold different ones. For a program that holds none
-it warns, until kakel shares windows.
+published, when one holds no web client, or one that is not signed with
+`ReleaseKey`, or they hold different ones.
 
 gunimsign makes the signature, and is the only program given the key.
 What it signs is `client.manifest`: the list of the client's files under

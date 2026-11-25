@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/marrasen/kakel/app"
+	"github.com/marrasen/kakel/look"
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/anim"
@@ -97,7 +98,7 @@ func (w *Window) dockChange(c dock.Change, u *gunim.UI) gunim.Intent {
 
 // tabFace is how pane id's tab looks.
 func (w *Window) tabFace(id string) dock.Face {
-	ic, ok := kindIcons[w.paneIcon(id, w.kindOf(id))]
+	ic, ok := look.KindIcons[w.paneIcon(id, w.kindOf(id))]
 	if !ok {
 		ic = icon.SquareTerminal
 	}
@@ -140,7 +141,7 @@ func (w *Window) paneIcon(id, kind string) string {
 		// A layout's pane still waiting shows what it waits to be.
 		for _, p := range w.panes {
 			if p.ID == id {
-				return paneKindIcon(p)
+				return p.Picture()
 			}
 		}
 	}

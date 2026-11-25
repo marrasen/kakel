@@ -368,3 +368,20 @@ func shot(t *testing.T, p *webtest.Page, name string) {
 		t.Fatal(err)
 	}
 }
+
+// Nothing said of a relay's URL that is none has any of it: it holds the
+// relay's secret, and what is said is written in the Window Log.
+func TestWhatIsSaidOfARelayURLHasNoneOfIt(t *testing.T) {
+	const secret = "wvshkoe3w2udng5gasrnycmrja"
+	for _, s := range []string{
+		"https://relay.example.com:port/k/" + secret, "https:///k/" + secret, "https://relay.example.com/%zz/k/" + secret,
+		secret + "://relay.example.com/k/x", "https://relay.example.com/s/" + secret, "https://relay.example.com/k/" + secret + "/x",
+		"https://user:" + secret + "@/k/x", secret,
+	} {
+		if _, err := ParseURL(s); err == nil {
+			t.Errorf("%q is read as a relay's URL", s)
+		} else if strings.Contains(err.Error(), secret) {
+			t.Errorf("%q is refused as %v", s, err)
+		}
+	}
+}
