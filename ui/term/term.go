@@ -160,7 +160,9 @@ type Terminal struct {
 	laneMu    sync.Mutex
 	lanes     []*lane
 	laneReady chan struct{}
-	laneTurn  int
+	// laneHold is laneHeld, but in a test that cannot count on 10 ms.
+	laneHold time.Duration
+	laneTurn int
 
 	// pending is set by the reader when new output has been parsed, so a
 	// frame with nothing to show can skip re-rendering.
@@ -387,6 +389,7 @@ func New(cfg Config) (*Terminal, error) {
 		out: make(chan []byte, outQueue),
 
 		laneReady: make(chan struct{}, 1),
+		laneHold:  laneHeld,
 	}
 	t.start = newStarter(t.send, t.cursorLine, t.hasText)
 	r := t.adopt(cfg.Session)

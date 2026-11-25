@@ -162,6 +162,8 @@ func TestALaneKeepsAKeyWhole(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			// Longer than a slow machine takes between the two.
+			term.laneHold = time.Minute
 			l := term.Lane()
 			l.Type([]byte("a" + whole[:cut]))
 			waitFor(t, func() bool { return strings.HasPrefix(f.sentText(), "a") })
