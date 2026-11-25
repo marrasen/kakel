@@ -41,12 +41,13 @@ func TestABuildForABrowserEmbedsNothing(t *testing.T) {
 }
 
 // What a release ships has the bundle in it: kakel itself is built of
-// this package, on each of its systems, with the tag and without.
+// this package, on each of its systems, with the tag and without. With
+// the tag, and no bundle built here, go list says what it can, with -e.
 func TestKakelIsBuiltOfIt(t *testing.T) {
 	const self = "github.com/marrasen/kakel/webbundle"
 	for _, goos := range []string{"linux", "windows"} {
 		for _, tags := range []string{"", "webclient"} {
-			cmd := exec.Command("go", "list", "-deps", "-tags", tags, "github.com/marrasen/kakel")
+			cmd := exec.Command("go", "list", "-e", "-deps", "-tags", tags, "github.com/marrasen/kakel")
 			cmd.Env = append(os.Environ(), "GOOS="+goos, "GOARCH=amd64", "CGO_ENABLED=0", "GOFLAGS=")
 			out, err := cmd.Output()
 			if err != nil {

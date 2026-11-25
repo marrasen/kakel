@@ -1350,7 +1350,7 @@ func TestATerminalThroughAnotherKakelIsShared(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := fmt.Fprintf(shown, "echo $((6*7))$((6*7))$((6*7))\n"); err != nil {
+	if _, err := fmt.Fprintf(shown, "echo $((6*7))$((6*7))$((6*7))\r"); err != nil {
 		t.Fatal(err)
 	}
 	v.sees("424242")
