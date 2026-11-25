@@ -361,9 +361,21 @@ func serve(ctx context.Context, in io.Reader, out io.Writer, panes Panes, onCanc
 
 		select {
 		case atOnce <- struct{}{}:
+			// Tracked here, before its goroutine runs, so a cancel sent right after it finds it.
+			ctx, cancel := callCtx, context.CancelFunc(func() {})
+			forget := func() {}
+			if peek.Method == "tools/call" && len(peek.ID) > 0 {
+				ctx, cancel = context.WithCancel(callCtx)
+				forget = s.track(peek.ID, cancel)
+			}
 			running.Go(func() {
-				defer func() { <-atOnce }()
-				s.answerOne(callCtx, line)
+				answer, reply := s.handle(ctx, line)
+				forget()
+				cancel()
+				<-atOnce
+				if reply {
+					s.send(answer)
+				}
 			})
 		default:
 			s.answerBusy(callCtx, line)
@@ -552,13 +564,6 @@ func (s *server) handle(ctx context.Context, line []byte) (response, bool) {
 		// A tool call has to be answered, so one sent as a notification is not run.
 		return response{}, false
 	}
-	if req.Method == "tools/call" {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithCancel(ctx)
-		defer s.track(req.ID, cancel)()
-		defer cancel()
-	}
-
 	result, rerr := s.call(ctx, req)
 	if notice {
 		return response{}, false
@@ -638,7 +643,7 @@ const instructions = `kakel gives you terminal panes the user shares with you. T
 
 Call use_session_code first, with the code the user gave you. It lists the panes, and every other tool takes a pane name. The user adds and removes panes while you work, so list_panes shows what you have now.
 
-Run a command with send_keys and steps ["type:<command>", "key:Enter", "until"]. The answer is what the command printed and its exit status. Enter is a key, never a newline in the text. read_pane reads the screen. wait_for waits for something already running. ask_for_secret has the user type a password you must not see.
+Run a command with send_keys and steps ["type:<command>", "key:Enter", "until"]. The answer is what the command printed and its exit status. Enter is a key, never a newline in the text. read_pane reads the screen. wait_for waits for something already running. ask_for_secret has the user type a password you must not see: start the command that prompts for it first, with steps ending in "until:<its prompt>", then ask, then wait_for.
 
 In an answer, the pane's text ends at the line "-- kakel --", and kakel's notes follow it. Without shell integration kakel cannot tell when a command ends, so the notes say it is a guess: read the screen before you report a result.
 

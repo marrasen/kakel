@@ -120,7 +120,7 @@ func toolList() []tool {
 					"pane":       pane,
 					"steps":      {Type: "array", Items: &items{Type: "string"}, Description: stepsArg},
 					"lines":      lines,
-					"timeout_ms": {Type: "integer", Description: fmt.Sprintf("ms each until may wait. Default %d, max %d.", giveUpAfterMS, longestCallMS)},
+					"timeout_ms": {Type: "integer", Description: fmt.Sprintf("ms each until may wait. Default and max: what is left of the list's %d.", longestCallMS)},
 				},
 				Required: []string{"pane", "steps"},
 			},
@@ -314,7 +314,7 @@ func (s *server) runTool(ctx context.Context, name string, args json.RawMessage)
 			return wrong(failed(err))
 		}
 		if !typed {
-			return say(fmt.Sprintf("Not typed yet. The ask stays on the pane for %d minutes."+
+			return say(fmt.Sprintf("Not typed yet. The ask stays on the pane until %d minutes after you first asked."+
 				" Call again with the same pane and what. After a few tries, ask the user yourself.",
 				int(agent.LongestSecretWait.Minutes())))
 		}
@@ -427,8 +427,9 @@ key:<name> presses one key: %s.
 until waits for the running command to finish.
 until:<text> waits for that text to appear after the last thing typed. If the command ends without it, the list stops.
 wait:<ms> sleeps.
+A whole list may take %[4]d seconds; then it stops, and wait_for waits on.
 require:<text> stops the list unless the output since you typed has that text. fail:<text> stops it if it has.
-Max %d steps and %d typed characters.`, agent.KeyNames(), steps.MostSteps, steps.MostText)
+Max %[2]d steps and %[3]d typed characters.`, agent.KeyNames(), steps.MostSteps, steps.MostText, int(agent.LongestCall.Seconds()))
 
 // giveUpAfterMS is how long the window gives a wait that asked for no timeout, in milliseconds.
 var giveUpAfterMS = agent.GiveUpAfter.Milliseconds()
@@ -476,23 +477,8 @@ func missing(what string) (result, *rpcError) {
 	}
 }
 
-// afterWaiting is what a wait answers with: what the command printed
-// where the shell said one finished, and the screen everywhere else.
-//
-// The shell said the command finished, so what was waited for is what it
-// printed. A rectangle of screen here is what sends a caller looking for
-// read_output, or clearing the screen before each command so that the
-// rectangle means something -- and clearing throws away what the user
-// had in front of them.
-//
-// Every other ending leaves the screen the right answer: on quiet, on
-// text, or on the time running out, nobody has said where an output
-// begins.
-//
-// One path for both ways of waiting. A list of steps that answered with
-// a rectangle while wait_for answered with the output would teach an
-// agent to clear the screen in exactly the half of the cases that did
-// not need it.
+// afterWaiting is what a wait answers with: what the command printed when the shell said it finished or the prompt
+// came back, and the screen otherwise. A list of steps answers the same way.
 func (s *server) afterWaiting(pane string, screen Screen, ended Ending,
 	lines int, clamped, wantScreen bool) string {
 

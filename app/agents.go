@@ -206,7 +206,7 @@ func (a *app) dropHandover(id string) {
 		delete(h.in.panes, id)
 	}
 	delete(a.agents.by, id)
-	if t := a.terminal(id); t != nil && t.AskedForASecret() {
+	if t := a.terminal(id); t != nil {
 		t.EndSecret(nil)
 	}
 }
@@ -710,7 +710,7 @@ func (w agentWindow) Secret(id, what string, wait time.Duration) (bool, error) {
 	case answered:
 		return true, nil
 	case ended:
-		return false, fmt.Errorf("that ask ended without the user answering it: the pane closed, the program in it finished, the user took the pane back, or nobody typed anything for %d minutes", int(agent.LongestSecretWait.Minutes()))
+		return false, fmt.Errorf("that ask ended without the user answering it: the pane closed, the program in it finished, the user took the pane back, you asked for something else on that pane, or nobody typed anything for %d minutes", int(agent.LongestSecretWait.Minutes()))
 	case w.a.ctx.Err() != nil:
 		return false, errors.New("this window is closing")
 	}

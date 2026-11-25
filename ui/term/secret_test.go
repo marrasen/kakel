@@ -124,3 +124,18 @@ func TestAnAskNobodyAnswersEndsOnItsOwn(t *testing.T) {
 		t.Fatal("the ask ran out of time and still counts as answered or waiting")
 	}
 }
+
+func TestAKeptAnswerGoesWhenTheAskEnds(t *testing.T) {
+	term, _ := newTestTerm(t, 80, 10, Config{})
+	first := term.WaitForSecret("-- the password --", time.Minute)
+	if ended, _ := await(term, first, time.Millisecond); ended {
+		t.Fatal("the ask ended before anybody typed")
+	}
+	typeAnswer(t, term)
+	// The pane is taken back, or its program ends, before anybody collects the answer.
+	term.EndSecret(nil)
+	again := term.WaitForSecret("-- the password --", time.Minute)
+	if ended, _ := await(term, again, 0); ended {
+		t.Fatal("an answer kept from before the pane was taken back was handed out")
+	}
+}

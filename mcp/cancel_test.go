@@ -101,6 +101,28 @@ func TestACancelledListTypesNothingMore(t *testing.T) {
 	}
 }
 
+func TestACancelSentRightAfterTheCallStopsIt(t *testing.T) {
+	panes := &fakePanes{code: "gt1-2222-abc", screen: "$ "}
+	c := converse(t, panes)
+	c.say(useCode)
+	c.answer()
+	c.say(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"send_keys",` +
+		`"arguments":{"pane":"1.1","steps":["wait:1500","type:make deploy"]}}}`)
+	c.say(`{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":2}}`)
+	c.say(`{"jsonrpc":"2.0","id":3,"method":"ping"}`)
+	if got := c.answer(); string(got.ID) != "3" {
+		t.Fatalf("the first answer after the cancel is for %s", got.ID)
+	}
+	// Past the list's own wait, which is when it would have typed.
+	time.Sleep(2 * time.Second)
+	panes.mu.Lock()
+	typed := panes.typed
+	panes.mu.Unlock()
+	if typed != "" {
+		t.Fatalf("a list cancelled as it was sent typed %q", typed)
+	}
+}
+
 func TestTheAgentGoingStopsAListPartWay(t *testing.T) {
 	panes := &blockingPanes{fakePanes: &fakePanes{code: "gt1-2222-abc", screen: "$ "},
 		started: make(chan struct{}, 1), letGo: make(chan struct{})}
