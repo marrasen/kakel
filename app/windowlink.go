@@ -393,6 +393,10 @@ func (a *app) linkReached(l *windowLink, err error) {
 		return
 	}
 	if err == nil {
+		if l.troubled {
+			// In place of what was said of it, which is so no more.
+			a.postIn(l.win, Notice{Title: "Connected to the relay again", Kind: NoticeWorked, Key: "relay:" + l.id})
+		}
 		l.reached, l.trouble, l.troubled = true, "", false
 		if l.stands == LinkReaching {
 			l.stands = LinkWaiting
@@ -410,7 +414,8 @@ func (a *app) linkReached(l *windowLink, err error) {
 	}
 	if !l.troubled {
 		l.troubled = true
-		a.failed("Couldn't reach the relay", reason(errors.New(why))+"\n\nkakel keeps trying.")
+		a.postIn(l.win, Notice{Title: "Couldn't reach the relay", Body: reason(errors.New(why)) + "\n\nkakel keeps trying.",
+			Kind: NoticeFailed, Key: "relay:" + l.id})
 		a.problem()
 	}
 	l.reached, l.trouble = false, why
@@ -467,7 +472,7 @@ func (a *app) askAbout(ctx context.Context, l *windowLink, r guest.Request) bool
 		a.pingsIn(w).Calls++
 		if w != nil && w != a.cur {
 			// Asked in the window shared: said where the user is.
-			a.post(Notice{Title: guestName(r.Name) + " asks to join a shared window", Kind: NoticePlain, Icon: "user-round",
+			a.post(Notice{Title: guestFirst(r.Name) + " asks to join a shared window", Kind: NoticePlain, Icon: "user-round",
 				Action: "Show", On: FocusPane{Pane: a.focusIn(w)}})
 		}
 	})
@@ -482,7 +487,7 @@ func (a *app) askAbout(ctx context.Context, l *windowLink, r guest.Request) bool
 // guestUnseen tells the user outside kakel's windows of a guest who asks.
 func (a *app) guestUnseen(id string) {
 	if l := a.linkByID(id); l != nil && l.stands == LinkAsking {
-		a.popUp(guestName(l.status.Guest.Name)+" asks to join a shared window", "kakel waits for you to allow or refuse it.")
+		a.popUp(guestFirst(l.status.Guest.Name)+" asks to join a shared window", "kakel waits for you to allow or refuse it.")
 	}
 }
 
@@ -526,13 +531,17 @@ func (a *app) setLinkMay(in SetLinkMay) {
 	}
 }
 
-// guestName is what a guest is called, for a guest with no name to show.
+// guestName is what a guest is called in a sentence, which says that it is
+// one: what it calls itself could be words of kakel's.
 func guestName(name string) string {
 	if name == "" {
-		return "A guest"
+		return "a guest"
 	}
-	return name
+	return "guest " + name
 }
+
+// guestFirst is guestName at the start of a sentence.
+func guestFirst(name string) string { return words.UpperFirst(guestName(name)) }
 
 // guestForLog is a guest for the Window Log: what it calls itself, where
 // it came from, and the browser it says it has.
@@ -558,7 +567,7 @@ func (a *app) linkStatus(l *windowLink, st guest.Status) {
 	}
 	was := l.status
 	l.status = st
-	name := guestName(st.Guest.Name)
+	name := guestFirst(st.Guest.Name)
 	switch st.Phase {
 	case guest.PhaseJoin, guest.PhaseWaiting:
 		// Asked about as askAbout hears of it.
@@ -682,7 +691,7 @@ func (a *app) endLinksOf(w *ownWin) {
 		if l.win != w.id {
 			continue
 		}
-		name, body := guestName(l.status.Guest.Name), "The shared window closed."
+		name, body := guestFirst(l.status.Guest.Name), "The shared window closed."
 		switch l.stands {
 		case LinkIn, LinkAway:
 			a.notify(name+" was disconnected", body, "")
@@ -751,7 +760,7 @@ func (a *app) stopped(stop []*windowLink) {
 	}
 	body := ""
 	if len(names) > 0 {
-		body = listOf(names) + " can no longer see the window."
+		body = words.UpperFirst(listOf(names)) + " can no longer see the window."
 	}
 	a.worked("Sharing stopped", body, "")
 }

@@ -11,8 +11,9 @@ redraws that part.
 
 It is also a window manager for the things a terminal drags along with
 it: panes on several machines at once, a file manager in a pane, a file
-viewer, tunnels, and a way to hand a few panes to an agent without
-handing over the machine.
+viewer, tunnels, a window shared with somebody who has only a web
+browser, and a way to hand a few panes to an agent without handing over
+the machine.
 
 Kakel is Swedish for tile. It was called gridterm until September 2026;
 see [Coming from gridterm](#coming-from-gridterm).

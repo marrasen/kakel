@@ -57,6 +57,10 @@ func TestMain(m *testing.M) {
 	if shared.browser != nil {
 		shared.browser.Close()
 	}
+	if relayed.server != nil {
+		relayed.server.CloseClientConnections()
+		relayed.server.Close()
+	}
 	if shared.server != nil {
 		shared.server.CloseClientConnections()
 		shared.server.Close()

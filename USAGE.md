@@ -364,7 +364,8 @@ you let them.
    write any name, so check with them if you are not sure. Choose Type or
    Only watch, and press Allow or Refuse. Nothing in the question works
    until no key and no mouse button has been pressed for a second, so it
-   cannot be answered by accident. After that Enter and Escape refuse.
+   cannot be answered by accident. After that Enter and Escape refuse,
+   and from the keyboard Allow works once it has had it for a second.
    You have ten minutes to answer.
 
 The guest sees the terminals of that window and nothing else: no other
@@ -387,18 +388,49 @@ While the window is shared:
   lists the links, with Type or Only watch, and Stop, for each. Add makes
   another, for another guest.
 - Each terminal a guest sees has a gold ring, bright round the one the
-  guest is in. The guest's name shows at its corner as they come to it
-  and while they type.
+  guest is in. The guest's name is on that terminal's tab.
 - The Machines pane lists each guest under This computer. The × on the
   row ends that share.
 - The size of the terminals stays yours. The guest's text is scaled to
   fit.
 
 A guest who loses the connection, or reloads the page, comes back by
-itself for 30 minutes. Sharing ends when you choose Stop Sharing Window,
-when the guest leaves, when the window closes, and when kakel exits. The
-Window Log keeps when a window was shared, who asked, what you answered
-and how it ended, and never the link.
+itself for 30 minutes, also when the relay was restarted meanwhile.
+Sharing ends when you choose Stop Sharing Window, when the guest leaves,
+when the window closes, and when kakel exits. The Window Log keeps when a
+window was shared, who asked, what you answered and how it ended, and
+never the link.
+
+### As the guest
+
+Open the link in a current Chrome, Edge, Firefox or Safari, on a computer
+or a phone. Write your name and press Join. The window opens once the
+host allows you, with the host's panes, tabs and theme. Your tabs follow
+the host's until you pick one, click in a terminal or type. From then you
+have your own.
+
+- The bar says who shares the window, and whether you can type or only
+  watch. Typing while you only watch shakes it, and lights the pane's
+  edge.
+- Copy and paste as in kakel: Ctrl+Shift+C and Ctrl+Shift+V, Ctrl+Insert
+  and Shift+Insert, Cmd+C and Cmd+V on a Mac, or a right click. A paste
+  of several lines is asked about first.
+- Shift+Page Up and Page Down, and the wheel, scroll back through what
+  your page has been shown.
+- Full screen gives the terminal more of the browser's own keys: see the
+  button on the bar.
+- On a narrow page one pane shows at a time, with a tab for each. With a
+  finger, so does a phone on its side, and there is a row of keys a
+  phone's keyboard has not: Esc, Tab, Ctrl and the arrows, with Alt,
+  Home, End, PgUp and PgDn under …. A tap is a click. A finger held
+  selects the word under it, or keeps the selection it is in, takes in
+  more as it moves, and opens the menu as it lifts.
+- What you type in a pane that is still opening is typed once it has. If
+  the connection goes first, none of it is, and the page says so.
+- A lost connection comes back by itself, and so does a reload. Opened
+  in two tabs, the window is in the one opened last, and the other has
+  Use Here.
+- Leave ends your part for good. To come back you need a new link.
 
 Settings › Sharing › Sharing with a link has the name, the choice and the
 relay that the next link starts with.
@@ -517,8 +549,12 @@ The relay only carries bytes. The two kakels speak SSH to each other
 through it, so it cannot read what passes, and the one connected to
 still lets in only the keys it lists.
 
-A relay also serves windows shared with a link, under `/s/`. The links
-it serves do not hold its secret. A proxy in front of it has to:
+A relay also serves windows shared with a link, under `/s/`. It has to
+be the kakel of the release that shares them or a newer one: to update
+it, replace the program and start it again with the same options. Its
+secret and URL stay, remote access comes back by itself, and so do the
+windows shared and their guests. The links do not hold the secret. A
+proxy in front of the relay has to:
 
 - pass on everything under the relay's address, `/s/` and what follows it
   too, and not `/k/` alone;
@@ -532,7 +568,12 @@ it serves do not hold its secret. A proxy in front of it has to:
 A kakel that shares a window gives the relay the page its guests open.
 The relay takes only one signed with kakel's release key. `-allow-unsigned`
 takes any, for trying a kakel you built, and lets anyone with the
-relay's URL put a page of their own on its domain.
+relay's URL put a page of their own on its domain. To try one on this
+machine alone:
+
+    kakel -relay -allow-unsigned
+
+Its URL is then `http://127.0.0.1:8080/k/` and the secret it prints.
 
 ## Where kakel keeps its files
 

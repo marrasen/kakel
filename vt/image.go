@@ -59,6 +59,32 @@ type Image struct {
 // write to it or keep it past the next write to the pane.
 func (t *Terminal) Images() []Image { return t.images }
 
+// LimitImages has the images the pane holds take most bytes at most, as
+// files and as pixels, drawn ones too: a terminal shown output by
+// somebody it does not know. An image that is larger by itself is not
+// decoded, and neither are more bytes of one held than that. None at all
+// are shown for 0 or less. It is called before anything is written.
+func (t *Terminal) LimitImages(most int) {
+	t.imagesLimited, t.mostImages = true, max(most, 0)
+	// Room for the text of a copy, whatever there is for images.
+	t.long.most = min(base64.StdEncoding.EncodedLen(max(most, 64<<10))+1024, mostLongOSC)
+}
+
+// imagePixelBytes is what a pixel of an image held takes at most: as it
+// is decoded, and as it is drawn.
+const imagePixelBytes = 12
+
+// imageBytes is what an image takes.
+func imageBytes(w, h, raw int) int64 { return int64(w)*int64(h)*imagePixelBytes + int64(raw) }
+
+// takesImage says why the pane does not take an image, or "".
+func (t *Terminal) takesImage(w, h, raw int) string {
+	if t.imagesLimited && imageBytes(w, h, raw) > int64(t.mostImages) {
+		return "it is larger than is shown here"
+	}
+	return ""
+}
+
 // setImage takes OSC 1337, which is how iTerm2 and the terminals that
 // followed it put an image in the output.
 //
@@ -83,7 +109,7 @@ func (t *Terminal) setImage(params [][]byte) {
 		// terminal to save a file, which this does not do.
 		return
 	}
-	img, raw, why := decodeImage(encoded)
+	img, raw, why := decodeImage(encoded, t.takesImage)
 	if why != "" {
 		// Meant as an image, so a word where it would have gone, rather
 		// than nothing: a stray sequence is not an inline File.
@@ -114,8 +140,9 @@ func imageArgs(head string) map[string]string {
 }
 
 // decodeImage reads the base64 a program sent and decodes the image
-// in it, or says why it could not, in words a user reads.
-func decodeImage(encoded string) (img image.Image, raw []byte, why string) {
+// in it, or says why it could not, in words a user reads. takes says why
+// one of a size is not to be, before it is.
+func decodeImage(encoded string, takes func(w, h, raw int) string) (img image.Image, raw []byte, why string) {
 	encoded = strings.TrimSpace(encoded)
 	switch {
 	case encoded == "":
@@ -136,6 +163,9 @@ func decodeImage(encoded string) (img image.Image, raw []byte, why string) {
 	}
 	if int64(cfg.Width)*int64(cfg.Height) > mostImagePixels {
 		return nil, nil, strconv.Itoa(cfg.Width) + "×" + strconv.Itoa(cfg.Height) + " is more pixels than a pane takes"
+	}
+	if why := takes(cfg.Width, cfg.Height, len(raw)); why != "" {
+		return nil, nil, why
 	}
 	img, _, err = image.Decode(bytes.NewReader(raw))
 	if err != nil || img.Bounds().Empty() {
@@ -199,11 +229,22 @@ func (t *Terminal) placeImage(img image.Image, raw []byte, args map[string]strin
 // the oldest once it is holding too many.
 func (t *Terminal) holdImage(at Image) {
 	t.images = append(t.images, at)
-	if len(t.images) > MostImages {
+	drop := max(len(t.images)-MostImages, 0)
+	if t.imagesLimited {
+		var all int64
+		for i := len(t.images) - 1; i >= drop; i-- {
+			size := t.images[i].Img.Bounds().Size()
+			if all += imageBytes(size.X, size.Y, len(t.images[i].Raw)); all > int64(t.mostImages) {
+				drop = i + 1
+			}
+		}
+	}
+	if drop > 0 {
 		// The oldest goes: it is furthest up the history and the least
 		// likely to be looked at again.
-		clear(t.images[:len(t.images)-MostImages])
-		t.images = append(t.images[:0], t.images[len(t.images)-MostImages:]...)
+		n := copy(t.images, t.images[drop:])
+		clear(t.images[n:])
+		t.images = t.images[:n]
 	}
 }
 

@@ -30,13 +30,13 @@ type term struct {
 	agent bool
 	marks look.Marks
 	// guests is what it shows of the guests who see it.
-	guests guestTags
+	guests guestRing
 }
 
 // newTerm is pane id's terminal in w.
 func (w *Window) newTerm(id string) *term {
-	t := &term{Term: termview.New(w.shells.Get(id), w.keys), id: id, dropLit: anim.NewFloat(0), guests: newGuestTags()}
-	t.Add(t.dropLit, t.guests.ring, t.guests.near, t.guests.low)
+	t := &term{Term: termview.New(w.shells.Get(id), w.keys), id: id, dropLit: anim.NewFloat(0), guests: newGuestRing()}
+	t.Add(t.dropLit, t.guests.ring, t.guests.near)
 	t.OnFocus = func(u *gunim.UI) { u.Send(t, app.FocusPane{Pane: id}) }
 	t.OnPaste = func(s string, u *gunim.UI) bool { return w.checkPaste(t, s, u) }
 	t.OnPasteImage = func(u *gunim.UI) { u.Send(t, app.PasteImage{Pane: id}) }
@@ -74,12 +74,10 @@ func (t *term) Handle(e gi.Event, u *gunim.UI) bool {
 	return t.Term.Handle(e, u)
 }
 
-// Paint implements [gunim.Node]: the terminal, and over it the rings and
-// the names of the guests in it.
+// Paint implements [gunim.Node]: the terminal, and over it the rings.
 func (t *term) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gunim.Children) {
 	t.Term.Paint(p, f, box, kids)
 	t.paintRings(p, f, box)
-	t.paintTags(p, f, kids)
 	t.paintDropLit(p, f, box)
 }
 

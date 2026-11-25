@@ -125,6 +125,9 @@ dialog with the name they gave and the address they came from.
 
 ## Steps
 
+Steps 1 to 7 are done. Of step 8 the test and the documents are done; the
+reviews and `windows.yml` on the branch come last, before the merge.
+
 ### 1. The names
 
 Every word the user sees: menus, commands, dialogs, settings, chips,
@@ -184,6 +187,6 @@ of security and of the whole. `USAGE`, `FEATURES`, `GAPS`, `RELEASING`,
 
 ## Not in this
 
-File panes, fonts past the bundled ones (so no Chinese, Japanese or Korean
-text), a public relay, a guest opening panes or moving the layout, two
-guests on one link, recording.
+File panes, the host's own fonts (the browser draws what the bundled ones
+have not, as Chinese, Japanese and Korean), a public relay, a guest
+opening panes or moving the layout, two guests on one link, recording.

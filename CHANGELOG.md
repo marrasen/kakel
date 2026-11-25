@@ -20,11 +20,22 @@ the guest can type or only watch, and can change it at any time.
 - The guest sees the terminals of that one window and nothing else.
   Those opened in it or moved into it later are shared too, and one
   moved out is gone from the guest's page at once.
-- A chip on the menu bar, rings round the panes and the guest's name at
-  the corner of the pane they are in say who is there.
-- It goes through a relay: your own, with the kakel of this release or a
-  newer one. Whoever runs the relay could see everything.
-- Stop Sharing Window ends it. So do closing the window and exiting.
+- The guest's page has the window's panes, tabs and theme, scaled to fit
+  a computer's screen or a phone's. Copy, paste, scrolling back and full
+  screen work there, and a phone has a row of keys its keyboard has not.
+  A guest who loses the connection or reloads the page comes back by
+  itself, also after the relay was restarted.
+- A chip on the menu bar, rings round the panes and the guest's name on
+  the tab of the pane they are in say who is there.
+- Stop Sharing Window ends it. So do closing the window and exiting, and
+  the guest's page says which.
+- It goes through a relay of your own, which serves the guest's page
+  under `/s/`. **Update the relay to this release**: to one with an older
+  kakel, sharing says that the relay needs a newer one. A proxy in front
+  of it has to pass everything on to it, and not `/k/` alone: see Running
+  a relay in `USAGE.md`. Whoever runs the relay could see everything.
+- The guest's page is part of kakel, so a download is about 6.4 MB
+  larger.
 
 ### Changed
 
@@ -43,6 +54,29 @@ that may connect, the relay codes and the shortcuts.
 - A kakel on another machine is called another kakel, or kakel, in the
   Machines pane, the launcher, the palette, the dialogs, the Window Log
   and what a relay answers. A window is only a window on the screen.
+
+**A theme glides into the terminals.** Picking another theme changed the
+terminals' colours at once while the window round them glided. They now
+glide with it.
+
+**A finger in a terminal.** A press takes effect as the finger lifts from
+a tap, so scrolling with a finger keeps what is selected.
+
+### Fixed
+
+**A pane opens in the window it was asked for in.** A server that took
+its time to answer put its pane in whatever window was in front by then.
+It now opens where you asked for it.
+
+**A pane on another kakel has its program's modes.** Opened while the
+program was running, it did not know that the program had asked for the
+mouse or for marked pastes. A click then selected text, and a paste of
+several lines ran them one by one. It is now told with the first screen.
+
+**Boxes, missing characters and accents in terminals.** Lines of a box
+meet at every size of text, double lines too. A character that no font
+has shows as an empty box. An accent that comes as a character of its
+own is drawn on its letter.
 
 ## v0.12.2-beta.18
 

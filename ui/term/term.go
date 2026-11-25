@@ -52,8 +52,15 @@ type Config struct {
 	// destroyed rather than reflowed.
 	Size ui.Size
 
-	// Scrollback is how many lines of history to keep.
+	// Scrollback is how many lines of history to keep: the usual for 0,
+	// and none for less.
 	Scrollback int
+	// Images, when set, is how many bytes the images the pane holds may
+	// take: see vt.Terminal.LimitImages. Less than 0 is none.
+	Images int
+	// Links, when set, is how many bytes the hyperlinks the pane remembers
+	// may take: see vt.Terminal.LimitLinks. Less than 0 is none.
+	Links int
 
 	// Program is what the terminal calls itself when a program asks with
 	// XTVERSION, as a name and a version. Empty answers nothing.
@@ -163,6 +170,9 @@ type Terminal struct {
 	// laneHold is laneHeld, but in a test that cannot count on 10 ms.
 	laneHold time.Duration
 	laneTurn int
+
+	// recoloured counts the palettes set.
+	recoloured atomic.Uint64
 
 	// pending is set by the reader when new output has been parsed, so a
 	// frame with nothing to show can skip re-rendering.
@@ -379,8 +389,11 @@ func New(cfg Config) (*Terminal, error) {
 	if cfg.Palette != nil {
 		pal = *cfg.Palette
 	}
-	if cfg.Scrollback <= 0 {
+	switch {
+	case cfg.Scrollback == 0:
 		cfg.Scrollback = vt.DefaultScrollback
+	case cfg.Scrollback < 0:
+		cfg.Scrollback = 0
 	}
 
 	t := &Terminal{
@@ -447,6 +460,12 @@ func New(cfg Config) (*Terminal, error) {
 		},
 	})
 	t.term.SetProgram(cfg.Program)
+	if cfg.Images != 0 {
+		t.term.LimitImages(cfg.Images)
+	}
+	if cfg.Links != 0 {
+		t.term.LimitLinks(cfg.Links)
+	}
 
 	t.begin(r)
 	return t, nil
@@ -1665,6 +1684,23 @@ func (t *Terminal) SelectAll() {
 	t.pending.Store(true)
 }
 
+// HoldSelection goes on selecting from the selection, where cell col,row
+// of the pane is in it, and reports whether it is. A move takes in more,
+// by whole words, until a release, and none leaves it as it is: as a
+// finger held on a selection, and dragged on from it.
+func (t *Terminal) HoldSelection(col, row int) bool {
+	at := grid.Point{X: col, Y: t.drawnTop + row - t.capRows()}
+	if !t.sel.Contains(at.X, at.Y) {
+		return false
+	}
+	if !t.sel.Block {
+		t.selecting, t.unit = true, byWord
+		t.unitFrom, t.unitTo = t.sel.Ordered()
+		t.selAt = grid.Point{X: col, Y: at.Y - t.drawnTop}
+	}
+	return true
+}
+
 // Selecting reports whether a press is selecting, until its release.
 func (t *Terminal) Selecting() bool { return t.selecting }
 
@@ -1710,6 +1746,10 @@ func (t *Terminal) selectTo(at grid.Point, top int) {
 		return
 	}
 	from, end := t.unitSpan(to, t.unit)
+	if end.Before(t.unitTo) {
+		// In a selection held, which is no one word.
+		end = t.unitTo
+	}
 	next := grid.Selection{Anchor: t.unitFrom, Cursor: end, Active: true}
 	if from.Before(t.unitFrom) {
 		next.Anchor, next.Cursor = t.unitTo, from
@@ -1806,6 +1846,13 @@ func (t *Terminal) mode() input.Mode {
 func (t *Terminal) MouseTaken(mods input.Mods) bool {
 	mode, _ := t.mouseMode()
 	return mode.Enabled() && !mods.Has(input.ModShift)
+}
+
+// TakesWheel reports whether the program is sent the wheel, with mods, as
+// reports or as arrows, where it otherwise scrolls the view.
+func (t *Terminal) TakesWheel(mods input.Mods) bool {
+	mode, alt := t.mouseMode()
+	return (mode.Enabled() && !mods.Has(input.ModShift)) || alt
 }
 
 // mouseMode reads the mouse state and which buffer is in use, in one
@@ -2118,8 +2165,13 @@ func (t *Terminal) SetPalette(pal vt.Palette) {
 	t.sendScreen()
 	t.staleFollowers()
 	t.mu.Unlock()
+	t.recoloured.Add(1)
 	t.pending.Store(true)
 }
+
+// Recoloured counts the times the terminal was given other colours to
+// draw in.
+func (t *Terminal) Recoloured() uint64 { return t.recoloured.Load() }
 
 // PressPaste sends the key a program reads as paste, which is Ctrl+V.
 //

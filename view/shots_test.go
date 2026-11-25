@@ -571,13 +571,13 @@ func TestShotsWindowLink(t *testing.T) {
 		settle()
 		shot("chip-asking")
 
-		// In: the chip, the rings and the name.
+		// In: the chip, the rings and the name on the tab.
 		in.TypedIn, in.TypedAt = "p1", time.Now()
 		st.Links = []app.WindowLink{in}
 		publish(st)
 		for i := 1; i <= 5; i++ {
 			frames(2)
-			shot("tag-coming-" + strconv.Itoa(i))
+			shot("badge-coming-" + strconv.Itoa(i))
 		}
 		settle()
 		shot("in")

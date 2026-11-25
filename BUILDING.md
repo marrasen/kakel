@@ -85,10 +85,15 @@ The page the client starts in is `webclient/index.html`, `page.css` and
 `start.js`. A relay serves them under a policy that lets nothing inline
 run, so every script and style is a file. Built with the tag `demo`, as
 the tests build it, the client shows a made-up terminal when the page's
-address says `?demo=1`. The one a release has in it does not.
+address says `?demo=1`, and `window.kakelGuest` tells a test what the
+guest's page shows. The one a release has in it does neither.
 
 `KAKEL_SHOTS=<folder> go test ./relay -run TheWebClient` writes pictures
-of the page as it loads and of each way it can fail.
+of the page as it loads and of each way it can fail. `KAKEL_SHOTS=<folder>
+go test ./webclient -run Guest` writes pictures of a guest in a window,
+and with `DISPLAY` set to a private X server, `go test ./guestview` writes
+each page and the frames between them. `KAKEL_FLOOD=<megabytes> go test -v
+./webclient -run Flood` says how the page does under that much output.
 
 ## Building a release
 

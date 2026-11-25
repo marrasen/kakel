@@ -34,6 +34,7 @@ func (o *Output) Copy(terms iter.Seq[*Term]) {
 	o.wrote = nil
 	late := false
 	for t := range terms {
+		t.u = u
 		t.Sync()
 		t.LookAgain(u)
 		// The program may have asked for a blinking cursor just now,

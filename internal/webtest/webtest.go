@@ -325,9 +325,10 @@ type Page struct {
 	session string
 	target  string
 
-	mu   sync.Mutex
-	said []string
-	bad  []string
+	mu    sync.Mutex
+	said  []string
+	bad   []string
+	asked int
 }
 
 // Open opens url in a page of its own, width by height CSS pixels at
@@ -381,6 +382,14 @@ func (p *Page) Close() {
 
 // event takes what the page says on its own: its console and its errors.
 func (p *Page) event(m message) {
+	if m.Method == "Page.javascriptDialogOpening" {
+		// As a page that asks before it closes does: it may.
+		p.mu.Lock()
+		p.asked++
+		p.mu.Unlock()
+		go func() { _ = p.b.call(p.session, "Page.handleJavaScriptDialog", map[string]any{"accept": true}, nil) }()
+		return
+	}
 	var say struct {
 		Type string `json:"type"`
 		Args []struct {
@@ -428,6 +437,14 @@ func (p *Page) event(m message) {
 			p.bad = append(p.bad, say.Entry.Text+" "+say.Entry.URL)
 		}
 	}
+}
+
+// Asked is how many times the page had the browser ask something, as
+// before it closes. Each is answered with yes.
+func (p *Page) Asked() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.asked
 }
 
 // Console is every line the page has said on its console.

@@ -186,9 +186,25 @@ func TestAGuestsWordsAreMadePlain(t *testing.T) {
 	if got.From == "" || len([]rune(got.About)) > mostAbout {
 		t.Errorf("the rest is %+v", got)
 	}
-	for _, bad := range []string{"", " \n", "\u202e\u200b"} {
+	for _, bad := range []string{"", " \n"} {
 		if _, _, err := decodeJoining(joinFrame(t, bad, signer(t, key(t)).PublicKey().Marshal())[headerLen:]); err == nil {
 			t.Errorf("%q is a name", bad)
+		}
+	}
+}
+
+// Nothing in a name takes room and shows nothing, or is piled on a letter.
+func TestANameIsSeen(t *testing.T) {
+	for _, c := range []struct{ name, want string }{
+		{"\u3164", "Guest"}, {"\u115f\u1160\uffa0", "Guest"}, {"\u2800 \u2800", "Guest"}, {"\u202e\u200b", "Guest"},
+		{"\u034f\ufe0f\u17b4\u17b5", "Guest"}, {"\U000e0041\U000e0101", "Guest"}, {"\u0301\u0302", "Guest"},
+		{"Bo\u3164b", "Bob"}, {"A\u034f\ufe0fnna", "Anna"}, {"a \u2800 b", "a b"},
+		{"Ana\u0308\u0301is", "Ana\u0308\u0301is"}, {"Z" + strings.Repeat("\u0335", 50) + "oe", "Z\u0335\u0335oe"},
+		{"a \u0301b", "a b"}, {"नि", "नि"}, {"日本", "日本"}, {"😀", "😀"},
+	} {
+		j, _, err := decodeJoining(joinFrame(t, c.name, signer(t, key(t)).PublicKey().Marshal())[headerLen:])
+		if err != nil || j.Name != c.want {
+			t.Errorf("%+q is called %+q (%v), want %+q", c.name, j.Name, err, c.want)
 		}
 	}
 }

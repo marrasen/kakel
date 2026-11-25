@@ -310,10 +310,8 @@ type Window struct {
 	// and askingLater says another dialog keeps a question back.
 	askFirst    string
 	askingLater bool
-	// guestAt is where each guest is, and stopTags cancels the wake for
-	// the next guest's name to go.
-	guestAt  map[string]cameTo
-	stopTags func()
+	// guestIn are the names of the guests in each pane.
+	guestIn map[string]string
 	// permsAfter is a pane whose permissions open once it is shared.
 	permsAfter string
 	size       geom.Size
@@ -2181,6 +2179,10 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 	w.placeFilePanes(st, u)
 	// Before the layout, so a waiting pane made now says it at once.
 	w.waits = st.Waits
+	w.guestIn = map[string]string{}
+	for _, p := range st.Panes {
+		w.guestIn[p.ID] = guestsIn(st, p.ID)
+	}
 	w.showLayout(st, u)
 	// After the panes are built, so one made now shows the state too.
 	if w.settings != nil && u.Presence(w.settings) != gunim.Exiting {

@@ -1006,6 +1006,16 @@ func TestAShareOutlivesItsRelayBeingLost(t *testing.T) {
 	if shown > 1 {
 		t.Errorf("one failure was shown %d times", shown)
 	}
+	// What was said of it goes as the relay is back.
+	last := -1
+	for i, n := range r.a.st.Notices {
+		if n.Key == "relay:"+l.ID {
+			last = i
+		}
+	}
+	if last < 0 || r.a.st.Notices[last].Kind != NoticeWorked {
+		t.Error("with the relay back, the user is still told that it is lost")
+	}
 }
 
 // gate passes connections on to somewhere else, while it is open.

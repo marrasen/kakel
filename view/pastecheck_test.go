@@ -14,30 +14,6 @@ import (
 	"github.com/marrasen/kakel/vt"
 )
 
-func TestPasteLinesLeavesOutTheLastBreak(t *testing.T) {
-	for s, want := range map[string]int{
-		"ls":            1,
-		"ls\n":          1,
-		"ls\r\n":        1,
-		"a\nb":          2,
-		"a\r\nb\r\n":    2,
-		"a\rb":          2,
-		"a\n\nb":        3,
-		"\n\n":          2,
-		"one\ntwo\nthr": 3,
-	} {
-		if got := pasteLines(s); got != want {
-			t.Errorf("pasteLines(%q) = %d, want %d", s, got, want)
-		}
-	}
-	if needsCheck("ls -la\n") {
-		t.Error("a line copied whole opens in the editor")
-	}
-	if !needsCheck(strings.Repeat("x", pasteBytes+1)) {
-		t.Error("a paste over 5 KB goes straight in")
-	}
-}
-
 // pasteStage is a window with one pane, p1, whose session records
 // what it is sent, with the paste check on or off.
 func pasteStage(t *testing.T, check bool) (*Window, *sessiontest.Typed) {

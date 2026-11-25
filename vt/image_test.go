@@ -301,3 +301,49 @@ func TestTheWordOnAnImageIsWrittenPlain(t *testing.T) {
 		t.Fatalf("on the alternate screen, the first line reads %q", got)
 	}
 }
+
+// A pane whose images are limited keeps the newest within the limit, and
+// decodes none that is past it by itself.
+func TestImagesAreHeldToALimit(t *testing.T) {
+	send := func(term *Terminal, side int) {
+		var b bytes.Buffer
+		if err := png.Encode(&b, image.NewGray(image.Rect(0, 0, side, side))); err != nil {
+			t.Fatal(err)
+		}
+		_, _ = term.Write([]byte("\x1b]1337;File=inline=1;width=2;height=1:" + base64.StdEncoding.EncodeToString(b.Bytes()) + "\x07"))
+	}
+	held := func(term *Terminal) (n int, all int64) {
+		for _, at := range term.Images() {
+			s := at.Img.Bounds().Size()
+			all += imageBytes(s.X, s.Y, len(at.Raw))
+		}
+		return len(term.Images()), all
+	}
+	const most = 5 * 100 * 100 * imagePixelBytes
+	term := New(80, 24, DefaultPalette(), 100, Callbacks{})
+	term.LimitImages(most)
+	for range 20 {
+		send(term, 100)
+	}
+	if n, all := held(term); n != 4 || all > most {
+		t.Errorf("it holds %d images of %d bytes", n, all)
+	}
+	send(term, 300)
+	if n, _ := held(term); n != 4 {
+		t.Errorf("after one larger than all it may hold, it holds %d", n)
+	}
+	none := New(80, 24, DefaultPalette(), 100, Callbacks{})
+	none.LimitImages(-1)
+	send(none, 4)
+	if n, _ := held(none); n != 0 {
+		t.Errorf("one that takes no images holds %d", n)
+	}
+	// What is sent of one is held to as much.
+	_, _ = term.Write([]byte("\x1b]1337;File=inline=1:" + strings.Repeat("A", 4*most)))
+	if got := cap(term.long.body); got > 2*base64.StdEncoding.EncodedLen(most) {
+		t.Errorf("%d bytes are held of one that never ends", got)
+	}
+	if got := len(term.long.body); got == 0 {
+		t.Error("nothing is held of one on its way")
+	}
+}
