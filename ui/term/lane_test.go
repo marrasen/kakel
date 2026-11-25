@@ -48,7 +48,9 @@ func TestALaneNeitherLosesNorHoldsUp(t *testing.T) {
 	defer func() { _ = term.Close() }()
 	l := term.Lane()
 	text := []byte(strings.Repeat("åäö 漢字 ab", 100_000))
+	typed := make(chan struct{})
 	go func() {
+		defer close(typed)
 		for rest := text; len(rest) > 0; {
 			if n := l.Type(rest); n > 0 {
 				rest = rest[n:]
@@ -73,6 +75,12 @@ func TestALaneNeitherLosesNorHoldsUp(t *testing.T) {
 		t.Error("the user's key cut a character in two")
 	}
 	close(s.reads)
+	// Once the writer is done, the lane holds at most laneRoom for the program to read.
+	select {
+	case <-typed:
+	case <-time.After(time.Minute):
+		t.Fatalf("the program read %d bytes in a minute", len(s.typed()))
+	}
 	waitFor(t, func() bool { return len(s.typed()) == len(text)+1 })
 	if got := bytes.ReplaceAll(s.typed(), []byte{3}, nil); !bytes.Equal(got, text) {
 		t.Error("what was typed arrived wrong")
