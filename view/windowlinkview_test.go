@@ -117,6 +117,44 @@ func TestAStrayKeyNeverLetsAGuestIn(t *testing.T) {
 	}
 }
 
+// Tab and then Space, typed right after one another, let nobody in,
+// whichever way the keyboard goes round the question; Allow does once it
+// has had the keyboard a moment, with nothing pressed.
+func TestTheKeyboardLetsAGuestInOnlyOnceOnAllow(t *testing.T) {
+	for _, first := range []bool{false, true} {
+		for _, shift := range []gi.Mods{0, gi.ModShift} {
+			for _, k := range []gi.Key{gi.KeySpace, gi.KeyEnter} {
+				win, st, publish := linkStage(t)
+				st.Links = []app.WindowLink{asks("l1", "Bob")}
+				publish(st)
+				d := win.guestAsk.d
+				d.DefaultFirst = first
+				pause(askWait * 2)
+				tabs := 0
+				for lastUI.Focused() != d.OK() {
+					if tabs++; tabs > 3 {
+						t.Fatal("Tab never comes to Allow")
+					}
+					lastWindow.Input(gi.KeyPress{Key: gi.KeyTab, Mods: shift, Time: time.Now()})
+					frames(2)
+				}
+				for range 3 {
+					hit(k)
+					pause(askWait * 8 / 10)
+				}
+				if got := answers(); len(got) != 0 || lastUI.Presence(d) == gunim.Exiting {
+					t.Errorf("OK first %v, Shift %v: %v after %d tabs answered %+v", first, shift != 0, k, tabs, got)
+				}
+				pause(askWait * 12 / 10)
+				hit(k)
+				if got := answers(); len(got) != 1 || !got[0].Allow {
+					t.Errorf("OK first %v, Shift %v: %v on Allow, a moment later, answered %+v", first, shift != 0, k, got)
+				}
+			}
+		}
+	}
+}
+
 // clickOn clicks the middle of a node, in the window.
 func clickOn(t *testing.T, n gunim.Node) {
 	t.Helper()
@@ -187,6 +225,7 @@ func TestEnterInTheQuestionRefuses(t *testing.T) {
 			frames(2)
 		}
 		onAllow := lastUI.Focused() == win.guestAsk.d.OK()
+		pause(askWait * 12 / 10)
 		hit(gi.KeyEnter)
 		for _, a := range answers() {
 			if a.Allow != onAllow {
@@ -306,7 +345,8 @@ func TestAGuestWhoAsksUnseenIsSaidOutside(t *testing.T) {
 }
 
 // The chip says what there is to know at a glance: who asks, or else who
-// is in, or that the window is shared.
+// is in, or that the window is shared. What a guest calls itself reads as
+// no words of kakel's.
 func TestWhatTheLinkChipSays(t *testing.T) {
 	link := app.WindowLink{ID: "a", Stands: app.LinkWaiting}
 	over := app.WindowLink{ID: "b", Stands: app.LinkEnded}
@@ -325,6 +365,9 @@ func TestWhatTheLinkChipSays(t *testing.T) {
 		{[]app.WindowLink{away, isIn("d", "Bob", "p1")}, []string{"2"}},
 		{[]app.WindowLink{isIn("d", "Bob", "p1"), asks("e", "Eve")}, []string{"Eve", "asks"}},
 		{[]app.WindowLink{asks("e", "Eve"), asks("f", "Bob")}, []string{"2", "ask"}},
+		{[]app.WindowLink{isIn("d", "Shared", "p1")}, []string{"Guest: Shared"}},
+		{[]app.WindowLink{isIn("d", "2 guests", "p1")}, []string{"Guest: 2 guests"}},
+		{[]app.WindowLink{asks("d", "Nobody")}, []string{"Guest: Nobody asks"}},
 	} {
 		win, _, _ := linkStage(t, c.links...)
 		var got string
@@ -412,7 +455,7 @@ func TestAGuestWhoAsksIsSaidOnANarrowBar(t *testing.T) {
 			t.Errorf("the chip is at %v, of %v", s.box, win.chips.room)
 		}
 	}
-	if win.chips.on.Value() < 0.99 || shown["Bartholomew of the Long Name asks"] < 0.99 || shown["Remote Access"] > 0.01 {
+	if win.chips.on.Value() < 0.99 || shown["Guest: Bartholomew of the Long Name asks"] < 0.99 || shown["Remote Access"] > 0.01 {
 		t.Errorf("the chips show %v, the bar %v", shown, win.chips.on.Value())
 	}
 }
@@ -448,7 +491,7 @@ func guestRings() (n int, most uint8) {
 }
 
 // Each pane a guest sees has a ring, which fades in and out, and the one
-// the guest is in has a brighter one and its name, for a while.
+// the guest is in has a brighter one, and the guest's name on its tab.
 func TestAPaneSaysWhichGuestIsInIt(t *testing.T) {
 	win, st, publish := linkStage(t, app.WindowLink{ID: "l1", Stands: app.LinkWaiting})
 	if n, _ := guestRings(); n != 0 {
@@ -462,82 +505,42 @@ func TestAPaneSaysWhichGuestIsInIt(t *testing.T) {
 	if n != 2 || early >= late {
 		t.Errorf("there are %d rings, as strong as %d at first and %d after", n, early, late)
 	}
-	named := func(id string) bool { return slices.Contains(win.terms[id].guests.whose[:], "l1") }
-	if !named("p1") || named("p2") {
-		t.Error("the name is not at the pane the guest is in")
+	named := func(id string) string { return win.tabFace(id).Badge }
+	// drawn is how wide pane id's tab is: its badge has room in it.
+	drawn := func(id string) float32 {
+		r, _ := win.dock.TabRect(id)
+		return r.Size().W
 	}
-	if r := win.terms["p1"].guests.at[0]; r.Size().W < 10 {
-		t.Errorf("the name is drawn at %v", r)
+	if named("p1") != "Bob" || named("p2") != "" {
+		t.Errorf("p1's tab has %q, and p2's %q", named("p1"), named("p2"))
 	}
+	with, without := drawn("p1"), drawn("p2")
 	// Elsewhere, the name goes along.
 	st.Links = []app.WindowLink{isIn("l1", "Bob", "p2")}
 	publish(st)
 	settle()
-	if named("p1") || !named("p2") {
+	if named("p1") != "" || named("p2") != "Bob" {
 		t.Error("the name stayed where the guest was")
 	}
-	// And goes, once the guest has been there a while and typed nothing.
-	win.guestAt["l1"] = cameTo{"p2", time.Now().Add(-2 * tagFor)}
-	publish(st)
-	settle()
-	if named("p2") || win.terms["p2"].guests.at[0].Size().W > 0 {
-		t.Error("the name stays for good")
+	if drawn("p1") >= with || drawn("p2") <= without {
+		t.Errorf("the tabs went from %v and %v to %v and %v", with, without, drawn("p1"), drawn("p2"))
 	}
-	st.Links[0].TypedIn, st.Links[0].TypedAt = "p2", time.Now()
+	// Two are both named, and one who left is not.
+	st.Links = []app.WindowLink{isIn("l1", "Bob", "p2"), isIn("l2", "", "p2")}
 	publish(st)
-	settle()
-	if !named("p2") {
-		t.Error("typing brings no name")
+	if got := named("p2"); !strings.Contains(got, "Bob") || got == "Bob" {
+		t.Errorf("with two in it, p2's tab has %q", got)
 	}
-	// A pane that is no terminal has none of it.
+	st.Links[0].Stands = app.LinkAway
+	publish(st)
+	if got := named("p2"); strings.Contains(got, "Bob") {
+		t.Errorf("one who is away is named: %q", got)
+	}
 	st.Links = nil
 	publish(st)
 	settle()
-	if n, _ := guestRings(); n != 0 || win.glowing {
-		t.Error("with nobody there the panes are ringed")
-	}
-}
-
-// fed is a session whose program prints what a test gives it.
-type fed struct {
-	*sessiontest.Typed
-	out chan []byte
-}
-
-func (f fed) Read(p []byte) (int, error) { return copy(p, <-f.out), nil }
-
-// The name keeps clear of the cursor, and glides out of its way.
-func TestAGuestsNameKeepsClearOfTheCursor(t *testing.T) {
-	win, sh, publish := windowStageOf(t, geom.Sz(900, 600))
-	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
-	prog := fed{sessiontest.New(), make(chan []byte, 1)}
-	sh.Set("p1", screen.Open(prog, vt.DefaultPalette(), quiet))
-	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "one"}}, Focus: "p1", Marks: look.MarksOf(vt.DefaultPalette()),
-		Layout: boxLayout(&app.Box{Pane: "p1"}), Links: []app.WindowLink{isIn("l1", "Bob", "p1")}}
-	publish(st)
-	settle()
-	term := win.terms["p1"]
-	at := func() geom.Rect { return term.guests.at[slices.Index(term.guests.whose[:], "l1")] }
-	top := at()
-	if top.Min.Y > 30 || top.Size().W < 10 {
-		t.Fatalf("the name is at %v", top)
-	}
-	// The cursor to the end of the first line.
-	prog.out <- []byte("\x1b[1;999H")
-	var places []float32
-	for end := time.Now().Add(5 * time.Second); at().Min.Y < 100; {
-		publish(st)
-		places = append(places, at().Min.Y)
-		if time.Now().After(end) {
-			t.Fatalf("with the cursor at %v the name is at %v", term.TextCaret(), at())
-		}
-	}
-	settle()
-	if caret := term.TextCaret(); at().Min.Y < caret.Max.Y {
-		t.Errorf("the name is at %v, over the cursor at %v", at(), caret)
-	}
-	if !slices.ContainsFunc(places, func(y float32) bool { return y > top.Min.Y && y < at().Min.Y/2 }) {
-		t.Errorf("the name went there by %v", places)
+	if n, _ := guestRings(); n != 0 || win.glowing || named("p2") != "" {
+		t.Error("with nobody there the panes are ringed, or named")
 	}
 }
 

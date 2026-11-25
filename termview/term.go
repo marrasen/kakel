@@ -57,6 +57,12 @@ type Term struct {
 	// up, for the one under the pointer, which may be another than this.
 	// With none, this one alone hears it.
 	OnCtrl func(k gi.Key, mods gi.Mods, down bool, u *gunim.UI)
+	// OnHeld says a finger held in the terminal was lifted at at, having
+	// selected the word there, or kept the selection it was in, and what
+	// it was dragged over since: the place for a menu. With none a finger
+	// held selects nothing, and the press is the window's, as a right
+	// click is.
+	OnHeld func(at geom.Point, u *gunim.UI)
 	// AlongWith is the other panes typing goes to from this one while it
 	// has the keyboard, nil for none.
 	AlongWith func() []*Term
@@ -82,6 +88,12 @@ type Term struct {
 	// held is the button down in the pane, and at the cell the pointer
 	// was last heard of in.
 	held input.MouseButton
+	// tap is a finger's press while tapping, which does what it does as
+	// the finger lifts, if it neither scrolled nor was held; tapIn says
+	// the terminal had the keyboard as it came. holding says a finger
+	// held selects.
+	tap                     gi.PointerDown
+	tapping, tapIn, holding bool
 	// edge is how many rows past the top, negative, or the bottom of the
 	// cells the pointer is while it drags a selection, and edgeLines the
 	// part of a line the view has to scroll toward it still.
@@ -125,6 +137,12 @@ type Term struct {
 	offset geom.Point
 	// fit is a fitted screen's place in the pane; see [Term.SetFitted].
 	fit fit
+	// compose is what an input method is composing in the pane.
+	compose compose
+	// u is the window's, as last heard of, and recoloured the terminal's
+	// count of palettes as the cells were last copied.
+	u          *gunim.UI
+	recoloured uint64
 }
 
 // LeastCols and LeastRows are the smallest screen a shell is given at
@@ -164,9 +182,10 @@ func (t *Term) SetAway(away bool, u *gunim.UI) {
 			// Let go where it was, so a program that has the mouse
 			// hears the button come up, and a selection ends there.
 			held := t.held
-			t.held, t.edge = input.MouseNone, 0
+			t.held, t.edge, t.holding = input.MouseNone, 0, false
 			t.mouse(input.MouseEvent{Kind: input.MouseRelease, Button: held, Col: t.at.X, Row: t.at.Y}, u)
 		}
+		t.tapping = false
 		t.hoverMods = 0
 		t.sh.T.SetHover(t.at.X, t.at.Y, 0)
 	}
@@ -242,6 +261,8 @@ func New(sh *screen.Shell, keys *ui.Keymap) *Term {
 	t := &Term{keys: keys, sh: sh, cells: g, settle: anim.NewFloat(0)}
 	t.selGrow = anim.NewFloat(1)
 	t.fit.init(&t.Group)
+	t.compose.init(&t.Group)
+	t.recoloured = sh.T.Recoloured()
 	// settle counts real time, whatever pace the theme sets.
 	t.settle.RealTime()
 	t.Add(t.settle, t.selGrow)
@@ -303,6 +324,10 @@ func (t *Term) Hover() (mods input.Mods, over bool) { return t.hoverMods, t.over
 
 // TakesText implements [gunim.TextTaker].
 func (t *Term) TakesText() bool { return t.TextInput }
+
+// RawText implements [gunim.RawTexter]: a phone's keyboard leaves what is
+// typed as it is.
+func (t *Term) RawText() bool { return true }
 
 // TextCaret implements [gunim.CaretReporter]: the cursor's cell, for an
 // input method to open beside.
@@ -379,6 +404,7 @@ func (t *Term) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gunim.
 	}
 	kids.At(0).Paint(p)
 	t.paintImages(p)
+	t.paintCompose(p, f)
 }
 
 // paintImages draws the inline images on screen, each over the
@@ -420,6 +446,16 @@ func (t *Term) paintImages(p *paint.Painter) {
 func (t *Term) Sync() {
 	sh := t.sh
 	sh.Drawn(func(g *grid.Grid) {
+		if n := sh.T.Recoloured(); n != t.recoloured {
+			t.recoloured = n
+			// The colours glide with the theme's, where they show.
+			u := t.u
+			if u != nil && u.Presence(t.cells) == gunim.Exiting {
+				u = nil
+			}
+			t.cells.FadeColors(u)
+		}
+		t.compose.ink, t.compose.ground = opaque(g.DefaultFG), opaque(g.DefaultBG)
 		cols, rows := g.Size()
 		t.cells.Resize(cols, rows)
 		for y := range rows {
@@ -445,7 +481,8 @@ func (t *Term) Sync() {
 		t.wantBlink = cur.Blink
 		// A pane whose program has ended takes no typing, and one without
 		// the keyboard takes none now, so neither shows a cursor.
-		visible := cur.Visible && !sh.T.Exited() && t.typedIn() && !t.away
+		// An input method's has its own.
+		visible := cur.Visible && !sh.T.Exited() && t.typedIn() && !t.away && !t.compose.on()
 		if at := (grid.Point{X: cur.X, Y: cur.Y}); at != t.cursorAt {
 			t.cursorAt = at
 			t.blinkAgain()
@@ -491,8 +528,8 @@ func CellOf(g *grid.Grid, x, y int) widget.Cell {
 	}
 	out := widget.Cell{
 		Rune: c.Rune,
-		FG:   color.NRGBA{R: fg.R, G: fg.G, B: fg.B, A: 0xff},
-		BG:   color.NRGBA{R: bg.R, G: bg.G, B: bg.B, A: 0xff},
+		FG:   opaque(fg),
+		BG:   opaque(bg),
 		Wide: c.Width == 2,
 	}
 	if len(c.Comb) > 0 {
@@ -509,12 +546,17 @@ func CellOf(g *grid.Grid, x, y int) widget.Cell {
 	return out
 }
 
+// opaque is a grid's colour as gunim has it.
+func opaque(c color.RGBA) color.NRGBA { return color.NRGBA{R: c.R, G: c.G, B: c.B, A: 0xff} }
+
 // Handle implements [gunim.Handler]: keys and text go to the shell,
 // and the wheel scrolls back through what has scrolled off.
 func (t *Term) Handle(e gi.Event, u *gunim.UI) bool {
+	t.u = u
 	switch e := e.(type) {
 	case gi.FocusGained, gi.FocusLost:
 		_, t.focused = e.(gi.FocusGained)
+		t.composing(gi.Composing{}, u)
 		if t.focused && t.OnFocus != nil {
 			t.OnFocus(u)
 		}
@@ -546,7 +588,14 @@ func (t *Term) Handle(e gi.Event, u *gunim.UI) bool {
 	case gi.KeyRelease:
 		t.ctrlChanged(e.Key, e.Mods, false, u)
 		return false
+	case gi.Composing:
+		if !t.TextInput {
+			return false
+		}
+		t.composing(e, u)
+		return true
 	case gi.TextInput:
+		t.composing(gi.Composing{}, u)
 		for _, r := range e.Text {
 			t.key(input.Event{Kind: input.Text, Rune: r, NormalText: true})
 		}
@@ -752,7 +801,16 @@ func (t *Term) Step(dt time.Duration) bool {
 func (t *Term) press(e gi.PointerDown, u *gunim.UI) bool {
 	at := t.cellAt(e.Pos)
 	mods := MouseMods(e.Mods)
+	// Any other press is in the place of a finger's that came before it.
+	t.tapping = false
 	switch {
+	case e.Touch && e.Button == gi.ButtonPrimary:
+		// It may scroll yet, or be held.
+		t.tap, t.tapping, t.tapIn = e, true, t.focused
+		return true
+	case e.Touch && e.Button == gi.ButtonSecondary && t.OnHeld != nil && !t.sh.T.MouseTaken(mods):
+		t.hold(at, u)
+		return true
 	case e.Focusing && e.Button == gi.ButtonPrimary:
 		// The click that gives the pane the keyboard only does that: it
 		// starts no selection, and a program with the mouse is not
@@ -808,14 +866,46 @@ func (t *Term) drag(e gi.PointerMove, u *gunim.UI) bool {
 	return t.mouse(input.MouseEvent{Kind: input.MouseMove, Button: t.held, Col: at.X, Row: at.Y, Mods: MouseMods(e.Mods)}, u)
 }
 
+// hold selects the word at a cell, or keeps the selection that is there,
+// as a finger is held on it. What it is dragged over is selected too.
+func (t *Term) hold(at grid.Point, u *gunim.UI) {
+	t.held, t.at, t.holding = input.MouseLeft, at, true
+	if !t.sh.T.HoldSelection(at.X, at.Y) {
+		t.mouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: at.X, Row: at.Y, Clicks: 2}, u)
+	}
+}
+
+// tapped does what a finger's press does, as it lifts at at. One let go at
+// [gi.Away] scrolled, or is held, and did not tap. A tap that gave the
+// terminal the keyboard only does that, as a click does.
+func (t *Term) tapped(at geom.Point, u *gunim.UI) {
+	d := t.tap
+	t.tapping = false
+	if at == gi.Away || !t.tapIn {
+		return
+	}
+	d.Touch = false
+	if t.press(d, u) {
+		t.release(gi.PointerUp{Pos: d.Pos, Button: d.Button, Mods: d.Mods, Time: d.Time}, u)
+	}
+}
+
 func (t *Term) release(e gi.PointerUp, u *gunim.UI) bool {
+	if t.tapping && e.Button == gi.ButtonPrimary {
+		t.tapped(e.Pos, u)
+		return true
+	}
 	if t.held == input.MouseNone {
 		return false
 	}
 	at := t.cellAt(e.Pos)
-	held := t.held
-	t.held, t.edge = input.MouseNone, 0
-	return t.mouse(input.MouseEvent{Kind: input.MouseRelease, Button: held, Col: at.X, Row: at.Y, Mods: MouseMods(e.Mods)}, u)
+	held, holding := t.held, t.holding
+	t.held, t.edge, t.holding = input.MouseNone, 0, false
+	took := t.mouse(input.MouseEvent{Kind: input.MouseRelease, Button: held, Col: at.X, Row: at.Y, Mods: MouseMods(e.Mods)}, u)
+	if holding && e.Pos != gi.Away {
+		t.OnHeld(e.Pos, u)
+	}
+	return took
 }
 
 // CopySelection puts the selected text on the clipboard.

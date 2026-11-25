@@ -32,6 +32,10 @@ type longOSC struct {
 	esc bool
 	// one holds a single byte handed on by itself.
 	one [1]byte
+
+	// most is the largest payload held, in place of mostLongOSC, where
+	// the terminal has a limit of its own.
+	most int
 }
 
 // longOSCMarkers are the sequences read here rather than by the
@@ -190,7 +194,11 @@ func (s *longOSC) add(run []byte) {
 	if len(run) == 0 {
 		return
 	}
-	if room := mostLongOSC - len(s.body); len(run) > room {
+	most := mostLongOSC
+	if s.most > 0 {
+		most = min(most, s.most)
+	}
+	if room := most - len(s.body); len(run) > room {
 		s.over = true
 		run = run[:max(room, 0)]
 	}

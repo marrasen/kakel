@@ -668,3 +668,76 @@ func TestLittleIsOnItsWay(t *testing.T) {
 	}
 	_ = conn.Wait()
 }
+
+// Of large screens a guest holds one at a time, however many panes have
+// one, and a pane closed lets go of its own.
+func TestOneLargeScreenIsHeldAtATime(t *testing.T) {
+	r := newRig(t, true)
+	// Each cell its own colours, about 2 MB of screen.
+	const cols, rows = 300, 180
+	var ids []string
+	for _, id := range []string{"a", "b", "c"} {
+		term, p := terminal(t, cols, rows)
+		var line bytes.Buffer
+		for x := range cols * rows {
+			fmt.Fprintf(&line, "\x1b[38;2;%d;%d;1m\x1b[48;2;%d;%d;2mx", x%250, x%241, x%239, x%233)
+		}
+		p.out <- line.Bytes()
+		r.until("the screen is drawn", func() bool { return len(term.Replay()) > largeScreen })
+		r.share(id, term)
+		ids = append(ids, id)
+	}
+	r.publish(terminals(true, ids...))
+	s := r.in(key(t))
+	open := func(id string) (*ShownPane, chan int) {
+		t.Helper()
+		p, err := s.Pane(context.Background(), id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := make(chan int, 1)
+		go func() {
+			b := make([]byte, 1<<10)
+			for {
+				_, scr, err := p.ReadScreen(b)
+				if err != nil {
+					got <- -1
+					return
+				}
+				if scr != nil && scr.Cols > 0 {
+					got <- len(scr.Draw)
+					return
+				}
+			}
+		}()
+		return p, got
+	}
+	a, gotA := open("a")
+	if n := <-gotA; n < largeScreen {
+		t.Fatalf("its screen is %d bytes, which is not large", n)
+	}
+	b, gotB := open("b")
+	select {
+	case n := <-gotB:
+		t.Fatalf("with one held, another of %d bytes is read", n)
+	case <-time.After(100 * time.Millisecond):
+	}
+	// Closed, the first lets go of its own.
+	_ = a.Close()
+	if n := <-gotB; n < largeScreen {
+		t.Fatalf("the second is %d bytes", n)
+	}
+	c, gotC := open("c")
+	select {
+	case <-gotC:
+		t.Fatal("with the second held, a third is read")
+	case <-time.After(50 * time.Millisecond):
+	}
+	// Read again, the second has been drawn.
+	go func() { _, _, _ = b.ReadScreen(make([]byte, 1<<10)) }()
+	if n := <-gotC; n < largeScreen {
+		t.Fatalf("the third is %d bytes", n)
+	}
+	_ = c.Close()
+	_ = b.Close()
+}

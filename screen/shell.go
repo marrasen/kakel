@@ -56,6 +56,11 @@ type Hooks struct {
 	Link     func(string)
 	FindPath func(text, dir string) (at string, isDir, ok bool)
 	OpenPath func(at string, isDir bool, line int)
+	// Scrollback is how many lines of history the pane keeps, the usual
+	// for 0 and none for less, and Images and Links how many bytes the
+	// images and the hyperlinks in it may take, as many as there are for 0
+	// and none for less.
+	Scrollback, Images, Links int
 }
 
 // Cols and Rows are a new shell's size, until its pane lays
@@ -76,10 +81,16 @@ func Open(sess session.Session, pal vt.Palette, hooks Hooks) *Shell {
 	if program == "" {
 		program = build.Name
 	}
+	scrollback := hooks.Scrollback
+	if scrollback == 0 {
+		scrollback = ScrollbackLines
+	}
 	t, err := uiterm.New(uiterm.Config{
 		Session:       sess,
 		Size:          ui.Size{Cols: Cols, Rows: Rows},
-		Scrollback:    ScrollbackLines,
+		Scrollback:    scrollback,
+		Images:        hooks.Images,
+		Links:         hooks.Links,
 		Program:       program + " " + build.Version(),
 		Palette:       &pal,
 		OnTitle:       hooks.Title,

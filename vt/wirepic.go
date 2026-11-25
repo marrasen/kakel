@@ -72,7 +72,7 @@ func (t *Terminal) placeWirePic(params [][]byte) {
 	if line < 0 {
 		return
 	}
-	img, raw, why := decodeImage(string(params[6]))
+	img, raw, why := decodeImage(string(params[6]), t.takesImage)
 	if why != "" {
 		return
 	}

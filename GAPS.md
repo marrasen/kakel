@@ -28,8 +28,19 @@ something.
 - **A window shared with a link shows its terminals alone.** A file
   manager, a reader, a log or a settings pane in it is a box with its
   kind on it. A guest opens no pane, moves none, and each link is for one
-  guest. The page draws with the fonts kakel carries, so it has no
-  Chinese, Japanese or Korean text. Nothing is recorded.
+  guest. The page draws with the fonts kakel carries, whatever the host's
+  is, and has the browser draw what they lack. Nothing is recorded.
+- **A guest's page has a terminal's basics.** It follows no links, has
+  no find, and lights the pane where kakel sounds a bell. It keeps at most
+  2,000 lines of history in each terminal, less the more it shows, and
+  up to 16 off the screen, for five minutes. Past 40 terminals on the screen,
+  or 96 MB of them, the rest say so in their place. The whole of the
+  host's screen is drawn to fit, so a wide one is small on a phone.
+  Outside full screen a browser keeps Ctrl+W, Ctrl+T, Ctrl+N and Ctrl+Tab
+  for itself, and Firefox and Safari keep some in it too. A guest who
+  leaves while the connection is lost is gone from its page at once, and
+  from the host's list when the 30 minutes are over. No screen reader
+  reads the page (gunim #323), and its terminals have no name for one.
 - **Whoever runs the relay could change the page a guest opens.** What
   passes between the guest's page and the host is encrypted from end to
   end, and the relay takes only a page signed with kakel's release key.

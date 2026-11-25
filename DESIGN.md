@@ -18,9 +18,8 @@ The window and the program:
 - `termview`: a terminal as the window draws it and takes what is typed
   and clicked in it. It knows nothing of the program round it, and is
   built for a browser too.
-- `webclient`: kakel in a browser, built for `js/wasm`: for now one
-  terminal with a made-up program in it. `internal/webtest` runs it in
-  headless Chrome for its tests.
+- `pastecheck`: the question asked before a paste of many lines, here
+  and in a guest's page.
 - `look`: kakel's themes turned into gunim's, and the colours of the
   window's own parts.
 - `winkeys`: keys as gunim hears them, turned into kakel's keys and
@@ -62,9 +61,14 @@ Machines and connections:
   connecting end is built for a browser too.
 - `guest`: a window shared by a link: what its host and its guest say to
   each other, and both ends of it. The guest's is built for a browser.
-- `webclient`: the program a guest runs, in a browser, and the page it
-  starts in. `webbundle`: the same, built and in this kakel, to give to a
-  relay.
+- `guestview`: the page a guest of it works in, from the name it gives
+  to how it ended. It is built for a browser, and for the tests on any
+  machine. `guestlook`: the window's layout and theme, as its host says
+  them.
+- `webclient`: the program a guest runs, in a browser: `guestview`, and
+  what it needs of the browser, with the page it starts in.
+  `internal/webtest` runs it in headless Chrome for its tests.
+  `webbundle`: the same, built and in this kakel, to give to a relay.
 - `vfs`: a filesystem kakel reads files through: this machine, or one
   over SFTP.
 - `jobs`: copying, moving and deleting in the background.
@@ -100,8 +104,8 @@ the keymap and what `ui/term` and `ui/files` are built on. `internal`
 holds the build stamp, test helpers, the icon writer, and what builds
 the web client into a bundle.
 
-gunim is imported by `app`, `view`, `termview`, `webclient`, `look`,
-`winkeys`, `internal/sound` and `main`. The terminal packages, `serve`,
+gunim is imported by `app`, `view`, `termview`, `guestview`,
+`guestlook`, `pastecheck`, `webclient`, `look`, `winkeys`, `internal/sound` and `main`. The terminal packages, `serve`,
 `guest`, `remote`, `vfs`, `jobs` and `settings` do not import it. So everything
 fiddly is testable without a display, which is how the emulator got
 written.

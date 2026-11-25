@@ -20,9 +20,9 @@ first time rather than being rewritten later.
 5. **Buttons are one verb**, from a small fixed set: `OK` `Add` `Cancel`
    `Close` `Retry` `Wait` `Save` `Create` `Delete` `Remove` `Replace`
    `Skip` `Open` `Run` `Connect` `Generate` `Show` `Type` `Turn On`
-   `Turn Off` `Allow` `Refuse` `Copy` `Stop`. No pronouns:
-   never `Make it`, `Close it`, `Keep them`, `Leave it`. And never a
-   button that renames itself to say what the next press does: that is
+   `Turn Off` `Allow` `Refuse` `Copy` `Stop` `Join` `Leave` `Use Here`.
+   No pronouns: never `Make it`, `Close it`, `Keep them`, `Leave it`.
+   And never a button that renames itself to say what the next press does: that is
    rule 9. Use a tick box.
 6. **`Cancel` cancels what the dialog is about. `Close` dismisses a
    dialog and leaves things running.** The same meaning everywhere.

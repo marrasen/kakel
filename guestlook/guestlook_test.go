@@ -2,11 +2,18 @@ package guestlook_test
 
 import (
 	"encoding/json"
+	"fmt"
+	"image/color"
+	"io"
+	"log"
+	"os"
 	"reflect"
 	"slices"
 	"strings"
 	"testing"
 
+	"github.com/marrasen/gunim/theme"
+	"github.com/marrasen/gunim/widget"
 	"github.com/marrasen/gunim/widget/dock"
 
 	"github.com/marrasen/kakel/guestlook"
@@ -129,13 +136,14 @@ func TestALayoutIsWholeHoweverItIsWritten(t *testing.T) {
 	}
 }
 
-// Every theme kakel comes with makes the same at the other end, with what
-// the theme editor changed in it, and what its file says of its shape.
+// Every theme kakel comes with makes the same at the other end, with the
+// colours the theme editor changed in it, and what its file says of its
+// shape.
 func TestAThemeMakesTheSameAtTheOtherEnd(t *testing.T) {
 	room, lively := 1.4, themes.MotionLively
 	for i, th := range themes.Built() {
 		if i == 0 {
-			th.Edits = json.RawMessage(`{"motion.caret": {"response": 0, "damping": 1}, "kakel.faint": "#123456"}`)
+			th.Edits = json.RawMessage(`{"kakel.faint": "#123456"}`)
 			th.Shape, th.Motion = &themes.Shape{Room: &room}, lively
 		}
 		made, err := look.Of(th)
@@ -161,6 +169,95 @@ func TestAThemeMakesTheSameAtTheOtherEnd(t *testing.T) {
 		}
 		if !reflect.DeepEqual(got.Look.Theme, made.Theme) || !reflect.DeepEqual(got.Look.Content, made.Content) {
 			t.Errorf("%s is made into another theme", th.Name)
+		}
+	}
+}
+
+// Of the theme editor's changes a page keeps the colours, but for its
+// own, whatever is said of the rest; what it says itself it draws in the
+// theme without any.
+func TestAPageKeepsOnlyTheColoursOfEdits(t *testing.T) {
+	own := theme.Color("kakel.page.test", color.NRGBA{A: 0xff})
+	// What each edit of the host's says is wrong with it.
+	log.SetOutput(io.Discard)
+	defer log.SetOutput(os.Stderr)
+	base := themes.Built()[0]
+	plain, err := look.Of(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	read := func(edits string) guestlook.Theme {
+		t.Helper()
+		th := base
+		th.Edits = json.RawMessage(edits)
+		made, err := look.Of(th)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// As it comes from a host that edits what it likes.
+		raw, err := guestlook.Theme{Look: made, FontSize: 15}.Bytes()
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := guestlook.ReadTheme(raw)
+		if err != nil {
+			t.Fatalf("%s: %v", edits, err)
+		}
+		return got
+	}
+	extremes := []string{`1e9`, `-1e9`, `3e38`, `0`, `""`, `"#00000000"`, `null`, `[1e9]`, `{"response":1e9,"damping":0}`, `{"top":1e9,"left":-1e9}`, `true`}
+	for _, info := range theme.Tokens() {
+		colour := info.Kind == theme.KindColor || info.Kind == theme.KindForeground
+		for _, v := range extremes {
+			got := read(fmt.Sprintf(`{%q: %s, "no.such": 1, "kakel.faint": "#123456"}`, info.Key, v))
+			if !reflect.DeepEqual(got.Look.Plain, plain.Plain) || !got.Readable() {
+				t.Fatalf("%s as %s changes what the page is drawn in", info.Key, v)
+			}
+			if colour && info.Key != own.Key() {
+				continue
+			}
+			for what, th := range map[string][2]theme.Theme{"the panes'": {got.Look.Content, plain.Content}, "the tabs'": {got.Look.Theme, plain.Theme}} {
+				is, _ := th[0].Value(info.Key)
+				was, _ := th[1].Value(info.Key)
+				if info.Key != look.Faint.Key() && !reflect.DeepEqual(is, was) {
+					t.Errorf("%s as %s: in %s theme it is %v", info.Key, v, what, is)
+				}
+			}
+		}
+	}
+	got := read(`{"kakel.faint": "#123456", "ink": "#654321", "kakel.page.test": "#ffffff"}`)
+	if c := look.Faint.In(got.Look.Content); c.R != 0x12 {
+		t.Errorf("an edited colour is %v", c)
+	}
+	if c := widget.Ink.In(got.Look.Theme); c.R != 0x65 {
+		t.Errorf("an edited colour is %v", c)
+	}
+	for _, raw := range []string{`[]`, `"x"`, `null`, `7`} {
+		read(raw)
+	}
+}
+
+// A theme whose words do not stand out from their ground is told, and all
+// of kakel's do.
+func TestAThemeThatCannotBeReadIsTold(t *testing.T) {
+	for _, th := range themes.Built() {
+		made, err := look.Of(th)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !(guestlook.Theme{Look: made}).Readable() {
+			t.Errorf("%s cannot be read", th.Name)
+		}
+	}
+	for _, c := range [][2]string{{"#101010", "#101010"}, {"#303030", "#101010"}, {"#eeeeee", "#ffffff"}} {
+		th := themes.Built()[0]
+		th.FG, th.BG = c[0], c[1]
+		made, err := look.Of(th)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if (guestlook.Theme{Look: made}).Readable() {
+			t.Errorf("%s on %s can be read", c[0], c[1])
 		}
 	}
 }

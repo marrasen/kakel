@@ -201,7 +201,7 @@ func (r *rest) writeEnd(b *strings.Builder, g *grid.Grid) {
 // among it: seq is the whole of what it shows from now on.
 func (t *Terminal) Adopt(cols, rows int, seq []byte) {
 	t.parser = vte.NewParser(t)
-	t.long = longOSC{}
+	t.long = longOSC{most: t.long.most}
 	t.tail = nil
 	t.lastRune = 0
 	if t.scr.OnAltBuffer() {

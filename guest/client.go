@@ -46,6 +46,8 @@ type Session struct {
 	out   *latest
 	key   Key
 	yield func()
+	// large is had by the pane whose large screen is being read, or drawn.
+	large chan struct{}
 
 	// changed has word when the view or the end is new.
 	changed chan struct{}
@@ -144,6 +146,7 @@ func dial(ctx context.Context, nc net.Conn, o Options) (*Session, error) {
 
 	s := &Session{
 		conn: conn, gone: gone, ch: ch, out: newLatest(ch), key: o.Key, yield: o.Yield,
+		large:   make(chan struct{}, 1),
 		changed: make(chan struct{}, 1), moved: make(chan struct{}), over: make(chan struct{}),
 	}
 	if s.yield == nil {
@@ -300,7 +303,7 @@ func (s *Session) Err() error {
 // once the host is being asked. From then the link is spent, and the key
 // is how the guest comes back.
 func (s *Session) Join(ctx context.Context, name, about string) error {
-	if name = plain(name, mostName); name == "" {
+	if name = plainName(name); name == "" {
 		return errors.New("a guest needs a name")
 	}
 	own, err := ssh.NewPublicKey(s.key.private().Public())

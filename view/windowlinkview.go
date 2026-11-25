@@ -73,9 +73,9 @@ func linkChip(live []app.WindowLink) (text string, waits bool) {
 	for _, l := range live {
 		switch {
 		case l.Stands == app.LinkAsking:
-			asking = append(asking, guestCalled(l))
+			asking = append(asking, guestMarked(l))
 		case l.GuestIn():
-			in = append(in, guestCalled(l))
+			in = append(in, guestMarked(l))
 		}
 	}
 	switch {
@@ -98,7 +98,7 @@ func linkChip(live []app.WindowLink) (text string, waits bool) {
 // linkHeading is what a share's card is headed.
 func linkHeading(l app.WindowLink) string {
 	if l.Guest != "" {
-		return l.Guest
+		return guestMarked(l)
 	}
 	return "Link"
 }
@@ -570,7 +570,8 @@ func (c *linkCard) Paint(p *paint.Painter, _ gunim.Frame, _ geom.Size, kids guni
 // is open. Nothing in it works until nothing has been pressed, with the
 // keyboard or the pointer, for a moment: it opens by itself, under the
 // hands of somebody at work in a terminal. Then the button that refuses
-// has the keyboard. A window that loses the keyboard begins that again as
+// has the keyboard, and the one that allows works from it only once it has
+// had it as long: Tab and Space typed on are no answer. A window that loses the keyboard begins that again as
 // it gets it back.
 type guestAsk struct {
 	w    *Window
@@ -583,6 +584,10 @@ type guestAsk struct {
 	// ready says it works, and stop cancels what makes it.
 	ready bool
 	stop  func()
+	// pressed is when something was last pressed, before was when before
+	// that, and byKey says the last was a key.
+	pressed, before time.Time
+	byKey           bool
 }
 
 // askWait is how long nothing is pressed before the dialog that asks
@@ -686,6 +691,7 @@ func newGuestAsk(w *Window, l app.WindowLink) *guestAsk {
 		}
 	}
 	d.OnAccept, d.OnDismiss = answer(true), answer(false)
+	d.Check = g.tooSoon
 	g.setReady(false)
 	return g
 }
@@ -694,6 +700,16 @@ func newGuestAsk(w *Window, l app.WindowLink) *guestAsk {
 func (g *guestAsk) setReady(on bool) {
 	g.ready = on
 	g.d.OK().Disabled, g.d.Cancel().Disabled, g.may.Disabled = !on, !on, !on
+}
+
+// tooSoon is what is said where Allow was worked from the keyboard, and
+// something was pressed right before: the press that brought the keyboard
+// to it, say.
+func (g *guestAsk) tooSoon() string {
+	if g.byKey && g.pressed.Sub(g.before) < askWait {
+		return "Wait a second"
+	}
+	return ""
 }
 
 // gone reports whether the dialog has closed, or closes.
@@ -742,10 +758,13 @@ func (g *guestAsk) tick(u *gunim.UI) {
 }
 
 // Overhear implements [gunim.Overhearer]: whatever is pressed before the
-// dialog works, wherever, has it wait anew.
+// dialog works, wherever, has it wait anew, and what is pressed is counted
+// from.
 func (g *guestAsk) Overhear(e gi.Event, u *gunim.UI) {
 	switch e.(type) {
 	case gi.PointerDown, gi.KeyPress:
+		g.before, g.pressed = g.pressed, u.Now()
+		_, g.byKey = e.(gi.KeyPress)
 		if !g.ready && !g.gone(u) {
 			g.hold(u)
 		}
@@ -809,7 +828,7 @@ func (w *Window) guestRows(rows []sideItem, st app.State) []sideItem {
 		if l.Stands == app.LinkAway {
 			note = "connection lost"
 		}
-		item := sideItem{key: "guest:" + l.ID, text: guestCalled(l), note: note, dim: l.Stands == app.LinkAway,
+		item := sideItem{key: "guest:" + l.ID, text: guestMarked(l), note: note, dim: l.Stands == app.LinkAway,
 			closes: app.StopLink{ID: l.ID}}
 		if l.Window == st.Window {
 			item.local = func(u *gunim.UI) { w.linkDialog(u) }

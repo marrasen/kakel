@@ -41,6 +41,9 @@ var (
 	// Guest is the guest of a window shared with a link: the rings round
 	// the panes it sees, its name, and the chip that says it is there.
 	Guest = theme.Color("kakel.guest", color.NRGBA{R: 0xe6, G: 0xb8, B: 0x55, A: 0xff})
+	// GuestName is that colour where the name is written on a tab, on
+	// which it can be read.
+	GuestName = theme.Color("kakel.guest.name", color.NRGBA{R: 0xe6, G: 0xb8, B: 0x55, A: 0xff})
 )
 
 var TermBackground = theme.Color("kakel.background", color.NRGBA{R: 0x14, G: 0x17, B: 0x1c, A: 0xff})
@@ -317,6 +320,7 @@ func Of(t themes.Theme) (Themed, error) {
 		theme.Set(RowHover, rowHover),
 		theme.Set(Faint, faint),
 		theme.Set(Guest, guest),
+		theme.Set(GuestName, guestName(guest, sideFill, rowActive)),
 		theme.Set(TermBackground, bg),
 		// The tab bar in the title bar: its tabs as the sidebar's rows,
 		// and a tab dragged on the sidebar's fill.
@@ -362,6 +366,19 @@ func Of(t themes.Theme) (Themed, error) {
 	edits := EditsOf(t)
 	return Themed{Name: t.Name, Theme: edits.Over(th), Content: edits.Over(content), Palette: pal, Source: t,
 		Edits: edits, Plain: th, PlainContent: content}, nil
+}
+
+// guestName is the guest's colour as a name on a tab has it, on the tab's
+// fill and a tint of its own.
+func guestName(guest, bar, tab color.NRGBA) color.NRGBA {
+	rgba := func(c color.NRGBA) color.RGBA { return color.RGBA{R: c.R, G: c.G, B: c.B, A: 0xff} }
+	fill := mix(bar, tab, int(tab.A)*100/255)
+	tint := int(widget.BadgeTint.Default() * 100)
+	// Twice round, as the tint moves along.
+	for range 2 {
+		guest = nrgba(grid.Readable(rgba(guest), rgba(mix(fill, guest, tint)), 4.5))
+	}
+	return guest
 }
 
 // EditsOf are the theme editor's changes saved for t. A value this kakel

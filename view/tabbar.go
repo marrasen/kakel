@@ -102,7 +102,8 @@ func (w *Window) tabFace(id string) dock.Face {
 	if !ok {
 		ic = icon.SquareTerminal
 	}
-	return dock.Face{Title: w.tabTitle(id), Short: w.tabShort(id), Icon: ic, Closable: true}
+	return dock.Face{Title: w.tabTitle(id), Short: w.tabShort(id), Icon: ic, Closable: true,
+		Badge: w.guestIn[id], BadgeInk: &look.GuestName}
 }
 
 // tabTitle is what pane id's tab says.

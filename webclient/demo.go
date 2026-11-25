@@ -25,7 +25,12 @@ func init() {
 
 // showDemo shows a terminal with a made-up program in it, until the
 // window closes.
-func showDemo(ctx context.Context, w *gunim.Window, th look.Themed) error {
+func showDemo(ctx context.Context, w *gunim.Window, _ look.Themed) error {
+	// Its colours are the same whatever the browser's user likes.
+	th, err := ownTheme(false)
+	if err != nil {
+		return err
+	}
 	sess := demo.New(yielding())
 	wrote := make(chan struct{}, 1)
 	sh := screen.Open(sess, th.Palette, screen.Hooks{
@@ -59,23 +64,5 @@ func showDemo(ctx context.Context, w *gunim.Window, th look.Themed) error {
 				return nil
 			}
 		}
-	}
-}
-
-// yielding is a function that lets the browser have its thread, to draw
-// and to hear of keys, and returns once it comes back. Go gives it back
-// only when all its goroutines wait, and a sleep too short to wait for
-// is none. A message to the page itself comes back as soon as it may,
-// as a message from the network does.
-func yielding() func() {
-	ch := js.Global().Get("MessageChannel").New()
-	back := make(chan struct{}, 1)
-	ch.Get("port1").Set("onmessage", js.FuncOf(func(js.Value, []js.Value) any {
-		back <- struct{}{}
-		return nil
-	}))
-	return func() {
-		ch.Get("port2").Call("postMessage", js.Null())
-		<-back
 	}
 }

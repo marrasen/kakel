@@ -138,10 +138,18 @@ type Terminal struct {
 	// fifty links to the same page costs one entry.
 	links []string
 	byURL map[string]uint32
+	// linkRoom is how many bytes they may take more, where linksLimited
+	// says that is limited.
+	linksLimited bool
+	mostLinks    int
+	linkRoom     int
 
 	// images are the images a program put in the output, oldest
 	// first, each one holding the line it sits on.
 	images []Image
+	// mostImages is how many bytes they may take, where that is limited.
+	imagesLimited bool
+	mostImages    int
 
 	// cmd is what the shell's prompt marks have said so far.
 	cmd Command
@@ -329,7 +337,7 @@ func (t *Terminal) EscDispatch(intermediates []byte, _ bool, b byte) {
 		t.lastRune = 0
 		t.title = ""
 		t.dir, t.dirHost = "", ""
-		t.links, t.byURL = nil, nil
+		t.links, t.byURL, t.linkRoom = nil, nil, t.mostLinks
 		t.images = nil
 		t.notice, t.progress = "", Progress{}
 	case '=': // DECKPAM
@@ -720,6 +728,19 @@ func (t *Terminal) OscDispatch(params [][]byte, bell bool) {
 // read and to copy.
 const MostLinks = 4096
 
+// linkBytes is what a hyperlink takes besides its address: its places in
+// the two tables, and the room those grow with.
+const linkBytes = 160
+
+// LimitLinks has the hyperlinks the pane remembers take most bytes at
+// most, as a pane's that shows output by somebody it does not know. A
+// link past that is not taken, and the text is drawn without it. None at
+// all are for 0 or less. It is called before anything is written.
+func (t *Terminal) LimitLinks(most int) {
+	t.linksLimited, t.mostLinks = true, max(most, 0)
+	t.linkRoom = t.mostLinks
+}
+
 // setLink takes OSC 8, which is how a program puts a hyperlink under
 // the text it is about to print.
 //
@@ -750,12 +771,16 @@ func (t *Terminal) linkID(uri string) uint32 {
 	if id, had := t.byURL[uri]; had {
 		return id
 	}
-	if len(t.links) >= MostLinks {
+	takes := len(uri) + linkBytes
+	if len(t.links) >= MostLinks || t.linksLimited && takes > t.linkRoom {
 		return 0
 	}
+	t.linkRoom -= takes
 	if t.byURL == nil {
 		t.byURL = map[string]uint32{}
 	}
+	// Its own, not the sequence it came in.
+	uri = strings.Clone(uri)
 	t.links = append(t.links, uri)
 	id := uint32(len(t.links))
 	t.byURL[uri] = id

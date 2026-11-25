@@ -1,7 +1,9 @@
 package vt
 
 import (
+	"runtime"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/marrasen/kakel/grid"
@@ -147,6 +149,68 @@ func TestPastTheCapTheTextIsStillPrinted(t *testing.T) {
 	}
 	if got := renderOf(t, term).At(0, 0).Rune; got != 'p' {
 		t.Errorf("the text past the cap reads %q, want it printed anyway", got)
+	}
+}
+
+// A pane whose links are limited takes no more of them than it has room
+// for, short or long, and a reset gives the room back.
+func TestLinksAreHeldToALimit(t *testing.T) {
+	const most = 64 << 10
+	for _, long := range []int{1, 900} {
+		term := New(40, 5, DefaultPalette(), 10, Callbacks{})
+		term.LimitLinks(most)
+		held := func() (all int) {
+			for _, uri := range term.links {
+				all += len(uri) + linkBytes
+			}
+			return all
+		}
+		write := func() {
+			for i := range 1000 {
+				feed(t, term, "\x1b]8;;https://example.com/"+strconv.Itoa(i)+strings.Repeat("x", long)+"\x07x")
+			}
+		}
+		write()
+		if got := held(); got > most || got < most/2 {
+			t.Errorf("links %d long take %d bytes of %d", long, got, most)
+		}
+		feed(t, term, "\x1bc")
+		write()
+		if got := held(); got > most || got < most/2 {
+			t.Errorf("after a reset, links %d long take %d bytes of %d", long, got, most)
+		}
+	}
+	none := New(40, 5, DefaultPalette(), 10, Callbacks{})
+	none.LimitLinks(-1)
+	feed(t, none, "\x1b]8;;https://example.com/\x07x")
+	if got := linkUnder(t, none, 0, 0); got != "" || renderOf(t, none).At(0, 0).Rune != 'x' {
+		t.Errorf("one that takes no links has %q under its text", got)
+	}
+}
+
+// What the links take is what they are counted as, or less.
+func TestLinksTakeWhatTheyAreCountedAs(t *testing.T) {
+	heap := func() int {
+		runtime.GC()
+		runtime.GC()
+		var m runtime.MemStats
+		runtime.ReadMemStats(&m)
+		return int(m.HeapAlloc)
+	}
+	// Under 5 MB.
+	for _, long := range []int{1, 900} {
+		term := New(40, 5, DefaultPalette(), 10, Callbacks{})
+		was, counted := heap(), 0
+		for i := range MostLinks {
+			uri := "https://example.com/" + strconv.Itoa(i) + strings.Repeat("x", long)
+			counted += len(uri) + linkBytes
+			feed(t, term, "\x1b]8;;"+uri+"\x07")
+		}
+		// And what a heap is out by.
+		if got := heap() - was; got > counted+64<<10 {
+			t.Errorf("links %d long take %d bytes, counted as %d", long, got, counted)
+		}
+		runtime.KeepAlive(term)
 	}
 }
 

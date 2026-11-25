@@ -334,7 +334,7 @@ func decodeJoining(body []byte) (joining, ssh.PublicKey, error) {
 	if err := json.Unmarshal(body, &j); err != nil {
 		return joining{}, nil, fmt.Errorf("%w: a join: %w", errFrame, err)
 	}
-	j.Name, j.About = plain(j.Name, mostName), plain(j.About, mostAbout)
+	j.Name, j.About = plainName(j.Name), plain(j.About, mostAbout)
 	if j.Name == "" {
 		return joining{}, nil, fmt.Errorf("%w: a join with no name", errFrame)
 	}
