@@ -32,10 +32,16 @@ type conversation struct {
 
 func converse(t *testing.T, panes Panes) *conversation {
 	t.Helper()
+	return converseWith(t, panes, nil)
+}
+
+// converseWith is converse, with onCancelled run once the server has cancelled its calls.
+func converseWith(t *testing.T, panes Panes, onCancelled func()) *conversation {
+	t.Helper()
 	toServer, fromTest := io.Pipe()
 	fromServer, toTest := io.Pipe()
 	c := &conversation{t: t, to: fromTest, from: bufio.NewReaderSize(fromServer, 4096), done: make(chan error, 1)}
-	go func() { c.done <- Serve(t.Context(), toServer, toTest, panes) }()
+	go func() { c.done <- serve(t.Context(), toServer, toTest, panes, onCancelled) }()
 	t.Cleanup(func() { _ = fromTest.Close(); _ = fromServer.Close() })
 	return c
 }
@@ -98,7 +104,8 @@ func TestACancelledListTypesNothingMore(t *testing.T) {
 func TestTheAgentGoingStopsAListPartWay(t *testing.T) {
 	panes := &blockingPanes{fakePanes: &fakePanes{code: "gt1-2222-abc", screen: "$ "},
 		started: make(chan struct{}, 1), letGo: make(chan struct{})}
-	c := converse(t, panes)
+	// The wait comes back only once the server has cancelled the call.
+	c := converseWith(t, panes, func() { close(panes.letGo) })
 	c.say(useCode)
 	c.answer()
 	c.say(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"send_keys",` +
@@ -107,9 +114,6 @@ func TestTheAgentGoingStopsAListPartWay(t *testing.T) {
 	if err := c.to.Close(); err != nil {
 		t.Fatalf("close: %v", err)
 	}
-	// Serve waits for the call, which notices it was cancelled once its wait comes back.
-	time.Sleep(50 * time.Millisecond)
-	close(panes.letGo)
 	if err := <-c.done; err != nil {
 		t.Fatalf("serve: %v", err)
 	}

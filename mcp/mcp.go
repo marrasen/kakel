@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -27,10 +28,12 @@ import (
 	"github.com/marrasen/kakel/internal/build"
 )
 
-// protocolVersion is the one version this speaks. An agent that asks
-// for another is answered with this one, which is what the protocol
-// says to do when the version asked for is not on offer.
+// protocolVersion is the newest version this speaks, and the answer to a client asking for one it does not.
 const protocolVersion = "2025-06-18"
+
+// protocolVersions are the versions this speaks: the tools are the same in each, and an older client ignores the
+// fields it does not know.
+var protocolVersions = []string{"2025-06-18", "2025-03-26", "2024-11-05"}
 
 // longestLine caps one message, so a client that sends no newline
 // cannot make this process hold an unbounded buffer.
@@ -263,7 +266,12 @@ type Until struct {
 // so an agent can ask something else during a wait. Only answersAtOnce
 // tool calls run at a time, and one past that is turned away. A tool call
 // is cancelled by notifications/cancelled and when Serve returns.
-func Serve(ctx context.Context, in io.Reader, out io.Writer, panes Panes) (err error) {
+func Serve(ctx context.Context, in io.Reader, out io.Writer, panes Panes) error {
+	return serve(ctx, in, out, panes, nil)
+}
+
+// serve is Serve, running onCancelled once it has cancelled the calls still running, for a test to act then.
+func serve(ctx context.Context, in io.Reader, out io.Writer, panes Panes, onCancelled func()) (err error) {
 	r := bufio.NewReaderSize(in, 4096)
 	s := &server{panes: panes, out: json.NewEncoder(out),
 		broke: make(chan struct{}), stop: ctx.Done(), calls: map[string]context.CancelFunc{}}
@@ -280,6 +288,9 @@ func Serve(ctx context.Context, in io.Reader, out io.Writer, panes Panes) (err e
 	defer func() {
 		close(done)
 		cancelCalls()
+		if onCancelled != nil {
+			onCancelled()
+		}
 		running.Wait()
 		if err == nil {
 			// An answer written on one of those goroutines may have been
@@ -566,8 +577,15 @@ func (s *server) handle(ctx context.Context, line []byte) (response, bool) {
 func (s *server) call(ctx context.Context, req request) (any, *rpcError) {
 	switch req.Method {
 	case "initialize":
+		var params struct {
+			Version string `json:"protocolVersion"`
+		}
+		version := protocolVersion
+		if json.Unmarshal(req.Params, &params) == nil && slices.Contains(protocolVersions, params.Version) {
+			version = params.Version
+		}
 		return map[string]any{
-			"protocolVersion": protocolVersion,
+			"protocolVersion": version,
 			"capabilities":    map[string]any{"tools": map[string]any{}},
 			"serverInfo": map[string]any{
 				"name":    "kakel",

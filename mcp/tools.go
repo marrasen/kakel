@@ -16,11 +16,29 @@ import (
 
 // tool is one thing an agent can ask for.
 type tool struct {
-	Name        string `json:"name"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	InputSchema schema `json:"inputSchema"`
+	Name        string      `json:"name"`
+	Title       string      `json:"title"`
+	Description string      `json:"description"`
+	InputSchema schema      `json:"inputSchema"`
+	Annotations annotations `json:"annotations"`
 }
+
+// annotations tell a client what a tool does to the panes, so it can let reads through without asking.
+type annotations struct {
+	ReadOnly    bool  `json:"readOnlyHint"`
+	Destructive *bool `json:"destructiveHint,omitempty"`
+	Idempotent  bool  `json:"idempotentHint,omitempty"`
+	OpenWorld   bool  `json:"openWorldHint"`
+}
+
+// reads is the annotation for a tool that only looks.
+var reads = annotations{ReadOnly: true, Idempotent: true}
+
+// types is the annotation for a tool that types into a real shell, which can do anything.
+var types = annotations{OpenWorld: true}
+
+// harmless is the annotation for a tool that changes a pane without being able to undo anything there.
+var harmless = annotations{Destructive: new(false)}
 
 // schema says what a tool's arguments look like.
 type schema struct {
@@ -69,12 +87,14 @@ func toolList() []tool {
 				Properties: map[string]field{"code": {Type: "string", Description: "the session code the user gave you"}},
 				Required:   []string{"code"},
 			},
+			Annotations: reads,
 		},
 		{
 			Name:        "list_panes",
 			Title:       "List the panes you have",
 			Description: "The panes in your share now: name, size and what each allows. The user adds and removes panes while you work.",
 			InputSchema: schema{Type: "object", Properties: map[string]field{}},
+			Annotations: reads,
 		},
 		{
 			Name:        "read_pane",
@@ -85,20 +105,7 @@ func toolList() []tool {
 				Properties: map[string]field{"pane": pane, "lines": lines},
 				Required:   []string{"pane"},
 			},
-		},
-		{
-			Name:  "read_output",
-			Title: "Read what the last command printed",
-			Description: "What the last command printed, without the screen around it." +
-				" Without shell integration: everything printed since you last typed.",
-			InputSchema: schema{
-				Type: "object",
-				Properties: map[string]field{
-					"pane":  pane,
-					"lines": {Type: "integer", Description: fmt.Sprintf("most lines to return, counted up from the bottom. Default and max %d.", mostLines)},
-				},
-				Required: []string{"pane"},
-			},
+			Annotations: reads,
 		},
 		{
 			Name:  "send_keys",
@@ -117,6 +124,7 @@ func toolList() []tool {
 				},
 				Required: []string{"pane", "steps"},
 			},
+			Annotations: types,
 		},
 		{
 			Name:  "ask_for_secret",
@@ -134,6 +142,7 @@ func toolList() []tool {
 				},
 				Required: []string{"pane", "what"},
 			},
+			Annotations: harmless,
 		},
 		{
 			Name:  "restart_pane",
@@ -145,6 +154,7 @@ func toolList() []tool {
 				Properties: map[string]field{"pane": pane},
 				Required:   []string{"pane"},
 			},
+			Annotations: harmless,
 		},
 		{
 			Name:  "open_pane",
@@ -157,6 +167,7 @@ func toolList() []tool {
 				Properties: map[string]field{"pane": pane},
 				Required:   []string{"pane"},
 			},
+			Annotations: harmless,
 		},
 		{
 			Name:  "wait_for",
@@ -180,6 +191,7 @@ func toolList() []tool {
 				},
 				Required: []string{"pane"},
 			},
+			Annotations: reads,
 		},
 	}
 }
@@ -249,20 +261,6 @@ func (s *server) runTool(ctx context.Context, name string, args json.RawMessage)
 		}
 		lines, clamped := atMostLines(in.Lines)
 		screen, err := s.panes.Read(in.Pane, lines)
-		if err != nil {
-			return wrong(failed(err))
-		}
-		return say(showScreen(screen, Ending{}, clamped))
-
-	case "read_output":
-		if in.Pane == "" {
-			return missing("pane")
-		}
-		most, clamped := atMostLines(in.Lines)
-		if most == 0 {
-			most = mostLines
-		}
-		screen, err := s.panes.Output(in.Pane, most)
 		if err != nil {
 			return wrong(failed(err))
 		}
@@ -506,7 +504,7 @@ func (s *server) afterWaiting(pane string, screen Screen, ended Ending,
 func (s *server) printedOrScreen(pane string, screen Screen, ended Ending,
 	lines int, wantScreen bool) Screen {
 
-	if wantScreen || ended.Because != agent.EndedOnMarks {
+	if wantScreen || (ended.Because != agent.EndedOnMarks && ended.Because != agent.EndedOnPrompt) {
 		return screen
 	}
 	most := lines

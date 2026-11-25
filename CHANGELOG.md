@@ -21,6 +21,14 @@ instructions short before they reached that rule.
 **send_keys takes steps.** The older `text` and `keys` arguments are no
 longer offered to agents, though a call that uses them still works.
 
+**read_output is gone.** `wait_for` and a list of steps already give
+what a command printed. They now give it also when the shell has no
+shell integration and the prompt came back.
+
+**Agent programs on an older MCP version are answered in it.** kakel
+also marks its reading tools as read only, so an agent program can let
+those through without asking you.
+
 **A wrong argument is named.** A call with `"lines":"50"`, or an argument
 no tool takes, now says which argument is wrong.
 

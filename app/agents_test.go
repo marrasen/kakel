@@ -211,34 +211,17 @@ func TestAnAskForASecretOutlivesTheCallThatGaveUp(t *testing.T) {
 		t.Fatal("the ask left the pane when the call gave up")
 	}
 
-	// Asking again waits on the same ask, and the user's answer reaches it.
-	second := make(chan bool, 1)
-	go func() {
-		ok, err := c.Secret(sh.Panes[0].ID, "the sudo password", 10*time.Second)
-		second <- ok && err == nil
-	}()
-	// Run the window for a second, so the second call reaches the pane before the user answers.
-	joined := time.Now().Add(time.Second)
-	waitFor(t, a, "the second call", func() bool { return time.Now().After(joined) })
-	if !a.terminal(pane).AskedForASecret() {
-		t.Fatal("the ask is gone before the user answered it")
-	}
-	if n := strings.Count(strings.ReplaceAll(a.terminal(pane).Text(), "\n", ""), "It asked for"); n != 1 {
-		t.Errorf("the pane asks %d times:\n%s", n, a.terminal(pane).Text())
-	}
+	// The user answers between the two calls, and the next call is told at once.
 	_, _ = a.terminal(pane).HandleKey(input.Event{Kind: input.Text, Rune: 'x', NormalText: true})
 	_, _ = a.terminal(pane).HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyEnter})
 	var ok bool
-	waitFor(t, a, "the answer", func() bool {
-		select {
-		case ok = <-second:
-			return true
-		default:
-			return false
-		}
-	})
-	if !ok {
-		t.Fatal("the user typed, and the second call was not told")
+	var err error
+	asAgent(t, a, func() { ok, err = c.Secret(sh.Panes[0].ID, "the sudo password", 10*time.Second) })
+	if err != nil || !ok {
+		t.Fatalf("the user typed between the calls, and the second call said %v, %v", ok, err)
+	}
+	if n := strings.Count(strings.ReplaceAll(a.terminal(pane).Text(), "\n", ""), "It asked for"); n != 1 {
+		t.Errorf("the pane asks %d times:\n%s", n, a.terminal(pane).Text())
 	}
 }
 

@@ -431,9 +431,7 @@ func TestWhatTheShellSaidReachesTheAgent(t *testing.T) {
 			`{"name":"read_pane","arguments":{"pane":"`+pane.ID+`"}}}`,
 		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":`+
 			`{"name":"wait_for","arguments":{"pane":"`+pane.ID+`","quiet_ms":30,`+
-			`"timeout_ms":5000}}}`,
-		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":`+
-			`{"name":"read_output","arguments":{"pane":"`+pane.ID+`"}}}`)
+			`"timeout_ms":5000}}}`)
 
 	said := byID(t, answers)
 	screen, failed := textOf(t, said[2])
@@ -454,12 +452,8 @@ func TestWhatTheShellSaidReachesTheAgent(t *testing.T) {
 		t.Errorf("the wait does not say how the command ended:\n%s", waited)
 	}
 
-	// And the last command's output comes back through the same layers,
-	// carrying what the window said about where it began.
-	printed, failed := textOf(t, said[4])
-	if failed {
-		t.Fatalf("reading the output failed: %q", printed)
-	}
+	// And the wait carries the last command's output through the same layers, with what the window said about it.
+	printed := waited
 	if !strings.Contains(printed, "shell.png") {
 		t.Errorf("the output never reached the agent:\n%s", printed)
 	}

@@ -360,7 +360,7 @@ func TestItSaysWhatItIsAndWhatItCanDo(t *testing.T) {
 
 	raw, _ = json.Marshal(answers[1].Result)
 	for _, want := range []string{
-		"use_session_code", "list_panes", "read_pane", "read_output", "send_keys",
+		"use_session_code", "list_panes", "read_pane", "send_keys",
 		"ask_for_secret", "restart_pane", "open_pane", "wait_for",
 	} {
 		if !strings.Contains(string(raw), want) {
@@ -375,7 +375,7 @@ func TestItSaysWhatItIsAndWhatItCanDo(t *testing.T) {
 	if err := json.Unmarshal(raw, &listed); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if len(listed.Tools) != 9 {
+	if len(listed.Tools) != 8 {
 		var names []string
 		for _, tl := range listed.Tools {
 			names = append(names, tl.Name)
@@ -745,14 +745,13 @@ func TestEveryToolSaysWhatItTakes(t *testing.T) {
 	if err := json.Unmarshal(raw, &listed); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if len(listed.Tools) != 9 {
+	if len(listed.Tools) != 8 {
 		t.Fatalf("it offers %d tools", len(listed.Tools))
 	}
 	needs := map[string][]string{
 		"use_session_code": {"code"},
 		"list_panes":       nil,
 		"read_pane":        {"pane"},
-		"read_output":      {"pane"},
 		"ask_for_secret":   {"pane", "what"},
 		"restart_pane":     {"pane"},
 		"open_pane":        {"pane"},
@@ -1067,83 +1066,72 @@ func TestAWaitSaysWhyItEnded(t *testing.T) {
 	}
 }
 
-// read_output asks the window for the last command's output and hands it
-// back with what the window said about it.
-func TestReadingTheOutputOfTheLastCommand(t *testing.T) {
-	panes := &fakePanes{
-		code: "gt1-2222-abc", screen: "$ ", output: "altscreen.png\nshell.png",
-		marks: true, done: 1, hasStatus: true, yours: true,
-	}
-	answers := talk(t, panes,
-		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":`+
-			`{"name":"use_session_code","arguments":{"code":"gt1-2222-abc"}}}`,
-		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":`+
-			`{"name":"read_output","arguments":{"pane":"1.1"}}}`)
-
-	text, failed := textOf(t, answers[1])
-	if failed {
-		t.Fatalf("reading the output failed: %s", text)
-	}
-	if !strings.Contains(text, "shell.png") {
-		t.Errorf("the answer does not carry the output:\n%s", text)
-	}
-	if !strings.Contains(text, "this is what the last command printed") {
-		t.Errorf("the answer drops what the window said about it:\n%s", text)
-	}
-	// And the screen the pane is showing is not what came back.
-	if strings.Contains(text, "$ ") {
-		t.Errorf("the answer carries the screen as well:\n%s", text)
-	}
-
-	// None asked for is as much as one read gives.
-	panes.mu.Lock()
-	most := panes.mostOutput
-	panes.mu.Unlock()
-	if most != mostLines {
-		t.Errorf("it asked for %d lines, want %d", most, mostLines)
-	}
-}
-
-// A pane with no boundary says so, and the failure is the tool's answer
-// rather than a broken call: the agent can act on it.
-func TestReadingTheOutputWithNoBoundarySaysSo(t *testing.T) {
-	panes := &fakePanes{code: "gt1-2222-abc", screen: "$ "}
-	answers := talk(t, panes,
-		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":`+
-			`{"name":"use_session_code","arguments":{"code":"gt1-2222-abc"}}}`,
-		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":`+
-			`{"name":"read_output","arguments":{"pane":"1.1"}}}`)
-
-	text, failed := textOf(t, answers[1])
-	if !failed {
-		t.Fatalf("it answered as though it had the output: %s", text)
-	}
-	if !strings.Contains(text, "where the last command's output began") {
-		t.Errorf("it does not say why: %q", text)
-	}
-}
-
-// An agent may ask for fewer lines, and too many are cut to what one
-// read gives.
-func TestReadingTheOutputTakesALineCount(t *testing.T) {
-	for _, tc := range []struct {
-		asked string
-		want  int
-	}{
-		{`,"lines":20`, 20},
-		{`,"lines":100000`, mostLines},
-	} {
-		panes := &fakePanes{code: "gt1-2222-abc", screen: "$ ", output: "one\ntwo"}
-		talk(t, panes,
-			`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":`+
-				`{"name":"use_session_code","arguments":{"code":"gt1-2222-abc"}}}`,
-			`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":`+
-				`{"name":"read_output","arguments":{"pane":"1.1"`+tc.asked+`}}}`)
+// A wait that ends on the shell's marks, or on the prompt coming back, gives what the command printed, not the screen.
+func TestAWaitGivesWhatTheCommandPrinted(t *testing.T) {
+	for _, because := range []string{agent.EndedOnMarks, agent.EndedOnPrompt} {
+		panes := &fakePanes{code: "gt1-2222-abc", screen: "$ ", output: "altscreen.png\nshell.png", because: because}
+		answers := talk(t, panes, useCode,
+			`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"wait_for","arguments":{"pane":"1.1"}}}`)
+		text, failed := textOf(t, answers[1])
+		if failed {
+			t.Fatalf("waiting failed: %s", text)
+		}
+		if !strings.Contains(text, "shell.png") || strings.Contains(text, "$ ") {
+			t.Errorf("ended because %s, the answer is not the output:\n%s", because, text)
+		}
 		panes.mu.Lock()
 		most := panes.mostOutput
 		panes.mu.Unlock()
-		if most != tc.want {
-			t.Errorf("asked%s: it asked the window for %d lines, want %d", tc.asked, most, tc.want)
+		if most != mostLines {
+			t.Errorf("it asked for %d lines of output, want %d", most, mostLines)
+		}
+	}
+}
+
+// A wait that ended some other way gives the screen, and so does one whose output cannot be picked out.
+func TestAWaitGivesTheScreenWhenThereIsNoOutput(t *testing.T) {
+	for _, tc := range []struct {
+		because, output string
+	}{
+		{agent.EndedOnQuiet, "shell.png"},
+		{agent.EndedOnMarks, ""},
+	} {
+		panes := &fakePanes{code: "gt1-2222-abc", screen: "$ ", output: tc.output, because: tc.because}
+		answers := talk(t, panes, useCode,
+			`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"wait_for","arguments":{"pane":"1.1"}}}`)
+		text, failed := textOf(t, answers[1])
+		if failed {
+			t.Fatalf("waiting failed: %s", text)
+		}
+		if !strings.HasPrefix(text, "$ ") {
+			t.Errorf("ended because %s with output %q, the answer is not the screen:\n%s", tc.because, tc.output, text)
+		}
+	}
+}
+
+// An agent on an older protocol is answered in its own version, and one asking for an unknown version gets ours.
+func TestInitializeAnswersInTheVersionAskedFor(t *testing.T) {
+	for asked, want := range map[string]string{
+		"2024-11-05": "2024-11-05", "2025-03-26": "2025-03-26", "2025-06-18": "2025-06-18", "2099-01-01": protocolVersion,
+	} {
+		answers := talk(t, &fakePanes{}, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":`+
+			`{"protocolVersion":"`+asked+`","capabilities":{},"clientInfo":{"name":"x","version":"1"}}}`)
+		raw, _ := json.Marshal(answers[0].Result)
+		var said struct {
+			Version string `json:"protocolVersion"`
+		}
+		if err := json.Unmarshal(raw, &said); err != nil || said.Version != want {
+			t.Errorf("asked for %s, it answered %s", asked, raw)
+		}
+	}
+}
+
+// Only the tools that look at a pane say they are read only, so a client may let those through without asking.
+func TestOnlyTheReadingToolsAreReadOnly(t *testing.T) {
+	reading := map[string]bool{"use_session_code": true, "list_panes": true, "read_pane": true, "wait_for": true}
+	for _, tl := range toolList() {
+		if tl.Annotations.ReadOnly != reading[tl.Name] {
+			t.Errorf("%s says read only %v", tl.Name, tl.Annotations.ReadOnly)
 		}
 	}
 }
