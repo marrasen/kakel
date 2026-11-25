@@ -217,12 +217,11 @@ func (c *Client) answerWithin(want ask) time.Duration {
 	if patience <= 0 {
 		patience = promptly
 	}
-	// A secret waits for a person to type, which is the one thing here
-	// slower than a wait.
+	// A secret waits for a person to type.
 	if want.Do == "secret" {
 		asked := time.Duration(want.WaitMS) * time.Millisecond
-		if asked <= 0 || asked > LongestSecretWait {
-			asked = LongestSecretWait
+		if asked <= 0 || asked > SecretCallWait {
+			asked = SecretCallWait
 		}
 		return asked + patience
 	}

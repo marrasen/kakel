@@ -7,6 +7,17 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
+## Unreleased
+
+### Fixed
+
+**An agent's ask for a secret no longer stalls its other tools.** While
+an agent waited for you to type a password, none of its other calls got
+an answer, for up to 10 minutes. Its agent program gave up on them, and
+could drop the connection to kakel altogether. One ask now waits at most
+45 seconds. The line asking you stays on the pane for up to 10 minutes,
+and the agent asks again to go on waiting.
+
 ## v0.12.2-beta.19
 
 ### Added
