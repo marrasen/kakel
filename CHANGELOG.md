@@ -7,6 +7,18 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
+## Unreleased
+
+### Changed
+
+**A server whose host key changed can be accepted.** kakel used to refuse
+the connection with no way past it. It now asks, and shows the old key's
+fingerprint beside the new one. The question opens on Cancel. A yes
+replaces the old entry in known_hosts and connects. Other hosts on the
+same known_hosts line keep their entry. An entry that matches only
+through a wildcard is left alone, and the error names the line to edit
+by hand.
+
 ## v0.12.2-beta.20
 
 ### Changed

@@ -306,6 +306,7 @@ func connect(ctx context.Context, to reach, via *Conn, cfg Config) (*Conn, error
 		if err != nil {
 			return nil, err
 		}
+		keys.retried = true
 		hostKey = keys.callback(ctx, cfg.Ask)
 	}
 

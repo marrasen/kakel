@@ -73,6 +73,23 @@ func dial(ctx context.Context, to reach, addr, user string, next ssh.ClientAuthC
 			if err2 == nil {
 				return client, nil
 			}
+			// The server has no key of a recorded type any more, so the key it did present is the one to offer.
+			var ck *changedKey
+			var neg *ssh.AlgorithmNegotiationError
+			if errors.As(err2, &neg) && neg.What == "host key" && errors.As(err, &ck) {
+				if err3 := ck.offer(); err3 != nil {
+					return nil, describeHostKeyError(err3, addr)
+				}
+				client, err3 := dialOnce(ctx, to, addr, base, saying)
+				if err3 != nil {
+					return nil, describeHostKeyError(err3, addr)
+				}
+				return client, nil
+			}
+			// A changed key put off for the retry was settled there, so the retry's error is the one to report.
+			if errors.As(err, &ck) {
+				return nil, describeHostKeyError(err2, addr)
+			}
 			// Both, because the first attempt is the one that reports a
 			// key mismatch and the second is the one that says why the
 			// retry did not help either.

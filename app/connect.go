@@ -741,11 +741,33 @@ func (q asker) TrustHostKey(ctx context.Context, k remote.HostKey) (bool, error)
 	if k.Shown != "" {
 		who = k.Shown
 	}
+	if len(k.Was) > 0 {
+		return q.trustChangedKey(ctx, who, k)
+	}
 	text := fmt.Sprintf("%s is new to this computer. Its %s key has the fingerprint %s. Connect only if that matches the one its owner gave you.",
 		who, k.Type(), k.Fingerprint())
 	// Careful: it opens on Cancel, as the one question where yes by
 	// reflex is the answer that cannot be taken back.
 	ans, err := q.a.ask(ctx, Ask{Title: "Trust this server?", Text: text, Yes: "Trust and Connect", Careful: true, Icon: "shield-alert"})
+	if errors.Is(err, errDeclined) {
+		return false, nil
+	}
+	return err == nil && ans.Yes, err
+}
+
+// trustChangedKey asks whether to replace the host key known_hosts records for who with the one it presents now.
+func (q asker) trustChangedKey(ctx context.Context, who string, k remote.HostKey) (bool, error) {
+	var was []string
+	for _, old := range k.Was {
+		o := remote.HostKey{Key: old}
+		was = append(was, o.Type()+" key "+o.Fingerprint())
+	}
+	text := fmt.Sprintf("The host key for %s has changed. This computer knows it by its %s. "+
+		"It now presents the %s key %s. "+
+		"A rebuilt server gets a new key. So does a connection someone is listening in on. "+
+		"Accept the new key only if the server's owner confirms its fingerprint.",
+		who, strings.Join(was, " and its "), k.Type(), k.Fingerprint())
+	ans, err := q.a.ask(ctx, Ask{Title: "Host key changed", Text: text, Yes: "Replace Key and Connect", Danger: true, Icon: "shield-alert"})
 	if errors.Is(err, errDeclined) {
 		return false, nil
 	}

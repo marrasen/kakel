@@ -1,13 +1,20 @@
 package remote
 
 import (
+	"bytes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"errors"
+	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 
 	"github.com/marrasen/kakel/internal/sshtest"
 )
@@ -151,17 +158,14 @@ func TestDialRefusedHostKeyDoesNotConnectOrRecord(t *testing.T) {
 	}
 }
 
-// A key that does not match the one on record is a different thing
-// entirely. There is no answer a user could give that would make
-// connecting safe, so they are not asked.
-func TestDialChangedHostKeyIsNeverOffered(t *testing.T) {
+// A changed key with nobody to ask is refused, and the error names the risk.
+func TestDialChangedHostKeyWithNobodyToAskIsRefused(t *testing.T) {
 	s := sshtest.New(t)
 	other := sshtest.New(t)
-	ask := newTestAsk()
 
 	kh := sshtest.WriteKnownHosts(t, s.LineFor(other.HostKey()))
 	cfg := checkedConfig(t, s, kh)
-	cfg.Ask = ask
+	cfg.Ask = nil
 
 	_, err := Connect(t.Context(), cfg)
 	if err == nil {
@@ -173,8 +177,167 @@ func TestDialChangedHostKeyIsNeverOffered(t *testing.T) {
 	if !strings.Contains(err.Error(), "man-in-the-middle") {
 		t.Fatalf("error = %v, want it to name the risk", err)
 	}
-	if _, _, keys := ask.asked(); len(keys) != 0 {
-		t.Fatalf("the user was offered a changed host key: %+v", keys)
+}
+
+// A changed key is offered with the old key beside it, and a yes replaces the old entry.
+func TestDialChangedHostKeyAcceptedReplacesTheOldOne(t *testing.T) {
+	s := sshtest.New(t)
+	other := sshtest.New(t)
+	third := sshtest.New(t)
+	ask := newTestAsk()
+
+	kh := sshtest.WriteKnownHosts(t, "# kept", third.KnownHostsLine(), s.LineFor(other.HostKey()))
+	cfg := checkedConfig(t, s, kh)
+	cfg.Ask = ask
+
+	c, err := Connect(t.Context(), cfg)
+	if err != nil {
+		t.Fatalf("Connect after the new key was accepted: %v", err)
+	}
+	_ = c.Close()
+
+	_, _, keys := ask.asked()
+	if len(keys) != 1 {
+		t.Fatalf("the user was asked %d times, want once", len(keys))
+	}
+	if got := keys[0].Fingerprint(); got != ssh.FingerprintSHA256(s.HostKey()) {
+		t.Errorf("asked about %q, want the key the server presented", got)
+	}
+	if len(keys[0].Was) != 1 || ssh.FingerprintSHA256(keys[0].Was[0]) != ssh.FingerprintSHA256(other.HostKey()) {
+		t.Errorf("Was = %v, want the key known_hosts recorded", keys[0].Was)
+	}
+
+	b, err := os.ReadFile(kh)
+	if err != nil {
+		t.Fatalf("read known_hosts: %v", err)
+	}
+	want := "# kept\n" + third.KnownHostsLine() + "\n" + s.KnownHostsLine() + "\n"
+	if string(b) != want {
+		t.Fatalf("known_hosts holds\n%s\nwant\n%s", b, want)
+	}
+
+	second := newTestAsk()
+	cfg.Ask = second
+	c2, err := Connect(t.Context(), cfg)
+	if err != nil {
+		t.Fatalf("second Connect: %v", err)
+	}
+	_ = c2.Close()
+	if _, _, keys := second.asked(); len(keys) != 0 {
+		t.Fatalf("the replaced key was asked about again: %+v", keys)
+	}
+}
+
+// Saying no to a changed key connects nothing and leaves known_hosts as it was.
+func TestDialChangedHostKeyRefusedLeavesKnownHosts(t *testing.T) {
+	s := sshtest.New(t)
+	other := sshtest.New(t)
+	ask := newTestAsk()
+	ask.trust = false
+
+	kh := sshtest.WriteKnownHosts(t, s.LineFor(other.HostKey()))
+	before, err := os.ReadFile(kh)
+	if err != nil {
+		t.Fatalf("read known_hosts: %v", err)
+	}
+	cfg := checkedConfig(t, s, kh)
+	cfg.Ask = ask
+
+	if _, err := Connect(t.Context(), cfg); !errors.Is(err, ErrHostKeyRefused) {
+		t.Fatalf("Connect = %v, want ErrHostKeyRefused", err)
+	}
+	after, err := os.ReadFile(kh)
+	if err != nil {
+		t.Fatalf("read known_hosts: %v", err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("known_hosts changed for a refused key:\n%s", after)
+	}
+}
+
+// A server that no longer has a key of the recorded type is offered with the key it does have.
+func TestDialChangedHostKeyOfAnotherTypeIsOffered(t *testing.T) {
+	s := sshtest.New(t)
+	ask := newTestAsk()
+
+	ec, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	old, err := ssh.NewPublicKey(&ec.PublicKey)
+	if err != nil {
+		t.Fatalf("public key: %v", err)
+	}
+	kh := sshtest.WriteKnownHosts(t, s.LineFor(old))
+	cfg := checkedConfig(t, s, kh)
+	cfg.Ask = ask
+
+	c, err := Connect(t.Context(), cfg)
+	if err != nil {
+		t.Fatalf("Connect after the new key was accepted: %v", err)
+	}
+	_ = c.Close()
+	_, _, keys := ask.asked()
+	if len(keys) != 1 || len(keys[0].Was) != 1 || keys[0].Was[0].Type() != old.Type() {
+		t.Fatalf("asked %+v, want one question naming the recorded %s key", keys, old.Type())
+	}
+	b, err := os.ReadFile(kh)
+	if err != nil {
+		t.Fatalf("read known_hosts: %v", err)
+	}
+	if string(b) != s.KnownHostsLine()+"\n" {
+		t.Fatalf("known_hosts holds %q, want only the new key", b)
+	}
+}
+
+// A line naming other hosts too keeps them, and a hashed name is recognised.
+func TestDialChangedHostKeyKeepsOtherHostsOnTheLine(t *testing.T) {
+	s := sshtest.New(t)
+	other := sshtest.New(t)
+	host, port := s.Host()
+	addr := knownhosts.Normalize(net.JoinHostPort(host, strconv.Itoa(port)))
+	shared := knownhosts.Line([]string{"elsewhere.example", addr}, other.HostKey())
+	hashed := knownhosts.Line([]string{knownhosts.HashHostname(addr)}, other.HostKey())
+
+	kh := sshtest.WriteKnownHosts(t, shared, hashed)
+	cfg := checkedConfig(t, s, kh)
+	cfg.Ask = newTestAsk()
+
+	c, err := Connect(t.Context(), cfg)
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	_ = c.Close()
+	b, err := os.ReadFile(kh)
+	if err != nil {
+		t.Fatalf("read known_hosts: %v", err)
+	}
+	want := knownhosts.Line([]string{"elsewhere.example"}, other.HostKey()) + "\n" + s.KnownHostsLine() + "\n"
+	if string(b) != want {
+		t.Fatalf("known_hosts holds\n%s\nwant\n%s", b, want)
+	}
+}
+
+// An entry that matches only through a wildcard is not edited, and the connection fails saying where it is.
+func TestDialChangedHostKeyUnderAPatternIsLeftAlone(t *testing.T) {
+	s := sshtest.New(t)
+	other := sshtest.New(t)
+	_, port := s.Host()
+	line := "[*]:" + strconv.Itoa(port) + " " + string(bytes.TrimSpace(ssh.MarshalAuthorizedKey(other.HostKey())))
+	kh := sshtest.WriteKnownHosts(t, line)
+	cfg := checkedConfig(t, s, kh)
+	cfg.Ask = newTestAsk()
+
+	_, err := Connect(t.Context(), cfg)
+	if err == nil || !strings.Contains(err.Error(), "pattern") {
+		t.Fatalf("Connect = %v, want it to say the entry is a pattern", err)
+	}
+	b, err := os.ReadFile(kh)
+	if err != nil {
+		t.Fatalf("read known_hosts: %v", err)
+	}
+	if string(b) != line+"\n" {
+		t.Fatalf("known_hosts changed: %q", b)
 	}
 }
 
@@ -340,5 +503,45 @@ func TestDialWillNotRecordThroughSomethingThatIsNotAFile(t *testing.T) {
 
 	if _, err := Connect(t.Context(), cfg); err == nil {
 		t.Fatal("Connect recorded a host key through a directory")
+	}
+}
+
+// An entry written with SSH's own port in brackets names the host as plainly as one without it.
+func TestWithoutHostMatchesABracketedDefaultPort(t *testing.T) {
+	key := sshtest.New(t).HostKey()
+	line := []byte(knownhosts.Line([]string{"other.example"}, key))
+	line = append([]byte("[host.example]:22,"), line...)
+	rest, ok := withoutHost(line, "host.example:22")
+	if !ok {
+		t.Fatal("withoutHost took [host.example]:22 for a pattern")
+	}
+	if want := knownhosts.Line([]string{"other.example"}, key); string(rest) != want {
+		t.Fatalf("withoutHost = %q, want %q", rest, want)
+	}
+}
+
+// A known_hosts file that changed after it was read is not replaced, so a line appended meanwhile is kept.
+func TestReplaceFileKeepsALineAppendedMeanwhile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "known_hosts")
+	if err := os.WriteFile(path, []byte("a\nb\n"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	read := []byte("a\n")
+	if err := replaceFile(path, []byte("x\n"), 0o600, read); !errors.Is(err, errMovedUnder) {
+		t.Fatalf("replaceFile = %v, want errMovedUnder", err)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if string(b) != "a\nb\n" {
+		t.Fatalf("known_hosts holds %q, want it untouched", b)
+	}
+	left, err := os.ReadDir(filepath.Dir(path))
+	if err != nil {
+		t.Fatalf("read dir: %v", err)
+	}
+	if len(left) != 1 {
+		t.Fatalf("the staged file was left behind: %v", left)
 	}
 }

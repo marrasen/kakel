@@ -19,6 +19,7 @@ import (
 	"github.com/marrasen/kakel/internal/testhome"
 	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/remote"
+	"golang.org/x/crypto/ssh"
 )
 
 // dialApp is a program side and the test SSH server, saved as "srv",
@@ -175,6 +176,32 @@ func TestSigningInSaysAPasswordWasRefused(t *testing.T) {
 	}
 	if first, second := <-said, <-said; first != "" || second != "Invalid password." {
 		t.Fatalf("the questions said %q, then %q", first, second)
+	}
+}
+
+// A changed host key is asked about as a danger, naming the old key and the new one.
+func TestAChangedHostKeyNamesBothKeys(t *testing.T) {
+	a, _ := dialApp(t)
+	now, was := sshtest.New(t).HostKey(), sshtest.New(t).HostKey()
+	k := remote.HostKey{Addr: "10.8.2.233:22", Key: now, Was: []ssh.PublicKey{was}}
+	got := make(chan bool, 1)
+	go func() {
+		ok, _ := newAsker(a, "").TrustHostKey(t.Context(), k)
+		got <- ok
+	}()
+	waitFor(t, a, "the changed key question", func() bool { return len(a.st.Asks) > 0 })
+	q := a.st.Asks[0]
+	if q.Title != "Host key changed" || !q.Danger || q.Yes != "Replace Key and Connect" {
+		t.Fatalf("asked %+v", q)
+	}
+	for _, fp := range []string{ssh.FingerprintSHA256(now), ssh.FingerprintSHA256(was), "10.8.2.233:22"} {
+		if !strings.Contains(q.Text, fp) {
+			t.Errorf("the question %q leaves out %s", q.Text, fp)
+		}
+	}
+	a.handle(AskAnswered{ID: q.ID, Yes: true})
+	if !<-got {
+		t.Fatal("a yes did not accept the new key")
 	}
 }
 
