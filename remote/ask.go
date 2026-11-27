@@ -32,7 +32,9 @@ type Ask interface {
 	Question(ctx context.Context, q Question) ([]string, error)
 
 	// TrustHostKey asks whether to connect to a host that is not in
-	// known_hosts. Answering yes records the key.
+	// known_hosts, or whose key no longer matches the one there when
+	// key.Was is set. Answering yes records the key, in place of the
+	// old one for a changed key.
 	TrustHostKey(ctx context.Context, key HostKey) (bool, error)
 
 	// Notice is something a server said rather than asked: a link to
@@ -103,7 +105,8 @@ type Question struct {
 	Echo    []bool
 }
 
-// HostKey is a host key offered by a server that is not in known_hosts.
+// HostKey is a host key offered by a server that is not in known_hosts,
+// or that no longer matches it.
 type HostKey struct {
 	// Addr is the host:port being connected to.
 	Addr string
@@ -114,6 +117,10 @@ type HostKey struct {
 
 	// Key is what the server presented.
 	Key ssh.PublicKey
+
+	// Was is what known_hosts records for the host when Key does not
+	// match it, and empty for a host that is new.
+	Was []ssh.PublicKey
 }
 
 // Type returns the key algorithm, such as ssh-ed25519.
