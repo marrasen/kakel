@@ -92,10 +92,43 @@ const (
 	frameProgram = 'P'
 )
 
-// frameTyped, from the guest, is what it typed, and all it can say there.
-// It begins with the count of frameProgram as the guest had it, in four
-// bytes: what was typed for a program that ended is not for the next.
-const frameTyped = 'T'
+// From the guest:
+const (
+	// frameTyped is what it typed. It begins with the count of
+	// frameProgram as the guest had it, in four bytes: what was typed for
+	// a program that ended is not for the next.
+	frameTyped = 'T'
+
+	// frameFit is the columns and the rows, two bytes each, that the pane
+	// has room for on the guest's page, for the host to size the program
+	// to while the share has the guest set the size. Both zero give the
+	// host's size back. Only the latest counts.
+	frameFit = 'Z'
+)
+
+// fitLen is how long a frameFit's body is.
+const fitLen = 4
+
+// fitFrame asks for the pane to be c.
+func fitFrame(c Cells) []byte {
+	var b [fitLen]byte
+	binary.BigEndian.PutUint16(b[:], uint16(c.Cols))
+	binary.BigEndian.PutUint16(b[2:], uint16(c.Rows))
+	return frame(frameFit, b[:])
+}
+
+// readFit reads the body of a fitFrame: a size to hold, or none, and
+// whether it is either.
+func readFit(body []byte) (Cells, bool) {
+	if len(body) != fitLen {
+		return Cells{}, false
+	}
+	c := Cells{Cols: int(binary.BigEndian.Uint16(body)), Rows: int(binary.BigEndian.Uint16(body[2:]))}
+	return c, c == Cells{} || goodSize(c.Cols, c.Rows)
+}
+
+// Cells is the size of a terminal, in columns and rows.
+type Cells struct{ Cols, Rows int }
 
 // programLen and countLen are what a frameProgram is, and what a
 // frameTyped begins with.
@@ -161,7 +194,7 @@ var (
 	controlToGuest = mosts{frameJoin: 0, frameWaiting: 0, frameState: mostState, frameEnded: mostEnded}
 	controlToHost  = mosts{frameName: mostJoining, frameFocus: mostID, frameFollow: 0, frameLeave: 0}
 	paneToGuest    = mosts{frameScreen: mostScreen + 4, frameData: mostData, frameProgram: programLen}
-	paneToHost     = mosts{frameTyped: countLen + mostTyped}
+	paneToHost     = mosts{frameTyped: countLen + mostTyped, frameFit: fitLen}
 )
 
 // errFrame is a far end that says something it has no business saying.
@@ -277,6 +310,13 @@ type State struct {
 	// the host has not said.
 	Room Size `json:",omitzero"`
 	Cell Size `json:",omitzero"`
+
+	// GuestSizes says the guest's page sets the size of the terminals it
+	// shows, rather than the host's window: the page lays its panes out
+	// at its own size, and says what fits each, which the host sizes the
+	// program to. Sizes the guest says while it does not are dropped by
+	// the host.
+	GuestSizes bool `json:",omitempty"`
 }
 
 // Size is a width and a height, in the host's logical pixels.
@@ -308,7 +348,7 @@ func encodeState(st State) ([]byte, error) {
 func (st State) least() State {
 	few := State{
 		HostName: plain(st.HostName, mostName),
-		CanType:  st.CanType, Panes: []Pane{},
+		CanType:  st.CanType, GuestSizes: st.GuestSizes, Panes: []Pane{},
 		Room: st.Room.within(mostRoom), Cell: st.Cell.within(mostCell),
 	}
 	if len(st.HostIn) <= mostID {

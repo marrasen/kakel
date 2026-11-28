@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"slices"
 	"sync"
@@ -34,6 +35,19 @@ const (
 	// typedAgain is how long after a guest typed in a pane it is told that
 	// it types there still.
 	typedAgain = time.Second
+
+	// fitEvery is how often at most a pane is sized to what the guest
+	// says fits it: a program redraws its screen each time, and the guest
+	// says so as fast as its page changes size. The latest is held to.
+	fitEvery = 100 * time.Millisecond
+
+	// fitsAwayFor is how long the sizes a guest set stay once its
+	// connection is lost or replaced, for one that comes straight back:
+	// past it, and whatever the guest has not said again, the host's sizes
+	// are back. unfitAfter is how long after a pane's channel has gone the
+	// connection is looked at, to tell a pane closed from one lost.
+	fitsAwayFor = 10 * time.Second
+	unfitAfter  = time.Second
 )
 
 // How long a share waits for things, for a HostConfig that does not say.
@@ -118,6 +132,11 @@ type Status struct {
 	// has drawn.
 	Follows bool
 
+	// Sizes are the sizes the guest has its terminals be, by pane, while
+	// the state published says GuestSizes: for the host to size each
+	// program to. A pane not in it has the host's size.
+	Sizes map[string]Cells
+
 	// Until is when the phase ends by itself: a link's expiry, the end of
 	// asking, or the end of waiting for a guest who is away. Zero while
 	// nothing is waited for.
@@ -167,6 +186,13 @@ type Host struct {
 	typedAt        time.Time
 	follows        bool
 	hostIn         string
+
+	// guestSizes says the guest sets the size of what it is shown, and
+	// fits are the sizes it has set, by pane, each with the stream that
+	// set it. fitsAway takes away those of a connection that is lost.
+	guestSizes bool
+	fits       map[string]fitBy
+	fitsAway   *time.Timer
 
 	conns map[*hostConn]struct{}
 	// arriving are the callers that prove a key, and unjoined those that
@@ -233,6 +259,12 @@ func NewHost(cfg HostConfig) (*Host, error) {
 // Secret is what the link carries.
 func (h *Host) Secret() Secret { return h.secret }
 
+// fitBy is a size a guest set a pane to, and the stream it came on.
+type fitBy struct {
+	Cells
+	by *stream
+}
+
 // Status is how the share stands now.
 func (h *Host) Status() Status {
 	h.mu.Lock()
@@ -240,6 +272,12 @@ func (h *Host) Status() Status {
 	st := Status{
 		Phase: h.phase, Reason: h.why, Guest: h.guest, Here: h.cur != nil,
 		Focus: h.inLocked(), TypedIn: h.typedIn, TypedAt: h.typedAt, Until: h.until, Follows: h.follows,
+	}
+	if len(h.fits) > 0 {
+		st.Sizes = make(map[string]Cells, len(h.fits))
+		for id, f := range h.fits {
+			st.Sizes[id] = f.Cells
+		}
 	}
 	if !h.awayUntil.IsZero() && (st.Until.IsZero() || h.awayUntil.Before(st.Until)) {
 		st.Until = h.awayUntil
@@ -325,6 +363,9 @@ func (h *Host) Publish(st State) error {
 	if h.inLocked() != was {
 		nudge(h.wake)
 	}
+	// The sizes the guest set go with the choice, and with the panes.
+	h.guestSizes = st.GuestSizes
+	h.dropFitsLocked(func(id string, _ fitBy) bool { return !st.GuestSizes || !panes[id] })
 	var gone, kept []*stream
 	for c := range h.conns {
 		gone = append(gone, c.withdrawLocked(func(id string) bool { return !panes[id] })...)
@@ -383,6 +424,10 @@ func (h *Host) End(why Reason) {
 	h.disarmLocked(&h.phaseEnd, &h.until)
 	h.disarmLocked(&h.away, &h.awayUntil)
 	h.state, h.panes, h.focus, h.follows, h.cur = nil, nil, "", false, nil
+	h.guestSizes, h.fits = false, nil
+	if h.fitsAway != nil {
+		h.fitsAway.Stop()
+	}
 	conns := make([]*hostConn, 0, len(h.conns))
 	for c := range h.conns {
 		conns = append(conns, c)
@@ -640,7 +685,78 @@ func (h *Host) drop(c *hostConn) {
 	}
 	h.cur, h.focus, h.follows = nil, "", false
 	h.awayLocked()
+	h.fitsAwayLocked()
 	nudge(h.wake)
+}
+
+// fitsAwayLocked has the sizes the guest set go once it has been gone a
+// while, unless it says them again over a connection of its own by then.
+func (h *Host) fitsAwayLocked() {
+	if h.fitsAway != nil {
+		h.fitsAway.Stop()
+	}
+	h.fitsAway = time.AfterFunc(fitsAwayFor, func() {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		h.dropFitsLocked(func(_ string, f fitBy) bool { return h.cur == nil || f.by.c != h.cur })
+	})
+}
+
+// dropFitsLocked takes away the sizes the guest set that which says,
+// and tells OnChange where there were any.
+func (h *Host) dropFitsLocked(which func(id string, f fitBy) bool) {
+	n := len(h.fits)
+	maps.DeleteFunc(h.fits, which)
+	if len(h.fits) != n {
+		nudge(h.wake)
+	}
+}
+
+// fit has pane id be the size the guest says fits it on its page, or the
+// host's again for none, where the guest sets the size, and s is the
+// pane's as it is shown now.
+func (h *Host) fit(s *stream, c Cells) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.phase != PhaseIn || h.cur != s.c || !h.guestSizes || !h.panes[s.id] || s.c.streams[s.id] != s {
+		return
+	}
+	if c == (Cells{}) {
+		h.dropFitsLocked(func(id string, _ fitBy) bool { return id == s.id })
+		return
+	}
+	if h.fits == nil {
+		h.fits = map[string]fitBy{}
+	}
+	had, ok := h.fits[s.id]
+	h.fits[s.id] = fitBy{c, s}
+	if !ok || had.Cells != c {
+		nudge(h.wake)
+	}
+}
+
+// unfitLater gives back the host's size to a pane whose size s set, once
+// s has gone: where its connection is the guest's still, a moment later,
+// the guest closed the pane. A guest says so before it closes one, and
+// this is for one that does not. A connection that was lost or replaced
+// meanwhile keeps the size a while, for the guest to say again.
+func (h *Host) unfitLater(s *stream) {
+	h.mu.Lock()
+	owns := false
+	for _, f := range h.fits {
+		owns = owns || f.by == s
+	}
+	h.mu.Unlock()
+	if !owns {
+		return
+	}
+	time.AfterFunc(unfitAfter, func() {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		if h.cur == s.c {
+			h.dropFitsLocked(func(_ string, f fitBy) bool { return f.by == s })
+		}
+	})
 }
 
 // countLocked takes c off those that have not joined.
@@ -683,7 +799,10 @@ func (h *Host) greet(c *hostConn) (why Reason, replaced *hostConn) {
 // told. That is put with mu held, so a state published meanwhile is never
 // put before one it stands in place of.
 func (h *Host) takeLocked(c *hostConn) {
-	// Where it is, the guest says again.
+	// Where it is, the guest says again, and its sizes too.
+	if h.cur != nil && len(h.fits) > 0 {
+		h.fitsAwayLocked()
+	}
 	h.cur, h.focus, h.follows = c, "", false
 	h.countLocked(c)
 	h.disarmLocked(&h.away, &h.awayUntil)

@@ -53,6 +53,9 @@ type pacing struct {
 	hidden, kept, again, againMost time.Duration
 	// bells is the least time between two of a pane's bells.
 	bells time.Duration
+	// fits is the least time between two sizes a pane is said to have
+	// room for: the host holds to them no faster.
+	fits time.Duration
 	// room is the most the terminals take, in bytes.
 	room int
 }
@@ -65,6 +68,7 @@ var paces = pacing{
 	joins: 3, blocked: 30 * time.Second, wakes: 3 * time.Second, stuck: 5 * time.Second, giveUp: guest.AwayFor + 5*time.Minute,
 	hidden: 20 * time.Second, kept: 5 * time.Minute, again: 2 * time.Second, againMost: time.Minute,
 	bells: 250 * time.Millisecond,
+	fits:  100 * time.Millisecond,
 	room:  mostHeld,
 }
 
@@ -150,6 +154,8 @@ type flow struct {
 	opens   float64
 	opensAt time.Time
 	due     *time.Timer
+	// fitting is the timer for a size that has to wait.
+	fitting *time.Timer
 }
 
 // pane is a terminal of the window.
@@ -179,6 +185,10 @@ type pane struct {
 	fails, conn     int
 	// rang says its bell rang, and is not to ring again yet.
 	rang atomic.Bool
+	// fits is the size its terminal has room for on the page, and told the
+	// size the host was last told over the pane open now, at toldAt.
+	fits, told guest.Cells
+	toldAt     time.Time
 }
 
 func newFlow(ctx context.Context, w *gunim.Window, cfg Config) *flow {
@@ -312,6 +322,11 @@ func (f *flow) intent(in gunim.Intent) {
 		f.follows = in.On
 		f.sayWhere()
 		f.tend()
+	case Fits:
+		if p := f.panes[in.Pane]; p != nil {
+			p.fits = guest.Cells{Cols: in.Cols, Rows: in.Rows}
+			f.fit()
+		}
 	case gunim.ClipboardFailed:
 		if err := f.c.Patch(topic, notCopied{in.Reason}); err != nil {
 			log.Printf("the clipboard could not be written: %v", in.Reason)
@@ -697,6 +712,7 @@ func (f *flow) look(s Session) {
 func (f *flow) window(st guest.State) {
 	f.st.HostName, f.st.CanType, f.st.HostIn = st.HostName, st.CanType, st.HostIn
 	f.st.Room, f.st.Cell = geom.Sz(st.Room.W, st.Room.H), geom.Sz(st.Cell.W, st.Cell.H)
+	f.st.GuestSizes = st.GuestSizes
 	f.st.Panes = st.Panes
 	if raw := string(st.Theme); raw != "" && raw != f.themed {
 		f.themed = raw
@@ -777,6 +793,49 @@ func (f *flow) closePane(p *pane) {
 		p.feed.detach()
 	}
 	p.open, p.opening = false, false
+	// What the host was told went with the pane.
+	p.told = guest.Cells{}
+}
+
+// fit tells the host the size each terminal on the screen has room for,
+// where the page sets the sizes, and that one off the screen has none:
+// it has the host's size. Each pane is told no more often than
+// paces.fits, the latest by then.
+func (f *flow) fit() {
+	if f.fitting != nil {
+		return
+	}
+	now := time.Now()
+	next := time.Duration(-1)
+	for _, p := range f.panes {
+		if !f.st.GuestSizes {
+			// The host let go of them itself.
+			p.told = guest.Cells{}
+			continue
+		}
+		var want guest.Cells
+		if p.shown {
+			want = p.fits
+		}
+		if !p.open || want == p.told {
+			continue
+		}
+		if wait := paces.fits - now.Sub(p.toldAt); wait > 0 {
+			if next < 0 || wait < next {
+				next = wait
+			}
+			continue
+		}
+		if p.feed.fit(want) {
+			p.told, p.toldAt = want, now
+		}
+	}
+	if next >= 0 {
+		f.fitting = f.after(next, func() {
+			f.fitting = nil
+			f.fit()
+		})
+	}
 }
 
 // size is how large a pane is: its terminal, or as it was last heard to
@@ -1008,6 +1067,7 @@ func (f *flow) tend() {
 	if next >= 0 {
 		f.due = f.after(next, f.tend)
 	}
+	f.fit()
 	f.tell()
 }
 

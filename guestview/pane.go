@@ -113,7 +113,7 @@ func (v *paneView) showing(f face) gunim.Node {
 	if v.w.p.away {
 		t.SetAway(true, nil)
 	}
-	t.SetFitted(true, v.w.p.u)
+	t.SetFitted(!v.w.st.GuestSizes, v.w.p.u)
 	t.SetCell(v.w.cell(), v.w.p.u)
 	v.term = t
 	v.themed = widget.NewThemed(&termview.Pad{Term: t.menu()}, v.w.st.Theme.Content)
@@ -308,6 +308,33 @@ type term struct {
 	// eaten is what an input method is composing and has been typed
 	// already.
 	eaten string
+	// fits is the size the program was last said to have room for.
+	fits [2]int
+}
+
+// Layout implements [gunim.Node]: the terminal's own, and where the page
+// sets the size, what it has room for is said, as that changes.
+func (t *term) Layout(c gunim.Constraints, f gunim.Frame, kids gunim.Children) geom.Size {
+	size := t.Term.Layout(c, f, kids)
+	u := t.v.w.p.u
+	if t.Fitted() || !t.v.w.st.GuestSizes || u == nil {
+		t.fits = [2]int{}
+		return size
+	}
+	// The room's, at the page's own size of text: the cells are laid out
+	// at the screen's, which a screen larger than the pane is drawn smaller
+	// than.
+	cell := t.Cells().CellSize()
+	if cell.W <= 0 || cell.H <= 0 {
+		return size
+	}
+	if cols, rows := int(size.W/cell.W), int(size.H/cell.H); cols > 0 && rows > 0 && [2]int{cols, rows} != t.fits {
+		t.fits = [2]int{cols, rows}
+		id := t.v.id
+		// Once this layout is done.
+		u.After(0, func(u *gunim.UI) { u.Send(t.v.w.p, Fits{Pane: id, Cols: cols, Rows: rows}) })
+	}
+	return size
 }
 
 // menu is the terminal in the menu its right click opens.

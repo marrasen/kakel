@@ -55,7 +55,13 @@ type ShownPane struct {
 	// holds says a large screen of the pane's is held, and closed that the
 	// pane is.
 	holds, closed bool
+	// fit is the size to ask the host for, fitNew that it has not been
+	// yet, and fitting that it is being.
+	fit             Cells
+	fitNew, fitting bool
 
+	// writeMu has one frame written at a time.
+	writeMu sync.Mutex
 	closing sync.Once
 }
 
@@ -268,7 +274,7 @@ func (p *ShownPane) Write(b []byte) (int, error) {
 			return len(b), nil
 		}
 		n := uiterm.CutTyped(rest, most)
-		if _, err := p.ch.Write(typedFrame(count, rest[:n])); err != nil {
+		if err := p.put(typedFrame(count, rest[:n])); err != nil {
 			return len(b) - len(rest), err
 		}
 		rest = rest[n:]
@@ -283,8 +289,55 @@ func (p *ShownPane) begun() uint32 {
 	return p.count
 }
 
-// Resize does nothing: the size is the host's.
+// put writes one frame.
+func (p *ShownPane) put(frame []byte) error {
+	p.writeMu.Lock()
+	defer p.writeMu.Unlock()
+	_, err := p.ch.Write(frame)
+	return err
+}
+
+// Resize does nothing: the size is the host's, as the screens say.
 func (p *ShownPane) Resize(int, int) error { return nil }
+
+// Fit asks the host to size the pane's program to cols by rows, what the
+// pane has room for on the page, or to its own size again for zero. The
+// host does where the share has the guest set the size. Only the latest
+// is sent, and Fit does not wait.
+func (p *ShownPane) Fit(cols, rows int) {
+	c := Cells{Cols: cols, Rows: rows}
+	if c != (Cells{}) && !goodSize(cols, rows) {
+		c = Cells{Cols: min(max(cols, 1), mostCols), Rows: min(max(rows, 1), mostRows)}
+	}
+	p.mu.Lock()
+	p.fit, p.fitNew = c, true
+	going := p.fitting
+	p.fitting = true
+	p.mu.Unlock()
+	if !going {
+		// Typed on the same channel may be held up, and this with it.
+		go p.sendFit()
+	}
+}
+
+// sendFit sends the size last asked for, until there is none newer.
+func (p *ShownPane) sendFit() {
+	for {
+		p.mu.Lock()
+		c, send := p.fit, p.fitNew && !p.closed
+		p.fitNew, p.fitting = false, send
+		p.mu.Unlock()
+		if !send {
+			return
+		}
+		if p.put(fitFrame(c)) != nil {
+			p.mu.Lock()
+			p.fitting = false
+			p.mu.Unlock()
+			return
+		}
+	}
+}
 
 // Wait waits for the pane to be shown no more. How its program ended is
 // the host's to know.

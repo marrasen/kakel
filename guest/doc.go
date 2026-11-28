@@ -9,7 +9,8 @@
 // Publish says how the window stands each time that changes, whether or
 // not anybody is there. HostConfig's Ask says whether a guest may come in,
 // and its Open gives the pane one asks for, checking it again each time.
-// OnChange hears how the share stands, Status. End ends it.
+// OnChange hears how the share stands, Status, the sizes the guest sets
+// among it. End ends it.
 //
 //	h, err := guest.NewHost(guest.HostConfig{Ask: ask, Open: open, OnChange: changed})
 //	link := base + "#" + h.Secret().String()
@@ -41,7 +42,8 @@
 //	pane, err := s.Pane(ctx, id)
 //
 // A terminal on a pane has the host's size and no other, answers nothing
-// the program asks, and is drawn scaled. It is somebody else's program, so
+// the program asks, and is drawn scaled. Where the state says GuestSizes,
+// Fit asks the host to size a pane's program to what fits it on the page. It is somebody else's program, so
 // it is given no hooks that act on this machine: no clipboard for OSC 52,
 // no links to open, no paths to find, no bell or title outside the page.
 // With them nil a terminal does nothing of those. Copying and pasting by
@@ -70,9 +72,13 @@
 // A guest can open a channel for each terminal that the window's published
 // state lists and Open still gives. Down it comes what that program draws;
 // up it go the keys typed, which are dropped while the host does not let
-// the guest type. There is no request for a shell, a file, a tunnel, a
-// size, the clipboard, or anything outside the window, and everything that
-// is not one of these is refused.
+// the guest type, and the size the pane has room for, which is dropped
+// while the host does not let the guest set the size. A size is held to
+// no more often than fitEvery, and the host's comes back as the guest
+// closes the pane, as the choice or the window changes, and a while after
+// the connection is lost. There is no request for a shell, a file, a
+// tunnel, the clipboard, or anything outside the window, and everything
+// that is not one of these is refused.
 //
 // What a guest has the host hold is bounded, in channels, frames and
 // bytes, and what it has the host do, in time. A guest that is slow is

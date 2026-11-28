@@ -29,14 +29,16 @@ type term struct {
 	// colours of the rings that say so.
 	agent bool
 	marks look.Marks
-	// guests is what it shows of the guests who see it.
+	// guests is what it shows of the guests who see it, and sized of a
+	// guest's page setting its size.
 	guests guestRing
+	sized  guestSized
 }
 
 // newTerm is pane id's terminal in w.
 func (w *Window) newTerm(id string) *term {
-	t := &term{Term: termview.New(w.shells.Get(id), w.keys), id: id, dropLit: anim.NewFloat(0), guests: newGuestRing()}
-	t.Add(t.dropLit, t.guests.ring, t.guests.near)
+	t := &term{Term: termview.New(w.shells.Get(id), w.keys), id: id, dropLit: anim.NewFloat(0), guests: newGuestRing(), sized: newGuestSized()}
+	t.Add(t.dropLit, t.guests.ring, t.guests.near, t.sized.beyond)
 	t.OnFocus = func(u *gunim.UI) { u.Send(t, app.FocusPane{Pane: id}) }
 	t.OnPaste = func(s string, u *gunim.UI) bool { return w.checkPaste(t, s, u) }
 	t.OnPasteImage = func(u *gunim.UI) { u.Send(t, app.PasteImage{Pane: id}) }
@@ -74,9 +76,12 @@ func (t *term) Handle(e gi.Event, u *gunim.UI) bool {
 	return t.Term.Handle(e, u)
 }
 
-// Paint implements [gunim.Node]: the terminal, and over it the rings.
+// Paint implements [gunim.Node]: the terminal, the room it does not take
+// while a guest's page sets its size, and over them the rings.
 func (t *term) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gunim.Children) {
 	t.Term.Paint(p, f, box, kids)
+	t.paintBeyond(p, f, box)
+	kids.At(1).Paint(p)
 	t.paintRings(p, f, box)
 	t.paintDropLit(p, f, box)
 }

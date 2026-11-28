@@ -1848,6 +1848,8 @@ func (a *app) handle(in gunim.Intent) {
 		err = a.copyLink(in.ID)
 	case SetLinkMay:
 		a.setLinkMay(in)
+	case SetLinkSize:
+		a.setLinkSize(in)
 	case AnswerGuest:
 		a.answerGuest(in)
 	case GuestUnseen:

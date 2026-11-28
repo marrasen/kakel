@@ -279,6 +279,7 @@ func (c *hostConn) reserve(id string) (*stream, error) {
 // release gives back what reserve took, once the channel has gone.
 func (c *hostConn) release(s *stream) {
 	s.end()
+	c.h.unfitLater(s)
 	c.h.mu.Lock()
 	defer c.h.mu.Unlock()
 	c.streaming--

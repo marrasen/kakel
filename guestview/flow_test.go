@@ -37,6 +37,14 @@ type fakePane struct {
 	typed   []byte
 	over    chan struct{}
 	closed  bool
+	// fits are the sizes the host was asked for.
+	fits [][2]int
+}
+
+func (p *fakePane) Fit(cols, rows int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.fits = append(p.fits, [2]int{cols, rows})
 }
 
 func newFakePane(id, draw string) *fakePane { return newPaneOf(id, 40, 10, draw) }

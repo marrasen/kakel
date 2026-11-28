@@ -124,11 +124,13 @@ func (w *windowPage) cell() geom.Size {
 }
 
 // sized has the picture and the terminals' text go to the sizes the host
-// and the page say.
+// and the page say. Where the page sets the sizes, the terminals' text is
+// the page's own size, and each program has the room its pane has.
 func (w *windowPage) sized(u *gunim.UI) {
 	w.picture.set(u)
 	cell := w.cell()
 	for t := range w.terms {
+		t.SetFitted(!w.st.GuestSizes, u)
 		t.SetCell(cell, u)
 	}
 }
@@ -224,7 +226,7 @@ func (w *windowPage) update(st State, u *gunim.UI) {
 	}
 	w.themes = st.Themes
 	w.host = st.Layout
-	if st.Room != was.Room || st.Cell != was.Cell {
+	if st.Room != was.Room || st.Cell != was.Cell || st.GuestSizes != was.GuestSizes {
 		// The host's window may be too large to read whole now, or no
 		// longer.
 		w.narrows(u)

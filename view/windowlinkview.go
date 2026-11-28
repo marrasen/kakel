@@ -50,6 +50,31 @@ func mayIndex(canType bool) int {
 	return 1
 }
 
+// sizeFors are whose size the terminals have, as a choice offers them:
+// the window's, or that of the guest's page.
+var sizeFors = []string{"Me", "The guest"}
+
+// forGuest reports whether the choice of sizeFors at i sizes the terminals
+// for the guest's page.
+func forGuest(i int) bool { return i == 1 }
+
+// sizeIndex is the choice of sizeFors for whether the terminals are sized
+// for the guest's page.
+func sizeIndex(forGuest bool) int {
+	if forGuest {
+		return 1
+	}
+	return 0
+}
+
+// newSizeFor is the choice of whose size the terminals have.
+func newSizeFor(forGuest bool) *widget.Segmented {
+	s := widget.NewSegmented(sizeFors...)
+	s.SetSelected(sizeIndex(forGuest), nil)
+	s.Tooltip = "Size for"
+	return s
+}
+
 // The room in the dialog: within a share's card, and between its words.
 var (
 	linkCardGap = theme.Length("kakel.link.card", 10)
@@ -168,7 +193,7 @@ type linkBox struct {
 	waiting bool
 
 	name, relay *widget.TextField
-	may         *widget.Segmented
+	may, size   *widget.Segmented
 	via         *widget.Dropdown
 	viaIDs      []machines.ID
 	wrong       *widget.Label
@@ -215,7 +240,7 @@ func (w *Window) linkDialog(u *gunim.UI) {
 
 func newLinkBox(w *Window, d *widget.Dialog) *linkBox {
 	s := w.linkSetup
-	b := &linkBox{w: w, d: d, name: widget.NewTextField(), relay: widget.NewTextField(), may: newGuestMay(!s.Watch),
+	b := &linkBox{w: w, d: d, name: widget.NewTextField(), relay: widget.NewTextField(), may: newGuestMay(!s.Watch), size: newSizeFor(false),
 		wrong: widget.NewLabel(""), list: widget.NewList(), another: widget.NewButton("Add")}
 	b.name.SetText(s.Name, nil)
 	b.relay.SetText(s.Relay, nil)
@@ -231,6 +256,7 @@ func newLinkBox(w *Window, d *widget.Dialog) *linkBox {
 	form := widget.NewForm().
 		Add("Your name", b.name).
 		Add("Guest can", folded(b.may, typeSays(b.may))).
+		Add("Size for", b.size).
 		Add("Relay", folded(b.relay, b.wrongFold)).
 		Add("Through", b.via).
 		Add("", faintLabel(linkRelaySays))
@@ -298,7 +324,7 @@ func (b *linkBox) make(u *gunim.UI) {
 	b.wrongFold.SetOpen(false, u)
 	b.tries, b.waiting = b.w.linkSetup.Tries, true
 	u.Send(b.w, app.ShareWindow{Window: b.w.winID, Name: strings.TrimSpace(b.name.Text()), CanType: mayType(b.may.Selected()),
-		Relay: strings.TrimSpace(b.relay.Text()), Via: b.viaIDs[max(0, min(b.via.Selected(), len(b.viaIDs)-1))]})
+		ForGuest: forGuest(b.size.Selected()), Relay: strings.TrimSpace(b.relay.Text()), Via: b.viaIDs[max(0, min(b.via.Selected(), len(b.viaIDs)-1))]})
 	b.turn(linkLists, u)
 }
 
@@ -395,7 +421,7 @@ func (b *linkBox) Paint(p *paint.Painter, _ gunim.Frame, _ geom.Size, kids gunim
 // Focusables are what Tab moves through, of the face shown.
 func (b *linkBox) Focusables() []gunim.Node {
 	if !b.listing {
-		out := []gunim.Node{b.name, b.may, b.relay}
+		out := []gunim.Node{b.name, b.may, b.size, b.relay}
 		if !b.via.Disabled {
 			out = append(out, b.via)
 		}
@@ -435,13 +461,13 @@ type linkCard struct {
 	asks   *widget.Button
 	askRow *widget.Fold
 
-	linkRow, busy, mayRow *widget.Fold
-	may                   *widget.Segmented
+	linkRow, busy, mayRow, sizeRow *widget.Fold
+	may, size                      *widget.Segmented
 }
 
 func newLinkCard(w *Window, l app.WindowLink, now time.Time) *linkCard {
 	c := &linkCard{w: w, head: widget.NewLabel(""), says: faintLabel(""), link: selectable(""), copyIt: widget.NewButton("Copy"),
-		may: newGuestMay(l.CanType), stop: widget.NewButton("Stop"), asks: widget.NewButton("Show")}
+		may: newGuestMay(l.CanType), size: newSizeFor(l.ForGuest), stop: widget.NewButton("Stop"), asks: widget.NewButton("Show")}
 	c.head.Face = widget.BoldFont
 	c.link.Face, c.link.MaxLines = widget.MonoFont, 1
 	id := l.ID
@@ -452,6 +478,7 @@ func newLinkCard(w *Window, l app.WindowLink, now time.Time) *linkCard {
 	c.asks.Kind = widget.ButtonPrimary
 	c.asks.OnClick = func(u *gunim.UI) gunim.Intent { w.askFirst = id; w.showGuestAsk(u); return nil }
 	c.may.OnChange = func(i int, _ *gunim.UI) gunim.Intent { return app.SetLinkMay{ID: id, CanType: mayType(i)} }
+	c.size.OnChange = func(i int, _ *gunim.UI) gunim.Intent { return app.SetLinkSize{ID: id, ForGuest: forGuest(i)} }
 	mark := widget.NewIcon(linkMark(l), "")
 	mark.Color = look.Guest
 	if !l.Live() {
@@ -475,11 +502,12 @@ func newLinkCard(w *Window, l app.WindowLink, now time.Time) *linkCard {
 	}
 	c.linkRow = said(c.link, c.copyIt)
 	c.mayRow = said(widget.NewLabel("Guest can"), c.may)
+	c.sizeRow = said(widget.NewLabel("Size for"), c.size)
 	c.askRow = said(widget.NewLabel("Waits for your answer"), c.asks)
 	bar := widget.NewProgressBar()
 	bar.Indeterminate = true
 	c.busy = widget.NewFold(under(bar, linkUnder), false)
-	c.card = widget.NewCard(folded(top, c.busy, c.linkRow, c.askRow, c.mayRow))
+	c.card = widget.NewCard(folded(top, c.busy, c.linkRow, c.askRow, c.mayRow, c.sizeRow))
 	c.show(l, now, nil)
 	return c
 }
@@ -539,11 +567,16 @@ func (c *linkCard) show(l app.WindowLink, now time.Time, u *gunim.UI) {
 	c.copyIt.Disabled = l.Link == ""
 	c.busy.SetOpen(l.Stands == app.LinkReaching || l.Stands == app.LinkSending, u)
 	c.mayRow.SetOpen(l.Live() && l.Stands != app.LinkAsking, u)
+	c.sizeRow.SetOpen(l.Live() && l.Stands != app.LinkAsking, u)
 	c.askRow.SetOpen(l.Stands == app.LinkAsking, u)
 	if i := mayIndex(l.CanType); c.may.Selected() != i {
 		c.may.SetSelected(i, u)
 	}
 	c.may.Disabled = !l.Live()
+	if i := sizeIndex(l.ForGuest); c.size.Selected() != i {
+		c.size.SetSelected(i, u)
+	}
+	c.size.Disabled = !l.Live()
 	c.stop.Disabled = !l.Live()
 }
 
@@ -559,7 +592,7 @@ func (c *linkCard) focusables() []gunim.Node {
 	if c.l.Stands == app.LinkAsking {
 		out = append(out, c.asks)
 	} else {
-		out = append(out, c.may)
+		out = append(out, c.may, c.size)
 	}
 	return append(out, c.stop)
 }
