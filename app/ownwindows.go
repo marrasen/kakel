@@ -45,6 +45,9 @@ type ownWin struct {
 	size     geom.Size
 	tabsAt   map[string]geom.Rect
 	overview bool
+	// dock is how large its panes are laid out, their bars with them, and
+	// cell a terminal's cell, as it last said.
+	dock, cell geom.Size
 	// fresh says it opened while All Panes was over the screen, and
 	// has not shown yet.
 	fresh bool

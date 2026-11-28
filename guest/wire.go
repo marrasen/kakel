@@ -148,6 +148,11 @@ const (
 
 	// mostName, mostAbout and mostTitle count characters.
 	mostName, mostAbout, mostTitle = 40, 100, 300
+
+	// mostRoom is the widest and tallest the host's panes are said to be,
+	// as a window across several screens is, and mostCell a terminal's
+	// cell, as the largest text makes it: in the host's logical pixels.
+	mostRoom, mostCell = 32 << 10, 512
 )
 
 // headerLen is the length of what comes before a frame's body.
@@ -274,6 +279,26 @@ type State struct {
 	// which is the host's. No folder shares no files.
 	Files  FilesMay `json:",omitempty"`
 	Folder string   `json:",omitempty"`
+
+	// Room is how large the host's panes are laid out, their bars with
+	// them, and Cell how large a terminal's cell is there, both in the
+	// host's logical pixels: for a guest to lay the panes out as the host
+	// has them, every terminal's text the one size. Each is zero where
+	// the host has not said.
+	Room Size `json:",omitzero"`
+	Cell Size `json:",omitzero"`
+}
+
+// Size is a width and a height, in the host's logical pixels.
+type Size struct{ W, H float32 }
+
+// within is s where it is a size that is no larger than most either way,
+// and zero where it is not.
+func (s Size) within(most float32) Size {
+	if !(s.W > 0 && s.W <= most && s.H > 0 && s.H <= most) {
+		return Size{}
+	}
+	return s
 }
 
 // encodeState is st as a frame.
@@ -294,6 +319,7 @@ func (st State) least() State {
 	few := State{
 		HostName: plain(st.HostName, mostName),
 		CanType:  st.CanType, Panes: []Pane{},
+		Room: st.Room.within(mostRoom), Cell: st.Cell.within(mostCell),
 	}
 	few.Files, few.Folder = filesOf(st.Files, plain(st.Folder, mostName))
 	if len(st.HostIn) <= mostID {
@@ -324,6 +350,7 @@ func decodeState(body []byte) (State, error) {
 	if len(st.HostIn) > mostID {
 		st.HostIn = ""
 	}
+	st.Room, st.Cell = st.Room.within(mostRoom), st.Cell.within(mostCell)
 	panes := st.Panes[:0]
 	for _, p := range st.Panes {
 		if len(panes) == mostPanes || p.ID == "" || len(p.ID) > mostID {

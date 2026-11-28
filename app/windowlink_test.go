@@ -710,6 +710,34 @@ func TestAGuestThatFollowsIsInTheHostsPane(t *testing.T) {
 	}
 }
 
+// A guest is told how large the window's panes are laid out, and a cell,
+// as the window says, and again as it is resized; another window's
+// saying so tells it nothing.
+func TestAGuestIsToldHowLargeThePanesAre(t *testing.T) {
+	r := newLinkRig(t)
+	l := r.share(true)
+	v := r.visit(l.Link)
+	v.in(l.ID, true)
+	sized := func(w *ownWin, dock, cell geom.Size) {
+		if !r.a.overviewIn(w, StageSized{At: geom.Rc(0, 30, dock.W, dock.H-30), Window: dock, Dock: dock, Cell: cell}) {
+			t.Fatal("the window's size was not taken")
+		}
+	}
+	sized(r.one, geom.Sz(1200, 700), geom.Sz(8.5, 17))
+	v.state("the panes' size", func(st guest.State) bool {
+		return st.Room == guest.Size{W: 1200, H: 700} && st.Cell == guest.Size{W: 8.5, H: 17}
+	})
+	sized(r.two, geom.Sz(500, 400), geom.Sz(10, 20))
+	if told := r.a.linkByID(l.ID).told.Room; told != (guest.Size{W: 1200, H: 700}) {
+		t.Errorf("another window resized, and the guest was told %v", told)
+	}
+	sized(r.one, geom.Sz(900, 600), geom.Sz(8.5, 17))
+	st := v.state("the panes resized", func(st guest.State) bool { return st.Room == guest.Size{W: 900, H: 600} })
+	if st.Cell != (guest.Size{W: 8.5, H: 17}) {
+		t.Errorf("the guest was told a cell is %v", st.Cell)
+	}
+}
+
 // A guest is told of a theme before the terminals are drawn in it.
 func TestAThemeIsToldBeforeTheTerminalsHaveIt(t *testing.T) {
 	r := newLinkRig(t)

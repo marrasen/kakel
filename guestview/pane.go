@@ -114,6 +114,7 @@ func (v *paneView) showing(f face) gunim.Node {
 		t.SetAway(true, nil)
 	}
 	t.SetFitted(true, v.w.p.u)
+	t.SetCell(v.w.cell(), v.w.p.u)
 	v.term = t
 	v.themed = widget.NewThemed(&termview.Pad{Term: t.menu()}, v.w.st.Theme.Content)
 	return v.themed

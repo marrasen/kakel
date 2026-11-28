@@ -156,7 +156,9 @@ func forgetShared(live func(id string) bool) {
 // sayStage tells the program where the stage is in the window, how
 // large the window is, box, and where each pane's tab is on its bar,
 // when any of them has changed: All Panes draws the window's tabs that
-// shape, the window as it stands, and each pane under its tab.
+// shape, the window as it stands, and each pane under its tab. It says
+// too how large the dock and a terminal's cell are, for a guest of the
+// window to lay the panes out as large.
 func (w *Window) sayStage(f gunim.Frame, box geom.Size) {
 	u := f.UI()
 	if u == nil {
@@ -164,11 +166,33 @@ func (w *Window) sayStage(f gunim.Frame, box geom.Size) {
 	}
 	r, ok := u.Bounds(w.stage)
 	tabs := w.tabsAt()
-	if !ok || r == w.stageSaid && box == w.sizeSaid && maps.Equal(tabs, w.tabsSaid) {
+	var dock geom.Size
+	if d, laid := u.Bounds(w.dock); laid {
+		dock = d.Size()
+	}
+	cell := w.cellSize()
+	if !ok || r == w.stageSaid && box == w.sizeSaid && maps.Equal(tabs, w.tabsSaid) && dock == w.dockSaid && cell == w.cellSaid {
 		return
 	}
-	w.stageSaid, w.sizeSaid, w.tabsSaid = r, box, tabs
-	f.Send(w, app.StageSized{At: r, Window: box, Tabs: tabs})
+	w.stageSaid, w.sizeSaid, w.tabsSaid, w.dockSaid, w.cellSaid = r, box, tabs, dock, cell
+	f.Send(w, app.StageSized{At: r, Window: box, Tabs: tabs, Dock: dock, Cell: cell})
+}
+
+// cellSize is how large a cell of the window's terminals is, all being
+// drawn at the one size of text: the one with the keyboard's, or any
+// other's, or nothing where it holds none.
+func (w *Window) cellSize() geom.Size {
+	if t, ok := w.terms[w.focused]; ok {
+		if c := t.Cells().CellSize(); c.W > 0 && c.H > 0 {
+			return c
+		}
+	}
+	for _, t := range w.terms {
+		if c := t.Cells().CellSize(); c.W > 0 && c.H > 0 {
+			return c
+		}
+	}
+	return geom.Size{}
 }
 
 // tabsAt is where each pane shown has its tab, from the pane's top left

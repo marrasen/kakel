@@ -874,6 +874,15 @@ func (a *app) sayJoined() {
 	}
 }
 
+// tellLinksOf tells the shares of window win how it stands.
+func (a *app) tellLinksOf(win int) {
+	for _, l := range a.links.all {
+		if l.win == win {
+			a.tellLink(l)
+		}
+	}
+}
+
 // tellLink tells one share how its window stands.
 func (a *app) tellLink(l *windowLink) {
 	if l.host == nil || l.stands == LinkEnded {
@@ -934,6 +943,7 @@ func (a *app) sharedState(l *windowLink) (guest.State, map[string]guest.PaneSour
 	}
 	st.Layout = a.sharedLayout(win.Root, byID)
 	st.Theme = a.sharedTheme()
+	st.Room, st.Cell = guest.Size{W: w.dock.W, H: w.dock.H}, guest.Size{W: w.cell.W, H: w.cell.H}
 	return st, panes
 }
 

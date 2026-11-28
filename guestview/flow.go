@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/marrasen/gunim"
+	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/widget/dock"
 
 	"github.com/marrasen/kakel/guest"
@@ -695,6 +696,7 @@ func (f *flow) look(s Session) {
 // window takes the window as the host says it is.
 func (f *flow) window(st guest.State) {
 	f.st.HostName, f.st.CanType, f.st.HostIn = st.HostName, st.CanType, st.HostIn
+	f.st.Room, f.st.Cell = geom.Sz(st.Room.W, st.Room.H), geom.Sz(st.Cell.W, st.Cell.H)
 	f.st.Panes = st.Panes
 	if raw := string(st.Theme); raw != "" && raw != f.themed {
 		f.themed = raw

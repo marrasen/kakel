@@ -74,6 +74,34 @@ func TestAFittedScreenFillsThePaneAsFarAsItCan(t *testing.T) {
 	}
 }
 
+// A fitted screen given the far end's cell has text no larger than that
+// cell holds, whatever room the pane has, and screens of other sizes in
+// panes of other sizes, given the same cell, have the one size of text.
+// Given no cell, it is as large as the pane has room for again.
+func TestAFittedScreenGivenACellHasItsSize(t *testing.T) {
+	small := fitted(t, geom.Sz(900, 600), 80, 24)
+	free := small.cells.Size
+	cell := geom.Sz(small.cells.CellSize().W/2, small.cells.CellSize().H/2)
+	sizes := map[float32]bool{}
+	for _, tm := range []*testTerm{small, fitted(t, geom.Sz(1200, 500), 120, 20), fitted(t, geom.Sz(400, 700), 40, 30)} {
+		tm.SetCell(cell, tm.stage.u)
+		tm.frames(120)
+		got := tm.cells.CellSize()
+		if got.W > cell.W+0.01 || got.H > cell.H+0.01 || tm.scale != 1 {
+			t.Errorf("given a cell of %v, its cells are %v, scaled by %v", cell, got, tm.scale)
+		}
+		sizes[tm.cells.Size] = true
+	}
+	if len(sizes) != 1 {
+		t.Errorf("given the one cell, the screens have text of sizes %v", sizes)
+	}
+	small.SetCell(geom.Size{}, small.stage.u)
+	small.frames(120)
+	if small.cells.Size != free {
+		t.Errorf("given no cell, the text is %v, and was %v", small.cells.Size, free)
+	}
+}
+
 // A fitted screen given another size glides from where it stood to its
 // new place, and its first frame is not there already. With KAKEL_SHOTS
 // set the frames are written there too, to see it move.

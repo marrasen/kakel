@@ -38,6 +38,7 @@ func FuzzFrames(f *testing.F) {
 func FuzzState(f *testing.F) {
 	f.Add([]byte(`{"HostName":"anna","Panes":[{"ID":"a","Kind":"terminal","Cols":80,"Rows":24}],"Layout":{"a":1}}`))
 	f.Add([]byte(`{"Panes":[{"ID":"a","Cols":-1,"Rows":99999999999}]}`))
+	f.Add([]byte(`{"Room":{"W":1e30,"H":-1},"Cell":{"W":8,"H":17}}`))
 	f.Fuzz(func(t *testing.T, b []byte) {
 		st, err := decodeState(b)
 		if err != nil {
@@ -45,6 +46,14 @@ func FuzzState(f *testing.F) {
 		}
 		if len(st.Panes) > mostPanes || utf8.RuneCountInString(st.HostName) > mostTitle {
 			t.Fatalf("a state of %d panes", len(st.Panes))
+		}
+		for _, s := range []struct {
+			size Size
+			most float32
+		}{{st.Room, mostRoom}, {st.Cell, mostCell}} {
+			if s.size != (Size{}) && !(s.size.W > 0 && s.size.H > 0 && s.size.W <= s.most && s.size.H <= s.most) {
+				t.Fatalf("a size %v", s.size)
+			}
 		}
 		for _, p := range st.Panes {
 			if p.ID == "" || len(p.ID) > mostID || p.Cols > mostCols || p.Rows > mostRows || p.Cols < 0 {
