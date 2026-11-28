@@ -1,6 +1,7 @@
 package guestview
 
 import (
+	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/theme"
 	"github.com/marrasen/gunim/widget/dock"
 
@@ -50,6 +51,10 @@ type State struct {
 	Layout   dock.Layout
 	Panes    []guest.Pane
 	HostIn   string
+	// Room is how large the host's panes are laid out, their bars with
+	// them, and Cell a terminal's cell there, in the host's logical
+	// pixels: zero where the host has not said.
+	Room, Cell geom.Size
 	// Held are the terminals on the screen that are not shown, and why.
 	Held map[string]Held
 	// Shut are the terminals whose panes are not open, or have yet to

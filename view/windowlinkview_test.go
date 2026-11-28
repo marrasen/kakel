@@ -714,3 +714,37 @@ func TestABuildWithNoWebClientSaysSo(t *testing.T) {
 		}
 	}
 }
+
+// A window says how large its panes are laid out, and a terminal's cell,
+// and again as it is resized: a guest lays the panes out as large.
+func TestAWindowSaysHowLargeItsPanesAre(t *testing.T) {
+	win, _, _ := linkStage(t, isIn("l1", "Bob", "p1"))
+	said := func() app.StageSized {
+		t.Helper()
+		var last app.StageSized
+		for _, in := range sentIntents() {
+			if in, ok := in.(app.StageSized); ok {
+				last = in
+			}
+		}
+		return last
+	}
+	check := func(got app.StageSized) {
+		t.Helper()
+		d, ok := lastUI.Bounds(win.dock)
+		if !ok || got.Dock != d.Size() || got.Dock.W != lastWindow.Offscreen().Size().W {
+			t.Errorf("the window said its dock is %v, and it is %v", got.Dock, d.Size())
+		}
+		if cell := win.terms["p1"].Cells().CellSize(); got.Cell != cell || cell.W <= 0 || cell.H <= 0 {
+			t.Errorf("the window said a cell is %v, and it is %v", got.Cell, cell)
+		}
+	}
+	check(said())
+	lastWindow.Offscreen().Resize(geom.Sz(700, 500))
+	settle()
+	got := said()
+	if got.Dock.W != 700 {
+		t.Fatalf("resized, the window said its dock is %v", got.Dock)
+	}
+	check(got)
+}

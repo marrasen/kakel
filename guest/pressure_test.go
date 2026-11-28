@@ -462,6 +462,35 @@ func TestScreensAreOfASizeThatIsOne(t *testing.T) {
 	}
 }
 
+// The sizes a state says the host's panes and cells are, past what any
+// window has, or no size at all, are taken as not said.
+func TestAStatesSizesAreOnesThatAre(t *testing.T) {
+	for _, c := range []struct {
+		body       string
+		room, cell Size
+	}{
+		{`{"Room":{"W":1200,"H":700},"Cell":{"W":8.5,"H":17}}`, Size{1200, 700}, Size{8.5, 17}},
+		{`{"Room":{"W":40000,"H":700},"Cell":{"W":8.5,"H":1000}}`, Size{}, Size{}},
+		{`{"Room":{"W":-5,"H":700},"Cell":{"W":0,"H":17}}`, Size{}, Size{}},
+		{`{"Room":{"W":1200},"Cell":{"H":17}}`, Size{}, Size{}},
+		{`{"Room":{"W":32768,"H":32768},"Cell":{"W":512,"H":512}}`, Size{mostRoom, mostRoom}, Size{mostCell, mostCell}},
+	} {
+		st, err := decodeState([]byte(c.body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if st.Room != c.room || st.Cell != c.cell {
+			t.Errorf("%s is read as %v and %v", c.body, st.Room, st.Cell)
+		}
+		if few := (State{Room: st.Room, Cell: st.Cell}).least(); few.Room != c.room || few.Cell != c.cell {
+			t.Errorf("%s at least is %v and %v", c.body, few.Room, few.Cell)
+		}
+	}
+	if _, err := decodeState([]byte(`{"Room":{"W":"wide"}}`)); err == nil {
+		t.Error("a room of words was read")
+	}
+}
+
 // A host that sends many small things lets the browser have its thread as
 // one that sends much does.
 func TestManySmallFramesYield(t *testing.T) {

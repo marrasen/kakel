@@ -62,6 +62,11 @@ type (
 		// Tabs is where each pane's tab stands on its bar, from the top
 		// left of the pane: for All Panes to draw it there over the pane.
 		Tabs map[string]geom.Rect
+		// Dock is how large the panes are laid out, their bars with them,
+		// and Cell a terminal's cell there: for a guest of a window shared
+		// with a link to lay the panes out the same. Cell is zero where
+		// the window holds no terminal.
+		Dock, Cell geom.Size
 	}
 	// ToggleOverview opens All Panes in a window of its own, over the
 	// screen the window it came from is on, or closes it.
@@ -107,6 +112,11 @@ func (a *app) overviewIn(w *ownWin, in any) bool {
 			if a.over.c != nil && !a.over.closing {
 				a.over.c.ToFront()
 			}
+		}
+		if w.dock != in.Dock || w.cell != in.Cell {
+			w.dock, w.cell = in.Dock, in.Cell
+			// A guest lays the panes out as large as they are here.
+			a.tellLinksOf(w.id)
 		}
 		if w.stage == in.At && w.size == in.Window && maps.Equal(w.tabsAt, in.Tabs) {
 			a.quiet = true

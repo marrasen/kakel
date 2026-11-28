@@ -249,10 +249,13 @@ type Window struct {
 	overviewing   bool
 	overviewAlone bool
 	// stageSaid is where the program was last told the stage is,
-	// sizeSaid how large the window is and tabsSaid where its tabs are.
+	// sizeSaid how large the window is and tabsSaid where its tabs are,
+	// dockSaid how large the dock is and cellSaid a terminal's cell.
 	stageSaid geom.Rect
 	sizeSaid  geom.Size
 	tabsSaid  map[string]geom.Rect
+	dockSaid  geom.Size
+	cellSaid  geom.Size
 	// overWins and allPanes are every window and every pane, as All
 	// Panes shows them.
 	overWins    []app.OverWindow

@@ -77,7 +77,11 @@ func (s *stage) open(p guest.Pane) {
 	if p.Kind != guest.KindTerminal || s.shells.Get(p.ID) != nil {
 		return
 	}
-	prog := sessiontest.NewPrinted([]byte("this is " + p.ID + "\r\n$ "))
+	out := "this is " + p.ID + "\r\n$ "
+	if art, ok := printedBy[p.ID]; ok {
+		out = art
+	}
+	prog := sessiontest.NewPrinted([]byte(out))
 	s.typed[p.ID] = prog
 	sh := screen.Open(prog, s.st.Theme.Palette, screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}})
 	s.shells.Set(p.ID, sh)
@@ -85,6 +89,12 @@ func (s *stage) open(p guest.Pane) {
 	for end := time.Now().Add(5 * time.Second); sh.T.Text() == "" && time.Now().Before(end); {
 		time.Sleep(time.Millisecond)
 	}
+}
+
+// printedBy is what the programs of some panes print, where it is not
+// their ID.
+var printedBy = map[string]string{
+	"boxes": "┌──────┬──────┐\r\n│ box  │ draw │\r\n├──────┼──────┤\r\n│ █▓▒░ │ ░▒▓█ │\r\n└──────┴──────┘\r\n████▓▓▓▓▒▒▒▒░░░░\r\n$ ",
 }
 
 // show shows the state as do changes it.
