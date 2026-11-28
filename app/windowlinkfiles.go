@@ -199,6 +199,13 @@ func (a *app) setLinkFolder(in ChooseLinkFolder, dir string) {
 const (
 	filesQuiet = 2 * time.Second
 	filesMost  = 30 * time.Second
+
+	// filesLines is how many lines a share writes in filesEvery, so a
+	// guest that does much cannot push what came before it out of the
+	// Window Log, which keeps its latest lines. What is past it is counted,
+	// and said in a line once filesEvery is over.
+	filesLines = 20
+	filesEvery = time.Minute
 )
 
 // filesLog writes what a guest does in a share's folder in the Window
@@ -211,8 +218,15 @@ type filesLog struct {
 	who, folder string
 	run         *filesRun
 	quiet       *time.Timer
-	// write writes a line, log.Printf but in a test.
+	// write writes a line, log.Printf but in a test, and now is the time.
 	write func(string)
+	now   func() time.Time
+	// lines are those written since since, and held the things done since
+	// then that are not, which roll says once it is time.
+	lines int
+	since time.Time
+	held  int
+	roll  *time.Timer
 }
 
 // filesRun is the same thing done, one after the other, in one folder.
@@ -225,7 +239,7 @@ type filesRun struct {
 }
 
 func newFilesLog() *filesLog {
-	return &filesLog{write: func(s string) { log.Print(s) }}
+	return &filesLog{write: func(s string) { log.Print(s) }, now: time.Now}
 }
 
 // setWho says who the guest is, and setFolder what the folder is called.
@@ -283,15 +297,79 @@ func (f *filesLog) flushLocked() {
 		return
 	}
 	f.run = nil
-	f.write(f.line(r))
+	f.writeLocked(f.line(r), r.n)
+}
+
+// writeLocked writes line, of n things done, unless filesLines have been
+// written in this filesEvery.
+func (f *filesLog) writeLocked(line string, n int) {
+	now := f.clock()
+	if now.Sub(f.since) >= filesEvery {
+		f.sayHeldLocked()
+		f.since = now
+	}
+	if f.lines < filesLines {
+		f.lines++
+		f.write(line)
+		return
+	}
+	f.held += n
+	if f.roll == nil {
+		f.roll = time.AfterFunc(f.since.Add(filesEvery).Sub(now), f.rollOver)
+	}
+}
+
+// sayHeldLocked writes how many things done were not written, if any,
+// as the first line of the next filesEvery.
+func (f *filesLog) sayHeldLocked() {
+	if f.roll != nil {
+		f.roll.Stop()
+		f.roll = nil
+	}
+	f.lines = 0
+	if f.held == 0 {
+		return
+	}
+	f.write(fmt.Sprintf("%s did %d more things in a shared window", f.whoLocked(), f.held))
+	f.held, f.lines = 0, 1
+}
+
+// rollOver says what was held, once its filesEvery is over.
+func (f *filesLog) rollOver() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.held > 0 {
+		f.sayHeldLocked()
+		f.since = f.clock()
+	}
+}
+
+// end writes all there is to write, as the share ends.
+func (f *filesLog) end() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.flushLocked()
+	f.sayHeldLocked()
+}
+
+func (f *filesLog) clock() time.Time {
+	if f.now == nil {
+		return time.Now()
+	}
+	return f.now()
+}
+
+// whoLocked is the guest, in a line.
+func (f *filesLog) whoLocked() string {
+	if f.who == "" {
+		return "the guest"
+	}
+	return fmt.Sprintf("the guest %q", f.who)
 }
 
 // line is a run of things done, as the Window Log says it.
 func (f *filesLog) line(r *filesRun) string {
-	who := fmt.Sprintf("the guest %q", f.who)
-	if f.who == "" {
-		who = "the guest"
-	}
+	who := f.whoLocked()
 	in := fmt.Sprintf("%q", f.place(r.dir))
 	if r.n == 1 {
 		e := r.first

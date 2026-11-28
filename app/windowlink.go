@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"maps"
 	"os"
 	"os/user"
 	"reflect"
@@ -119,8 +120,8 @@ type LinkSetup struct {
 	// worked or did not, for the dialog that asked to hear how it went.
 	Tries uint64
 	// Folders are the folders the next share of each window starts with,
-	// by window.
-	Folders map[int]string
+	// by window, and Chosen those of them the user chose with Choose….
+	Folders, Chosen map[int]string
 }
 
 // Intents for sharing a window with a link.
@@ -672,7 +673,7 @@ func (a *app) letLinkGo(l *windowLink, why guest.Reason) {
 		if host != nil {
 			host.End(why)
 		}
-		files.flush()
+		files.end()
 		// On the way out as a signal asks, a relay reached through a
 		// saved server is not told: nothing new is dialled through one by
 		// then. The guest has heard, the link is for a host that is no
@@ -1051,7 +1052,8 @@ func (a *app) windowLinks() []WindowLink {
 // before that through the relay remote access goes through, or the one
 // last connected through.
 func (a *app) linkSetup() LinkSetup {
-	s := LinkSetup{NoClient: !a.links.hasClient(), Tries: a.links.tries, Folders: a.linkFolders()}
+	s := LinkSetup{NoClient: !a.links.hasClient(), Tries: a.links.tries, Folders: a.linkFolders(),
+		Chosen: maps.Clone(a.links.picked)}
 	if a.settings != nil {
 		kept := a.settings.ShareLink()
 		s.Name, s.Watch, s.Relay, s.Via = kept.Name, kept.Watch, kept.Relay, machines.ID(kept.Via)

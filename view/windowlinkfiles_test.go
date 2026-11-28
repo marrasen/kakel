@@ -97,3 +97,29 @@ func TestMakingALinkWithFiles(t *testing.T) {
 		t.Errorf("it sent %+v", got)
 	}
 }
+
+// Once the dialog is open, its folder changes only as one is chosen: a
+// Files pane going elsewhere leaves the folder the files were chosen for.
+func TestTheDialogsFolderChangesOnlyByChoose(t *testing.T) {
+	win, st, publish := linkStage(t)
+	st.LinkSetup.Folders = map[int]string{win.winID: "/home/anna/Reports"}
+	publish(st)
+	settle()
+	win.run("share.link", lastUI)
+	settle()
+	b := win.linkBox
+	b.files.may.SetSelected(int(guest.FilesChange), lastUI)
+	st.LinkSetup.Folders = map[int]string{win.winID: "/home/anna/elsewhere"}
+	publish(st)
+	settle()
+	if b.files.path != "/home/anna/Reports" {
+		t.Errorf("the folder followed the pane to %q", b.files.path)
+	}
+	st.LinkSetup.Folders = map[int]string{win.winID: "/home/anna/Chosen"}
+	st.LinkSetup.Chosen = map[int]string{win.winID: "/home/anna/Chosen"}
+	publish(st)
+	settle()
+	if b.files.path != "/home/anna/Chosen" {
+		t.Errorf("the folder chosen shows as %q", b.files.path)
+	}
+}

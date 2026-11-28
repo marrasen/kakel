@@ -74,6 +74,19 @@ func filesOn(t *testing.T, dir string, may FilesMay) (*rig, *Session, *sftp.Clie
 	return r, s, c
 }
 
+// upload writes a file as the guest.
+func upload(c *sftp.Client, name, text string) error {
+	w, err := c.Create(name)
+	if err != nil {
+		return err
+	}
+	if _, err := w.Write([]byte(text)); err != nil {
+		_ = w.Close()
+		return err
+	}
+	return w.Close()
+}
+
 func readAll(c *sftp.Client, name string) (string, error) {
 	f, err := c.Open(name)
 	if err != nil {
@@ -731,5 +744,45 @@ func TestFilesAfterAConnectionIsLost(t *testing.T) {
 	defer func() { _ = c2.Close() }()
 	if text, err := readAll(c2, "/a.txt"); err != nil || text != "inside" {
 		t.Errorf("back, a.txt read %q, %v", text, err)
+	}
+}
+
+// A link whose words go up is not read out: where it stands may be other
+// than the guest's path to it says, and up from there anywhere.
+func TestALinkThroughALinkedFolderIsNotReadOut(t *testing.T) {
+	f := newFolders(t)
+	if err := os.MkdirAll(filepath.Join(f.share, "x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(f.share, "a", "b", "c"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link(t, "../../outside/secret.txt", filepath.Join(f.share, "x", "L"))
+	link(t, "../../../x", filepath.Join(f.share, "a", "b", "c", "d"))
+	_, _, c := filesOn(t, f.share, FilesLook)
+	for _, name := range []string{"/a/b/c/d/L", "/x/L", "/a/b/c/d"} {
+		if to, err := c.ReadLink(name); err == nil || strings.Contains(to, "outside") {
+			t.Errorf("%s reads %q, %v", name, to, err)
+		}
+	}
+	info, err := c.Lstat("/x/L")
+	if err != nil || info.Mode()&fs.ModeSymlink == 0 || info.Size() != 0 {
+		t.Errorf("the link is %v of %d bytes, %v", info, info.Size(), err)
+	}
+}
+
+// The same path with another folder in its place by now is that folder.
+func TestTheSameNameAnotherFolder(t *testing.T) {
+	f := newFolders(t)
+	r, _, c := filesOn(t, f.share, FilesLook)
+	if err := os.Rename(f.share, f.share+".old"); err != nil {
+		t.Fatal(err)
+	}
+	put(t, filepath.Join(f.share, "new.txt"), "new")
+	if err := r.host.SetFiles(f.share, FilesLook); err != nil {
+		t.Fatal(err)
+	}
+	if text, err := readAll(c, "/new.txt"); err != nil || text != "new" {
+		t.Errorf("the new folder's file read %q, %v", text, err)
 	}
 }

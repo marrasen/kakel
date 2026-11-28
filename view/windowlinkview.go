@@ -171,10 +171,13 @@ type linkBox struct {
 	name, relay *widget.TextField
 	may         *widget.Segmented
 	files       *linkFiles
-	via         *widget.Dropdown
-	viaIDs      []machines.ID
-	wrong       *widget.Label
-	wrongFold   *widget.Fold
+	// chosen is the folder last chosen with Choose… for the next share,
+	// which is all that changes the folder once the dialog is open.
+	chosen    string
+	via       *widget.Dropdown
+	viaIDs    []machines.ID
+	wrong     *widget.Label
+	wrongFold *widget.Fold
 
 	list    *widget.List
 	another *widget.Button
@@ -224,6 +227,7 @@ func newLinkBox(w *Window, d *widget.Dialog) *linkBox {
 	b.relay.Select(0, 0)
 	b.relay.Placeholder = relayFormat
 	b.files = newLinkFiles(guest.FilesNone, s.Folders[w.winID], app.ChooseLinkFolder{Window: w.winID})
+	b.chosen = s.Chosen[w.winID]
 	b.via, b.viaIDs = w.throughPicker(s.Via)
 	b.via.Disabled = len(b.viaIDs) <= 1
 	b.wrong.Color = widget.DialogProblem
@@ -371,7 +375,12 @@ func (w *Window) showLinkBox(u *gunim.UI) {
 	}
 	here := w.linksHere()
 	b.sync(here, u)
-	b.files.show(b.files.chosen(), w.linkSetup.Folders[w.winID], u)
+	// Not the folder a Files pane goes on to, which the host did not see
+	// as the files were chosen for it.
+	if chosen := w.linkSetup.Chosen[w.winID]; chosen != b.chosen {
+		b.chosen = chosen
+		b.files.show(b.files.chosen(), chosen, u)
+	}
 	b.another.Disabled = w.linkSetup.NoClient
 	if b.waiting && w.linkSetup.Tries == b.tries {
 		return

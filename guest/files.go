@@ -104,7 +104,10 @@ type FileEvent struct {
 type filesState struct {
 	dir  string
 	root *os.Root
-	may  FilesMay
+	// is is the folder root was opened on, to know it from another put
+	// in its place under the same name.
+	is  fs.FileInfo
+	may FilesMay
 	// gen counts the roots opened, so a file knows its folder is shared no
 	// more.
 	gen uint64
@@ -129,11 +132,23 @@ func (h *Host) SetFiles(dir string, may FilesMay) error {
 	defer h.filesMu.Unlock()
 	h.mu.Lock()
 	open := may != FilesNone && (h.files.root == nil || dir != h.files.dir)
+	is := h.files.is
 	h.mu.Unlock()
+	if !open && may != FilesNone {
+		// The same name, and maybe another folder by now.
+		now, err := os.Stat(dir)
+		open = err != nil || is == nil || !os.SameFile(is, now)
+	}
 	var root *os.Root
 	var err error
 	if open {
-		if root, err = os.OpenRoot(dir); err != nil {
+		if root, err = os.OpenRoot(dir); err == nil {
+			if is, err = root.Stat("."); err != nil {
+				_ = root.Close()
+				root = nil
+			}
+		}
+		if err != nil {
 			dir, may = "", FilesNone
 		}
 	}
@@ -149,10 +164,10 @@ func (h *Host) SetFiles(dir string, may FilesMay) error {
 	var shut *os.Root
 	switch {
 	case root != nil:
-		shut, h.files.root = h.files.root, root
+		shut, h.files.root, h.files.is = h.files.root, root, is
 		h.files.gen++
 	case may == FilesNone && h.files.root != nil:
-		shut, h.files.root = h.files.root, nil
+		shut, h.files.root, h.files.is = h.files.root, nil, nil
 		h.files.gen++
 	}
 	h.files.dir, h.files.may = dir, may
@@ -289,15 +304,29 @@ func (s *filesServer) tell(e FileEvent) {
 }
 
 // hold opens the file of rel in root with flag for need, as a handle.
-func (s *filesServer) hold(root *os.Root, gen uint64, p, rel string, flag int, need FilesMay) (*fileHandle, error) {
-	made := false
-	if flag&os.O_CREATE != 0 {
-		_, err := root.Lstat(rel)
-		made = errors.Is(err, fs.ErrNotExist)
+//
+// Only a file, or a folder for dir, is opened: a pipe, a socket or a
+// device could wait for ever as it is opened or read, or do something as
+// it is. What is there is asked first, the name opened without waiting,
+// and what was opened asked again, in case it was swapped meanwhile.
+func (s *filesServer) hold(root *os.Root, gen uint64, p, rel string, flag int, need FilesMay, dir bool) (*fileHandle, error) {
+	was, err := root.Stat(rel)
+	made := errors.Is(err, fs.ErrNotExist) && flag&os.O_CREATE != 0
+	switch {
+	case made:
+	case err != nil:
+		return nil, bare(err)
+	case !plainKind(was, dir):
+		return nil, sftp.ErrSSHFxFailure
 	}
-	file, err := root.OpenFile(rel, flag, 0o666)
+	file, err := root.OpenFile(rel, flag|openNow, 0o666)
 	if err != nil {
 		return nil, bare(err)
+	}
+	is, err := file.Stat()
+	if err != nil || !plainKind(is, dir) || !made && !os.SameFile(was, is) {
+		_ = file.Close()
+		return nil, sftp.ErrSSHFxFailure
 	}
 	f := &fileHandle{s: s, f: file, path: shown(p), need: need, gen: gen, made: made, trunc: flag&os.O_TRUNC != 0}
 	if !s.open(f) {
@@ -305,6 +334,14 @@ func (s *filesServer) hold(root *os.Root, gen uint64, p, rel string, flag int, n
 		return nil, sftp.ErrSSHFxFailure
 	}
 	return f, nil
+}
+
+// plainKind reports whether info is a file, or a folder for dir.
+func plainKind(info fs.FileInfo, dir bool) bool {
+	if dir {
+		return info.IsDir()
+	}
+	return info.Mode().IsRegular()
 }
 
 // Fileread opens a file to read.
@@ -317,13 +354,9 @@ func (s *filesServer) Fileread(r *sftp.Request) (io.ReaderAt, error) {
 	if err != nil {
 		return nil, err
 	}
-	f, err := s.hold(root, gen, r.Filepath, rel, os.O_RDONLY, FilesLook)
+	f, err := s.hold(root, gen, r.Filepath, rel, os.O_RDONLY, FilesLook, false)
 	if err != nil {
 		return nil, err
-	}
-	if info, err := f.f.Stat(); err != nil || info.IsDir() {
-		_ = f.Close()
-		return nil, sftp.ErrSSHFxFailure
 	}
 	f.reads = true
 	return f, nil
@@ -359,7 +392,7 @@ func (s *filesServer) write(r *sftp.Request, flag int) (*fileHandle, error) {
 	if how.Excl {
 		flag |= os.O_EXCL
 	}
-	f, err := s.hold(root, gen, r.Filepath, rel, flag, FilesChange)
+	f, err := s.hold(root, gen, r.Filepath, rel, flag, FilesChange, false)
 	if err != nil {
 		return nil, err
 	}
@@ -502,13 +535,9 @@ func (s *filesServer) Filelist(r *sftp.Request) (sftp.ListerAt, error) {
 		}
 		return oneInfo{bareInfo{info}}, nil
 	case "List":
-		f, err := s.hold(root, gen, r.Filepath, rel, os.O_RDONLY, FilesLook)
+		f, err := s.hold(root, gen, r.Filepath, rel, os.O_RDONLY, FilesLook, true)
 		if err != nil {
 			return nil, err
-		}
-		if info, err := f.f.Stat(); err != nil || !info.IsDir() {
-			_ = f.Close()
-			return nil, sftp.ErrSSHFxFailure
 		}
 		return &dirLister{fileHandle: f, root: root, rel: rel}, nil
 	}
@@ -550,19 +579,23 @@ func (s *filesServer) Readlink(p string) (string, error) {
 		return "", bare(err)
 	}
 	to = filepath.ToSlash(to)
-	if filepath.IsAbs(to) || filepath.VolumeName(to) != "" || path.IsAbs(to) {
-		return "", sftp.ErrSSHFxNoSuchFile
-	}
-	// From the top, with no slash before it, so a ".." too many is kept.
-	if !inside(path.Join(path.Dir(strings.TrimPrefix(shown(p), "/")), to)) {
+	if filepath.IsAbs(to) || filepath.VolumeName(to) != "" || path.IsAbs(to) || climbs(to) {
 		return "", sftp.ErrSSHFxNoSuchFile
 	}
 	return to, nil
 }
 
-// inside reports whether a path joined from the top stays below it.
-func inside(p string) bool {
-	return p != ".." && !strings.HasPrefix(p, "../")
+// climbs reports whether a link's words go up a folder anywhere. Where
+// the link stands may be other than the guest's path to it says, through
+// a folder that is a link itself, so up from it may be anywhere: only a
+// target that goes down from it is surely inside.
+func climbs(to string) bool {
+	for part := range strings.SplitSeq(to, "/") {
+		if part == ".." {
+			return true
+		}
+	}
+	return false
 }
 
 // bare is err as the guest is told it: its kind, and none of the host's
@@ -585,10 +618,17 @@ func bare(err error) error {
 
 // bareInfo is what the guest is told of a file: no more than its name,
 // size, kind, permissions and time, and not the owner's numbers on the
-// host.
+// host. A link has no size: its own is the length of where it leads.
 type bareInfo struct{ fs.FileInfo }
 
 func (bareInfo) Sys() any { return nil }
+
+func (b bareInfo) Size() int64 {
+	if b.Mode()&fs.ModeSymlink != 0 {
+		return 0
+	}
+	return b.FileInfo.Size()
+}
 
 // oneInfo lists one name.
 type oneInfo struct{ info fs.FileInfo }
@@ -707,8 +747,25 @@ func (c *hostConn) files(ch ssh.Channel) {
 	m := &metered{rw: ch, ctx: c.ctx, asks: c.fileAsks, bytes: c.fileBytes, slots: make(chan struct{}, mostAsked)}
 	s := &filesServer{c: c}
 	srv := sftp.NewRequestServer(m, sftp.Handlers{FileGet: s, FilePut: s, FileCmd: s, FileList: s})
-	_ = srv.Serve()
+	served := make(chan struct{})
+	go func() {
+		defer close(served)
+		_ = srv.Serve()
+	}()
+	// The connection's end is not held up by a request that waits, as on
+	// a network drive that does not answer: what it has open is closed
+	// under it, and it ends when it can.
+	select {
+	case <-served:
+	case <-c.ctx.Done():
+	}
 	_ = srv.Close()
+	c.h.mu.Lock()
+	cut := c.h.cutLocked(func(f *fileHandle) bool { return f.s.c == c })
+	c.h.mu.Unlock()
+	for _, f := range cut {
+		f.cut()
+	}
 }
 
 // reserveFiles makes room for a channel to the folder.

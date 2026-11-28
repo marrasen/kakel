@@ -262,3 +262,29 @@ func TestTheFilesLogRunsThingsTogether(t *testing.T) {
 		t.Errorf("after a quiet moment, %d lines", n)
 	}
 }
+
+// A guest that does much in a minute has its lines cut off there, and
+// what was not written counted in one line, so the Window Log keeps what
+// came before.
+func TestTheFilesLogIsBounded(t *testing.T) {
+	var lines []string
+	now := time.Unix(1e9, 0)
+	f := &filesLog{write: func(s string) { lines = append(lines, s) }, now: func() time.Time { return now }}
+	f.setWho("Bob")
+	f.setFolder("Reports")
+	// Each in another folder, so none runs together.
+	for i := range 500 {
+		f.add(guest.FileEvent{Op: guest.FolderCreated, Path: "/d" + itoa(i) + "/x"})
+	}
+	f.flush()
+	if len(lines) != filesLines {
+		t.Fatalf("%d lines in a minute", len(lines))
+	}
+	now = now.Add(filesEvery)
+	f.add(guest.FileEvent{Op: guest.FileRemoved, Path: "/gone"})
+	f.end()
+	want := `the guest "Bob" did 480 more things in a shared window`
+	if len(lines) != filesLines+2 || lines[filesLines] != want || !strings.Contains(lines[filesLines+1], "removed") {
+		t.Errorf("after the minute: %q", lines[filesLines:])
+	}
+}
