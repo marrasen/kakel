@@ -130,3 +130,12 @@ func troubleOf(err error) string {
 	}
 	return "Couldn't reach the host. Check the network, then retry."
 }
+
+// sizedBy says a terminal has the host's size, where the page sets the
+// sizes of the others.
+func sizedBy(host string) string {
+	if host == "" {
+		return "Sized by the host"
+	}
+	return "Sized by " + host
+}

@@ -357,6 +357,18 @@ func (s *Session) Focus(id string) {
 	}
 }
 
+// Shown tells the host which panes are on the page: those whose size the
+// guest may set, with Fit. It does not wait.
+func (s *Session) Shown(ids []string) {
+	var keep []string
+	for _, id := range ids {
+		if id != "" && len(id) <= mostID && !strings.Contains(id, "\n") && len(keep) < mostPanes {
+			keep = append(keep, id)
+		}
+	}
+	s.out.putAside(frame(frameShown, []byte(strings.Join(keep, "\n"))))
+}
+
 // Leave ends the share, as the guest's own end of it, and closes the
 // session.
 func (s *Session) Leave() {

@@ -503,7 +503,7 @@ func (p *settingsPane) sharing() gunim.Node {
 	}
 	setLink := func(change func(*app.SetLinkSetup)) app.SetLinkSetup {
 		l := p.st.LinkSetup
-		in := app.SetLinkSetup{Name: l.Name, Watch: l.Watch, Relay: l.Relay, Via: l.Via}
+		in := app.SetLinkSetup{Name: l.Name, Watch: l.Watch, ForGuest: l.ForGuest, Relay: l.Relay, Via: l.Via}
 		change(&in)
 		return in
 	}

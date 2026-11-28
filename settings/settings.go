@@ -278,6 +278,8 @@ type ShareLink struct {
 	Name string `json:"name,omitempty"`
 	// Watch says the guest only watches until it is let type.
 	Watch bool `json:"watch,omitempty"`
+	// ForGuest says the guest's page sets the size of the terminals.
+	ForGuest bool `json:"forGuest,omitempty"`
 	// Relay is the relay it goes through, with its secret, and Via the ID
 	// of the saved server that is reached through, empty for this machine.
 	Relay string `json:"relay,omitempty"`

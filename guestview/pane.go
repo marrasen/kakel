@@ -41,6 +41,9 @@ type paneView struct {
 	// lit the bell has it.
 	dim, rung *anim.Float
 	ended     *widget.Badge
+	// hostSized says the page sets the sizes, and the host's is held to
+	// here all the same.
+	hostSized *widget.Badge
 	// ringing says the bell has lit it and has yet to let go, and warned
 	// lights its edge as the guest types and may only watch.
 	ringing bool
@@ -87,12 +90,15 @@ var (
 )
 
 func newPaneView(w *windowPage, id string) *paneView {
-	v := &paneView{w: w, id: id, dim: anim.NewFloat(0), rung: anim.NewFloat(0), warned: anim.NewFloat(0), ended: widget.NewBadge("Ended")}
+	v := &paneView{w: w, id: id, dim: anim.NewFloat(0), rung: anim.NewFloat(0), warned: anim.NewFloat(0), ended: widget.NewBadge("Ended"),
+		hostSized: widget.NewBadge(sizedBy(w.st.HostName))}
+	v.hostSized.Ink = look.Faint
 	v.Add(v.dim, v.rung, v.warned)
 	v.ended.Ink = look.Faint
 	v.untyped = w.st.Untyped[id]
 	pn, _ := w.p.paneOf(id)
 	v.ended.SetHidden(!pn.Ended, nil)
+	v.hostSized.SetHidden(!w.st.GuestSizes || !pn.HostSized, nil)
 	v.dim.Jump(anim.OnOff(pn.Ended))
 	v.pages = widget.NewPages(v.showing(w.faceOf(pn)))
 	return v
@@ -113,7 +119,7 @@ func (v *paneView) showing(f face) gunim.Node {
 	if v.w.p.away {
 		t.SetAway(true, nil)
 	}
-	t.SetFitted(true, v.w.p.u)
+	t.SetFitted(v.w.fitted(v.id), v.w.p.u)
 	t.SetCell(v.w.cell(), v.w.p.u)
 	v.term = t
 	v.themed = widget.NewThemed(&termview.Pad{Term: t.menu()}, v.w.st.Theme.Content)
@@ -168,6 +174,12 @@ func (v *paneView) update(u *gunim.UI) {
 		v.lose(u)
 	}
 	v.send(u)
+	if hidden := !v.w.st.GuestSizes || !pn.HostSized; hidden != v.hostSized.Hidden() {
+		if !hidden {
+			v.hostSized.Text = sizedBy(v.w.st.HostName)
+		}
+		v.hostSized.SetHidden(hidden, u)
+	}
 	if v.ended.Hidden() == pn.Ended {
 		v.ended.SetHidden(!pn.Ended, u)
 		v.dim.Animate(anim.OnOff(pn.Ended), widget.Settle.Get(u.Theme()))
@@ -204,7 +216,7 @@ func (v *paneView) warn(u *gunim.UI) {
 }
 
 // Children implements [gunim.Composite].
-func (v *paneView) Children() []gunim.Node { return []gunim.Node{v.pages, v.ended} }
+func (v *paneView) Children() []gunim.Node { return []gunim.Node{v.pages, v.ended, v.hostSized} }
 
 // Layout implements [gunim.Node]. While a split slides, the terminal's
 // text is sized along with the pane, as its screen is always all there.
@@ -216,6 +228,8 @@ func (v *paneView) Layout(c gunim.Constraints, f gunim.Frame, kids gunim.Childre
 	tag := paneTag.Get(f.Theme)
 	s := kids.At(1).Layout(gunim.Constraints{Max: size})
 	kids.At(1).Place(geom.Pt(c.Max.W-s.W-tag, tag))
+	s = kids.At(2).Layout(gunim.Constraints{Max: size})
+	kids.At(2).Place(geom.Pt(c.Max.W-s.W-tag, c.Max.H-s.H-tag))
 	return c.Max
 }
 
@@ -242,6 +256,7 @@ func (v *paneView) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gu
 		p.RRectStroke(r.Inset(geom.Uniform(w/2)), 0, paint.Fill{}, paint.Stroke{Width: w, Color: c})
 	}
 	kids.At(1).Paint(p)
+	kids.At(2).Paint(p)
 }
 
 // newStandIn stands in for a terminal that is not shown: what kind of
@@ -308,6 +323,50 @@ type term struct {
 	// eaten is what an input method is composing and has been typed
 	// already.
 	eaten string
+	// fits is the size the program was last said to have room for, and
+	// looking says it is to be looked at again once the panes stop gliding.
+	fits    [2]int
+	looking bool
+}
+
+// fitLook is how often a terminal looks whether the panes have stopped
+// gliding, to say what it has room for then.
+const fitLook = 50 * time.Millisecond
+
+// Layout implements [gunim.Node]: the terminal's own, and where the page
+// sets the size, what it has room for is said, as that changes.
+func (t *term) Layout(c gunim.Constraints, f gunim.Frame, kids gunim.Children) geom.Size {
+	size := t.Term.Layout(c, f, kids)
+	u := t.v.w.p.u
+	if t.Fitted() || !t.v.w.st.GuestSizes || u == nil {
+		t.fits = [2]int{}
+		return size
+	}
+	if t.v.w.picture.gliding() {
+		// Only the size they come to: each said resizes the program.
+		if !t.looking {
+			t.looking = true
+			u.After(fitLook, func(u *gunim.UI) {
+				t.looking = false
+				u.Invalidate()
+			})
+		}
+		return size
+	}
+	// The room's, at the page's own size of text: the cells are laid out
+	// at the screen's, which a screen larger than the pane is drawn smaller
+	// than.
+	cell := t.Cells().CellSize()
+	if cell.W <= 0 || cell.H <= 0 {
+		return size
+	}
+	if cols, rows := int(size.W/cell.W), int(size.H/cell.H); cols > 0 && rows > 0 && [2]int{cols, rows} != t.fits {
+		t.fits = [2]int{cols, rows}
+		id := t.v.id
+		// Once this layout is done.
+		u.After(0, func(u *gunim.UI) { u.Send(t.v.w.p, Fits{Pane: id, Cols: cols, Rows: rows}) })
+	}
+	return size
 }
 
 // menu is the terminal in the menu its right click opens.

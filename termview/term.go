@@ -137,6 +137,9 @@ type Term struct {
 	offset geom.Point
 	// fit is a fitted screen's place in the pane; see [Term.SetFitted].
 	fit fit
+	// heldSize is the size of a screen somebody else sizes, as it was last
+	// laid out, so a new one glides to its place.
+	heldSize [2]int
 	// compose is what an input method is composing in the pane.
 	compose compose
 	// u is the window's, as last heard of, and recoloured the terminal's
@@ -395,6 +398,12 @@ func (t *Term) Layout(c gunim.Constraints, f gunim.Frame, kids gunim.Children) g
 	t.scale, t.offset = 1, geom.Point{}
 	cell := t.cells.CellSize()
 	cols, rows = t.cells.GridSize()
+	if t.sh.T.Held() {
+		if was := t.heldSize; was != [2]int{cols, rows} && was != [2]int{} {
+			t.fit.due = true
+		}
+		t.heldSize = [2]int{cols, rows}
+	}
 	need := geom.Sz(float32(cols)*cell.W, float32(rows)*cell.H)
 	if t.sh.T.Held() && (need.W > size.W || need.H > size.H) && need.W > 0 && need.H > 0 {
 		t.scale = min(size.W/need.W, size.H/need.H)
