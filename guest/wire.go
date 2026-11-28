@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path"
+	"strings"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -186,6 +188,9 @@ const (
 	// mostName, mostAbout and mostTitle count characters.
 	mostName, mostAbout, mostTitle = 40, 100, 300
 
+	// mostFolder is the longest path of a Files pane, in bytes.
+	mostFolder = 4096
+
 	// mostRoom is the widest and tallest the host's panes are said to be,
 	// as a window across several screens is, and mostCell a terminal's
 	// cell, as the largest text makes it: in the host's logical pixels.
@@ -284,6 +289,11 @@ type Pane struct {
 	// set, though the state says GuestSizes: one another kakel watching it
 	// gives it, or that of screens from elsewhere.
 	HostSized bool `json:",omitempty"`
+	// Folder is where a Files pane is, inside the share's folder: its
+	// path from the folder's top, with slashes, as "/Reports/2026", and
+	// "" where it is elsewhere, or no files are shared. Never a path of
+	// the host's own.
+	Folder string `json:",omitempty"`
 }
 
 // Kind is what a pane is.
@@ -295,6 +305,9 @@ const (
 	// KindOther is one that is not shared, which stands in the layout and
 	// says so.
 	KindOther Kind = "other"
+	// KindFiles is a Files pane, which shows the share's folder where the
+	// guest may have files, and is not shared where it may not.
+	KindFiles Kind = "files"
 )
 
 // State is the shared window as it stands.
@@ -320,6 +333,9 @@ type State struct {
 	// which is the host's. No folder shares no files.
 	Files  FilesMay `json:",omitempty"`
 	Folder string   `json:",omitempty"`
+	// Folders counts the folders the host has shared, so a guest knows
+	// one from another of the same name.
+	Folders uint32 `json:",omitempty"`
 
 	// Room is how large the host's panes are laid out, their bars with
 	// them, and Cell how large a terminal's cell is there, both in the
@@ -370,6 +386,7 @@ func (st State) least() State {
 		Room: st.Room.within(mostRoom), Cell: st.Cell.within(mostCell),
 	}
 	few.Files, few.Folder = filesOf(st.Files, plain(st.Folder, mostName))
+	few.Folders = st.Folders
 	if len(st.HostIn) <= mostID {
 		few.HostIn = st.HostIn
 	}
@@ -405,8 +422,12 @@ func decodeState(body []byte) (State, error) {
 			continue
 		}
 		p.Title, p.Icon = plain(p.Title, mostTitle), plain(p.Icon, mostName)
-		if p.Kind != KindTerminal {
+		if p.Kind != KindTerminal && p.Kind != KindFiles {
 			p.Kind = KindOther
+		}
+		p.Folder = FolderPath(p.Folder)
+		if p.Kind != KindFiles || st.Files == FilesNone {
+			p.Folder = ""
 		}
 		if !goodSize(p.Cols, p.Rows) {
 			p.Cols, p.Rows = 0, 0
@@ -415,6 +436,22 @@ func decodeState(body []byte) (State, error) {
 	}
 	st.Panes = panes
 	return st, nil
+}
+
+// FolderPath is p where it is a path from the top of the share's folder a
+// Files pane may be told of: whole, clean, with slashes, no longer than
+// mostFolder, and with nothing in its names that is not plain. Any other
+// is "", the top.
+func FolderPath(p string) string {
+	if p == "" || len(p) > mostFolder || p[0] != '/' || path.Clean(p) != p || p == "/" {
+		return ""
+	}
+	for name := range strings.SplitSeq(p[1:], "/") {
+		if name == "" || name == "." || name == ".." || plain(name, mostFolder) != name || strings.Contains(name, `\`) {
+			return ""
+		}
+	}
+	return p
 }
 
 // filesOf is what a guest may do with a folder called folder: nothing

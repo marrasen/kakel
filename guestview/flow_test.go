@@ -17,6 +17,7 @@ import (
 	"github.com/marrasen/gunim/gunimtest"
 	"github.com/marrasen/gunim/theme"
 	"github.com/marrasen/gunim/widget/dock"
+	"github.com/pkg/sftp"
 
 	"github.com/marrasen/kakel/grid"
 	"github.com/marrasen/kakel/guest"
@@ -173,6 +174,9 @@ func (s *fakeSession) Leave() {
 	s.end(&guest.EndedError{Reason: guest.ReasonLeft})
 }
 func (s *fakeSession) Close() error { s.end(guest.ErrLost); return nil }
+
+// Files is a host that shares no files.
+func (s *fakeSession) Files(context.Context) (*sftp.Client, error) { return nil, guest.ErrNoFiles }
 
 // end ends the connection, once.
 func (s *fakeSession) end(err error) {

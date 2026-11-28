@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/marrasen/gunim"
+	"github.com/marrasen/gunim/filemanager"
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/widget/dock"
 
@@ -85,15 +86,21 @@ const (
 func Run(ctx context.Context, w *gunim.Window, cfg Config) error {
 	f := newFlow(ctx, w, cfg)
 	defer f.close()
-	gunim.RegisterView(w, "guest", func(st State) *page { return newPage(f.shells, f.cfg, st) }, (*page).Update)
-	gunim.RegisterPatch(w, "guest", func(p *page, _ outputArrived, u *gunim.UI) { p.output.Arrived(u) })
-	gunim.RegisterPatch(w, "guest", func(p *page, n notCopied, u *gunim.UI) { p.failed(notCopiedTitle, errors.New(n.why), u) })
-	gunim.RegisterPatch(w, "guest", func(p *page, r rang, u *gunim.UI) { p.ring(r.pane, u) })
-	if err := f.c.Mount(gunim.Root, "guest", "guest", f.st, topic); err != nil {
+	if err := f.show(w); err != nil {
 		return err
 	}
 	f.begin()
 	return f.run()
+}
+
+// show has w show the page, with its file managers.
+func (f *flow) show(w *gunim.Window) error {
+	gunim.RegisterView(w, "guest", func(st State) *page { return newPage(f.shells, f.cfg, st) }, (*page).Update)
+	gunim.RegisterPatch(w, "guest", func(p *page, _ outputArrived, u *gunim.UI) { p.output.Arrived(u) })
+	gunim.RegisterPatch(w, "guest", func(p *page, n notCopied, u *gunim.UI) { p.failed(notCopiedTitle, errors.New(n.why), u) })
+	gunim.RegisterPatch(w, "guest", func(p *page, r rang, u *gunim.UI) { p.ring(r.pane, u) })
+	filemanager.RegisterViews(w)
+	return f.c.Mount(gunim.Root, "guest", "guest", f.st, topic)
 }
 
 // flow is the program's half of the page. All of it is its own
@@ -156,6 +163,9 @@ type flow struct {
 	due     *time.Timer
 	// fitting is the timer for a size that has to wait.
 	fitting *time.Timer
+
+	// files are the file managers of the Files panes.
+	files filesFlow
 }
 
 // pane is a terminal of the window.
@@ -243,6 +253,9 @@ func (f *flow) run() error {
 			if !ok {
 				return nil
 			}
+			if f.deliverFiles(e) {
+				continue
+			}
 			f.intent(e.Intent)
 		}
 	}
@@ -253,6 +266,9 @@ func (f *flow) close() {
 	f.cancel()
 	if f.sess != nil {
 		_ = f.sess.Close()
+	}
+	if f.files.fs != nil {
+		f.files.fs.set(nil)
 	}
 	for id := range f.panes {
 		f.forget(id)
@@ -333,6 +349,8 @@ func (f *flow) intent(in gunim.Intent) {
 		}
 	case gunim.FullScreenLeft:
 		// The page reads how the window stands as it draws.
+	case FilesPlaced:
+		f.placed(in)
 	}
 }
 
@@ -629,6 +647,7 @@ func (f *flow) letGo() {
 		f.closePane(p)
 		p.again, p.fails = time.Time{}, 0
 	}
+	f.filesLost()
 }
 
 // end shows how it ended. What the tab kept is of no more use, unless the
@@ -654,6 +673,7 @@ func (f *flow) end(o Over, err error) {
 	}
 	f.st.Page, f.st.Over, f.st.Busy, f.st.Lost = PageOver, o, false, false
 	f.publish()
+	f.tendFiles()
 }
 
 // act does what the page at the end offers: it goes on where it was.
@@ -707,6 +727,7 @@ func (f *flow) look(s Session) {
 	}
 	f.publish()
 	f.tend()
+	f.tendFiles()
 }
 
 // window takes the window as the host says it is.
@@ -715,6 +736,7 @@ func (f *flow) window(st guest.State) {
 	f.st.Room, f.st.Cell = geom.Sz(st.Room.W, st.Room.H), geom.Sz(st.Cell.W, st.Cell.H)
 	f.st.GuestSizes = st.GuestSizes
 	f.st.Panes = st.Panes
+	f.st.Files, f.st.Folder, f.st.Folders = st.Files, st.Folder, st.Folders
 	if raw := string(st.Theme); raw != "" && raw != f.themed {
 		f.themed = raw
 		if th, err := guestlook.ReadTheme(st.Theme); err != nil {
@@ -976,7 +998,7 @@ func (f *flow) wanted() (wanted []*pane, held map[string]Held) {
 		order = slices.Insert(slices.Delete(order, i, i+1), 0, at)
 	}
 	held = map[string]Held{}
-	room := f.budget.most
+	room := f.budget.most - f.budget.held()
 	for _, id := range order {
 		p := f.panes[id]
 		if p == nil {

@@ -113,6 +113,27 @@ type filesState struct {
 	gen uint64
 	// open are the files and folders open, of every connection.
 	open map[*fileHandle]struct{}
+	// parts are the part files the guest made in the folder and has not
+	// renamed or removed, by their names in it: what a copy that stopped
+	// short leaves, which goes as the folder is shared no more.
+	parts map[string]struct{}
+}
+
+// isPart reports whether rel names a part file, as gunim's file manager
+// writes a copy through one: .files-<number>.part.
+func isPart(rel string) bool {
+	name := filepath.Base(rel)
+	return strings.HasPrefix(name, ".files-") && strings.HasSuffix(name, ".part")
+}
+
+// sweepParts removes from root the part files of parts the guest left,
+// files only, as the folder is shared no more.
+func sweepParts(root *os.Root, parts map[string]struct{}) {
+	for rel := range parts {
+		if info, err := root.Lstat(rel); err == nil && info.Mode().IsRegular() {
+			_ = root.Remove(rel)
+		}
+	}
 }
 
 // SetFiles sets the folder a guest reaches, and what it may do there. An
@@ -162,12 +183,15 @@ func (h *Host) SetFiles(dir string, may FilesMay) error {
 		return err
 	}
 	var shut *os.Root
+	var parts map[string]struct{}
 	switch {
 	case root != nil:
 		shut, h.files.root, h.files.is = h.files.root, root, is
+		parts, h.files.parts = h.files.parts, nil
 		h.files.gen++
 	case may == FilesNone && h.files.root != nil:
 		shut, h.files.root, h.files.is = h.files.root, nil, nil
+		parts, h.files.parts = h.files.parts, nil
 		h.files.gen++
 	}
 	h.files.dir, h.files.may = dir, may
@@ -177,6 +201,7 @@ func (h *Host) SetFiles(dir string, may FilesMay) error {
 		f.cut()
 	}
 	if shut != nil {
+		sweepParts(shut, parts)
 		_ = shut.Close()
 	}
 	return err
@@ -198,7 +223,7 @@ func (h *Host) cutLocked(which func(*fileHandle) bool) []*fileHandle {
 // endFiles shares no more files, as the share ends.
 func (h *Host) endFiles() {
 	h.mu.Lock()
-	root := h.files.root
+	root, parts := h.files.root, h.files.parts
 	h.files = filesState{}
 	cut := h.cutLocked(func(*fileHandle) bool { return true })
 	h.mu.Unlock()
@@ -206,6 +231,7 @@ func (h *Host) endFiles() {
 		f.cut()
 	}
 	if root != nil {
+		sweepParts(root, parts)
 		_ = root.Close()
 	}
 }
@@ -287,6 +313,23 @@ func (s *filesServer) open(f *fileHandle) bool {
 	return true
 }
 
+// part notes a part file the guest made in the folder of gen, or with
+// made false that it is renamed or removed.
+func (s *filesServer) part(rel string, gen uint64, made bool) {
+	h := s.c.h
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	switch {
+	case !made:
+		delete(h.files.parts, rel)
+	case gen == h.files.gen:
+		if h.files.parts == nil {
+			h.files.parts = map[string]struct{}{}
+		}
+		h.files.parts[rel] = struct{}{}
+	}
+}
+
 // closed notes that f was closed by the guest, or with its channel.
 func (s *filesServer) closed(f *fileHandle) {
 	h := s.c.h
@@ -332,6 +375,9 @@ func (s *filesServer) hold(root *os.Root, gen uint64, p, rel string, flag int, n
 	if !s.open(f) {
 		_ = file.Close()
 		return nil, sftp.ErrSSHFxFailure
+	}
+	if made && isPart(rel) {
+		s.part(rel, gen, true)
 	}
 	return f, nil
 }
@@ -468,6 +514,7 @@ func (s *filesServer) rename(r *sftp.Request, over bool) error {
 	if err := root.Rename(from, to); err != nil {
 		return bare(err)
 	}
+	s.part(from, 0, false)
 	s.tell(FileEvent{Op: FileRenamed, Path: shown(r.Filepath), To: shown(r.Target)})
 	return nil
 }
@@ -496,6 +543,7 @@ func (s *filesServer) remove(r *sftp.Request, dir bool) error {
 	if err := root.Remove(rel); err != nil {
 		return bare(err)
 	}
+	s.part(rel, 0, false)
 	s.tell(FileEvent{Op: FileRemoved, Path: shown(r.Filepath), Folder: dir})
 	return nil
 }

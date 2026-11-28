@@ -10,6 +10,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/marrasen/gunim/driver/web/saveworker"
 )
 
 // The page as it stands in the source is told how large the program is,
@@ -28,6 +30,11 @@ func TestThePageIsToldTheSize(t *testing.T) {
 	}
 	if !bytes.HasPrefix(files[iconName], []byte("\x89PNG")) {
 		t.Error("the icon is no PNG")
+	}
+	// gunim's save worker, as the page names it.
+	if !bytes.Equal(files[saveworker.Name], saveworker.Script) ||
+		!bytes.Contains(files["index.html"], []byte(`<meta name="gunim-save-worker" content="`+saveworker.Name+`">`)) {
+		t.Error("the page has no save worker")
 	}
 	for name, data := range files {
 		if filepath.Ext(name) != ".png" && bytes.ContainsRune(data, '\r') {

@@ -2,6 +2,7 @@ package guest
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"io/fs"
@@ -787,5 +788,61 @@ func TestTheSameNameAnotherFolder(t *testing.T) {
 	}
 	if text, err := readAll(c, "/new.txt"); err != nil || text != "new" {
 		t.Errorf("the new folder's file read %q, %v", text, err)
+	}
+}
+
+// A Files pane's folder is told only as a path inside the share's folder,
+// whole and plain, and only to a guest that may have files.
+func TestAFilesPanesFolderIsAPathInsideTheShare(t *testing.T) {
+	for p, want := range map[string]string{
+		"/Reports/2026": "/Reports/2026", "/a b": "/a b", "": "", "/": "", "Reports": "", "/a/../b": "", "/a/": "",
+		"/a//b": "", "/a/./b": "", `/a\b`: "", "/a\x00b": "", "/\u202ex": "", "/" + strings.Repeat("x", mostFolder): "",
+	} {
+		if got := FolderPath(p); got != want {
+			t.Errorf("FolderPath(%q) = %q, want %q", p, got, want)
+		}
+	}
+	st := State{Files: FilesLook, Folder: "Share", Panes: []Pane{
+		{ID: "f", Kind: KindFiles, Folder: "/sub"}, {ID: "t", Kind: KindTerminal, Folder: "/sub"}, {ID: "x", Kind: "nonsense", Folder: "/sub"},
+	}}
+	body, err := json.Marshal(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := decodeState(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := got.Panes; p[0].Kind != KindFiles || p[0].Folder != "/sub" || p[1].Folder != "" || p[2].Kind != KindOther || p[2].Folder != "" {
+		t.Errorf("decoded %+v", p)
+	}
+	st.Files = FilesNone
+	body, _ = json.Marshal(st)
+	if got, _ := decodeState(body); got.Panes[0].Folder != "" {
+		t.Error("a guest with no files is told a folder")
+	}
+}
+
+// The part files a guest's copies leave in the folder go once it is
+// shared no more: those the guest made and left, and no other.
+func TestPartFilesTheGuestLeftGoWithTheShare(t *testing.T) {
+	f := newFolders(t)
+	put(t, filepath.Join(f.share, ".files-1.part"), "the host's own")
+	r, _, c := filesOn(t, f.share, FilesChange)
+	for _, name := range []string{"/.files-2.part", "/sub/.files-3.part", "/.files-4.part"} {
+		if err := upload(c, name, "half"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := c.PosixRename("/.files-4.part", "/whole.txt"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.host.SetFiles("", FilesNone); err != nil {
+		t.Fatal(err)
+	}
+	for name, there := range map[string]bool{".files-1.part": true, ".files-2.part": false, "sub/.files-3.part": false, "whole.txt": true} {
+		if _, err := os.Stat(filepath.Join(f.share, filepath.FromSlash(name))); (err == nil) != there {
+			t.Errorf("%s is there: %v", name, err == nil)
+		}
 	}
 }

@@ -280,6 +280,9 @@ type windowLink struct {
 	files    guest.FilesMay
 	folder   string
 	filesLog *filesLog
+	// folders counts the folders shared, and counted is the last.
+	folders uint32
+	counted string
 
 	// mu guards panes, the terminals the guest may be shown, by pane,
 	// which the share's goroutines read.
@@ -1038,7 +1041,7 @@ func (a *app) tellLink(l *windowLink) {
 
 // sharedState is a window as its guest is told of it, and its terminals.
 func (a *app) sharedState(l *windowLink) (guest.State, map[string]guest.PaneSource) {
-	st := guest.State{HostName: l.hostName, CanType: l.canType, GuestSizes: l.forGuest}
+	st := guest.State{HostName: l.hostName, CanType: l.canType, GuestSizes: l.forGuest, Folders: l.folders}
 	if l.files != guest.FilesNone {
 		st.Files, st.Folder = l.files, folderName(l.folder)
 	}
@@ -1059,6 +1062,15 @@ func (a *app) sharedState(l *windowLink) (guest.State, map[string]guest.PaneSour
 			continue
 		}
 		shown := guest.Pane{ID: p.ID, Title: kindWord(p.Kind), Kind: guest.KindOther, Icon: a.sharedPicture(p)}
+		if p.Kind == KindFileManager && p.Machine == machines.Local && p.On == "" {
+			// A Files pane of this computer's is the shared folder on the
+			// guest's page. One of a server, or of another kakel, is not
+			// shared.
+			shown.Kind = guest.KindFiles
+			if l.files != guest.FilesNone {
+				shown.Folder = sharedFolder(l.folder, a.filesFolder(p.ID, machines.Local))
+			}
+		}
 		if t := a.terminal(p.ID); t != nil {
 			shown.Kind, shown.Title, shown.Ended = guest.KindTerminal, sharedTitle(p), p.Ended
 			size := t.Size()

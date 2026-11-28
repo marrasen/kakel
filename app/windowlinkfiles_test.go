@@ -121,6 +121,18 @@ func TestAGuestReachesTheSharedFolder(t *testing.T) {
 		t.Errorf("the share reads %+v", got)
 	}
 
+	// The Files pane is the guest's file manager, in the folder the
+	// host's shows, told from the share's top.
+	r.showFolder(filepath.Join(dir, "made"))
+	r.do(SetLinkFiles{ID: l.ID, Files: guest.FilesLook})
+	v.state("the Files pane's folder", func(st guest.State) bool {
+		i := slices.IndexFunc(st.Panes, func(p guest.Pane) bool { return p.ID == "p3" })
+		return i >= 0 && st.Panes[i].Kind == guest.KindFiles && st.Panes[i].Folder == "/made"
+	})
+	if strings.Contains(v.everything(), top) {
+		t.Error("the guest was told the folder's path")
+	}
+
 	r.do(SetLinkFiles{ID: l.ID, Files: guest.FilesNone})
 	v.state("none", func(st guest.State) bool { return st.Files == guest.FilesNone && st.Folder == "" })
 	if _, err := c.ReadDir("/"); !errors.Is(err, fs.ErrPermission) {
@@ -286,5 +298,48 @@ func TestTheFilesLogIsBounded(t *testing.T) {
 	want := `the guest "Bob" did 480 more things in a shared window`
 	if len(lines) != filesLines+2 || lines[filesLines] != want || !strings.Contains(lines[filesLines+1], "removed") {
 		t.Errorf("after the minute: %q", lines[filesLines:])
+	}
+}
+
+// A Files pane's folder is told as a path inside the share's folder, and
+// one elsewhere not at all.
+func TestAFilesPanesFolderIsToldInsideTheShare(t *testing.T) {
+	top := filepath.Join(t.TempDir(), "Reports")
+	for dir, want := range map[string]string{
+		filepath.Join(top, "2026", "May"): "/2026/May", top: "", filepath.Dir(top): "", filepath.Join(filepath.Dir(top), "Reports2"): "", "": "",
+	} {
+		if got := sharedFolder(top, dir); got != want {
+			t.Errorf("%s is told as %q, want %q", dir, got, want)
+		}
+	}
+	if got := sharedFolder("", top); got != "" {
+		t.Errorf("with no share, %q", got)
+	}
+}
+
+// A Files pane of a server's, or of another kakel's, is not the shared
+// folder: the guest is told it is not shared.
+func TestAServersFilesPaneIsNotShared(t *testing.T) {
+	r := newLinkRig(t)
+	dir := t.TempDir()
+	r.a.addPane(Pane{ID: "far", Title: "Files", Kind: KindFileManager, Machine: "box"}, nil, Placement{})
+	r.a.addPane(Pane{ID: "on", Title: "Files", Kind: KindFileManager, On: "other"}, nil, Placement{})
+	l := r.shareWith(guest.FilesLook, dir)
+	v := r.visit(l.Link)
+	v.in(l.ID, true)
+	st := v.state("the panes", func(st guest.State) bool {
+		return slices.ContainsFunc(st.Panes, func(p guest.Pane) bool { return p.ID == "on" })
+	})
+	for _, p := range st.Panes {
+		want := guest.KindOther
+		switch p.ID {
+		case "p1", "p2":
+			want = guest.KindTerminal
+		case "p3":
+			want = guest.KindFiles
+		}
+		if p.Kind != want {
+			t.Errorf("%s is %q, want %q", p.ID, p.Kind, want)
+		}
 	}
 }

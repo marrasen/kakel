@@ -660,3 +660,11 @@ func (b *Browser) Allow(t testing.TB, origin string, names ...string) {
 		t.Fatal(err)
 	}
 }
+
+// Downloads has what the pages download saved in dir, without asking.
+func (b *Browser) Downloads(t testing.TB, dir string) {
+	t.Helper()
+	if err := b.call("", "Browser.setDownloadBehavior", map[string]any{"behavior": "allow", "downloadPath": dir}, nil); err != nil {
+		t.Fatal(err)
+	}
+}
