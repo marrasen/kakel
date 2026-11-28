@@ -773,6 +773,9 @@ func TestALinkThroughALinkedFolderIsNotReadOut(t *testing.T) {
 
 // The same path with another folder in its place by now is that folder.
 func TestTheSameNameAnotherFolder(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows renames no folder that is open, so a shared one cannot be moved away")
+	}
 	f := newFolders(t)
 	r, _, c := filesOn(t, f.share, FilesLook)
 	if err := os.Rename(f.share, f.share+".old"); err != nil {
