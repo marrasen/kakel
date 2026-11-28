@@ -297,9 +297,12 @@ func TestARunningStartLineHoldsBackTheNext(t *testing.T) {
 
 			p := onlyPane(t, a, opens(t, a, opened, kept.ID))
 			tm := a.terminal(p.ID)
-			waitFor(t, a, "cat to run", func() bool { return tm.RunningAProgram() && strings.Contains(tm.AllText(), "cat") })
+			// The rows run together: a long folder in the prompt wraps
+			// what was typed across two.
+			text := func() string { return strings.ReplaceAll(tm.AllText(), "\n", "") }
+			waitFor(t, a, "cat to run", func() bool { return tm.RunningAProgram() && strings.Contains(text(), "cat") })
 			holds(t, a, "one line left while cat runs", 1500*time.Millisecond, func() bool {
-				return tm.LinesLeft() == 1 && !strings.Contains(tm.AllText(), "TWO")
+				return tm.LinesLeft() == 1 && !strings.Contains(text(), "TWO")
 			})
 		})
 	}
