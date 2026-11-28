@@ -41,10 +41,12 @@ type windowPage struct {
 	p    *page
 	bar  *bar
 	dock *dock.Dock
-	// tabs is the dock, in the host's own colours.
-	tabs *widget.Themed
-	keys *keyRow
-	veil *veil
+	// tabs is the dock, in the host's own colours, and picture draws it
+	// as the host's window, whole.
+	tabs    *widget.Themed
+	picture *picture
+	keys    *keyRow
+	veil    *veil
 	// keymap is what the terminals and the page do themselves.
 	keymap *ui.Keymap
 
@@ -82,7 +84,11 @@ func newWindowPage(p *page) *windowPage {
 	w.dock.Content = func(id string) gunim.Node { return w.pane(id) }
 	w.dock.Face = func(n *dock.Node) dock.Face {
 		pn, _ := p.paneOf(n.ID)
-		return dock.Face{Title: pn.Title, Icon: iconOf(pn)}
+		f := dock.Face{Title: pn.Title, Icon: iconOf(pn)}
+		if n.ID == w.hostIn && w.st.HostName != "" {
+			f.Badge, f.BadgeInk = w.st.HostName, &hostInk
+		}
+		return f
 	}
 	w.dock.OnChange = func(c dock.Change, u *gunim.UI) gunim.Intent {
 		if s, ok := c.(dock.Show); ok {
@@ -92,15 +98,39 @@ func newWindowPage(p *page) *windowPage {
 		return nil
 	}
 	w.tabs = widget.NewThemed(w.dock, w.tabsLook())
+	w.picture = newPicture(w)
 	return w
 }
 
-// tabsLook is what the dock and its tabs are drawn in.
+// tabsLook is what the dock and its tabs are drawn in: with room for a
+// finger where the panes stand one at a time, and otherwise as the host
+// has them, so that its panes are laid out as large.
 func (w *windowPage) tabsLook() theme.Theme {
-	if w.p.touch {
+	if w.p.touch && w.narrow {
 		return forFingers(w.st.Theme.Theme)
 	}
 	return w.st.Theme.Theme
+}
+
+// cell is how large the terminals' cells are to be at most: the host's,
+// where the panes are the host's window, whole, so all have its one size
+// of text, and none where they stand one at a time, each as large as the
+// page has room for.
+func (w *windowPage) cell() geom.Size {
+	if _, said := w.picture.hostRoom(); !said || w.narrow {
+		return geom.Size{}
+	}
+	return w.st.Cell
+}
+
+// sized has the picture and the terminals' text go to the sizes the host
+// and the page say.
+func (w *windowPage) sized(u *gunim.UI) {
+	w.picture.set(u)
+	cell := w.cell()
+	for t := range w.terms {
+		t.SetCell(cell, u)
+	}
 }
 
 // shortcuts are kakel's own, of what there is to do here, and those a Mac
@@ -176,6 +206,7 @@ func (w *windowPage) update(st State, u *gunim.UI) {
 	if st.Themes != w.themes {
 		w.tabs.Use(w.tabsLook())
 	}
+	w.sized(u)
 	for id, v := range w.panes {
 		if st.Conn != was.Conn && !was.Lost {
 			// Another connection already, too soon to be seen: what was
@@ -193,11 +224,13 @@ func (w *windowPage) update(st State, u *gunim.UI) {
 	}
 	w.themes = st.Themes
 	w.host = st.Layout
-	if st.HostIn != w.hostIn {
+	if st.HostIn != w.hostIn || st.HostName != was.HostName {
 		w.hostIn = st.HostIn
 		if w.follow && st.HostIn != "" {
 			w.dock.SetActive(st.HostIn, u)
 		}
+		// The host's name moves to its tab.
+		w.dock.Refresh(u)
 	}
 	w.arrange(u)
 	if w.follow && st.HostIn != "" && w.dock.Active() == st.HostIn {
@@ -399,20 +432,26 @@ func (w *windowPage) touched(u *gunim.UI) {
 // narrows has the panes stand one at a time where there is room for no
 // more, and as the host's where there is.
 func (w *windowPage) narrows(u *gunim.UI) {
-	th := u.Theme()
-	narrow := w.room.W < narrowAt.Get(th) || w.p.touch && w.room.H < lowAt.Get(th)
+	narrow := w.narrowIn(w.room, u.Theme())
 	if w.room == (geom.Size{}) || narrow == w.narrow {
 		return
 	}
 	w.narrow = narrow
 	w.bar.narrow(narrow, u)
+	w.tabs.Use(w.tabsLook())
+	w.sized(u)
 	w.arrange(u)
 	u.Invalidate()
 }
 
+// narrowIn reports whether the panes stand one at a time in room.
+func (w *windowPage) narrowIn(room geom.Size, th *theme.Live) bool {
+	return room.W < narrowAt.Get(th) || w.p.touch && room.H < lowAt.Get(th)
+}
+
 // Children implements [gunim.Composite].
 func (w *windowPage) Children() []gunim.Node {
-	return []gunim.Node{w.tabs, w.keys.fold, w.bar, w.veil}
+	return []gunim.Node{w.picture, w.keys.fold, w.bar, w.veil}
 }
 
 // Layout implements [gunim.Node].

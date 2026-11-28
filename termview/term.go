@@ -302,6 +302,19 @@ func (t *Term) SetFitted(on bool, u *gunim.UI) {
 	u.Invalidate()
 }
 
+// SetCell has a fitted screen's text no larger than the size whose cell
+// fits in cell, the size of a cell the far end has: every screen given the
+// same cell then has the one size of text, where each has the room. A
+// zero cell has the text as large as the pane has room for. Either way
+// the text glides to its new size.
+func (t *Term) SetCell(cell geom.Size, u *gunim.UI) {
+	if cell == t.fit.cell {
+		return
+	}
+	t.fit.cell, t.fit.due = cell, t.fit.laid
+	u.Invalidate()
+}
+
 // Fitted reports whether the screen is fitted; see [Term.SetFitted].
 func (t *Term) Fitted() bool { return t.fit.on }
 

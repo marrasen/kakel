@@ -22,6 +22,9 @@ type fit struct {
 	// again once the screen is no longer fitted.
 	want      fitKey
 	size, own float32
+	// cell is how large a cell the far end has, where that is said: the
+	// text is no larger than one whose cell fits in it.
+	cell geom.Size
 
 	// cellH is the height the cells are drawn at, and at where the
 	// screen's corner is.
@@ -34,7 +37,7 @@ type fit struct {
 
 // fitKey is what the size of the text depends on.
 type fitKey struct {
-	box        geom.Size
+	box, cell  geom.Size
 	cols, rows int
 	scale      float32
 	faces      [4]*text.Face
@@ -72,13 +75,18 @@ func (t *fit) set(on bool, cells *widget.CellGrid) {
 // they stand.
 func (t *fit) layout(k gunim.Child, box geom.Size, cells *widget.CellGrid, f gunim.Frame) geom.Point {
 	cols, rows := cells.GridSize()
-	want := fitKey{box: box, cols: cols, rows: rows, scale: f.Scale, faces: cells.Faces}
+	want := fitKey{box: box, cell: t.cell, cols: cols, rows: rows, scale: f.Scale, faces: cells.Faces}
 	if cells.Size != t.size || t.want == (fitKey{}) {
 		// The size the program gave it, now or while it was fitted.
 		t.own = cells.Size
 	}
 	if was := t.want; want != was {
 		t.want, t.size = want, t.largest(want, f)
+		if c := want.cell; c.W > 0 && c.H > 0 {
+			// One size for every screen with the same cell, wherever
+			// that is smaller than the whole screen would be.
+			t.size = min(t.size, t.largest(fitKey{box: c, cols: 1, rows: 1, scale: want.scale, faces: want.faces}, f))
+		}
 		t.due = t.due || was.cols != 0 && (was.cols != cols || was.rows != rows)
 	}
 	cells.Size = t.size
