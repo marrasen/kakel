@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/marrasen/gunim/driver/web/saveworker"
+
 	"github.com/marrasen/kakel/appicon"
 )
 
@@ -181,6 +183,9 @@ func page(root string, size int) (map[string][]byte, error) {
 		return nil, err
 	}
 	files[iconName] = icon.Bytes()
+	// gunim's save worker, which writes a download to the disk as it
+	// comes, as the page's meta tag names it.
+	files[saveworker.Name] = lines(saveworker.Script)
 	return files, nil
 }
 

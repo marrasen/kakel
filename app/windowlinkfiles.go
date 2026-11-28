@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"path"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -88,6 +89,21 @@ func (a *app) linkFolders() map[int]string {
 	return out
 }
 
+// sharedFolder is dir as a guest of a share of top is told of it: its path
+// inside top, with slashes, as "/Reports/2026", and "" for top itself or
+// a folder elsewhere. It is where the guest's file manager starts, and
+// the guest reaches only what is inside top, whatever it is told.
+func sharedFolder(top, dir string) string {
+	if top == "" || dir == "" {
+		return ""
+	}
+	rel, err := filepath.Rel(top, dir)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return ""
+	}
+	return guest.FolderPath("/" + filepath.ToSlash(rel))
+}
+
 // filesWith is what a guest may do with folder: nothing with none.
 func filesWith(may guest.FilesMay, folder string) guest.FilesMay {
 	if folder == "" {
@@ -100,6 +116,10 @@ func filesWith(may guest.FilesMay, folder string) guest.FilesMay {
 // where it could not.
 func (a *app) shareFiles(l *windowLink) {
 	l.files = filesWith(l.files, l.folder)
+	if l.folder != l.counted {
+		l.folders++
+		l.counted = l.folder
+	}
 	if l.host == nil {
 		return
 	}

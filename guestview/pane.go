@@ -54,17 +54,22 @@ type paneView struct {
 	deaf    time.Time
 }
 
-// face is what a pane shows: a terminal, or in place of one says, which
-// is empty for a terminal that is yet to come.
+// face is what a pane shows: a terminal, the share's folder in a Files
+// pane, of the folder of count folders, or in place of either says,
+// which is empty for a terminal that is yet to come.
 type face struct {
-	sh   *screen.Shell
-	says string
-	icon *icon.Icon
+	sh      *screen.Shell
+	files   bool
+	folders uint32
+	says    string
+	icon    *icon.Icon
 }
 
 // faceOf is what pane pn shows.
 func (w *windowPage) faceOf(pn guest.Pane) face {
 	switch held := w.st.Held[pn.ID]; {
+	case pn.Kind == guest.KindFiles && w.st.Files != guest.FilesNone && w.st.Folder != "":
+		return face{files: true, folders: w.st.Folders}
 	case pn.Kind != guest.KindTerminal:
 		return face{says: notShared, icon: iconOf(pn)}
 	case held == HeldLarge:
@@ -101,6 +106,10 @@ func newPaneView(w *windowPage, id string) *paneView {
 // showing is the node of what the pane shows.
 func (v *paneView) showing(f face) gunim.Node {
 	v.face, v.themes = f, v.w.themes
+	if f.files {
+		v.term, v.themed = nil, nil
+		return newFilesView(v, f.folders)
+	}
 	if f.sh == nil {
 		v.term, v.themed = nil, nil
 		return newStandIn(v, f)

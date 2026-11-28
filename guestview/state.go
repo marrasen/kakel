@@ -51,6 +51,12 @@ type State struct {
 	Layout   dock.Layout
 	Panes    []guest.Pane
 	HostIn   string
+	// Files is what the guest may do with the share's folder, Folder
+	// what the folder is called, and Folders the count of folders the
+	// host has shared.
+	Files   guest.FilesMay
+	Folder  string
+	Folders uint32
 	// Room is how large the host's panes are laid out, their bars with
 	// them, and Cell a terminal's cell there, in the host's logical
 	// pixels: zero where the host has not said.

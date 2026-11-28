@@ -3,6 +3,8 @@ package guestview
 import (
 	"context"
 
+	"github.com/pkg/sftp"
+
 	"github.com/marrasen/kakel/guest"
 	"github.com/marrasen/kakel/look"
 	"github.com/marrasen/kakel/screen"
@@ -19,6 +21,8 @@ type Session interface {
 	Join(ctx context.Context, name, about string) error
 	// Pane opens a pane the window shows, by its ID.
 	Pane(ctx context.Context, id string) (session.ScreenReader, error)
+	// Files opens the share's folder, as guest.Session.Files does.
+	Files(ctx context.Context) (*sftp.Client, error)
 	// Follow and Focus say where the guest is: following the host, or in
 	// a pane it picked.
 	Follow()
@@ -92,6 +96,11 @@ type Config struct {
 	// Shells, when set, is where the window's terminals are held, for a
 	// test to read.
 	Shells *screen.Shells
+
+	// FilesPrefs is the file the Files panes keep their settings in: none
+	// in a browser, where they last as long as the page, and a file of
+	// its own in a test.
+	FilesPrefs string
 
 	// Drawn is called as the first frame is drawn, and OnState with each
 	// state the page is to show. OnShown is called in the window once it

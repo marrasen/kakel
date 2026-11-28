@@ -103,15 +103,18 @@ const closedPolicy = "default-src 'none'; base-uri 'none'; form-action 'none'; f
 var plainHost = regexp.MustCompile(`^(\[[0-9a-fA-F:.]+\]|[a-zA-Z0-9._-]+)(:[0-9]+)?$`)
 
 // clientPolicy is the Content-Security-Policy of the web client, on the
-// relay reached as host: its own scripts, styles, images and fonts, and
-// its own stream. Some browsers read 'self' as https alone, so the
-// stream's host is named too.
+// relay reached as host: its own scripts, styles, images and fonts, its
+// own stream, and its own frames, which a download is asked for in. Some
+// browsers read 'self' as https alone, so the stream's host is named too.
+// Its save worker, a service worker, is a script of its own: with no
+// worker-src, script-src is what lets it in.
 func clientPolicy(host string) string {
 	connect := "'self'"
 	if plainHost.MatchString(host) {
 		connect += " wss://" + host + " ws://" + host
 	}
-	return closedPolicy + "; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src " + connect
+	return closedPolicy + "; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self'; font-src 'self'; " +
+		"frame-src 'self'; connect-src " + connect
 }
 
 // serveFile serves a file of a bundle. The index is never kept by a

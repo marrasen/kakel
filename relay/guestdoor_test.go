@@ -281,6 +281,11 @@ func TestEveryAnswerToAGuestIsClosedUp(t *testing.T) {
 	if p["script-src"] != "'self' 'wasm-unsafe-eval'" {
 		t.Errorf("script-src is %q", p["script-src"])
 	}
+	// The save worker's download frames, and the worker itself, which
+	// script-src lets in where no worker-src or child-src says otherwise.
+	if p["frame-src"] != "'self'" || p["worker-src"] != "" || p["child-src"] != "" {
+		t.Errorf("frame-src is %q, worker-src %q, child-src %q", p["frame-src"], p["worker-src"], p["child-src"])
+	}
 	// The expired page has a style and no script.
 	if p := policy(get(t, pageOf(u, NewShareID()))); p["script-src"] != "" || !strings.HasPrefix(p["style-src"], "'sha256-") {
 		t.Errorf("the expired page: %v", p)

@@ -35,12 +35,12 @@ func screenBytes(cols, rows int) int { return cols * rows * cellBytes }
 
 // room is what a terminal is made with: the size of its screen, how many
 // lines of history it has, and how many bytes of images and of links, none
-// for 0.
-type room struct{ cols, rows, lines, images, links int }
+// for 0. other is what something that is no terminal takes.
+type room struct{ cols, rows, lines, images, links, other int }
 
 // bytes is what it takes at most.
 func (r room) bytes() int {
-	n := screenBytes(r.cols, r.rows) + r.images + r.links
+	n := screenBytes(r.cols, r.rows) + r.images + r.links + r.other
 	if r.lines > 0 {
 		n += (r.lines + lineSlack) * r.cols * lineCell
 	}
@@ -103,6 +103,25 @@ func (b *budget) take(id string, r room) bool {
 	}
 	b.has[id] = r
 	return true
+}
+
+// hold keeps n bytes for what is no terminal, as id, whatever is left: the
+// terminals have what is left besides it.
+func (b *budget) hold(id string, n int) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.has[id] = room{other: n}
+}
+
+// held is what is kept for what is no terminal.
+func (b *budget) held() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	n := 0
+	for _, r := range b.has {
+		n += r.other
+	}
+	return n
 }
 
 // resize gives pane id's terminal a screen of another size, with the
