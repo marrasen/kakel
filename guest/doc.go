@@ -76,9 +76,12 @@
 // while the host does not let the guest set the size. A size is held to
 // no more often than fitEvery, and the host's comes back as the guest
 // closes the pane, as the choice or the window changes, and a while after
-// the connection is lost. There is no request for a shell, a file, a
-// tunnel, the clipboard, or anything outside the window, and everything
-// that is not one of these is refused.
+// the connection is lost. Where the host shares a folder, SetFiles, the
+// guest can open SFTP channels to it, Session.Files: it reaches what is in
+// the folder and nothing above it, and reads or changes it as FilesMay
+// allows at each request. There is no request for a shell, a tunnel, the
+// clipboard, or anything else outside the window, and everything that is
+// not one of these is refused.
 //
 // What a guest has the host hold is bounded, in channels, frames and
 // bytes, and what it has the host do, in time. A guest that is slow is

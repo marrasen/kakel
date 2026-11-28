@@ -102,6 +102,10 @@ type HostConfig struct {
 	// PhaseOver.
 	OnChange func(Status)
 
+	// OnFiles hears what the guest did in the share's folder, for the
+	// Window Log, on a goroutine of the share's. It does not wait.
+	OnFiles func(FileEvent)
+
 	// OnError hears what went wrong with a caller or with the guest, for
 	// the log. Nothing the user has to act on comes here.
 	OnError func(error)
@@ -160,6 +164,9 @@ type Host struct {
 	// pubMu orders the states published.
 	pubMu sync.Mutex
 
+	// filesMu orders SetFiles.
+	filesMu sync.Mutex
+
 	// typeMu is held reading while something is typed, so that once it
 	// has been held writing, nothing more is typed under what it was. It
 	// guards canType. mu may be taken with it held, and not the other way.
@@ -193,6 +200,9 @@ type Host struct {
 	guestSizes bool
 	fits       map[string]fitBy
 	fitsAway   *time.Timer
+
+	// files is the share's folder.
+	files filesState
 
 	conns map[*hostConn]struct{}
 	// arriving are the callers that prove a key, and unjoined those that
@@ -439,6 +449,7 @@ func (h *Host) End(why Reason) {
 	h.mu.Unlock()
 
 	h.cancel()
+	h.endFiles()
 	for ln := range lns {
 		_ = ln.Close()
 	}

@@ -1474,6 +1474,10 @@ func failedTitle(in gunim.Intent) string {
 		return couldntShare
 	case SetLinkSetup:
 		return "Couldn't change how windows are shared"
+	case SetLinkFiles:
+		return couldntShareFolder
+	case ChooseLinkFolder:
+		return "Couldn't choose a folder"
 	case NewRelayCode:
 		return "Couldn't make a new code"
 	case CopyRelayLink, CopyLink:
@@ -1850,6 +1854,10 @@ func (a *app) handle(in gunim.Intent) {
 		a.setLinkMay(in)
 	case SetLinkSize:
 		a.setLinkSize(in)
+	case SetLinkFiles:
+		err = a.setLinkFiles(in)
+	case ChooseLinkFolder:
+		err = a.chooseLinkFolder(in)
 	case AnswerGuest:
 		a.answerGuest(in)
 	case GuestUnseen:

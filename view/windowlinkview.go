@@ -17,6 +17,7 @@ import (
 	"github.com/marrasen/gunim/widget"
 
 	"github.com/marrasen/kakel/app"
+	"github.com/marrasen/kakel/guest"
 	"github.com/marrasen/kakel/look"
 	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/relay"
@@ -194,10 +195,14 @@ type linkBox struct {
 
 	name, relay *widget.TextField
 	may, size   *widget.Segmented
-	via         *widget.Dropdown
-	viaIDs      []machines.ID
-	wrong       *widget.Label
-	wrongFold   *widget.Fold
+	files       *linkFiles
+	// chosen is the folder last chosen with Choose… for the next share,
+	// which is all that changes the folder once the dialog is open.
+	chosen    string
+	via       *widget.Dropdown
+	viaIDs    []machines.ID
+	wrong     *widget.Label
+	wrongFold *widget.Fold
 
 	list    *widget.List
 	another *widget.Button
@@ -246,6 +251,8 @@ func newLinkBox(w *Window, d *widget.Dialog) *linkBox {
 	b.relay.SetText(s.Relay, nil)
 	b.relay.Select(0, 0)
 	b.relay.Placeholder = relayFormat
+	b.files = newLinkFiles(guest.FilesNone, s.Folders[w.winID], app.ChooseLinkFolder{Window: w.winID})
+	b.chosen = s.Chosen[w.winID]
 	b.via, b.viaIDs = w.throughPicker(s.Via)
 	b.via.Disabled = len(b.viaIDs) <= 1
 	b.wrong.Color = widget.DialogProblem
@@ -257,6 +264,8 @@ func newLinkBox(w *Window, d *widget.Dialog) *linkBox {
 		Add("Your name", b.name).
 		Add("Guest can", folded(b.may, typeSays(b.may))).
 		Add("Size for", b.size).
+		Add("Files", b.files.may).
+		Add("Folder", b.files.row).
 		Add("Relay", folded(b.relay, b.wrongFold)).
 		Add("Through", b.via).
 		Add("", faintLabel(linkRelaySays))
@@ -324,7 +333,8 @@ func (b *linkBox) make(u *gunim.UI) {
 	b.wrongFold.SetOpen(false, u)
 	b.tries, b.waiting = b.w.linkSetup.Tries, true
 	u.Send(b.w, app.ShareWindow{Window: b.w.winID, Name: strings.TrimSpace(b.name.Text()), CanType: mayType(b.may.Selected()),
-		ForGuest: forGuest(b.size.Selected()), Relay: strings.TrimSpace(b.relay.Text()), Via: b.viaIDs[max(0, min(b.via.Selected(), len(b.viaIDs)-1))]})
+		ForGuest: forGuest(b.size.Selected()), Relay: strings.TrimSpace(b.relay.Text()), Via: b.viaIDs[max(0, min(b.via.Selected(), len(b.viaIDs)-1))],
+		Files: b.files.chosen(), Folder: b.files.path})
 	b.turn(linkLists, u)
 }
 
@@ -391,6 +401,12 @@ func (w *Window) showLinkBox(u *gunim.UI) {
 	}
 	here := w.linksHere()
 	b.sync(here, u)
+	// Not the folder a Files pane goes on to, which the host did not see
+	// as the files were chosen for it.
+	if chosen := w.linkSetup.Chosen[w.winID]; chosen != b.chosen {
+		b.chosen = chosen
+		b.files.show(b.files.chosen(), chosen, u)
+	}
 	b.another.Disabled = w.linkSetup.NoClient
 	if b.waiting && w.linkSetup.Tries == b.tries {
 		return
@@ -421,7 +437,8 @@ func (b *linkBox) Paint(p *paint.Painter, _ gunim.Frame, _ geom.Size, kids gunim
 // Focusables are what Tab moves through, of the face shown.
 func (b *linkBox) Focusables() []gunim.Node {
 	if !b.listing {
-		out := []gunim.Node{b.name, b.may, b.size, b.relay}
+		out := append([]gunim.Node{b.name, b.may, b.size}, b.files.focusables()...)
+		out = append(out, b.relay)
 		if !b.via.Disabled {
 			out = append(out, b.via)
 		}
@@ -463,6 +480,10 @@ type linkCard struct {
 
 	linkRow, busy, mayRow, sizeRow *widget.Fold
 	may, size                      *widget.Segmented
+	// files is what the guest may do with the files, and the folder, on
+	// filesRow and folderRow.
+	files               *linkFiles
+	filesRow, folderRow *widget.Fold
 }
 
 func newLinkCard(w *Window, l app.WindowLink, now time.Time) *linkCard {
@@ -479,6 +500,8 @@ func newLinkCard(w *Window, l app.WindowLink, now time.Time) *linkCard {
 	c.asks.OnClick = func(u *gunim.UI) gunim.Intent { w.askFirst = id; w.showGuestAsk(u); return nil }
 	c.may.OnChange = func(i int, _ *gunim.UI) gunim.Intent { return app.SetLinkMay{ID: id, CanType: mayType(i)} }
 	c.size.OnChange = func(i int, _ *gunim.UI) gunim.Intent { return app.SetLinkSize{ID: id, ForGuest: forGuest(i)} }
+	c.files = newLinkFiles(l.Files, l.Folder, app.ChooseLinkFolder{Window: w.winID, ID: id})
+	c.files.may.OnChange = func(i int, _ *gunim.UI) gunim.Intent { return app.SetLinkFiles{ID: id, Files: guest.FilesMay(i)} }
 	mark := widget.NewIcon(linkMark(l), "")
 	mark.Color = look.Guest
 	if !l.Live() {
@@ -504,10 +527,14 @@ func newLinkCard(w *Window, l app.WindowLink, now time.Time) *linkCard {
 	c.mayRow = said(widget.NewLabel("Guest can"), c.may)
 	c.sizeRow = said(widget.NewLabel("Size for"), c.size)
 	c.askRow = said(widget.NewLabel("Waits for your answer"), c.asks)
+	c.filesRow = said(widget.NewLabel("Files"), c.files.may)
+	folder := widget.Row(widget.NewLabel("Folder"), c.files.row).Grow(c.files.row, 1)
+	folder.Cross, folder.Gap = widget.CrossCenter, linkCardGap
+	c.folderRow = widget.NewFold(under(folder, linkUnder), false)
 	bar := widget.NewProgressBar()
 	bar.Indeterminate = true
 	c.busy = widget.NewFold(under(bar, linkUnder), false)
-	c.card = widget.NewCard(folded(top, c.busy, c.linkRow, c.askRow, c.mayRow, c.sizeRow))
+	c.card = widget.NewCard(folded(top, c.busy, c.linkRow, c.askRow, c.mayRow, c.sizeRow, c.filesRow, c.folderRow))
 	c.show(l, now, nil)
 	return c
 }
@@ -568,6 +595,13 @@ func (c *linkCard) show(l app.WindowLink, now time.Time, u *gunim.UI) {
 	c.busy.SetOpen(l.Stands == app.LinkReaching || l.Stands == app.LinkSending, u)
 	c.mayRow.SetOpen(l.Live() && l.Stands != app.LinkAsking, u)
 	c.sizeRow.SetOpen(l.Live() && l.Stands != app.LinkAsking, u)
+	c.filesRow.SetOpen(l.Live() && l.Stands != app.LinkAsking, u)
+	c.folderRow.SetOpen(l.Live() && l.Stands != app.LinkAsking, u)
+	c.files.show(l.Files, l.Folder, u)
+	if !l.Live() {
+		c.files.may.Disabled = true
+	}
+	c.files.choose.Disabled = !l.Live()
 	c.askRow.SetOpen(l.Stands == app.LinkAsking, u)
 	if i := mayIndex(l.CanType); c.may.Selected() != i {
 		c.may.SetSelected(i, u)
@@ -593,6 +627,7 @@ func (c *linkCard) focusables() []gunim.Node {
 		out = append(out, c.asks)
 	} else {
 		out = append(out, c.may, c.size)
+		out = append(out, c.files.focusables()...)
 	}
 	return append(out, c.stop)
 }
