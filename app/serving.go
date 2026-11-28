@@ -1194,6 +1194,8 @@ func (a *app) watchPane(t *uiterm.Terminal, cols, rows int) (session.Session, er
 		go post(func() {
 			if t.Watched() == 0 {
 				t.Release()
+				// A guest's page may set its size, now nobody watches.
+				a.fitGuests()
 			}
 		})
 	})

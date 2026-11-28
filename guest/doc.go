@@ -9,7 +9,8 @@
 // Publish says how the window stands each time that changes, whether or
 // not anybody is there. HostConfig's Ask says whether a guest may come in,
 // and its Open gives the pane one asks for, checking it again each time.
-// OnChange hears how the share stands, Status. End ends it.
+// OnChange hears how the share stands, Status, the sizes the guest sets
+// among it. End ends it.
 //
 //	h, err := guest.NewHost(guest.HostConfig{Ask: ask, Open: open, OnChange: changed})
 //	link := base + "#" + h.Secret().String()
@@ -30,7 +31,8 @@
 // for a link nobody has used, and Join joins. From then Changed and View
 // follow the window. Pane opens one of its terminals, as a session for a
 // terminal to be on. Follow says the guest is in whichever pane the host
-// is in, and Focus that it is in one it picked. Leave ends the
+// is in, and Focus that it is in one it picked. Shown says which panes
+// are on the page. Leave ends the
 // share for good; a lost connection, ErrLost, is dialled again with the
 // same key, and comes back where it was, waiting or in the window.
 //
@@ -41,7 +43,8 @@
 //	pane, err := s.Pane(ctx, id)
 //
 // A terminal on a pane has the host's size and no other, answers nothing
-// the program asks, and is drawn scaled. It is somebody else's program, so
+// the program asks, and is drawn scaled. Where the state says GuestSizes,
+// Fit asks the host to size a pane's program to what fits it on the page. It is somebody else's program, so
 // it is given no hooks that act on this machine: no clipboard for OSC 52,
 // no links to open, no paths to find, no bell or title outside the page.
 // With them nil a terminal does nothing of those. Copying and pasting by
@@ -70,10 +73,15 @@
 // A guest can open a channel for each terminal that the window's published
 // state lists and Open still gives. Down it comes what that program draws;
 // up it go the keys typed, which are dropped while the host does not let
-// the guest type. Where the host shares a folder, SetFiles, the guest can
-// open SFTP channels to it, Session.Files: it reaches what is in the
-// folder and nothing above it, and reads or changes it as FilesMay allows
-// at each request. There is no request for a shell, a tunnel, a size, the
+// the guest type, and the size the pane has room for, which is dropped
+// while the host does not let the guest set the size, and for a pane the
+// guest has not said is on its page, Session.Shown. A size is held to
+// no more often than fitEvery, and the host's comes back as the guest
+// closes the pane, as the choice or the window changes, and a while after
+// the connection is lost. Where the host shares a folder, SetFiles, the
+// guest can open SFTP channels to it, Session.Files: it reaches what is in
+// the folder and nothing above it, and reads or changes it as FilesMay
+// allows at each request. There is no request for a shell, a tunnel, the
 // clipboard, or anything else outside the window, and everything that is
 // not one of these is refused.
 //

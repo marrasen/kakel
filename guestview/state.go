@@ -61,6 +61,10 @@ type State struct {
 	// them, and Cell a terminal's cell there, in the host's logical
 	// pixels: zero where the host has not said.
 	Room, Cell geom.Size
+	// GuestSizes says the page sets the size of the terminals it shows:
+	// the panes fill it, their text the page's own size, and the host
+	// sizes each program to what fits.
+	GuestSizes bool
 	// Held are the terminals on the screen that are not shown, and why.
 	Held map[string]Held
 	// Shut are the terminals whose panes are not open, or have yet to
@@ -125,6 +129,12 @@ type (
 	// Follows says whether the guest follows the host: while it does, it
 	// is in whichever pane the host is in.
 	Follows struct{ On bool }
+	// Fits says how many columns and rows a terminal has room for on the
+	// page, at the page's own size of text.
+	Fits struct {
+		Pane       string
+		Cols, Rows int
+	}
 )
 
 // The topic the State is published on, and what else the view is told.

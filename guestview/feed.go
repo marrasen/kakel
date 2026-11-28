@@ -5,6 +5,7 @@ import (
 	"io"
 	"sync"
 
+	"github.com/marrasen/kakel/guest"
 	"github.com/marrasen/kakel/session"
 )
 
@@ -172,6 +173,22 @@ func moves(b []byte) bool {
 
 // Resize does nothing: the size is the host's.
 func (f *feed) Resize(int, int) error { return nil }
+
+// fitter is a pane that asks the host for a size: see guest.ShownPane.Fit.
+type fitter interface{ Fit(cols, rows int) }
+
+// fit asks the host to size the pane open now to c, and reports whether
+// one is open to ask.
+func (f *feed) fit(c guest.Cells) bool {
+	f.mu.Lock()
+	cur := f.cur
+	f.mu.Unlock()
+	if p, ok := cur.(fitter); ok {
+		p.Fit(c.Cols, c.Rows)
+		return true
+	}
+	return false
+}
 
 // Wait waits for the feed to be closed.
 func (f *feed) Wait() error {

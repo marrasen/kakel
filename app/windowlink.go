@@ -23,6 +23,7 @@ import (
 	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/relay"
 	"github.com/marrasen/kakel/settings"
+	"github.com/marrasen/kakel/termview"
 	uiterm "github.com/marrasen/kakel/ui/term"
 	"github.com/marrasen/kakel/webbundle"
 	"github.com/marrasen/kakel/words"
@@ -50,7 +51,11 @@ type WindowLink struct {
 	Link string
 	// CanType says the guest may type, or may as it is let in.
 	CanType bool
-	Stands  LinkStands
+	// ForGuest says the guest's page sets the size of the terminals it
+	// shows, and Sizes are the panes whose programs have that size now.
+	ForGuest bool
+	Sizes    []string
+	Stands   LinkStands
 	// Trouble is why the relay is not reached, while it is not.
 	Trouble string
 	// Over is how the share ended, in a few words.
@@ -108,8 +113,9 @@ const (
 type LinkSetup struct {
 	// Name is what the guest is told the host is called.
 	Name string
-	// Watch says the guest only watches.
-	Watch bool
+	// Watch says the guest only watches, and ForGuest that its page sets
+	// the size of the terminals.
+	Watch, ForGuest bool
 	// Relay is the relay's URL with its secret, and Via the saved server
 	// it is reached through, empty for this machine.
 	Relay string
@@ -129,11 +135,11 @@ type (
 	// ShareWindow makes a link to Window, and keeps what it was made
 	// with for the next.
 	ShareWindow struct {
-		Window  int
-		Name    string
-		CanType bool
-		Relay   string
-		Via     machines.ID
+		Window            int
+		Name              string
+		CanType, ForGuest bool
+		Relay             string
+		Via               machines.ID
 		// Files is what the guest may do with Folder.
 		Files  guest.FilesMay
 		Folder string
@@ -149,6 +155,12 @@ type (
 		ID      string
 		CanType bool
 	}
+	// SetLinkSize sets whether the guest's page sets the size of the
+	// terminals it shows, or this window does.
+	SetLinkSize struct {
+		ID       string
+		ForGuest bool
+	}
 	// AnswerGuest lets a guest who asks in, or refuses it.
 	AnswerGuest struct {
 		ID             string
@@ -161,10 +173,10 @@ type (
 	ClearLinks struct{ Window int }
 	// SetLinkSetup sets what windows are shared with from now on.
 	SetLinkSetup struct {
-		Name  string
-		Watch bool
-		Relay string
-		Via   machines.ID
+		Name            string
+		Watch, ForGuest bool
+		Relay           string
+		Via             machines.ID
 	}
 )
 
@@ -200,6 +212,15 @@ type linkShares struct {
 	// picked are the folders chosen for the next share of a window, by
 	// window.
 	picked map[int]string
+	// fitted are the terminals a guest's page sets the size of, by pane,
+	// at that size, and the shares whose guests set it.
+	fitted map[string]fitted
+}
+
+// fitted is a terminal at the size of a guest's page.
+type fitted struct {
+	guest.Cells
+	by []string
 }
 
 // bundle is the web client to share with, and its signature.
@@ -226,6 +247,7 @@ type windowLink struct {
 	win      int
 	hostName string
 	canType  bool
+	forGuest bool
 	client   relay.Client
 	// ctx ends with the share.
 	ctx  context.Context
@@ -317,11 +339,11 @@ func (a *app) shareWindow(in ShareWindow) error {
 	}
 	if a.settings != nil {
 		a.keep("what windows are shared with", a.settings.PutShareLink(settings.ShareLink{
-			Name: name, Watch: !in.CanType, Relay: url.String(), Via: string(in.Via)}))
+			Name: name, Watch: !in.CanType, ForGuest: in.ForGuest, Relay: url.String(), Via: string(in.Via)}))
 	}
 	a.links.next++
 	l := &windowLink{
-		id: "l" + itoa(a.links.next), win: w.id, hostName: name, canType: in.CanType,
+		id: "l" + itoa(a.links.next), win: w.id, hostName: name, canType: in.CanType, forGuest: in.ForGuest,
 		files: filesWith(in.Files, in.Folder), folder: in.Folder, filesLog: newFilesLog(),
 		client: relay.Client{Relay: url, Dialer: a.relayDialer(in.Via, &throughRefused{again: "share the window again"})},
 	}
@@ -558,6 +580,98 @@ func (a *app) setLinkMay(in SetLinkMay) {
 	}
 }
 
+// setLinkSize sets whether the guest's page sets the size of what it is
+// shown. Back to this window's, the terminals have its sizes again at
+// once.
+func (a *app) setLinkSize(in SetLinkSize) {
+	l := a.linkByID(in.ID)
+	if l == nil || l.stands == LinkEnded || l.forGuest == in.ForGuest {
+		return
+	}
+	l.forGuest = in.ForGuest
+	if !in.ForGuest {
+		// The host's word that they are gone may come after a change back:
+		// what the guest said before is not held to again.
+		l.status.Sizes = nil
+	}
+	a.tellLink(l)
+	a.fitGuests()
+	if l.status.Phase == guest.PhaseIn {
+		what := "this window"
+		if in.ForGuest {
+			what = "the guest's page"
+		}
+		log.Printf("%s's terminals are sized for %s now", guestForLog(l.status.Guest), what)
+	}
+}
+
+// fitGuests sizes each terminal a guest's page sets the size of to what
+// fits it there, and gives the others back the sizes of their windows.
+//
+// Two guests who both set the size of one terminal have it the smaller
+// of the two, each way, as tmux does: each of them then sees all of the
+// program, and the larger page has room to spare, where the other way the
+// smaller page would have part of it cut off.
+//
+// A terminal watched by another kakel has the size that kakel gives it,
+// as it did before: the guest's comes back as it stops watching.
+func (a *app) fitGuests() {
+	want := map[string]fitted{}
+	for _, l := range a.links.all {
+		if !l.forGuest || l.stands == LinkEnded || l.status.Phase != guest.PhaseIn {
+			continue
+		}
+		l.mu.Lock()
+		panes := l.panes
+		l.mu.Unlock()
+		for id, c := range l.status.Sizes {
+			if panes[id] == nil {
+				continue
+			}
+			// No smaller than the window would give it: a screen of a
+			// cell rewraps all its history.
+			c = guest.Cells{Cols: max(c.Cols, termview.LeastCols), Rows: max(c.Rows, termview.LeastRows)}
+			f, ok := want[id]
+			if ok {
+				c = guest.Cells{Cols: min(c.Cols, f.Cols), Rows: min(c.Rows, f.Rows)}
+			}
+			want[id] = fitted{c, append(f.by, l.id)}
+		}
+	}
+	for id := range a.links.fitted {
+		if _, still := want[id]; still {
+			continue
+		}
+		delete(a.links.fitted, id)
+		if t := a.terminal(id); t != nil && t.Watched() == 0 {
+			t.Release()
+		}
+	}
+	for id, f := range want {
+		t := a.terminal(id)
+		if t == nil || t.Watched() > 0 {
+			delete(want, id)
+			continue
+		}
+		if size := t.Size(); !t.Held() || size.Cols != f.Cols || size.Rows != f.Rows {
+			t.Hold(f.Cols, f.Rows)
+		}
+		if size := t.Size(); size.Cols != f.Cols || size.Rows != f.Rows {
+			// One whose screens come from elsewhere has their size.
+			delete(want, id)
+		}
+	}
+	a.links.fitted = want
+}
+
+// hostSized reports whether terminal t, pane id, has a size no guest's
+// page can set: another kakel watching it gives it its own, or its
+// screens come from elsewhere with theirs.
+func (a *app) hostSized(id string, t *uiterm.Terminal) bool {
+	_, ours := a.links.fitted[id]
+	return t.Watched() > 0 || t.Held() && !ours
+}
+
 // guestName is what a guest is called in a sentence, which says that it is
 // one: what it calls itself could be words of kakel's.
 func guestName(name string) string {
@@ -594,6 +708,9 @@ func (a *app) linkStatus(l *windowLink, st guest.Status) {
 	}
 	was := l.status
 	l.status = st
+	if !maps.Equal(st.Sizes, was.Sizes) {
+		a.fitGuests()
+	}
 	l.filesLog.setWho(st.Guest.Name)
 	name := guestFirst(st.Guest.Name)
 	switch st.Phase {
@@ -656,6 +773,7 @@ func linkOver(why guest.Reason, name string, before guest.Phase) (title, body, o
 func (a *app) linkEnded(l *windowLink, over string) {
 	l.stands, l.over, l.reached, l.answer = LinkEnded, over, false, nil
 	l.setPanes(nil)
+	a.fitGuests()
 	log.Printf("the shared window's link is over: %s", over)
 	// The latest few, of each window.
 	n := 0
@@ -831,6 +949,16 @@ func (a *app) tellLinks() {
 	for _, l := range a.links.all {
 		a.tellLink(l)
 	}
+	if len(a.links.fitted) > 0 || slices.ContainsFunc(a.links.all, func(l *windowLink) bool { return l.forGuest }) {
+		// A terminal that left the window has its own size again, and the
+		// guests are told which they size.
+		a.fitGuests()
+		for _, l := range a.links.all {
+			if l.forGuest {
+				a.tellLink(l)
+			}
+		}
+	}
 	a.sayJoined()
 	a.links.byHand = ""
 }
@@ -913,7 +1041,7 @@ func (a *app) tellLink(l *windowLink) {
 
 // sharedState is a window as its guest is told of it, and its terminals.
 func (a *app) sharedState(l *windowLink) (guest.State, map[string]guest.PaneSource) {
-	st := guest.State{HostName: l.hostName, CanType: l.canType, Folders: l.folders}
+	st := guest.State{HostName: l.hostName, CanType: l.canType, GuestSizes: l.forGuest, Folders: l.folders}
 	if l.files != guest.FilesNone {
 		st.Files, st.Folder = l.files, folderName(l.folder)
 	}
@@ -944,6 +1072,7 @@ func (a *app) sharedState(l *windowLink) (guest.State, map[string]guest.PaneSour
 			shown.Kind, shown.Title, shown.Ended = guest.KindTerminal, sharedTitle(p), p.Ended
 			size := t.Size()
 			shown.Cols, shown.Rows = size.Cols, size.Rows
+			shown.HostSized = l.forGuest && a.hostSized(p.ID, t)
 			panes[p.ID] = t
 		}
 		if id == focus {
@@ -1040,11 +1169,18 @@ func (a *app) windowLinks() []WindowLink {
 	for _, l := range a.links.all {
 		st := l.status
 		s := WindowLink{
-			ID: l.id, Window: l.win, CanType: l.canType, Stands: l.stands, Over: l.over, Relay: l.client.Relay.Host(),
+			ID: l.id, Window: l.win, CanType: l.canType, ForGuest: l.forGuest, Stands: l.stands, Over: l.over, Relay: l.client.Relay.Host(),
 			Guest: st.Guest.Name, From: guestAddr(st.Guest.From), About: st.Guest.About,
 			Since: l.since, In: st.Focus, TypedIn: st.TypedIn, TypedAt: st.TypedAt, Until: st.Until, Follows: st.Follows,
 			Trouble: l.trouble, Files: l.files, Folder: l.folder,
 		}
+		for id, f := range a.links.fitted {
+			// Another kakel that watches it now has it at its size.
+			if t := a.terminal(id); t != nil && t.Watched() == 0 && slices.Contains(f.by, l.id) {
+				s.Sizes = append(s.Sizes, id)
+			}
+		}
+		slices.Sort(s.Sizes)
 		switch l.stands {
 		case LinkWaiting:
 			s.Link = l.link.String()
@@ -1065,7 +1201,7 @@ func (a *app) linkSetup() LinkSetup {
 		Chosen: maps.Clone(a.links.picked)}
 	if a.settings != nil {
 		kept := a.settings.ShareLink()
-		s.Name, s.Watch, s.Relay, s.Via = kept.Name, kept.Watch, kept.Relay, machines.ID(kept.Via)
+		s.Name, s.Watch, s.ForGuest, s.Relay, s.Via = kept.Name, kept.Watch, kept.ForGuest, kept.Relay, machines.ID(kept.Via)
 		if s.Relay == "" {
 			r := a.settings.Relay()
 			s.Relay, s.Via = r.URL, machines.ID(r.Via)
@@ -1093,7 +1229,7 @@ func (a *app) setLinkSetup(in SetLinkSetup) error {
 		}
 		at = u.String()
 	}
-	return a.settings.PutShareLink(settings.ShareLink{Name: oneLine(in.Name), Watch: in.Watch, Relay: at, Via: string(in.Via)})
+	return a.settings.PutShareLink(settings.ShareLink{Name: oneLine(in.Name), Watch: in.Watch, ForGuest: in.ForGuest, Relay: at, Via: string(in.Via)})
 }
 
 // ownName is what a guest is told the host is called, before the user

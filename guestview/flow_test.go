@@ -38,6 +38,14 @@ type fakePane struct {
 	typed   []byte
 	over    chan struct{}
 	closed  bool
+	// fits are the sizes the host was asked for.
+	fits [][2]int
+}
+
+func (p *fakePane) Fit(cols, rows int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.fits = append(p.fits, [2]int{cols, rows})
 }
 
 func newFakePane(id, draw string) *fakePane { return newPaneOf(id, 40, 10, draw) }
@@ -100,6 +108,8 @@ type fakeSession struct {
 	// focused are where the guest said it is, following for the host's.
 	focused []string
 	left    bool
+	// onPage are the panes the guest last said are on its page.
+	onPage []string
 }
 
 // following is the guest saying it follows the host, as focused has it.
@@ -146,6 +156,11 @@ func (s *fakeSession) Follow() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.focused = append(s.focused, following)
+}
+func (s *fakeSession) Shown(ids []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.onPage = slices.Clone(ids)
 }
 func (s *fakeSession) Focus(id string) {
 	s.mu.Lock()

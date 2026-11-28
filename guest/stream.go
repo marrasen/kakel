@@ -3,6 +3,7 @@ package guest
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"sync"
 	"time"
@@ -79,6 +80,12 @@ type stream struct {
 	// onWay is what was sent that the guest has not said it took.
 	onWay int
 	done  bool
+
+	// fit is the size the guest last said fits the pane, fitAt when one
+	// was last held to, and fitDue that one is to be.
+	fit    Cells
+	fitAt  time.Time
+	fitDue bool
 }
 
 func newStream(c *hostConn, id string) *stream {
@@ -390,18 +397,61 @@ func (s *stream) pause(d time.Duration) bool {
 	}
 }
 
-// receive types what the guest sends, until it has sent all it will.
+// receive types what the guest sends, and sizes the pane as it says,
+// until it has sent all it will.
 func (s *stream) receive(ch io.Reader) error {
 	var buf []byte
 	for {
-		_, body, err := readFrame(ch, paneToHost, buf)
+		kind, body, err := readFrame(ch, paneToHost, buf)
 		if err != nil {
 			return err
 		}
 		buf = body
 		s.c.frames.wait(s.c.ctx, 1)
 		s.c.bytes.wait(s.c.ctx, float64(len(body)))
+		if kind == frameFit {
+			c, ok := readFit(body)
+			if !ok {
+				return fmt.Errorf("%w: a pane %dx%d", errFrame, c.Cols, c.Rows)
+			}
+			s.fits(c)
+			continue
+		}
 		s.typed(splitTyped(body))
+	}
+}
+
+// fits notes the size the guest says fits the pane, which the pane is
+// sized to now, or once fitEvery has gone since the last: the latest said
+// by then.
+func (s *stream) fits(c Cells) {
+	s.mu.Lock()
+	if s.done {
+		s.mu.Unlock()
+		return
+	}
+	s.fit = c
+	due := s.fitDue
+	s.fitDue = true
+	wait := fitEvery - time.Since(s.fitAt)
+	s.mu.Unlock()
+	switch {
+	case due:
+	case wait <= 0:
+		s.fitNow()
+	default:
+		time.AfterFunc(wait, s.fitNow)
+	}
+}
+
+// fitNow sizes the pane as the guest last said.
+func (s *stream) fitNow() {
+	s.mu.Lock()
+	c, done := s.fit, s.done
+	s.fitDue, s.fitAt = false, time.Now()
+	s.mu.Unlock()
+	if !done {
+		s.c.h.fit(s, c)
 	}
 }
 

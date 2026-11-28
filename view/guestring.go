@@ -93,6 +93,7 @@ func (w *Window) showGuests(st app.State, u *gunim.UI) {
 	for _, p := range st.Panes {
 		if t, ok := w.terms[p.ID]; ok {
 			t.guests.show(guestSees(st, p), guestsIn(st, p.ID) != "", u)
+			t.sized.show(sizedNote(st, p.ID), u)
 		}
 	}
 }

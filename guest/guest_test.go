@@ -782,6 +782,15 @@ func TestABadGuestIsHungUpOn(t *testing.T) {
 			go ssh.DiscardRequests(reqs)
 			_, _ = ch.Write(frame(frameScreen, []byte("\x00\x50\x00\x18")))
 		},
+		"a size larger than any screen": func(conn ssh.Conn, _ ssh.Channel) {
+			writePane(conn, fitFrame(Cells{Cols: mostCols + 1, Rows: 24}))
+		},
+		"a size with no rows": func(conn ssh.Conn, _ ssh.Channel) {
+			writePane(conn, fitFrame(Cells{Cols: 80}))
+		},
+		"a size that is longer than one": func(conn ssh.Conn, _ ssh.Channel) {
+			writePane(conn, frame(frameFit, []byte{0, 80, 0, 24, 0}))
+		},
 		"channels without end": func(conn ssh.Conn, _ ssh.Channel) {
 			for range 10 * opensBurst {
 				_, _, _ = conn.OpenChannel("session", nil)
@@ -842,6 +851,17 @@ func TestABadGuestIsHungUpOn(t *testing.T) {
 			_ = s.Close()
 		})
 	}
+}
+
+// writePane writes b on pane a.
+func writePane(conn ssh.Conn, b []byte) {
+	ch, reqs, err := conn.OpenChannel(chanPane, ssh.Marshal(openPane{"a"}))
+	if err != nil {
+		return
+	}
+	go ssh.DiscardRequests(reqs)
+	go func() { _, _ = io.Copy(io.Discard, ch) }()
+	_, _ = ch.Write(b)
 }
 
 // Callers who prove nothing fill only their own few places, and the guest

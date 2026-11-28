@@ -27,6 +27,8 @@ type Session interface {
 	// a pane it picked.
 	Follow()
 	Focus(id string)
+	// Shown says which panes are on the page.
+	Shown(ids []string)
 	Leave()
 	Close() error
 }

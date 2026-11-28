@@ -124,13 +124,24 @@ func (w *windowPage) cell() geom.Size {
 }
 
 // sized has the picture and the terminals' text go to the sizes the host
-// and the page say.
+// and the page say. Where the page sets the sizes, the terminals' text is
+// the page's own size, and each program has the room its pane has.
 func (w *windowPage) sized(u *gunim.UI) {
 	w.picture.set(u)
 	cell := w.cell()
-	for t := range w.terms {
-		t.SetCell(cell, u)
+	for _, v := range w.panes {
+		if t := v.term; t != nil {
+			t.SetFitted(w.fitted(v.id), u)
+			t.SetCell(cell, u)
+		}
 	}
+}
+
+// fitted reports whether pane id's terminal is drawn fitted to the host's
+// screen: unless the page sets the size, and the host holds to it there.
+func (w *windowPage) fitted(id string) bool {
+	pn, _ := w.p.paneOf(id)
+	return !w.st.GuestSizes || pn.HostSized
 }
 
 // shortcuts are kakel's own, of what there is to do here, and those a Mac
@@ -224,7 +235,7 @@ func (w *windowPage) update(st State, u *gunim.UI) {
 	}
 	w.themes = st.Themes
 	w.host = st.Layout
-	if st.Room != was.Room || st.Cell != was.Cell {
+	if st.Room != was.Room || st.Cell != was.Cell || st.GuestSizes != was.GuestSizes {
 		// The host's window may be too large to read whole now, or no
 		// longer.
 		w.narrows(u)
