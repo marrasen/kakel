@@ -316,3 +316,30 @@ func TestAFilesPanesFolderIsToldInsideTheShare(t *testing.T) {
 		t.Errorf("with no share, %q", got)
 	}
 }
+
+// A Files pane of a server's, or of another kakel's, is not the shared
+// folder: the guest is told it is not shared.
+func TestAServersFilesPaneIsNotShared(t *testing.T) {
+	r := newLinkRig(t)
+	dir := t.TempDir()
+	r.a.addPane(Pane{ID: "far", Title: "Files", Kind: KindFileManager, Machine: "box"}, nil, Placement{})
+	r.a.addPane(Pane{ID: "on", Title: "Files", Kind: KindFileManager, On: "other"}, nil, Placement{})
+	l := r.shareWith(guest.FilesLook, dir)
+	v := r.visit(l.Link)
+	v.in(l.ID, true)
+	st := v.state("the panes", func(st guest.State) bool {
+		return slices.ContainsFunc(st.Panes, func(p guest.Pane) bool { return p.ID == "on" })
+	})
+	for _, p := range st.Panes {
+		want := guest.KindOther
+		switch p.ID {
+		case "p1", "p2":
+			want = guest.KindTerminal
+		case "p3":
+			want = guest.KindFiles
+		}
+		if p.Kind != want {
+			t.Errorf("%s is %q, want %q", p.ID, p.Kind, want)
+		}
+	}
+}

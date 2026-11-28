@@ -1062,9 +1062,12 @@ func (a *app) sharedState(l *windowLink) (guest.State, map[string]guest.PaneSour
 			continue
 		}
 		shown := guest.Pane{ID: p.ID, Title: kindWord(p.Kind), Kind: guest.KindOther, Icon: a.sharedPicture(p)}
-		if p.Kind == KindFileManager {
+		if p.Kind == KindFileManager && p.Machine == machines.Local && p.On == "" {
+			// A Files pane of this computer's is the shared folder on the
+			// guest's page. One of a server, or of another kakel, is not
+			// shared.
 			shown.Kind = guest.KindFiles
-			if l.files != guest.FilesNone && p.Machine == machines.Local && p.On == "" {
+			if l.files != guest.FilesNone {
 				shown.Folder = sharedFolder(l.folder, a.filesFolder(p.ID, machines.Local))
 			}
 		}

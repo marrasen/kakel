@@ -822,3 +822,27 @@ func TestAFilesPanesFolderIsAPathInsideTheShare(t *testing.T) {
 		t.Error("a guest with no files is told a folder")
 	}
 }
+
+// The part files a guest's copies leave in the folder go once it is
+// shared no more: those the guest made and left, and no other.
+func TestPartFilesTheGuestLeftGoWithTheShare(t *testing.T) {
+	f := newFolders(t)
+	put(t, filepath.Join(f.share, ".files-1.part"), "the host's own")
+	r, _, c := filesOn(t, f.share, FilesChange)
+	for _, name := range []string{"/.files-2.part", "/sub/.files-3.part", "/.files-4.part"} {
+		if err := upload(c, name, "half"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := c.PosixRename("/.files-4.part", "/whole.txt"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.host.SetFiles("", FilesNone); err != nil {
+		t.Fatal(err)
+	}
+	for name, there := range map[string]bool{".files-1.part": true, ".files-2.part": false, "sub/.files-3.part": false, "whole.txt": true} {
+		if _, err := os.Stat(filepath.Join(f.share, filepath.FromSlash(name))); (err == nil) != there {
+			t.Errorf("%s is there: %v", name, err == nil)
+		}
+	}
+}

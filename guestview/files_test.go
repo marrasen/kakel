@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -20,6 +22,7 @@ import (
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/gunimtest"
 	"github.com/marrasen/gunim/widget/dock"
+	"github.com/pkg/sftp"
 
 	"github.com/marrasen/kakel/guest"
 	"github.com/marrasen/kakel/guestlook"
@@ -34,9 +37,34 @@ type filesRig struct {
 	win  *gunim.Window
 	f    *flow
 	st   guest.State
-	// logged is what the page logged.
+	// logged is what the page logged, and did what the guest did in the
+	// folder, as the host heard it.
 	mu     sync.Mutex
 	logged bytes.Buffer
+	did    []guest.FileEvent
+	// files stands between the page and its files channel, as a host
+	// slow to answer or failing is.
+	files func(ctx context.Context, open func(context.Context) (*sftp.Client, error)) (*sftp.Client, error)
+}
+
+// slowFiles is a session whose files channel is as r.files has it.
+type slowFiles struct {
+	Session
+	r *filesRig
+}
+
+func (s slowFiles) Files(ctx context.Context) (*sftp.Client, error) {
+	if s.r.files == nil {
+		return s.Session.Files(ctx)
+	}
+	return s.r.files(ctx, s.Session.Files)
+}
+
+// events is what the host heard the guest do in the folder.
+func (r *filesRig) events() []guest.FileEvent {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.did)
 }
 
 // onUI runs a function on the window's UI goroutine, as a patch.
@@ -44,8 +72,15 @@ type onUI struct{ do func(u *gunim.UI) }
 
 func newFilesRig(t *testing.T, may guest.FilesMay, panes ...guest.Pane) *filesRig {
 	t.Helper()
+	return newFilesRigWith(t, nil, may, panes...)
+}
+
+// newFilesRigWith is newFilesRig, its files channel as files has it.
+func newFilesRigWith(t *testing.T, files func(context.Context, func(context.Context) (*sftp.Client, error)) (*sftp.Client, error),
+	may guest.FilesMay, panes ...guest.Pane) *filesRig {
+	t.Helper()
 	quick(t)
-	r := &filesRig{t: t, dir: t.TempDir()}
+	r := &filesRig{t: t, dir: t.TempDir(), files: files}
 	tree := map[string]string{"a.txt": "AAA", "sub/b.txt": "BBB", "sub/deep/c.txt": "CCC"}
 	for name, body := range tree {
 		p := filepath.Join(r.dir, filepath.FromSlash(name))
@@ -59,6 +94,11 @@ func newFilesRig(t *testing.T, may guest.FilesMay, panes ...guest.Pane) *filesRi
 	host, err := guest.NewHost(guest.HostConfig{
 		Ask:  func(context.Context, guest.Request) bool { return true },
 		Open: func(string) (guest.PaneSource, error) { return nil, errors.New("no terminals here") },
+		OnFiles: func(e guest.FileEvent) {
+			r.mu.Lock()
+			defer r.mu.Unlock()
+			r.did = append(r.did, e)
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -96,7 +136,7 @@ func newFilesRig(t *testing.T, may guest.FilesMay, panes ...guest.Pane) *filesRi
 			if err != nil {
 				return nil, err
 			}
-			return Dialed(s), nil
+			return slowFiles{Dialed(s), r}, nil
 		},
 		Keep: keep, Theme: themeAt(t, 0), FilesPrefs: filepath.Join(t.TempDir(), "prefs.json"),
 	}
@@ -248,6 +288,20 @@ func (r *filesRig) shot(name string) {
 	}
 }
 
+// listed waits until pane id's file manager lists want, in its order,
+// as Select all has it.
+func (r *filesRig) listed(id string, want ...string) {
+	r.t.Helper()
+	var p *filesPane
+	r.read(func() { p = r.f.files.panes[id] })
+	r.until(fmt.Sprintf("%q listed", want), func() bool {
+		r.run(id, filemanager.CmdSelectAll)
+		r.frames(2)
+		_, picked := p.showing()
+		return slices.Equal(picked, want)
+	})
+}
+
 // filesPaneAt is a Files pane, in the host's folder at.
 func filesPaneAt(id, at string) guest.Pane {
 	return guest.Pane{ID: id, Title: "Files", Kind: guest.KindFiles, Icon: "filemanager", Folder: at}
@@ -267,28 +321,23 @@ func TestAFilesPaneShowsTheSharedFolder(t *testing.T) {
 	}
 	r.frames(60)
 	r.shot("files-look")
-	r.run("f1", filemanager.CmdSelectAll)
-	r.until("its items are listed", func() bool {
-		_, picked := p.showing()
-		return slices.Equal(picked, []string{"/sub/deep", "/sub/b.txt"})
-	})
+	r.listed("f1", "/sub/deep", "/sub/b.txt")
 
 	// Up goes to the top, and no further.
 	r.run("f1", filemanager.CmdUp)
 	r.until("the top shows", func() bool { at, _ := p.showing(); return at == "/" })
 	r.run("f1", filemanager.CmdUp)
-	r.run("f1", filemanager.CmdSelectAll)
-	r.until("the top's items are listed", func() bool {
-		_, picked := p.showing()
-		return slices.Equal(picked, []string{"/sub", "/a.txt"})
-	})
+	r.listed("f1", "/sub", "/a.txt")
 
-	// Look: a change is refused by the file manager, and never asked of
-	// the host.
+	// Look: a change is refused by the file manager itself, and the host
+	// hears of nothing done.
 	r.run("f1", filemanager.CmdDelete)
 	r.until("the refusal is logged", func() bool { return strings.Contains(r.log(), "can only be looked at") })
 	if _, err := os.Stat(filepath.Join(r.dir, "a.txt")); err != nil {
 		t.Fatal(err)
+	}
+	if did := r.events(); slices.ContainsFunc(did, func(e guest.FileEvent) bool { return e.Op != guest.FileDownloaded }) {
+		t.Errorf("the host heard %+v", did)
 	}
 
 	// Change: the same file manager changes the folder.
@@ -356,4 +405,60 @@ func TestFilesGoingDownTakeTheFileManagerAway(t *testing.T) {
 	r.st.Folders = 2
 	r.share(guest.FilesLook)
 	r.until("another folder is shown anew", func() bool { n := r.pane("f1"); return n != nil && n != q })
+}
+
+// A host slow to give the files channel, slower than the view is to give
+// the file manager its place, still has the file manager shown there.
+func TestASlowFilesChannelStillShowsTheFolder(t *testing.T) {
+	r := newFilesRigWith(t, func(ctx context.Context, open func(context.Context) (*sftp.Client, error)) (*sftp.Client, error) {
+		time.Sleep(300 * time.Millisecond)
+		return open(ctx)
+	}, guest.FilesLook, filesPaneAt("f1", ""))
+	r.mounted("f1")
+	r.listed("f1", "/sub", "/a.txt")
+
+	// None, and back, and another folder: each shows again.
+	r.share(guest.FilesNone)
+	r.until("the file manager is let go of", func() bool {
+		var gone bool
+		r.read(func() { gone = r.f.files.hub == nil })
+		return gone
+	})
+	r.share(guest.FilesLook)
+	r.mounted("f1")
+	r.listed("f1", "/sub", "/a.txt")
+	r.st.Folders = 2
+	r.share(guest.FilesLook)
+	r.until("the other folder's file manager", func() bool {
+		var folders uint32
+		r.read(func() { folders = r.f.files.folders })
+		return folders == 2
+	})
+	r.mounted("f1")
+	r.listed("f1", "/sub", "/a.txt")
+}
+
+// A files channel that could not be had is asked for again, each new
+// reason logged, and meanwhile the file manager says why it shows
+// nothing.
+func TestAFailedFilesChannelIsAskedForAgain(t *testing.T) {
+	var mu sync.Mutex
+	fails := 3
+	r := newFilesRigWith(t, func(ctx context.Context, open func(context.Context) (*sftp.Client, error)) (*sftp.Client, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if fails > 0 {
+			fails--
+			return nil, errors.New("the host is busy")
+		}
+		return open(ctx)
+	}, guest.FilesLook, filesPaneAt("f1", ""))
+	r.mounted("f1")
+	r.listed("f1", "/sub", "/a.txt")
+	if n := len(regexp.MustCompile(`(?m)^\S+ \S+ couldn't reach the shared folder: the host is busy$`).FindAllString(r.log(), -1)); n != 1 {
+		t.Errorf("the reason is logged %d times:\n%s", n, r.log())
+	}
+	if !strings.Contains(r.log(), "Listing") {
+		t.Errorf("the file manager did not say why it showed nothing:\n%s", r.log())
+	}
 }

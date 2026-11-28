@@ -27,9 +27,16 @@ import (
 // host says, it refuses what it does not allow. The folder's top is the
 // top of all the file manager shows.
 
-// filesMemory is the room the file manager takes of what the page holds,
-// for its pictures, whatever is shown.
-const filesMemory = 48 << 20
+// filesMemory is the most room the file manager takes of what the page
+// holds, mostHeld, which its terminals have the rest of: 48 MB of 96. Its
+// windows share it, for their pictures, as gunim's file manager bounds
+// them: at the most seven eighths of it, 42 MB, besides the listings.
+// filesLeast is the least it is given, where the terminals on the
+// screen keep more.
+const (
+	filesMemory = 48 << 20
+	filesLeast  = 16 << 20
+)
 
 // filesRoom is what the budget counts the file manager's room under.
 const filesRoom = "\x00files"
@@ -58,9 +65,18 @@ type filesFlow struct {
 	folders uint32
 	may     guest.FilesMay
 	// reached is the connection the folder's channel was made over, and
-	// asking the one it is being asked over, 0 for none.
+	// asking the one it is being asked over, 0 for none. tries counts the
+	// asks that failed in a row, retry is the timer of the next, and said
+	// the failure last logged.
 	reached, asking int
+	tries           int
+	retry           *time.Timer
+	said            string
 	panes           map[string]*filesPane
+	// places are where the view has a place for each pane's file manager,
+	// of this folder, as it said last: it may say so before the file
+	// manager is made.
+	places map[string]gunim.ID
 	// made counts the file managers made, for their IDs.
 	made int
 }
@@ -68,8 +84,9 @@ type filesFlow struct {
 // filesPane is one pane's file manager.
 type filesPane struct {
 	win *filemanager.Window
-	// host is the ID its views are mounted under.
-	host string
+	// host is the ID its views are mounted under, and dir the folder it
+	// started in.
+	host, dir string
 	// at is where it is mounted, "" until it is.
 	at gunim.ID
 	// shows is the folder it shows, and picked the items selected there,
@@ -119,9 +136,12 @@ func (f *flow) tendFiles() {
 	if ff.hub == nil {
 		ctx, stop := context.WithCancel(f.ctx)
 		ff.hub, ff.stop, ff.folders = filemanager.NewHub(ctx, nil), stop, f.st.Folders
+		ff.hub.SetMemory(int64(f.holdFiles()))
 		ff.fs = newSharedFS("kakel-share:"+strconv.FormatUint(uint64(ff.folders), 10), f.st.Folder)
 		ff.panes, ff.may = map[string]*filesPane{}, f.st.Files
-		f.budget.hold(filesRoom, filesMemory)
+		if ff.places == nil {
+			ff.places = map[string]gunim.ID{}
+		}
 	}
 	if f.st.Files != ff.may {
 		ff.may = f.st.Files
@@ -133,8 +153,9 @@ func (f *flow) tendFiles() {
 	here := map[string]bool{}
 	for _, pn := range panes {
 		here[pn.ID] = true
-		// Made once the folder is reached, so the first it reads is there.
-		if ff.panes[pn.ID] == nil && ff.reached != 0 {
+		// Made at once: what it reads waits for the folder's channel, and
+		// says why it could not be read where it cannot.
+		if ff.panes[pn.ID] == nil {
 			f.openFiles(pn)
 		}
 	}
@@ -146,15 +167,38 @@ func (f *flow) tendFiles() {
 	}
 }
 
+// holdFiles makes room for the file manager in the page's budget, and
+// returns how much: filesMemory, where the terminals off the screen, and
+// then the others, can let go of that much, and what is left otherwise,
+// but no less than filesLeast. A terminal let go of is made again in the
+// room left.
+func (f *flow) holdFiles() int {
+	wanted, _ := f.wanted()
+	for f.budget.free(filesRoom) < filesMemory {
+		q := f.least(nil, wanted)
+		if q == nil {
+			break
+		}
+		f.dropTerminal(q)
+	}
+	room := max(min(filesMemory, f.budget.free(filesRoom)), filesLeast)
+	f.budget.hold(filesRoom, room)
+	return room
+}
+
 // reachFiles asks the host for the folder's channel, over the connection
-// there is, where the folder has none over it.
+// there is, where the folder has none over it. One that could not be had
+// is asked for again, ever later, while the folder is shown, and each new
+// reason is logged; meanwhile the file managers say what keeps the folder
+// from them.
 func (f *flow) reachFiles() {
 	ff := &f.files
 	s, n := f.sess, f.dial
-	if s == nil || ff.reached == n || ff.asking == n {
+	if s == nil || ff.reached == n || ff.asking == n || ff.retry != nil {
 		return
 	}
 	ff.asking = n
+	ff.fs.asking()
 	fs, folders := ff.fs, ff.folders
 	go func() {
 		c, err := s.Files(f.ctx)
@@ -163,19 +207,50 @@ func (f *flow) reachFiles() {
 				ff.asking = 0
 			}
 			switch {
-			case err != nil:
-				if !errors.Is(err, context.Canceled) && !errors.Is(err, guest.ErrLost) && !errors.Is(err, guest.ErrNoFiles) {
-					log.Printf("couldn't reach the shared folder: %v", err)
-				}
 			case ff.fs != fs || ff.folders != folders || f.dial != n || f.sess != s:
-				_ = c.Close()
+				if err == nil {
+					_ = c.Close()
+				}
+			case err != nil:
+				f.filesFailed(err)
 			default:
-				ff.reached = n
+				ff.reached, ff.tries, ff.said = n, 0, ""
 				fs.set(c)
-				f.tendFiles()
+				for _, p := range ff.panes {
+					// What it read meanwhile is read again.
+					at, _ := p.showing()
+					if at == "" {
+						at = p.dir
+					}
+					p.win.Show(fs, at)
+				}
 			}
 		})
 	}()
+}
+
+// filesFailed hears that the folder's channel could not be had: the file
+// managers say why, and it is asked for again in a while.
+func (f *flow) filesFailed(err error) {
+	ff := &f.files
+	ff.fs.fail(err)
+	if !errors.Is(err, context.Canceled) {
+		if said := err.Error(); said != ff.said {
+			ff.said = said
+			log.Printf("couldn't reach the shared folder: %v", err)
+		}
+	}
+	d := paces.again
+	for range ff.tries {
+		d = min(2*d, paces.againMost)
+	}
+	ff.tries++
+	ff.retry = f.after(d, func() {
+		ff.retry = nil
+		if ff.hub != nil {
+			f.reachFiles()
+		}
+	})
 }
 
 // openFiles makes the file manager of Files pane pn, in its folder where
@@ -189,10 +264,10 @@ func (f *flow) openFiles(pn guest.Pane) {
 	}
 	o := filemanager.Options{
 		FS: ff.fs, Dir: dir, Top: "/", TopName: f.st.Folder, ReadOnly: ff.may != guest.FilesChange,
-		Memory: filesMemory, PrefsPath: f.cfg.FilesPrefs, Name: "Files",
+		PrefsPath: f.cfg.FilesPrefs, Name: "Files",
 		Log: func(line string) { log.Print(line) },
 	}
-	p := &filesPane{host: "kakel-files-" + strconv.Itoa(ff.made)}
+	p := &filesPane{host: "kakel-files-" + strconv.Itoa(ff.made), dir: dir}
 	host := filemanager.PaneHost{
 		ID: p.host,
 		Folder: func(_, path string) {
@@ -213,17 +288,25 @@ func (f *flow) openFiles(pn guest.Pane) {
 	}
 	p.win = win
 	ff.panes[pn.ID] = p
+	if at, ok := ff.places[pn.ID]; ok {
+		// The view had its place first.
+		p.at = at
+		win.Attach(f.c, at)
+	}
 }
 
-// placed hears that the view has a place for a file manager.
+// placed hears that the view has a place for a file manager, which it is
+// mounted in now or once it is made: whichever comes first.
 func (f *flow) placed(in FilesPlaced) {
 	ff := &f.files
-	p := ff.panes[in.Pane]
-	if p == nil || in.Folders != ff.folders {
+	if ff.hub == nil || in.Folders != ff.folders {
 		return
 	}
-	p.at = in.At
-	p.win.Attach(f.c, in.At)
+	ff.places[in.Pane] = in.At
+	if p := ff.panes[in.Pane]; p != nil {
+		p.at = in.At
+		p.win.Attach(f.c, in.At)
+	}
 }
 
 // shutFiles lets go of the file managers, the folder's channel and their
@@ -238,6 +321,9 @@ func (f *flow) shutFiles() {
 		wins = append(wins, p.win)
 	}
 	fs, stop := ff.fs, ff.stop
+	if ff.retry != nil {
+		ff.retry.Stop()
+	}
 	*ff = filesFlow{made: ff.made}
 	f.budget.drop(filesRoom)
 	f.after(filesLinger, func() {
@@ -253,7 +339,11 @@ func (f *flow) shutFiles() {
 // with it, and is asked for again over the next.
 func (f *flow) filesLost() {
 	ff := &f.files
-	ff.reached, ff.asking = 0, 0
+	ff.reached, ff.asking, ff.tries = 0, 0, 0
+	if ff.retry != nil {
+		ff.retry.Stop()
+		ff.retry = nil
+	}
 	if ff.fs != nil {
 		ff.fs.set(nil)
 	}

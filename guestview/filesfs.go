@@ -3,6 +3,7 @@ package guestview
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"sync"
@@ -29,6 +30,10 @@ type sharedFS struct {
 
 	mu  sync.Mutex
 	cur *vfs.SFTP
+	// err is why the channel could not be had, and waiting closes once
+	// it is had, or err is known, while it is asked for.
+	err     error
+	waiting chan struct{}
 }
 
 var (
@@ -40,8 +45,36 @@ var (
 // errNoFolder is a call while the folder is not reached.
 var errNoFolder = errors.New("the shared folder is not reached now")
 
+// reachWait is how long a call waits for the channel being asked for.
+const reachWait = 30 * time.Second
+
 // newSharedFS is a folder called name, as the file system of ID id.
 func newSharedFS(id, name string) *sharedFS { return &sharedFS{id: id, name: name} }
+
+// asking says the channel is being asked for: calls wait for it.
+func (s *sharedFS) asking() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cur == nil && s.waiting == nil {
+		s.waiting = make(chan struct{})
+	}
+}
+
+// fail says the channel could not be had, and why: calls fail so.
+func (s *sharedFS) fail(err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.err = fmt.Errorf("couldn't reach the shared folder: %w", err)
+	s.wake()
+}
+
+// wake lets the calls that wait go on. Of s.mu.
+func (s *sharedFS) wake() {
+	if s.waiting != nil {
+		close(s.waiting)
+		s.waiting = nil
+	}
+}
 
 // set hands over the folder's channel, or none while there is none. The
 // one before is closed.
@@ -52,21 +85,39 @@ func (s *sharedFS) set(c *sftp.Client) {
 	}
 	s.mu.Lock()
 	was := s.cur
-	s.cur = next
+	s.cur, s.err = next, nil
+	if next != nil {
+		s.wake()
+	}
 	s.mu.Unlock()
 	if was != nil {
 		_ = was.Close()
 	}
 }
 
-// files is the folder, or why it cannot be read.
+// files is the folder, once it is reached, or why it cannot be read.
 func (s *sharedFS) files() (*vfs.SFTP, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.cur == nil {
-		return nil, errNoFolder
+	for end := time.Now().Add(reachWait); ; {
+		s.mu.Lock()
+		cur, err, waiting := s.cur, s.err, s.waiting
+		s.mu.Unlock()
+		switch {
+		case cur != nil:
+			return cur, nil
+		case waiting == nil && err != nil:
+			return nil, err
+		case waiting == nil:
+			return nil, errNoFolder
+		}
+		select {
+		case <-waiting:
+		case <-time.After(time.Until(end)):
+			return nil, errNoFolder
+		}
+		if time.Now().After(end) {
+			return nil, errNoFolder
+		}
 	}
-	return s.cur, nil
 }
 
 // ID implements [filemanager.FS].
