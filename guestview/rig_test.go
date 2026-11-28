@@ -182,7 +182,7 @@ func termPane(id string) guest.Pane {
 // inWindow is the state of a guest in a window of terminals, in one
 // group.
 func inWindow(ids ...string) State {
-	st := State{Page: PageWindow, HostName: "Anna", Title: "web", CanType: true, Layout: dock.NewLayout(true, ids...), HostIn: ids[0]}
+	st := State{Page: PageWindow, HostName: "Anna", CanType: true, Layout: dock.NewLayout(true, ids...), HostIn: ids[0]}
 	for _, id := range ids {
 		st.Panes = append(st.Panes, termPane(id))
 	}

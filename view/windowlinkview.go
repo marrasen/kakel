@@ -507,6 +507,9 @@ func linkMark(l app.WindowLink) *icon.Icon {
 func (c *linkCard) show(l app.WindowLink, now time.Time, u *gunim.UI) {
 	c.l = l
 	c.head.Text, c.says.Text = linkHeading(l), linkStands(l, now)
+	if where := c.w.guestWhere(l); where != "" && l.Stands == app.LinkIn && l.Trouble == "" {
+		c.says.Text = where + " " + c.says.Text
+	}
 	c.says.Color = look.Faint
 	if l.Trouble != "" {
 		c.says.Color = widget.DialogProblem

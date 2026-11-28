@@ -64,8 +64,14 @@ const (
 	// frameName joins, with a joining.
 	frameName = 'N'
 
-	// frameFocus says which pane the guest is in, by its ID.
+	// frameFocus says which pane the guest is in, by its ID: one it
+	// picked, so it follows the host no more.
 	frameFocus = 'F'
+
+	// frameFollow says the guest follows the host: it is in whichever pane
+	// the host is in, until a frameFocus says otherwise. Each says all
+	// there is of where the guest is, so only the latest is sent.
+	frameFollow = 'H'
 
 	// frameLeave says the guest goes, and will not be back.
 	frameLeave = 'L'
@@ -148,7 +154,7 @@ type mosts map[byte]int
 
 var (
 	controlToGuest = mosts{frameJoin: 0, frameWaiting: 0, frameState: mostState, frameEnded: mostEnded}
-	controlToHost  = mosts{frameName: mostJoining, frameFocus: mostID, frameLeave: 0}
+	controlToHost  = mosts{frameName: mostJoining, frameFocus: mostID, frameFollow: 0, frameLeave: 0}
 	paneToGuest    = mosts{frameScreen: mostScreen + 4, frameData: mostData, frameProgram: programLen}
 	paneToHost     = mosts{frameTyped: countLen + mostTyped}
 )
@@ -243,8 +249,9 @@ const (
 
 // State is the shared window as it stands.
 type State struct {
-	// HostName is who shares it, and Title what the window says it is.
-	HostName, Title string
+	// HostName is who shares it. The guest's page is called after the
+	// pane the guest is in.
+	HostName string
 
 	// CanType says the guest may type. What it types while it may not is
 	// dropped by the host, whatever the guest's own program thinks.
@@ -275,8 +282,8 @@ func encodeState(st State) ([]byte, error) {
 // layout and no theme, and no more of the rest than a guest keeps.
 func (st State) least() State {
 	few := State{
-		HostName: plain(st.HostName, mostName), Title: plain(st.Title, mostName),
-		CanType: st.CanType, Panes: []Pane{},
+		HostName: plain(st.HostName, mostName),
+		CanType:  st.CanType, Panes: []Pane{},
 	}
 	if len(st.HostIn) <= mostID {
 		few.HostIn = st.HostIn
@@ -301,7 +308,7 @@ func decodeState(body []byte) (State, error) {
 	if err := json.Unmarshal(body, &st); err != nil {
 		return State{}, fmt.Errorf("%w: a state: %w", errFrame, err)
 	}
-	st.HostName, st.Title = plain(st.HostName, mostTitle), plain(st.Title, mostTitle)
+	st.HostName = plain(st.HostName, mostTitle)
 	if len(st.HostIn) > mostID {
 		st.HostIn = ""
 	}

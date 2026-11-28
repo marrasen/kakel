@@ -95,10 +95,14 @@ type fakeSession struct {
 	paneErr error
 	onPane  func()
 	// sizes are the panes of another size than 40 by 10.
-	sizes   map[string][2]int
+	sizes map[string][2]int
+	// focused are where the guest said it is, following for the host's.
 	focused []string
 	left    bool
 }
+
+// following is the guest saying it follows the host, as focused has it.
+const following = "(following)"
 
 func newFake(v guest.View) *fakeSession {
 	return &fakeSession{view: v, changed: make(chan struct{}, 1), done: make(chan struct{})}
@@ -136,6 +140,11 @@ func (s *fakeSession) Pane(_ context.Context, id string) (session.ScreenReader, 
 	p := newPaneOf(id, size[0], size[1], "screen of "+id)
 	s.panes = append(s.panes, p)
 	return p, nil
+}
+func (s *fakeSession) Follow() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.focused = append(s.focused, following)
 }
 func (s *fakeSession) Focus(id string) {
 	s.mu.Lock()
@@ -298,7 +307,7 @@ func (c *course) on(p Page) {
 
 // in is a window of terminals, as a host says it.
 func in(ids ...string) guest.View {
-	st := guest.State{HostName: "Anna", Title: "web", CanType: true}
+	st := guest.State{HostName: "Anna", CanType: true}
 	l := dock.NewLayout(true, ids...)
 	st.Layout, _ = guestlook.Layout(l.Windows[0].Root, func(string) bool { return true })
 	for _, id := range ids {
@@ -340,7 +349,7 @@ func TestAGuestJoinsOnceItAsks(t *testing.T) {
 	}
 	s.say(in("p1"))
 	c.on(PageWindow)
-	if st := c.state(); st.HostName != "Anna" || st.Title != "web" || !st.CanType || len(st.Panes) != 1 {
+	if st := c.state(); st.HostName != "Anna" || !st.CanType || len(st.Panes) != 1 {
 		t.Errorf("the window is %+v", st)
 	}
 }
@@ -467,6 +476,37 @@ func TestHowAShareEnds(t *testing.T) {
 	}
 }
 
+// The host hears whether the guest follows it, and the pane it picked
+// once it does not: as it comes in, as it changes, and as it comes back.
+// While it follows, the panes it is in say nothing to the host.
+func TestTheHostHearsWhetherTheGuestFollows(t *testing.T) {
+	quick(t)
+	s, back := newFake(in("p1", "p2")), newFake(in("p1", "p2"))
+	c := newCourse(t, true, nil, s)
+	c.on(PageWindow)
+	said := func(f *fakeSession, what string, want ...string) {
+		t.Helper()
+		c.until(what, func() bool {
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			return slices.Equal(f.focused, want)
+		})
+	}
+	said(s, "following, as it came in", following)
+	c.do(In{"p2"})
+	c.do(In{"p1"})
+	c.do(Follows{false})
+	said(s, "in p1", following, "p1")
+	c.do(In{"p2"})
+	said(s, "in p2", following, "p1", "p2")
+	c.do(Follows{true})
+	said(s, "following again", following, "p1", "p2", following)
+	c.then(back)
+	s.end(guest.ErrLost)
+	c.until("back", func() bool { return c.dials() == 2 && !c.state().Lost })
+	said(back, "following, as it came back", following)
+}
+
 // A link that is not whole says so, and reaches nobody.
 func TestABrokenLinkSaysSo(t *testing.T) {
 	quick(t)
@@ -488,6 +528,7 @@ func TestALostConnectionIsMadeAgain(t *testing.T) {
 	c.on(PageWindow)
 	c.do(Shown{[]string{"p1"}})
 	c.do(In{"p1"})
+	c.do(Follows{false})
 	c.until("p1 open", func() bool { return slices.Equal(s.opened(), []string{"p1"}) })
 	c.until("its terminal", func() bool { return c.f.shells.Get("p1") != nil })
 	sh := c.f.shells.Get("p1")

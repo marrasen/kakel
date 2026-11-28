@@ -187,6 +187,8 @@ func (c *hostConn) control(ch ssh.Channel) {
 			}
 		case frameFocus:
 			c.h.focused(c, string(body))
+		case frameFollow:
+			c.h.followed(c)
 		case frameLeave:
 			c.h.leave(c)
 		}

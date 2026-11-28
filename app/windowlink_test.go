@@ -602,17 +602,15 @@ func TestWhatIsSharedFollowsThePanes(t *testing.T) {
 	// In a split, and focused.
 	r.do(MovePane{Pane: "p6", Beside: "p2"})
 	r.do(FocusPane{Pane: "p6"})
-	st := v.state("the split", func(st guest.State) bool {
+	v.state("the split", func(st guest.State) bool {
 		lay, err := guestlook.ReadLayout(st.Layout)
 		return err == nil && lay.Windows[0].Root.Kind == dock.Row && st.HostIn == "p6"
 	})
-	if st.Title != "renamed" {
-		t.Errorf("the window is called %q", st.Title)
-	}
 	// With a pane in front that is not shared, its title is not said.
 	r.do(FocusPane{Pane: "p3"})
-	if st := v.state("the files in front", func(st guest.State) bool { return st.HostIn == "p3" }); st.Title != "Files" {
-		t.Errorf("the window is called %q", st.Title)
+	st := v.state("the files in front", func(st guest.State) bool { return st.HostIn == "p3" })
+	if i := slices.IndexFunc(st.Panes, func(p guest.Pane) bool { return p.ID == "p3" }); i < 0 || st.Panes[i].Title != "Files" {
+		t.Errorf("the files are told as %+v", st.Panes)
 	}
 
 	// Closed.
@@ -685,6 +683,30 @@ func TestTheHostSaysWhetherAGuestTypes(t *testing.T) {
 	r.settle()
 	if got := r.progs["p1"].sent(); strings.Contains(got, "again") {
 		t.Errorf("the program was sent %q", got)
+	}
+}
+
+// A guest that follows the host is in the pane the host is in, as the
+// host moves, with nothing said by the guest: a page in a hidden tab draws
+// nothing, and says nothing.
+func TestAGuestThatFollowsIsInTheHostsPane(t *testing.T) {
+	r := newLinkRig(t)
+	l := r.share(true)
+	v := r.visit(l.Link)
+	v.in(l.ID, true)
+	v.state("the window", func(st guest.State) bool { return len(st.Panes) == 3 })
+	v.s.Follow()
+	for _, id := range []string{"p2", "p1", "p2"} {
+		r.do(FocusPane{Pane: id})
+		r.until("the guest in "+id, func() bool { got := r.only(); return got.In == id && got.Follows })
+	}
+	// A pane of its own holds it.
+	v.s.Focus("p1")
+	r.until("the guest in p1", func() bool { got := r.only(); return got.In == "p1" && !got.Follows })
+	r.do(FocusPane{Pane: "p2"})
+	r.settle()
+	if got := r.only(); got.In != "p1" {
+		t.Errorf("the host moved, and the guest is in %q", got.In)
 	}
 }
 

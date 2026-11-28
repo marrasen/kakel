@@ -188,7 +188,7 @@ func TestTypingInTheWindow(t *testing.T) {
 		t.Errorf("of what is on the screen it said %v", in)
 	}
 	off := s.win.Offscreen()
-	if !off.KeysClaimed() || !off.CloseAsks() || off.Title() != "web — kakel" {
+	if !off.KeysClaimed() || !off.CloseAsks() || off.Title() != "p1 — kakel" {
 		t.Errorf("the keys are claimed: %v, a close asks: %v, the title is %q", off.KeysClaimed(), off.CloseAsks(), off.Title())
 	}
 	// Another pane clicked.
@@ -328,6 +328,111 @@ func TestFollowingTheHost(t *testing.T) {
 	s.settle()
 	if !slices.Contains(d.Shown(), "p1") || d.Active() != "p1" {
 		t.Errorf("after its tab was picked it shows %v, and is in %s", d.Shown(), d.Active())
+	}
+}
+
+// A guest that picked a pane of its own has a way back to following the
+// host, which comes and goes as it moves; the bar and the browser's tab
+// are called after the pane the guest is in.
+func TestFollowingTheHostAgain(t *testing.T) {
+	for name, size := range map[string]geom.Size{"wide": geom.Sz(1000, 700), "narrow": geom.Sz(390, 700)} {
+		t.Run(name, func(t *testing.T) {
+			s := newStage(t, size, inSplit())
+			s.settle()
+			w := s.page.win
+			b, d := w.bar, w.dock
+			way, other := b.follow, b.followIcon
+			if size.W < 600 {
+				way, other = other, way
+			}
+			titled := func(want string) {
+				t.Helper()
+				label, _ := b.title.Page().(*widget.Label)
+				if label == nil || label.Text != want || s.win.Offscreen().Title() != want+" — kakel" {
+					t.Errorf("in %s, the bar says %v and the tab %q", d.Active(), label, s.win.Offscreen().Title())
+				}
+			}
+			// moves draws the way back as it comes or goes, and reports
+			// in how many frames it stood between.
+			moves := func() int {
+				between, full := 0, float32(0)
+				for range 60 {
+					s.frames(1)
+					box, _ := s.u.Bounds(way)
+					if wide := box.Size().W; wide > 1 && (full == 0 || wide != full) {
+						between++
+					}
+					if !way.Open() {
+						continue
+					}
+					full = max(full, box.Size().W)
+				}
+				return between
+			}
+			host := func(id string) {
+				s.show(func(st *State) {
+					st.Layout = st.Layout.Clone()
+					st.Layout.Show(id)
+					st.HostIn = id
+				})
+			}
+			if way.Open() || other.Open() {
+				t.Error("following, there is a way back")
+			}
+			titled("p1")
+			// The title fades from one to the next.
+			was := b.title.Page()
+			host("p3")
+			going := 0
+			for range 30 {
+				if s.u.Drawn(was) {
+					going++
+				}
+				s.frames(1)
+			}
+			if going < 3 {
+				t.Errorf("the title before went in %d frames", going)
+			}
+			s.settle()
+			titled("p3")
+			s.intents()
+
+			// Typed in, the pane is the guest's own.
+			s.typing("x")
+			s.sent("p3", "x")
+			if in := s.intents(); !slices.Contains(in, gunim.Intent(Follows{false})) {
+				t.Errorf("typing, it said %v", in)
+			}
+			if n := moves(); !way.Open() || other.Open() || n < 3 {
+				t.Errorf("the way back is there: %v, and came in %d frames", way.Open(), n)
+			}
+			host("p1")
+			s.settle()
+			if d.Active() != "p3" {
+				t.Errorf("the host moved, and the guest is in %s", d.Active())
+			}
+			titled("p3")
+
+			s.click(way)
+			if in := s.intents(); !slices.Contains(in, gunim.Intent(Follows{true})) {
+				t.Errorf("following again, it said %v", in)
+			}
+			if n := moves(); way.Open() || n < 3 {
+				t.Errorf("following again, the way back is there: %v, and went in %d frames", way.Open(), n)
+			}
+			s.settle()
+			if d.Active() != "p1" || !slices.Contains(d.Shown(), "p1") {
+				t.Errorf("following again, it shows %v and is in %s", d.Shown(), d.Active())
+			}
+			titled("p1")
+			host("p2")
+			s.settle()
+			if d.Active() != "p2" {
+				t.Errorf("following again, the host moved and the guest is in %s", d.Active())
+			}
+			titled("p2")
+			s.shot("follow-again-" + name)
+		})
 	}
 }
 
@@ -1042,7 +1147,7 @@ func TestAHostsThemeLeavesThePageItself(t *testing.T) {
 func TestALongTitleLeavesRoomForWhoShares(t *testing.T) {
 	for _, w := range []float32{320, 390, 700, 1200} {
 		st := inWindow("p1")
-		st.Title, st.HostName, st.CanType = strings.Repeat("Shared by you ", 40), "Anna", false
+		st.Panes[0].Title, st.HostName, st.CanType = strings.Repeat("Shared by you ", 40), "Anna", false
 		s := newStage(t, geom.Sz(w, 600), st)
 		s.settle()
 		b := s.page.win.bar

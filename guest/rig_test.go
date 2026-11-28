@@ -337,7 +337,7 @@ func (r *rig) share(id string, src PaneSource) {
 
 // terminals is a state of terminals by those ids.
 func terminals(canType bool, ids ...string) State {
-	st := State{HostName: "anna", Title: "the window", CanType: canType}
+	st := State{HostName: "anna", CanType: canType}
 	for _, id := range ids {
 		st.Panes = append(st.Panes, Pane{ID: id, Title: id, Kind: KindTerminal, Cols: 80, Rows: 24})
 	}

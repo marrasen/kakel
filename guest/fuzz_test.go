@@ -11,7 +11,7 @@ import (
 // Nothing a far end sends makes a reader hold more than the kind of frame
 // may be, or panic.
 func FuzzFrames(f *testing.F) {
-	f.Add(frame(frameState, []byte(`{"Title":"x"}`)))
+	f.Add(frame(frameState, []byte(`{"HostName":"x"}`)))
 	f.Add(frame(frameTyped, []byte("hello")))
 	f.Add([]byte{frameTyped, 0xff, 0xff, 0xff, 0xff, 1})
 	f.Add(append(frame(frameScreen, []byte("\x00\x50\x00\x18\x1b[H")), frame(frameData, []byte("x"))...))
@@ -43,7 +43,7 @@ func FuzzState(f *testing.F) {
 		if err != nil {
 			return
 		}
-		if len(st.Panes) > mostPanes || utf8.RuneCountInString(st.Title) > mostTitle {
+		if len(st.Panes) > mostPanes || utf8.RuneCountInString(st.HostName) > mostTitle {
 			t.Fatalf("a state of %d panes", len(st.Panes))
 		}
 		for _, p := range st.Panes {

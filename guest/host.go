@@ -113,6 +113,10 @@ type Status struct {
 	// and TypedAt when, zero before it has.
 	Focus, TypedIn string
 	TypedAt        time.Time
+	// Follows says the guest follows the host: Focus is then the pane the
+	// host is in, as the host last published it, whatever the guest's page
+	// has drawn.
+	Follows bool
 
 	// Until is when the phase ends by itself: a link's expiry, the end of
 	// asking, or the end of waiting for a guest who is away. Zero while
@@ -157,8 +161,12 @@ type Host struct {
 	state []byte
 	panes map[string]bool
 
+	// focus is the pane the guest picked, and follows says it picked none
+	// and follows the host, who is in hostIn.
 	focus, typedIn string
 	typedAt        time.Time
+	follows        bool
+	hostIn         string
 
 	conns map[*hostConn]struct{}
 	// arriving are the callers that prove a key, and unjoined those that
@@ -231,7 +239,7 @@ func (h *Host) Status() Status {
 	defer h.mu.Unlock()
 	st := Status{
 		Phase: h.phase, Reason: h.why, Guest: h.guest, Here: h.cur != nil,
-		Focus: h.focus, TypedIn: h.typedIn, TypedAt: h.typedAt, Until: h.until,
+		Focus: h.inLocked(), TypedIn: h.typedIn, TypedAt: h.typedAt, Until: h.until, Follows: h.follows,
 	}
 	if !h.awayUntil.IsZero() && (st.Until.IsZero() || h.awayUntil.Before(st.Until)) {
 		st.Until = h.awayUntil
@@ -309,9 +317,12 @@ func (h *Host) Publish(st State) error {
 		return nil
 	}
 	// What is taken away first: whatever comes after, that holds.
-	h.panes = panes
-	if !panes[h.focus] && h.focus != "" {
+	was := h.inLocked()
+	h.panes, h.hostIn = panes, st.HostIn
+	if !panes[h.focus] {
 		h.focus = ""
+	}
+	if h.inLocked() != was {
 		nudge(h.wake)
 	}
 	var gone, kept []*stream
@@ -371,7 +382,7 @@ func (h *Host) End(why Reason) {
 	h.phase, h.why = PhaseOver, why
 	h.disarmLocked(&h.phaseEnd, &h.until)
 	h.disarmLocked(&h.away, &h.awayUntil)
-	h.state, h.panes, h.focus, h.cur = nil, nil, "", nil
+	h.state, h.panes, h.focus, h.follows, h.cur = nil, nil, "", false, nil
 	conns := make([]*hostConn, 0, len(h.conns))
 	for c := range h.conns {
 		conns = append(conns, c)
@@ -627,7 +638,7 @@ func (h *Host) drop(c *hostConn) {
 	if h.cur != c {
 		return
 	}
-	h.cur, h.focus = nil, ""
+	h.cur, h.focus, h.follows = nil, "", false
 	h.awayLocked()
 	nudge(h.wake)
 }
@@ -672,7 +683,8 @@ func (h *Host) greet(c *hostConn) (why Reason, replaced *hostConn) {
 // told. That is put with mu held, so a state published meanwhile is never
 // put before one it stands in place of.
 func (h *Host) takeLocked(c *hostConn) {
-	h.cur, h.focus = c, ""
+	// Where it is, the guest says again.
+	h.cur, h.focus, h.follows = c, "", false
 	h.countLocked(c)
 	h.disarmLocked(&h.away, &h.awayUntil)
 	c.out.put(h.viewLocked())
@@ -737,15 +749,39 @@ func (h *Host) ask(r Request) {
 	h.cur.out.put(h.viewLocked())
 }
 
-// focused notes the pane the guest says it is in.
+// focused notes the pane the guest says it picked: none that is shared,
+// where that is not one.
 func (h *Host) focused(c *hostConn, id string) {
+	if !h.panes[id] {
+		id = ""
+	}
+	h.place(c, id, false)
+}
+
+// followed notes that the guest follows the host.
+func (h *Host) followed(c *hostConn) { h.place(c, "", true) }
+
+// place notes where the guest says it is.
+func (h *Host) place(c *hostConn, focus string, follows bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if h.cur != c || h.phase != PhaseIn || id != "" && !h.panes[id] || id == h.focus {
+	if h.cur != c || h.phase != PhaseIn || focus == h.focus && follows == h.follows {
 		return
 	}
-	h.focus = id
+	h.focus, h.follows = focus, follows
 	nudge(h.wake)
+}
+
+// inLocked is the pane the guest is in: the host's while it follows, and
+// only one that is shared.
+func (h *Host) inLocked() string {
+	switch {
+	case !h.follows:
+		return h.focus
+	case h.panes[h.hostIn]:
+		return h.hostIn
+	}
+	return ""
 }
 
 // typed notes that the guest typed in a pane.

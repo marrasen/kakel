@@ -42,7 +42,7 @@ func init() {
 			}
 			return map[string]any{
 				"page": int(now.Page), "lost": now.Lost, "busy": now.Busy, "over": now.Over.Title, "trouble": now.Trouble,
-				"title": now.Title, "host": now.HostName, "canType": now.CanType, "panes": panes, "shown": shown,
+				"host": now.HostName, "canType": now.CanType, "panes": panes, "shown": shown,
 				"theme": now.Theme.Name, "why": now.Why,
 			}
 		}),

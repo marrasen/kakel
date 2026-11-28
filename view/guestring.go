@@ -108,6 +108,18 @@ func guestsIn(st app.State, id string) string {
 	return strings.Join(names, ", ")
 }
 
+// guestWhere says where a share's guest is: following the host, or in a
+// pane it picked. "" for neither.
+func (w *Window) guestWhere(l app.WindowLink) string {
+	if l.Follows {
+		return "Following you."
+	}
+	if i := slices.IndexFunc(w.panes, func(p app.Pane) bool { return p.ID == l.In }); i >= 0 && l.In != "" {
+		return "In " + w.titleOf(w.panes[i]) + "."
+	}
+	return ""
+}
+
 // guestCalled is what a share's guest is called, where it has no name.
 func guestCalled(l app.WindowLink) string {
 	if l.Guest == "" {

@@ -258,7 +258,7 @@ func TestAWaitingGuestLearnsNothing(t *testing.T) {
 	}
 	say(r, term, p, "what the program says", "a-title")
 	st := terminals(true, "secret-pane", "another")
-	st.Title = "a new title"
+	st.HostName = "a new name"
 	r.publish(st)
 	_, _ = ch.Write(frame(frameFocus, []byte("secret-pane")))
 	time.Sleep(50 * time.Millisecond)
@@ -309,7 +309,7 @@ func TestAGuestComesBack(t *testing.T) {
 	r.publish(terminals(true, "a"))
 	r.answer <- true
 	r.until("it is in", func() bool { return s.View().Phase == PhaseIn })
-	if st := s.View().State; st.Title != "the window" || len(st.Panes) != 1 {
+	if st := s.View().State; st.HostName != "anna" || len(st.Panes) != 1 {
 		t.Errorf("the window is %+v", st)
 	}
 	_ = s.Close()
@@ -620,6 +620,66 @@ func TestFocusIsToldAndBounded(t *testing.T) {
 		defer r.mu.Unlock()
 		return r.statuss[len(r.statuss)-1].Focus == ""
 	})
+}
+
+// A guest that follows the host is in the host's pane as the host moves,
+// with nothing more said: a page that draws nothing says nothing. One it
+// picks holds it there, and following again takes it back.
+func TestAGuestThatFollowsIsWhereTheHostIs(t *testing.T) {
+	r := newRig(t, false)
+	st := terminals(true, "a", "b", "c")
+	st.Panes = append(st.Panes, Pane{ID: "files", Title: "Files", Kind: KindOther})
+	hostIn := func(id string) {
+		st.HostIn = id
+		r.publish(st)
+	}
+	hostIn("a")
+	k := key(t)
+	s := r.in(k)
+	is := func(what, focus string, follows bool) {
+		t.Helper()
+		r.until(what, func() bool {
+			got := r.host.Status()
+			return got.Focus == focus && got.Follows == follows
+		})
+	}
+	s.Follow()
+	is("the guest is in a", "a", true)
+	for _, id := range []string{"b", "c", "b"} {
+		hostIn(id)
+		is("the guest is in "+id, id, true)
+	}
+	// The host in a pane that is not shared: so is the guest.
+	hostIn("files")
+	is("the guest is in no shared pane", "", true)
+	hostIn("c")
+	s.Focus("a")
+	is("the guest picked a", "a", false)
+	hostIn("b")
+	time.Sleep(20 * time.Millisecond)
+	if got := r.host.Status(); got.Focus != "a" || got.Follows {
+		t.Errorf("the host moved, and the guest is in %q, following: %v", got.Focus, got.Follows)
+	}
+	s.Follow()
+	is("the guest follows again", "b", true)
+	r.until("OnChange has it", func() bool {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		last := r.statuss[len(r.statuss)-1]
+		return last.Focus == "b" && last.Follows
+	})
+	// Back after a lost connection, it is where it says.
+	_ = s.Close()
+	r.until("the guest is away", func() bool { return !r.host.Status().Here })
+	again, err := r.guest(k)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = again.Close() }()
+	r.until("it is back", func() bool { return again.View().Phase == PhaseIn })
+	is("the guest has said nothing", "", false)
+	again.Follow()
+	is("the guest follows", "b", true)
 }
 
 func TestLeavingEndsTheShare(t *testing.T) {

@@ -47,6 +47,14 @@ func hostOr(host string) string {
 	return host
 }
 
+// followWord is the button that has the guest follow the host again.
+func followWord(host string) string {
+	if host == "" {
+		return "Follow the Host"
+	}
+	return "Follow " + host
+}
+
 // overBroken is a link that is not whole.
 var overBroken = Over{Title: "This link is incomplete", Text: "Open the whole link you were sent."}
 

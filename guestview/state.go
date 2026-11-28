@@ -43,13 +43,13 @@ type State struct {
 	// Over says how it ended.
 	Over Over
 
-	// HostName, Title and the rest are the shared window's, once the
-	// guest is in. They stay as they were while the connection is lost.
-	HostName, Title string
-	CanType         bool
-	Layout          dock.Layout
-	Panes           []guest.Pane
-	HostIn          string
+	// HostName and the rest are the shared window's, once the guest is
+	// in. They stay as they were while the connection is lost.
+	HostName string
+	CanType  bool
+	Layout   dock.Layout
+	Panes    []guest.Pane
+	HostIn   string
 	// Held are the terminals on the screen that are not shown, and why.
 	Held map[string]Held
 	// Shut are the terminals whose panes are not open, or have yet to
@@ -111,6 +111,9 @@ type (
 	Shown struct{ Panes []string }
 	// In says which pane the guest is in.
 	In struct{ Pane string }
+	// Follows says whether the guest follows the host: while it does, it
+	// is in whichever pane the host is in.
+	Follows struct{ On bool }
 )
 
 // The topic the State is published on, and what else the view is told.

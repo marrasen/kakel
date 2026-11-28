@@ -27,14 +27,17 @@ var (
 	barSmall  = theme.FontSize("kakel.page.bar.small", 12)
 )
 
-// bar is over the window: what it is, and under that who shares it, which
-// no title takes the room of, whether the guest may type, and the way out.
-// While the connection is lost, neither of those is there: the veil says
+// bar is over the window: the pane the guest is in, and under that who
+// shares it, which no title takes the room of, whether the guest may type,
+// the way back to following the host while it does not, and the way out.
+// While the connection is lost, none of the ways is there: the veil says
 // how it stands, and has a way out of its own.
 type bar struct {
 	anim.Group
-	w         *windowPage
-	title, by *widget.Label
+	w *windowPage
+	// title fades from one pane's title to the next.
+	title *widget.Pages
+	by    *widget.Label
 	// watch and types say whether the guest may type: one shows at a
 	// time, and swing is how far they are shaken to the side.
 	types, watch *widget.Badge
@@ -43,13 +46,19 @@ type bar struct {
 	// leaveIcon leave, the one with room for the word and the other not.
 	fill, unfill, leave, leaveIcon *widget.Fold
 	full, short, lost              bool
+	// follow and followIcon follow the host again, the one with room for
+	// the word and the other not, and own says the guest does not follow.
+	follow, followIcon *widget.Fold
+	followButton       *widget.Button
+	followIconButton   *widget.IconButton
+	own                bool
 }
 
 func newBar(w *windowPage) *bar {
-	b := &bar{w: w, title: widget.NewLabel(""), by: widget.NewLabel(""), types: widget.NewBadge(canType), watch: widget.NewBadge(canWatch),
+	b := &bar{w: w, title: widget.NewPages(barTitle("")), by: widget.NewLabel(""), types: widget.NewBadge(canType), watch: widget.NewBadge(canWatch),
 		swing: anim.NewFloat(0)}
 	b.Add(b.swing)
-	b.title.MaxLines, b.title.Face = 1, widget.BoldFont
+	b.title.InTurn = true
 	b.by.MaxLines, b.by.Color, b.by.Size = 1, quietInk, barSmall
 	b.types.Ink, b.watch.Ink = mayInk, watchInk
 	b.types.SetHidden(!w.st.CanType || w.st.Lost, nil)
@@ -66,7 +75,33 @@ func newBar(w *windowPage) *bar {
 	}
 	b.leave = sideFold(leave, true)
 	b.leaveIcon = sideFold(iconButton(icon.LogOut, "Leave", w.p.askLeave), false)
+	b.followButton = widget.NewButton(followWord(w.st.HostName))
+	b.followButton.Icon, b.followButton.Ghost, b.followButton.KeepFocus = icon.LocateFixed, true, true
+	b.followButton.OnClick = func(u *gunim.UI) gunim.Intent {
+		w.followHost(u)
+		return nil
+	}
+	b.follow = sideFold(b.followButton, false)
+	b.followIconButton = iconButton(icon.LocateFixed, followWord(w.st.HostName), w.followHost)
+	b.followIcon = sideFold(b.followIconButton, false)
 	return b
+}
+
+// barTitle is the title of the pane the guest is in, as the bar shows it.
+func barTitle(s string) *widget.Label {
+	l := widget.NewLabel(s)
+	l.MaxLines, l.Face = 1, widget.BoldFont
+	return l
+}
+
+// retitle shows the title of the pane the guest is in.
+func (b *bar) retitle(title string, u *gunim.UI) {
+	at := u
+	if u.Presence(b) == gunim.Exiting {
+		// Not on the screen yet: as it is when it comes.
+		at = nil
+	}
+	b.title.Show(barTitle(title), geom.Point{}, at)
 }
 
 // iconButton is a button of an icon, named for what it does.
@@ -89,8 +124,9 @@ func sideFold(n gunim.Node, open bool) *widget.Fold {
 
 // update shows st.
 func (b *bar) update(st State, u *gunim.UI) {
-	b.title.Text = st.Title
 	b.by.Text = "Shared by " + hostOr(st.HostName)
+	b.followButton.Label = followWord(st.HostName)
+	b.followIconButton.Tooltip = followWord(st.HostName)
 	types, watch := st.CanType && !st.Lost, !st.CanType && !st.Lost
 	switch {
 	case types && b.types.Hidden():
@@ -106,16 +142,24 @@ func (b *bar) update(st State, u *gunim.UI) {
 	}
 }
 
+// following hears whether the guest follows the host.
+func (b *bar) following(on bool, u *gunim.UI) {
+	b.own = !on
+	b.leaves(u)
+}
+
 // narrow has the bar do with less room, or not.
 func (b *bar) narrow(on bool, u *gunim.UI) {
 	b.short = on
 	b.leaves(u)
 }
 
-// leaves has the way out that there is room for show.
+// leaves has the ways back and out that there is room for show.
 func (b *bar) leaves(u *gunim.UI) {
 	b.leave.SetOpen(!b.short && !b.lost, u)
 	b.leaveIcon.SetOpen(b.short && !b.lost, u)
+	b.follow.SetOpen(!b.short && !b.lost && b.own, u)
+	b.followIcon.SetOpen(b.short && !b.lost && b.own, u)
 }
 
 // shake swings what says the guest may only watch.
@@ -130,7 +174,7 @@ func (b *bar) shake(u *gunim.UI) {
 
 // Children implements [gunim.Composite].
 func (b *bar) Children() []gunim.Node {
-	return []gunim.Node{b.title, b.by, b.types, b.watch, b.fill, b.unfill, b.leaveIcon, b.leave}
+	return []gunim.Node{b.title, b.by, b.types, b.watch, b.fill, b.unfill, b.leaveIcon, b.leave, b.followIcon, b.follow}
 }
 
 // Layout implements [gunim.Node]: from its right end in, and the title
@@ -160,6 +204,8 @@ func (b *bar) Layout(c gunim.Constraints, f gunim.Frame, kids gunim.Children) ge
 	right(6, gap)
 	right(5, gap/2)
 	right(4, gap)
+	right(9, gap)
+	right(8, gap)
 	swing := barShake.Get(th) * b.swing.Value()
 	for _, i := range []int{3, 2} {
 		s := kids.At(i).Layout(gunim.Constraints{Max: geom.Sz(max(x-left-barBy.Get(th), 1), size.H)})
