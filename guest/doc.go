@@ -70,9 +70,12 @@
 // A guest can open a channel for each terminal that the window's published
 // state lists and Open still gives. Down it comes what that program draws;
 // up it go the keys typed, which are dropped while the host does not let
-// the guest type. There is no request for a shell, a file, a tunnel, a
-// size, the clipboard, or anything outside the window, and everything that
-// is not one of these is refused.
+// the guest type. Where the host shares a folder, SetFiles, the guest can
+// open SFTP channels to it, Session.Files: it reaches what is in the
+// folder and nothing above it, and reads or changes it as FilesMay allows
+// at each request. There is no request for a shell, a tunnel, a size, the
+// clipboard, or anything else outside the window, and everything that is
+// not one of these is refused.
 //
 // What a guest has the host hold is bounded, in channels, frames and
 // bytes, and what it has the host do, in time. A guest that is slow is
