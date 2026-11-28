@@ -95,6 +95,10 @@ func (t *fit) layout(k gunim.Child, box geom.Size, cells *widget.CellGrid, f gun
 	need := geom.Sz(float32(cols)*cell.W, float32(rows)*cell.H)
 	k.Layout(gunim.Tight(need))
 	k.Place(geom.Point{})
+	if c := t.cell; c.W > 0 && c.H > 0 {
+		// Drawn as the far end draws it: from the top left.
+		return geom.Point{}
+	}
 	return geom.Pt(max(0, (box.W-need.W)/2), max(0, (box.H-need.H)/2))
 }
 

@@ -3,6 +3,7 @@ package guestview
 import (
 	"fmt"
 	"math"
+	"os"
 	"testing"
 	"time"
 
@@ -83,7 +84,7 @@ func TestTheHostsWindowIsDrawnWholeAtOneSize(t *testing.T) {
 		cols, rows := tm.Cells().GridSize()
 		at, c := tm.Drawn()
 		screen := geom.Sz(float32(cols)*c.W, float32(rows)*c.H)
-		if screen.W > box.W+0.5 || screen.H > box.H+0.5 || box.W-screen.W >= c.W || box.H-screen.H >= c.H || at.X < 0 || at.Y < 0 {
+		if screen.W > box.W+0.5 || screen.H > box.H+0.5 || box.W-screen.W >= c.W || box.H-screen.H >= c.H || at != (geom.Point{}) {
 			t.Errorf("%s's screen of %v, at %v, does not fill its pane of %v", id, screen, at, box)
 		}
 	}
@@ -92,7 +93,7 @@ func TestTheHostsWindowIsDrawnWholeAtOneSize(t *testing.T) {
 	}
 	// The guest's ring is round the pane it is in, the host's round the
 	// host's, and each pane has an edge.
-	if pc.guest.id != "p1" || pc.guest.lit.Value() < 0.99 || pc.host.id != "p1" || pc.host.lit.Value() < 0.99 {
+	if pc.guest.id != "p1" || pc.guest.lit.Value() < 0.99 || pc.host.id != "p1" || pc.host.lit.Value() < 0.99 || pc.together.Value() < 0.99 {
 		t.Errorf("the guest's ring is round %q, lit %v, the host's round %q, lit %v", pc.guest.id, pc.guest.lit.Value(), pc.host.id, pc.host.lit.Value())
 	}
 	l := w.dock.Arrangement()
@@ -123,8 +124,8 @@ func TestAPointerReachesThroughThePicture(t *testing.T) {
 	if w.dock.Active() != "p2" {
 		t.Fatalf("a click on p2's tab has the guest in %q", w.dock.Active())
 	}
-	if pc.guest.id != "p2" {
-		t.Errorf("the guest's ring is round %q", pc.guest.id)
+	if pc.guest.id != "p2" || pc.together.Value() > 0.01 {
+		t.Errorf("the guest's ring is round %q, the host's inside it as far as %v", pc.guest.id, pc.together.Value())
 	}
 	// A double click on the word "p3" of the line "this is p3" picks it.
 	v := w.panes["p3"]
@@ -215,5 +216,82 @@ func TestANarrowPageShowsOnePaneOfThePicture(t *testing.T) {
 	s.settle()
 	if pc.on.Value() != 1 || w.panes["p1"].term.Cells().CellSize() != cell {
 		t.Errorf("back, the picture is %v, its cells %v", pc.on.Value(), w.panes["p1"].term.Cells().CellSize())
+	}
+}
+
+// Where the host's window, whole, would be drawn too small to read, the
+// page shows one pane at a time, as a narrow one does, and the picture
+// again once it can be read; gliding both ways.
+func TestAPictureTooSmallToReadShowsOnePane(t *testing.T) {
+	st := inSplit()
+	st.Room, st.Cell = geom.Sz(1000, 600), geom.Sz(8, 17)
+	s := newStage(t, geom.Sz(640, 640), st)
+	s.settle()
+	w := s.page.win
+	pc := w.picture
+	if w.narrow || pc.on.Value() != 1 {
+		t.Fatalf("a window that can be read is narrow: %v, drawn whole %v", w.narrow, pc.on.Value())
+	}
+	s.show(func(st *State) { st.Room = geom.Sz(2560, 1440) })
+	s.frames(3)
+	if on := pc.on.Value(); on < 0.05 || on > 0.95 {
+		t.Errorf("a few frames on the picture is %v, not on its way", on)
+	}
+	s.settle()
+	if !w.narrow || pc.on.Value() != 0 || len(w.dock.Shown()) != 1 {
+		t.Errorf("too small to read, it is narrow: %v, drawn whole %v, showing %v", w.narrow, pc.on.Value(), w.dock.Shown())
+	}
+	s.show(func(st *State) { st.Room = geom.Sz(1000, 600) })
+	s.settle()
+	if w.narrow || pc.on.Value() != 1 {
+		t.Errorf("readable again, it is narrow: %v, drawn whole %v", w.narrow, pc.on.Value())
+	}
+}
+
+// On a page a finger is at, a picture whose tabs would be drawn smaller
+// than a fingertip shows one pane at a time; with a mouse it is whole.
+func TestAPictureTooSmallToTouchShowsOnePane(t *testing.T) {
+	for _, touch := range []bool{false, true} {
+		st := inSplit()
+		st.Room, st.Cell = geom.Sz(1600, 900), geom.Sz(8, 17)
+		s := newStage(t, geom.Sz(1180, 820), st, func(c *Config) { c.Touch = touch })
+		s.settle()
+		if w := s.page.win; w.narrow != touch {
+			t.Errorf("with a finger %v, it is narrow: %v", touch, w.narrow)
+		}
+	}
+}
+
+// A room too small to lay panes out in is none: the panes fill the page,
+// and the terminals are not given the host's cells.
+func TestATinyRoomIsNone(t *testing.T) {
+	st := inSplit()
+	st.Room, st.Cell = geom.Sz(1e-30, 1e-30), geom.Sz(8, 17)
+	s := newStage(t, geom.Sz(1100, 640), st)
+	s.settle()
+	w := s.page.win
+	if w.picture.on.Value() != 0 || w.cell() != (geom.Size{}) || w.narrow {
+		t.Errorf("drawn whole %v, with cells of %v, narrow %v", w.picture.on.Value(), w.cell(), w.narrow)
+	}
+}
+
+// Box drawing and blocks in the picture, scaled and at the host's own
+// size, to be looked at: with KAKEL_SHOTS set they are written there.
+func TestBoxDrawingInThePicture(t *testing.T) {
+	if os.Getenv("KAKEL_SHOTS") == "" {
+		t.Skip("only shots")
+	}
+	for name, c := range map[string]struct{ page, room geom.Size }{
+		"0.73": {geom.Sz(1100, 572), geom.Sz(1100, 685)},
+		"1":    {geom.Sz(1100, 572), geom.Sz(800, 500)},
+	} {
+		s := newStage(t, c.page, inWindow("boxes"))
+		s.settle()
+		cell := s.page.win.panes["boxes"].term.Cells().CellSize()
+		s.show(func(st *State) { st.Room, st.Cell = c.room, cell })
+		s.settle()
+		s.hostSizes(cell)
+		t.Logf("at %s the picture is scaled by %v", name, s.page.win.picture.scale)
+		s.shot("boxes-" + name)
 	}
 }

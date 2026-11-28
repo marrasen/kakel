@@ -9,6 +9,7 @@ import (
 	"github.com/marrasen/gunim/paint"
 	"github.com/marrasen/gunim/theme"
 	"github.com/marrasen/gunim/widget"
+	"github.com/marrasen/gunim/widget/dock"
 
 	"github.com/marrasen/kakel/look"
 )
@@ -25,6 +26,16 @@ var (
 	paneEdge      = theme.Length("kakel.page.pane.edge", 1)
 	guestRing     = theme.Length("kakel.page.ring", 2)
 	hostLine      = theme.Length("kakel.page.host.line", 1)
+	// pictureLeast is the least a terminal's cell is drawn tall in the
+	// picture, under which the page shows one pane at a time: 9 pixels
+	// is text of about 7, the smallest whose letters do not run together
+	// on a screen of ordinary density.
+	pictureLeast = theme.Length("kakel.page.picture.least", 9)
+	// fingerLeast is the least a bar of tabs is drawn tall on a page a
+	// finger is at, under which it shows one pane at a time: 28 pixels is
+	// 7.4 mm, about the 7.5 mm a fingertip needs to hit what it aims at.
+	// The picture's bars are the host's, never drawn taller than they are.
+	fingerLeast = theme.Length("kakel.page.picture.finger", 28)
 	// hostInk is the host's line, and its name on the tab of the pane it
 	// is in.
 	hostInk = theme.Color("kakel.page.host", color.NRGBA{R: 0x5e, G: 0x9c, B: 0xff, A: 0xff})
@@ -57,8 +68,10 @@ type picture struct {
 	laid  geom.Size
 	scale float32
 	at    geom.Point
-	// guest and host ring the pane each is in.
+	// guest and host ring the pane each is in, and together how far the
+	// host's stands inside the guest's, both being round the one pane.
 	guest, host mark
+	together    *anim.Float
 }
 
 // mark rings a pane of the picture: where it is, in the panes' own space,
@@ -72,17 +85,36 @@ type mark struct {
 }
 
 func newPicture(w *windowPage) *picture {
-	pc := &picture{w: w, on: anim.NewFloat(0), room: anim.NewSize(geom.Size{}), scale: 1}
+	pc := &picture{w: w, on: anim.NewFloat(0), room: anim.NewSize(geom.Size{}), scale: 1, together: anim.NewFloat(0)}
 	pc.guest = mark{at: anim.NewRect(geom.Rect{}), lit: anim.NewFloat(0)}
 	pc.host = mark{at: anim.NewRect(geom.Rect{}), lit: anim.NewFloat(0)}
-	pc.Add(pc.on, pc.room, pc.guest.at, pc.guest.lit, pc.host.at, pc.host.lit)
+	pc.Add(pc.on, pc.room, pc.guest.at, pc.guest.lit, pc.host.at, pc.host.lit, pc.together)
 	return pc
 }
 
 // hostRoom is the host's room, where it has said one.
 func (pc *picture) hostRoom() (geom.Size, bool) {
 	r := pc.w.st.Room
-	return r, r.W > 0 && r.H > 0
+	return r, roomy(r)
+}
+
+// roomy reports whether a room the host says is one to lay panes out in:
+// a pixel or more each way.
+func roomy(r geom.Size) bool { return r.W >= 1 && r.H >= 1 }
+
+// readable reports whether the picture, on a page of size page, is drawn
+// large enough to be read, and, on a page a finger is at, to be touched.
+// Where the host has said no room it is not drawn at all, and is.
+func (pc *picture) readable(page geom.Size, th *theme.Live) bool {
+	room, said := pc.hostRoom()
+	if !said {
+		return true
+	}
+	k := pc.fit(page, room, th)
+	if cell := pc.w.st.Cell; cell.H > 0 && k*cell.H < pictureLeast.Get(th) {
+		return false
+	}
+	return !pc.w.p.touch || k*dock.BarHeight.In(pc.w.st.Theme.Theme) >= fingerLeast.Get(th)
 }
 
 // set has the picture go to what the state and the page say: framed at
@@ -124,13 +156,13 @@ func (pc *picture) Layout(c gunim.Constraints, f gunim.Frame, kids gunim.Childre
 	}
 	on := min(max(pc.on.Value(), 0), 1)
 	host := pc.room.Value()
-	if host.W < 1 || host.H < 1 {
+	if !roomy(host) {
 		on, host = 0, page
 	}
 	// Laid out between the page's size and the host's, and drawn between
 	// the page and the picture's place on it, so that it stays on the page
 	// all the way.
-	k := pc.fit(page, host, f)
+	k := pc.fit(page, host, f.Theme)
 	pc.laid = geom.Sz(page.W+(host.W-page.W)*on, page.H+(host.H-page.H)*on)
 	drawn := geom.Sz(page.W+(host.W*k-page.W)*on, page.H+(host.H*k-page.H)*on)
 	pc.scale = min(drawn.W/pc.laid.W, drawn.H/pc.laid.H)
@@ -140,16 +172,19 @@ func (pc *picture) Layout(c gunim.Constraints, f gunim.Frame, kids gunim.Childre
 	kid.Place(geom.Point{})
 	pc.follow(&pc.guest, pc.w.dock.Active(), f)
 	pc.follow(&pc.host, pc.w.hostIn, f)
+	if together := pc.guest.id == pc.host.id && pc.guest.lit.Target() == 1; together != (pc.together.Target() == 1) {
+		pc.together.Animate(anim.OnOff(together), widget.Settle.Get(f.Theme))
+	}
 	return page
 }
 
 // fit is how much the host's window is scaled on a page: to fit within
 // it, and past its own size only by a share of the room left.
-func (pc *picture) fit(page, host geom.Size, f gunim.Frame) float32 {
-	pad := pictureMargin.Get(f.Theme)
+func (pc *picture) fit(page, host geom.Size, th *theme.Live) float32 {
+	pad := pictureMargin.Get(th)
 	k := min(max(page.W-2*pad, 1)/host.W, max(page.H-2*pad, 1)/host.H)
 	if k > 1 {
-		k = 1 + (k-1)*min(max(pictureGrow.Get(f.Theme), 0), 1)
+		k = 1 + (k-1)*min(max(pictureGrow.Get(th), 0), 1)
 	}
 	return k
 }
@@ -212,7 +247,7 @@ func (pc *picture) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gu
 		pc.paintEdges(p, th, on)
 		// The host's inside the guest's, so both show round one pane.
 		ring := guestRing.Get(th)
-		pc.paintMark(p, &pc.host, hostInk.Get(th), hostLine.Get(th), ring, on)
+		pc.paintMark(p, &pc.host, hostInk.Get(th), hostLine.Get(th), ring*min(max(pc.together.Value(), 0), 1), on)
 		pc.paintMark(p, &pc.guest, look.Guest.Get(th), ring, 0, on)
 	}()
 	edge := widget.DialogBorder.Get(th)

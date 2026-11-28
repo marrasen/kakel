@@ -224,6 +224,11 @@ func (w *windowPage) update(st State, u *gunim.UI) {
 	}
 	w.themes = st.Themes
 	w.host = st.Layout
+	if st.Room != was.Room || st.Cell != was.Cell {
+		// The host's window may be too large to read whole now, or no
+		// longer.
+		w.narrows(u)
+	}
 	if st.HostIn != w.hostIn || st.HostName != was.HostName {
 		w.hostIn = st.HostIn
 		if w.follow && st.HostIn != "" {
@@ -445,8 +450,14 @@ func (w *windowPage) narrows(u *gunim.UI) {
 }
 
 // narrowIn reports whether the panes stand one at a time in room.
+// They do too where the host's window, whole, would be drawn too small
+// to read, or on a page a finger is at, to touch.
 func (w *windowPage) narrowIn(room geom.Size, th *theme.Live) bool {
-	return room.W < narrowAt.Get(th) || w.p.touch && room.H < lowAt.Get(th)
+	if room.W < narrowAt.Get(th) || w.p.touch && room.H < lowAt.Get(th) {
+		return true
+	}
+	// The picture has the room under the bar.
+	return !w.picture.readable(geom.Sz(room.W, room.H-barHeight.Get(th)), th)
 }
 
 // Children implements [gunim.Composite].
