@@ -1351,6 +1351,13 @@ func TestACommandLineOnAnotherKakelIsNotTold(t *testing.T) {
 			v := r.visit(l.Link)
 			v.in(l.ID, true)
 			v.state("both panes", func(st guest.State) bool { return len(st.Panes) >= 2 })
+			if !older {
+				// A pane through another kakel may have its title a moment
+				// after it is there.
+				v.state("the shell's title", func(st guest.State) bool {
+					return slices.ContainsFunc(st.Panes, func(p guest.Pane) bool { return p.Title == "PLAIN-SHELL" })
+				})
+			}
 			got := v.everything()
 			if strings.Contains(got, "HUNTER2") {
 				t.Errorf("the guest is told the command line: %s", got)
