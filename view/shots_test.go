@@ -18,6 +18,7 @@ import (
 	"github.com/marrasen/gunim/widget"
 
 	"github.com/marrasen/kakel/app"
+	"github.com/marrasen/kakel/guest"
 	"github.com/marrasen/kakel/input"
 	"github.com/marrasen/kakel/internal/sessiontest"
 	"github.com/marrasen/kakel/keys"
@@ -653,4 +654,57 @@ func TestShotsWindowLink(t *testing.T) {
 		settle()
 		shot("no-client")
 	}
+}
+
+// TestShotsWindowLinkFiles writes a share's files: the dialog offering a
+// folder, and a card choosing one and then what the guest may do with it,
+// frames of each change.
+func TestShotsWindowLinkFiles(t *testing.T) {
+	dir := os.Getenv("KAKEL_SHOTS")
+	if dir == "" {
+		t.Skip("KAKEL_SHOTS names no folder to write the screenshots to")
+	}
+	shot := func(name string) {
+		gunimtest.WritePNG(t, filepath.Join(dir, "linkfiles-"+name+".png"), gunimtest.Pixels(t, lastWindow))
+	}
+	in := app.WindowLink{ID: "l1", CanType: true, Stands: app.LinkIn, Since: time.Now().Add(-3 * time.Minute), In: "p1",
+		Guest: "Bob", From: "203.0.113.7", About: "Firefox on Linux", Relay: "relay.example.com"}
+	win, st, publish := linkStage(t)
+	st.LinkSetup.Folders = map[int]string{win.winID: "/home/anna/src/Reports"}
+	publish(st)
+	settle()
+	win.linkDialog(lastUI)
+	settle()
+	shot("dialog")
+	lastUI.Focus(win.linkBox.files.may)
+	lastWindow.Input(gi.KeyPress{Key: gi.KeyRight})
+	frames(4)
+	shot("dialog-look-moving")
+	settle()
+	shot("dialog-look")
+	win.dialog.Close(lastUI)
+	settle()
+
+	st.Links = []app.WindowLink{in}
+	publish(st)
+	settle()
+	win.linkDialog(lastUI)
+	settle()
+	shot("card-no-folder")
+	in.Folder = "/home/anna/src/Reports"
+	st.Links = []app.WindowLink{in}
+	publish(st)
+	for i := 1; i <= 4; i++ {
+		frames(3)
+		shot("card-folder-coming-" + strconv.Itoa(i))
+	}
+	settle()
+	shot("card-folder")
+	in.Files = guest.FilesChange
+	st.Links = []app.WindowLink{in}
+	publish(st)
+	frames(4)
+	shot("card-change-moving")
+	settle()
+	shot("card-change")
 }

@@ -70,6 +70,10 @@ type WindowLink struct {
 	Follows     bool
 	// Relay is the relay's machine.
 	Relay string
+	// Files is what the guest may do with Folder, the folder shared, ""
+	// for none.
+	Files  guest.FilesMay
+	Folder string
 }
 
 // Live reports whether the share goes on.
@@ -114,6 +118,9 @@ type LinkSetup struct {
 	// Tries counts the times a window was asked to be shared, which
 	// worked or did not, for the dialog that asked to hear how it went.
 	Tries uint64
+	// Folders are the folders the next share of each window starts with,
+	// by window.
+	Folders map[int]string
 }
 
 // Intents for sharing a window with a link.
@@ -126,6 +133,9 @@ type (
 		CanType bool
 		Relay   string
 		Via     machines.ID
+		// Files is what the guest may do with Folder.
+		Files  guest.FilesMay
+		Folder string
 	}
 	// StopLink ends one share, and StopLinks every share of a window, or
 	// of every window for 0.
@@ -186,6 +196,9 @@ type linkShares struct {
 	// times for how long a share waits, for a test.
 	client func() (zipped, sig []byte, ok bool)
 	times  guest.HostConfig
+	// picked are the folders chosen for the next share of a window, by
+	// window.
+	picked map[int]string
 }
 
 // bundle is the web client to share with, and its signature.
@@ -239,6 +252,11 @@ type windowLink struct {
 	// seen are the terminals in told, by pane, as of the last time those
 	// that joined were said.
 	seen map[string]bool
+	// files is what the guest may do with folder, and filesLog writes
+	// what it does there.
+	files    guest.FilesMay
+	folder   string
+	filesLog *filesLog
 
 	// mu guards panes, the terminals the guest may be shown, by pane,
 	// which the share's goroutines read.
@@ -300,6 +318,7 @@ func (a *app) shareWindow(in ShareWindow) error {
 	a.links.next++
 	l := &windowLink{
 		id: "l" + itoa(a.links.next), win: w.id, hostName: name, canType: in.CanType,
+		files: filesWith(in.Files, in.Folder), folder: in.Folder, filesLog: newFilesLog(),
 		client: relay.Client{Relay: url, Dialer: a.relayDialer(in.Via, &throughRefused{again: "share the window again"})},
 	}
 	l.ctx, l.stop = context.WithCancel(a.ctx)
@@ -354,12 +373,14 @@ func (a *app) raiseLink(l *windowLink, hash string) {
 	cfg.OnChange = func(st guest.Status) { post(a, func() { a.linkStatus(l, st) }) }
 	// Written to the window log, which this reaches from any goroutine.
 	cfg.OnError = func(err error) { log.Printf("a shared window: %v", err) }
+	cfg.OnFiles = l.filesLog.add
 	host, err := guest.NewHost(cfg)
 	if err != nil {
 		a.linkFailed(l, err)
 		return
 	}
 	l.host, l.status = host, host.Status()
+	a.shareFiles(l)
 	id := relay.NewShareID()
 	l.link, err = relay.NewShareLink(l.client.Relay, id, host.Secret().String())
 	if err == nil {
@@ -569,6 +590,7 @@ func (a *app) linkStatus(l *windowLink, st guest.Status) {
 	}
 	was := l.status
 	l.status = st
+	l.filesLog.setWho(st.Guest.Name)
 	name := guestFirst(st.Guest.Name)
 	switch st.Phase {
 	case guest.PhaseJoin, guest.PhaseWaiting:
@@ -645,11 +667,12 @@ func (a *app) linkEnded(l *windowLink, over string) {
 // letLinkGo tells the guest and the relay that a share is over, on a
 // goroutine of its own.
 func (a *app) letLinkGo(l *windowLink, why guest.Reason) {
-	host, ln := l.host, l.ln
+	host, ln, files := l.host, l.ln, l.filesLog
 	a.links.ending.Go(func() {
 		if host != nil {
 			host.End(why)
 		}
+		files.flush()
 		// On the way out as a signal asks, a relay reached through a
 		// saved server is not told: nothing new is dialled through one by
 		// then. The guest has heard, the link is for a host that is no
@@ -878,6 +901,9 @@ func (a *app) tellLink(l *windowLink) {
 // sharedState is a window as its guest is told of it, and its terminals.
 func (a *app) sharedState(l *windowLink) (guest.State, map[string]guest.PaneSource) {
 	st := guest.State{HostName: l.hostName, CanType: l.canType}
+	if l.files != guest.FilesNone {
+		st.Files, st.Folder = l.files, folderName(l.folder)
+	}
 	panes := map[string]guest.PaneSource{}
 	w, win := a.winByID(l.win), a.layout.Window(l.win)
 	if w == nil || w.gone || win == nil {
@@ -997,7 +1023,7 @@ func (a *app) windowLinks() []WindowLink {
 			ID: l.id, Window: l.win, CanType: l.canType, Stands: l.stands, Over: l.over, Relay: l.client.Relay.Host(),
 			Guest: st.Guest.Name, From: guestAddr(st.Guest.From), About: st.Guest.About,
 			Since: l.since, In: st.Focus, TypedIn: st.TypedIn, TypedAt: st.TypedAt, Until: st.Until, Follows: st.Follows,
-			Trouble: l.trouble,
+			Trouble: l.trouble, Files: l.files, Folder: l.folder,
 		}
 		switch l.stands {
 		case LinkWaiting:
@@ -1015,7 +1041,7 @@ func (a *app) windowLinks() []WindowLink {
 // before that through the relay remote access goes through, or the one
 // last connected through.
 func (a *app) linkSetup() LinkSetup {
-	s := LinkSetup{NoClient: !a.links.hasClient(), Tries: a.links.tries}
+	s := LinkSetup{NoClient: !a.links.hasClient(), Tries: a.links.tries, Folders: a.linkFolders()}
 	if a.settings != nil {
 		kept := a.settings.ShareLink()
 		s.Name, s.Watch, s.Relay, s.Via = kept.Name, kept.Watch, kept.Relay, machines.ID(kept.Via)

@@ -13,8 +13,9 @@ import (
 
 // What the two ends say to each other.
 //
-// Two kinds of channel, both opened by the guest, and nothing else: one
-// control channel, and a channel for each pane it is shown. On both, each
+// Three kinds of channel, all opened by the guest, and nothing else: one
+// control channel, a channel for each pane it is shown, and channels to
+// the share's folder, which carry SFTP. On the first two, each
 // way, go frames: a byte that says what it is, the length of its body in
 // four bytes, and the body. Every kind has a most, which is checked
 // before anything is made to hold it.
@@ -23,6 +24,9 @@ const (
 
 	// chanPane's payload is openPane.
 	chanPane = "pane@kakel"
+
+	// chanFiles has no payload, and carries SFTP: see files.go.
+	chanFiles = "files@kakel"
 
 	// reqAlive is the request both ends send now and then, so that each
 	// hears the other is there. The no it is answered with is enough.
@@ -264,6 +268,12 @@ type State struct {
 
 	// HostIn is the pane the host is in.
 	HostIn string `json:",omitempty"`
+
+	// Files is what the guest may do with the share's folder, and Folder
+	// what the folder is called: its own name, and not the path to it,
+	// which is the host's. No folder shares no files.
+	Files  FilesMay `json:",omitempty"`
+	Folder string   `json:",omitempty"`
 }
 
 // encodeState is st as a frame.
@@ -285,6 +295,7 @@ func (st State) least() State {
 		HostName: plain(st.HostName, mostName),
 		CanType:  st.CanType, Panes: []Pane{},
 	}
+	few.Files, few.Folder = filesOf(st.Files, plain(st.Folder, mostName))
 	if len(st.HostIn) <= mostID {
 		few.HostIn = st.HostIn
 	}
@@ -309,6 +320,7 @@ func decodeState(body []byte) (State, error) {
 		return State{}, fmt.Errorf("%w: a state: %w", errFrame, err)
 	}
 	st.HostName = plain(st.HostName, mostTitle)
+	st.Files, st.Folder = filesOf(st.Files, plain(st.Folder, mostTitle))
 	if len(st.HostIn) > mostID {
 		st.HostIn = ""
 	}
@@ -328,6 +340,15 @@ func decodeState(body []byte) (State, error) {
 	}
 	st.Panes = panes
 	return st, nil
+}
+
+// filesOf is what a guest may do with a folder called folder: nothing
+// with none, and nothing it does not know.
+func filesOf(may FilesMay, folder string) (FilesMay, string) {
+	if folder == "" || may > FilesChange {
+		return FilesNone, folder
+	}
+	return may, folder
 }
 
 // goodSize reports whether a screen of cols by rows is one to hold.

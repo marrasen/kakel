@@ -39,6 +39,8 @@ type hostConn struct {
 	ctx context.Context
 
 	opens, requests, frames, bytes *limit
+	// fileAsks and fileBytes are those of its files channels, all of them.
+	fileAsks, fileBytes *limit
 
 	// out writes the control channel, from when it is open. opened says
 	// it is, and is closed then; heard is closed once nothing more comes
@@ -53,6 +55,9 @@ type hostConn struct {
 	streams   map[string]*stream
 	closing   map[*stream]struct{}
 	streaming int
+	// filing is how many files channels there are, and handles how many
+	// files and folders they have open.
+	filing, handles int
 }
 
 func newHostConn(ctx context.Context, h *Host, conn *ssh.ServerConn, r role) *hostConn {
@@ -62,8 +67,9 @@ func newHostConn(ctx context.Context, h *Host, conn *ssh.ServerConn, r role) *ho
 		requests: newLimit(requestsBurst, requestsRate),
 		frames:   newLimit(framesBurst, framesRate),
 		bytes:    newLimit(bytesBurst, bytesRate),
-		out:      newLatest(nil),
-		opened:   make(chan struct{}), heard: make(chan struct{}),
+		fileAsks: newLimit(fileAsksBurst, fileAsksRate), fileBytes: newLimit(fileBytesBurst, fileBytesRate),
+		out:    newLatest(nil),
+		opened: make(chan struct{}), heard: make(chan struct{}),
 		streams: map[string]*stream{}, closing: map[*stream]struct{}{},
 	}
 }
@@ -100,7 +106,8 @@ func (c *hostConn) fail(err error) {
 	_ = c.conn.Close()
 }
 
-// channels answers what the guest opens: one control channel, and panes.
+// channels answers what the guest opens: one control channel, panes, and
+// the folder.
 func (c *hostConn) channels(running *sync.WaitGroup, chans <-chan ssh.NewChannel) {
 	controlled := false
 	for nch := range chans {
@@ -134,6 +141,18 @@ func (c *hostConn) channels(running *sync.WaitGroup, chans <-chan ssh.NewChannel
 				continue
 			}
 			running.Go(func() { c.show(s, nch) })
+		case kind == chanFiles:
+			if err := c.reserveFiles(); err != nil {
+				_ = nch.Reject(ssh.Prohibited, err.Error())
+				continue
+			}
+			ch, reqs, err := nch.Accept()
+			if err != nil {
+				c.releaseFiles()
+				continue
+			}
+			running.Go(func() { discard(c.conn, c.requests, reqs) })
+			running.Go(func() { c.files(ch) })
 		default:
 			_ = nch.Reject(ssh.UnknownChannelType, "this is a shared kakel window, and has no such channel")
 		}
