@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -58,6 +59,14 @@ type hostConn struct {
 	// filing is how many files channels there are, and handles how many
 	// files and folders they have open.
 	filing, handles int
+
+	// onPage is what the guest last said is on its page, onPageAt when
+	// that was last taken, and onPageDue that it is to be: no more often
+	// than fitEvery, as each may size panes.
+	pageMu    sync.Mutex
+	onPage    []string
+	onPageAt  time.Time
+	onPageDue bool
 }
 
 func newHostConn(ctx context.Context, h *Host, conn *ssh.ServerConn, r role) *hostConn {
@@ -208,10 +217,38 @@ func (c *hostConn) control(ch ssh.Channel) {
 			c.h.focused(c, string(body))
 		case frameFollow:
 			c.h.followed(c)
+		case frameShown:
+			c.shown(strings.Split(string(body), "\n"))
 		case frameLeave:
 			c.h.leave(c)
 		}
 	}
+}
+
+// shown takes what the guest says is on its page, now or once fitEvery
+// has gone since the last: the latest said by then.
+func (c *hostConn) shown(ids []string) {
+	c.pageMu.Lock()
+	c.onPage = ids
+	due := c.onPageDue
+	c.onPageDue = true
+	wait := fitEvery - time.Since(c.onPageAt)
+	c.pageMu.Unlock()
+	switch {
+	case due:
+	case wait <= 0:
+		c.shownNow()
+	default:
+		time.AfterFunc(wait, c.shownNow)
+	}
+}
+
+func (c *hostConn) shownNow() {
+	c.pageMu.Lock()
+	ids := c.onPage
+	c.onPageDue, c.onPageAt = false, time.Now()
+	c.pageMu.Unlock()
+	c.h.onScreen(c, ids)
 }
 
 // end tells the guest why its connection ends, waits a moment for it to

@@ -126,9 +126,16 @@ func TestThePageSetsTheSizeOfItsPanes(t *testing.T) {
 		t.Error("the guest's pane has no ring")
 	}
 	fits := map[string]Fits{}
+	said := map[string][]Fits{}
 	for _, in := range s.intents() {
 		if f, ok := in.(Fits); ok {
 			fits[f.Pane] = f
+			said[f.Pane] = append(said[f.Pane], f)
+		}
+	}
+	for id, all := range said {
+		if len(all) != 1 {
+			t.Errorf("%s said what fits it %d times on the way: %+v", id, len(all), all)
 		}
 	}
 	for _, id := range []string{"p1", "p3"} {
@@ -195,5 +202,35 @@ func TestANarrowPageSetsTheSizeOfThePaneShown(t *testing.T) {
 		if f.Pane != shown {
 			t.Errorf("%s, not shown, said %+v", f.Pane, f)
 		}
+	}
+}
+
+// A terminal the host keeps at its own size, where the page sets the
+// others', is drawn as the host's, fitted to its pane, and says so.
+func TestATerminalAtTheHostsSizeSaysSo(t *testing.T) {
+	s, _ := hostStage(t, geom.Sz(1100, 640), geom.Sz(1600, 900))
+	w := s.page.win
+	s.show(func(st *State) {
+		st.GuestSizes = true
+		st.Panes[0].HostSized = true
+	})
+	s.settle()
+	s.shot("guest-sized-host")
+	p1, p3 := w.panes["p1"], w.panes["p3"]
+	if !p1.term.Fitted() || p1.hostSized.Hidden() {
+		t.Errorf("at the host's size, p1 is fitted %v, its note hidden %v", p1.term.Fitted(), p1.hostSized.Hidden())
+	}
+	if p3.term.Fitted() || !p3.hostSized.Hidden() {
+		t.Error("p3, at the page's size, is fitted or says it is the host's")
+	}
+	for _, in := range s.intents() {
+		if f, ok := in.(Fits); ok && f.Pane == "p1" {
+			t.Errorf("p1 said what fits it: %+v", f)
+		}
+	}
+	s.show(func(st *State) { st.Panes[0].HostSized = false })
+	s.settle()
+	if p1.term.Fitted() || !p1.hostSized.Hidden() {
+		t.Error("back at the page's size, p1 is still the host's")
 	}
 }

@@ -129,10 +129,19 @@ func (w *windowPage) cell() geom.Size {
 func (w *windowPage) sized(u *gunim.UI) {
 	w.picture.set(u)
 	cell := w.cell()
-	for t := range w.terms {
-		t.SetFitted(!w.st.GuestSizes, u)
-		t.SetCell(cell, u)
+	for _, v := range w.panes {
+		if t := v.term; t != nil {
+			t.SetFitted(w.fitted(v.id), u)
+			t.SetCell(cell, u)
+		}
 	}
+}
+
+// fitted reports whether pane id's terminal is drawn fitted to the host's
+// screen: unless the page sets the size, and the host holds to it there.
+func (w *windowPage) fitted(id string) bool {
+	pn, _ := w.p.paneOf(id)
+	return !w.st.GuestSizes || pn.HostSized
 }
 
 // shortcuts are kakel's own, of what there is to do here, and those a Mac

@@ -91,10 +91,12 @@ type latest struct {
 	// so a last word is the last.
 	writeMu sync.Mutex
 
-	mu      sync.Mutex
-	next    []byte
-	stopped bool
-	wake    chan struct{}
+	mu sync.Mutex
+	// next is the latest of those put, and also the latest of those put
+	// aside.
+	next, also []byte
+	stopped    bool
+	wake       chan struct{}
 }
 
 func newLatest(ch ssh.Channel) *latest { return &latest{ch: ch, wake: make(chan struct{}, 1)} }
@@ -111,10 +113,23 @@ func (l *latest) put(frame []byte) {
 	nudge(l.wake)
 }
 
+// putAside leaves a frame to be written, of a kind of its own: the latest
+// of these does not stand in place of the latest put.
+func (l *latest) putAside(frame []byte) {
+	l.mu.Lock()
+	if l.stopped {
+		l.mu.Unlock()
+		return
+	}
+	l.also = frame
+	l.mu.Unlock()
+	nudge(l.wake)
+}
+
 // stop writes no more of what was put.
 func (l *latest) stop() {
 	l.mu.Lock()
-	l.stopped, l.next = true, nil
+	l.stopped, l.next, l.also = true, nil, nil
 	l.mu.Unlock()
 	nudge(l.wake)
 }
@@ -124,12 +139,14 @@ func (l *latest) run() {
 	for range l.wake {
 		l.writeMu.Lock()
 		l.mu.Lock()
-		next, stopped := l.next, l.stopped
-		l.next = nil
+		next, also, stopped := l.next, l.also, l.stopped
+		l.next, l.also = nil, nil
 		l.mu.Unlock()
 		var err error
-		if next != nil {
-			_, err = l.ch.Write(next)
+		for _, f := range [][]byte{next, also} {
+			if f != nil && err == nil {
+				_, err = l.ch.Write(f)
+			}
 		}
 		l.writeMu.Unlock()
 		if stopped || err != nil {

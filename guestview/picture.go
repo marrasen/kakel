@@ -195,6 +195,9 @@ func (pc *picture) Layout(c gunim.Constraints, f gunim.Frame, kids gunim.Childre
 	return page
 }
 
+// gliding reports whether the panes are on their way to another size.
+func (pc *picture) gliding() bool { return pc.on.Active() || pc.room.Active() || pc.lines.Active() }
+
 // fit is how much the host's window is scaled on a page: to fit within
 // it, and past its own size only by a share of the room left.
 func (pc *picture) fit(page, host geom.Size, th *theme.Live) float32 {

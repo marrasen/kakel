@@ -200,6 +200,8 @@ type Host struct {
 	guestSizes bool
 	fits       map[string]fitBy
 	fitsAway   *time.Timer
+	// onPage are the panes on the guest's page, as it last said.
+	onPage map[string]bool
 
 	// files is the share's folder.
 	files filesState
@@ -694,7 +696,7 @@ func (h *Host) drop(c *hostConn) {
 	if h.cur != c {
 		return
 	}
-	h.cur, h.focus, h.follows = nil, "", false
+	h.cur, h.focus, h.follows, h.onPage = nil, "", false, nil
 	h.awayLocked()
 	h.fitsAwayLocked()
 	nudge(h.wake)
@@ -729,7 +731,7 @@ func (h *Host) dropFitsLocked(which func(id string, f fitBy) bool) {
 func (h *Host) fit(s *stream, c Cells) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if h.phase != PhaseIn || h.cur != s.c || !h.guestSizes || !h.panes[s.id] || s.c.streams[s.id] != s {
+	if h.phase != PhaseIn || h.cur != s.c || !h.guestSizes || !h.panes[s.id] || !h.onPage[s.id] || s.c.streams[s.id] != s {
 		return
 	}
 	if c == (Cells{}) {
@@ -743,6 +745,38 @@ func (h *Host) fit(s *stream, c Cells) {
 	h.fits[s.id] = fitBy{c, s}
 	if !ok || had.Cells != c {
 		nudge(h.wake)
+	}
+}
+
+// onScreen notes the panes the guest says are on its page. Those that are
+// not have the host's size again, and those that are, the size the guest
+// said fits them, which may have come first, on another channel.
+func (h *Host) onScreen(c *hostConn, ids []string) {
+	h.mu.Lock()
+	if h.cur != c {
+		h.mu.Unlock()
+		return
+	}
+	h.onPage = map[string]bool{}
+	var come []*stream
+	for _, id := range ids {
+		if len(h.onPage) < mostPanes && id != "" {
+			h.onPage[id] = true
+			if s := c.streams[id]; s != nil {
+				come = append(come, s)
+			}
+		}
+	}
+	h.dropFitsLocked(func(id string, f fitBy) bool { return f.by.c == c && !h.onPage[id] })
+	h.mu.Unlock()
+	for _, s := range come {
+		s.mu.Lock()
+		f := s.fit
+		s.mu.Unlock()
+		if f != (Cells{}) {
+			// At the pace of any other size.
+			s.fits(f)
+		}
 	}
 }
 
@@ -814,7 +848,7 @@ func (h *Host) takeLocked(c *hostConn) {
 	if h.cur != nil && len(h.fits) > 0 {
 		h.fitsAwayLocked()
 	}
-	h.cur, h.focus, h.follows = c, "", false
+	h.cur, h.focus, h.follows, h.onPage = c, "", false, nil
 	h.countLocked(c)
 	h.disarmLocked(&h.away, &h.awayUntil)
 	c.out.put(h.viewLocked())

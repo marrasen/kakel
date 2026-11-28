@@ -346,6 +346,7 @@ func (f *flow) sayWhere() {
 // where tells s where the guest is: following the host, or in the pane it
 // picked.
 func (f *flow) where(s Session) {
+	s.Shown(f.shown)
 	switch {
 	case f.follows:
 		s.Follow()
@@ -932,6 +933,9 @@ func (f *flow) forget(id string) {
 // setShown hears which panes are on the screen.
 func (f *flow) setShown(ids []string) {
 	f.shown = ids
+	if f.sess != nil && f.st.Page == PageWindow {
+		f.sess.Shown(ids)
+	}
 	f.tend()
 }
 

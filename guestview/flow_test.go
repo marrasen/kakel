@@ -107,6 +107,8 @@ type fakeSession struct {
 	// focused are where the guest said it is, following for the host's.
 	focused []string
 	left    bool
+	// onPage are the panes the guest last said are on its page.
+	onPage []string
 }
 
 // following is the guest saying it follows the host, as focused has it.
@@ -153,6 +155,11 @@ func (s *fakeSession) Follow() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.focused = append(s.focused, following)
+}
+func (s *fakeSession) Shown(ids []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.onPage = slices.Clone(ids)
 }
 func (s *fakeSession) Focus(id string) {
 	s.mu.Lock()

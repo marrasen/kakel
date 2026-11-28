@@ -79,6 +79,10 @@ const (
 
 	// frameLeave says the guest goes, and will not be back.
 	frameLeave = 'L'
+
+	// frameShown names the panes on the guest's page, a line each: those
+	// whose size the guest may set. Only the latest is sent.
+	frameShown = 'V'
 )
 
 // The frames on a pane's channel. From the host:
@@ -196,7 +200,7 @@ type mosts map[byte]int
 
 var (
 	controlToGuest = mosts{frameJoin: 0, frameWaiting: 0, frameState: mostState, frameEnded: mostEnded}
-	controlToHost  = mosts{frameName: mostJoining, frameFocus: mostID, frameFollow: 0, frameLeave: 0}
+	controlToHost  = mosts{frameName: mostJoining, frameFocus: mostID, frameFollow: 0, frameLeave: 0, frameShown: mostPanes * (mostID + 1)}
 	paneToGuest    = mosts{frameScreen: mostScreen + 4, frameData: mostData, frameProgram: programLen}
 	paneToHost     = mosts{frameTyped: countLen + mostTyped, frameFit: fitLen}
 )
@@ -276,6 +280,10 @@ type Pane struct {
 	Cols, Rows int
 	// Ended says its program has ended.
 	Ended bool `json:",omitempty"`
+	// HostSized says the terminal has a size the guest's page does not
+	// set, though the state says GuestSizes: one another kakel watching it
+	// gives it, or that of screens from elsewhere.
+	HostSized bool `json:",omitempty"`
 }
 
 // Kind is what a pane is.
@@ -372,7 +380,7 @@ func (st State) least() State {
 		if p.ID != "" && len(p.ID) <= mostID {
 			few.Panes = append(few.Panes, Pane{
 				ID: p.ID, Title: plain(p.Title, mostName), Kind: p.Kind, Icon: plain(p.Icon, mostName),
-				Cols: p.Cols, Rows: p.Rows, Ended: p.Ended,
+				Cols: p.Cols, Rows: p.Rows, Ended: p.Ended, HostSized: p.HostSized,
 			})
 		}
 	}

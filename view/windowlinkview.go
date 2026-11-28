@@ -245,7 +245,7 @@ func (w *Window) linkDialog(u *gunim.UI) {
 
 func newLinkBox(w *Window, d *widget.Dialog) *linkBox {
 	s := w.linkSetup
-	b := &linkBox{w: w, d: d, name: widget.NewTextField(), relay: widget.NewTextField(), may: newGuestMay(!s.Watch), size: newSizeFor(false),
+	b := &linkBox{w: w, d: d, name: widget.NewTextField(), relay: widget.NewTextField(), may: newGuestMay(!s.Watch), size: newSizeFor(s.ForGuest),
 		wrong: widget.NewLabel(""), list: widget.NewList(), another: widget.NewButton("Add")}
 	b.name.SetText(s.Name, nil)
 	b.relay.SetText(s.Relay, nil)

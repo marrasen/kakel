@@ -302,8 +302,10 @@ func (p *ShownPane) Resize(int, int) error { return nil }
 
 // Fit asks the host to size the pane's program to cols by rows, what the
 // pane has room for on the page, or to its own size again for zero. The
-// host does where the share has the guest set the size. Only the latest
-// is sent, and Fit does not wait.
+// host does where the share has the guest set the size, for a pane the
+// guest said is on its page. Only the latest is sent. Fit does not wait
+// for what is typed: with nothing being written it writes at once, in
+// turn with what comes after, and otherwise once that is written.
 func (p *ShownPane) Fit(cols, rows int) {
 	c := Cells{Cols: cols, Rows: rows}
 	if c != (Cells{}) && !goodSize(cols, rows) {
@@ -314,7 +316,12 @@ func (p *ShownPane) Fit(cols, rows int) {
 	going := p.fitting
 	p.fitting = true
 	p.mu.Unlock()
-	if !going {
+	switch {
+	case going:
+	case p.writeMu.TryLock():
+		p.writeMu.Unlock()
+		p.sendFit()
+	default:
 		// Typed on the same channel may be held up, and this with it.
 		go p.sendFit()
 	}

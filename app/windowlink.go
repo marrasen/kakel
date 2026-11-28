@@ -23,6 +23,7 @@ import (
 	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/relay"
 	"github.com/marrasen/kakel/settings"
+	"github.com/marrasen/kakel/termview"
 	uiterm "github.com/marrasen/kakel/ui/term"
 	"github.com/marrasen/kakel/webbundle"
 	"github.com/marrasen/kakel/words"
@@ -112,8 +113,9 @@ const (
 type LinkSetup struct {
 	// Name is what the guest is told the host is called.
 	Name string
-	// Watch says the guest only watches.
-	Watch bool
+	// Watch says the guest only watches, and ForGuest that its page sets
+	// the size of the terminals.
+	Watch, ForGuest bool
 	// Relay is the relay's URL with its secret, and Via the saved server
 	// it is reached through, empty for this machine.
 	Relay string
@@ -171,10 +173,10 @@ type (
 	ClearLinks struct{ Window int }
 	// SetLinkSetup sets what windows are shared with from now on.
 	SetLinkSetup struct {
-		Name  string
-		Watch bool
-		Relay string
-		Via   machines.ID
+		Name            string
+		Watch, ForGuest bool
+		Relay           string
+		Via             machines.ID
 	}
 )
 
@@ -334,7 +336,7 @@ func (a *app) shareWindow(in ShareWindow) error {
 	}
 	if a.settings != nil {
 		a.keep("what windows are shared with", a.settings.PutShareLink(settings.ShareLink{
-			Name: name, Watch: !in.CanType, Relay: url.String(), Via: string(in.Via)}))
+			Name: name, Watch: !in.CanType, ForGuest: in.ForGuest, Relay: url.String(), Via: string(in.Via)}))
 	}
 	a.links.next++
 	l := &windowLink{
@@ -584,6 +586,11 @@ func (a *app) setLinkSize(in SetLinkSize) {
 		return
 	}
 	l.forGuest = in.ForGuest
+	if !in.ForGuest {
+		// The host's word that they are gone may come after a change back:
+		// what the guest said before is not held to again.
+		l.status.Sizes = nil
+	}
 	a.tellLink(l)
 	a.fitGuests()
 	if l.status.Phase == guest.PhaseIn {
@@ -618,6 +625,9 @@ func (a *app) fitGuests() {
 			if panes[id] == nil {
 				continue
 			}
+			// No smaller than the window would give it: a screen of a
+			// cell rewraps all its history.
+			c = guest.Cells{Cols: max(c.Cols, termview.LeastCols), Rows: max(c.Rows, termview.LeastRows)}
 			f, ok := want[id]
 			if ok {
 				c = guest.Cells{Cols: min(c.Cols, f.Cols), Rows: min(c.Rows, f.Rows)}
@@ -649,6 +659,14 @@ func (a *app) fitGuests() {
 		}
 	}
 	a.links.fitted = want
+}
+
+// hostSized reports whether terminal t, pane id, has a size no guest's
+// page can set: another kakel watching it gives it its own, or its
+// screens come from elsewhere with theirs.
+func (a *app) hostSized(id string, t *uiterm.Terminal) bool {
+	_, ours := a.links.fitted[id]
+	return t.Watched() > 0 || t.Held() && !ours
 }
 
 // guestName is what a guest is called in a sentence, which says that it is
@@ -928,9 +946,15 @@ func (a *app) tellLinks() {
 	for _, l := range a.links.all {
 		a.tellLink(l)
 	}
-	if len(a.links.fitted) > 0 {
-		// A terminal that left the window has its own size again.
+	if len(a.links.fitted) > 0 || slices.ContainsFunc(a.links.all, func(l *windowLink) bool { return l.forGuest }) {
+		// A terminal that left the window has its own size again, and the
+		// guests are told which they size.
 		a.fitGuests()
+		for _, l := range a.links.all {
+			if l.forGuest {
+				a.tellLink(l)
+			}
+		}
 	}
 	a.sayJoined()
 	a.links.byHand = ""
@@ -1039,6 +1063,7 @@ func (a *app) sharedState(l *windowLink) (guest.State, map[string]guest.PaneSour
 			shown.Kind, shown.Title, shown.Ended = guest.KindTerminal, sharedTitle(p), p.Ended
 			size := t.Size()
 			shown.Cols, shown.Rows = size.Cols, size.Rows
+			shown.HostSized = l.forGuest && a.hostSized(p.ID, t)
 			panes[p.ID] = t
 		}
 		if id == focus {
@@ -1167,7 +1192,7 @@ func (a *app) linkSetup() LinkSetup {
 		Chosen: maps.Clone(a.links.picked)}
 	if a.settings != nil {
 		kept := a.settings.ShareLink()
-		s.Name, s.Watch, s.Relay, s.Via = kept.Name, kept.Watch, kept.Relay, machines.ID(kept.Via)
+		s.Name, s.Watch, s.ForGuest, s.Relay, s.Via = kept.Name, kept.Watch, kept.ForGuest, kept.Relay, machines.ID(kept.Via)
 		if s.Relay == "" {
 			r := a.settings.Relay()
 			s.Relay, s.Via = r.URL, machines.ID(r.Via)
@@ -1195,7 +1220,7 @@ func (a *app) setLinkSetup(in SetLinkSetup) error {
 		}
 		at = u.String()
 	}
-	return a.settings.PutShareLink(settings.ShareLink{Name: oneLine(in.Name), Watch: in.Watch, Relay: at, Via: string(in.Via)})
+	return a.settings.PutShareLink(settings.ShareLink{Name: oneLine(in.Name), Watch: in.Watch, ForGuest: in.ForGuest, Relay: at, Via: string(in.Via)})
 }
 
 // ownName is what a guest is told the host is called, before the user

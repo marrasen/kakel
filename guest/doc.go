@@ -31,7 +31,8 @@
 // for a link nobody has used, and Join joins. From then Changed and View
 // follow the window. Pane opens one of its terminals, as a session for a
 // terminal to be on. Follow says the guest is in whichever pane the host
-// is in, and Focus that it is in one it picked. Leave ends the
+// is in, and Focus that it is in one it picked. Shown says which panes
+// are on the page. Leave ends the
 // share for good; a lost connection, ErrLost, is dialled again with the
 // same key, and comes back where it was, waiting or in the window.
 //
@@ -73,7 +74,8 @@
 // state lists and Open still gives. Down it comes what that program draws;
 // up it go the keys typed, which are dropped while the host does not let
 // the guest type, and the size the pane has room for, which is dropped
-// while the host does not let the guest set the size. A size is held to
+// while the host does not let the guest set the size, and for a pane the
+// guest has not said is on its page, Session.Shown. A size is held to
 // no more often than fitEvery, and the host's comes back as the guest
 // closes the pane, as the choice or the window changes, and a while after
 // the connection is lost. Where the host shares a folder, SetFiles, the

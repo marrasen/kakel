@@ -76,12 +76,26 @@ func TestAPaneSizedForAGuestIsHatched(t *testing.T) {
 		t.Error("a pane the guest does not size has the note")
 	}
 
+	noteClear := func(when string) {
+		t.Helper()
+		at, ok := lastUI.Bounds(tm.sized.note)
+		scr := tm.screenRect()
+		scr = geom.Rect{Min: box.Min.Add(scr.Min), Max: box.Min.Add(scr.Max)}
+		if !ok || at.Size().W < 1 {
+			t.Errorf("%s, the note is not drawn", when)
+		} else if at.Min.X < scr.Max.X && at.Max.X > scr.Min.X && at.Min.Y < scr.Max.Y && at.Max.Y > scr.Min.Y {
+			t.Errorf("%s, the note at %v covers the screen at %v", when, at, scr)
+		}
+	}
+	noteClear("smaller")
+
 	tm.Shell().T.Hold(400, 200)
 	settle()
 	scr = tm.screenRect()
 	if r := (geom.Rect{Max: box.Size().Point()}); scr.Max.X > r.Max.X+0.5 || scr.Max.Y > r.Max.Y+0.5 || scr.Min.X < -0.5 || scr.Min.Y < -0.5 {
 		t.Errorf("a larger screen is drawn at %v in a pane of %v", scr, box.Size())
 	}
+	noteClear("larger")
 
 	// Two guests are both named.
 	st.Links = []app.WindowLink{sizedFor("l1", "Bob", "p1"), sizedFor("l2", "Eve", "p1")}
@@ -93,14 +107,23 @@ func TestAPaneSizedForAGuestIsHatched(t *testing.T) {
 	tm.Shell().T.Hold(20, 5)
 	settle()
 	_, full := hatching()
+	// hatched is how much of the pane the hatching covers.
+	hatched := func() (area float32) {
+		for _, r := range beside(geom.Rect{Max: box.Size().Point()}, tm.sized.screen) {
+			area += r.Size().W * r.Size().H
+		}
+		return area
+	}
+	was := hatched()
+	// As the program does it: the size let go of as the share says so.
 	st.Links = []app.WindowLink{isIn("l1", "Bob", "p1")}
+	tm.Shell().T.Release()
 	publish(st)
 	frames(1)
-	if n, a := hatching(); n == 0 || a >= full {
-		t.Errorf("at once, %d stripes as strong as %d, from %d", n, a, full)
+	if n, a := hatching(); n == 0 || a >= full || hatched() < was {
+		t.Errorf("at once, %d stripes as strong as %d, from %d, over %v of the %v hatched", n, a, full, hatched(), was)
 	}
 	settle()
-	tm.Shell().T.Release()
 	if n, _ := hatching(); n != 0 || !tm.sized.note.Hidden() {
 		t.Errorf("sized for the window again, %d stripes are drawn", n)
 	}

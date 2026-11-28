@@ -35,9 +35,17 @@ var (
 // guestSized is what a terminal shows of a guest's page setting its size.
 type guestSized struct {
 	// beyond is how far the hatching has come, and note says whose size it
-	// is.
+	// is. on says a guest's page sets the size.
 	beyond *anim.Float
 	note   *widget.Badge
+	on     bool
+	// screen is where the program's screen was last drawn while on: the
+	// hatching fades out round it, as the program takes the pane back.
+	screen geom.Rect
+	// noteW is how wide the note is, shown, for the room it needs, and
+	// noteOf what it said then.
+	noteW  float32
+	noteOf string
 }
 
 func newGuestSized() guestSized {
@@ -51,11 +59,11 @@ func newGuestSized() guestSized {
 // that none do, for "".
 func (g *guestSized) show(note string, u *gunim.UI) {
 	on := note != ""
+	g.on = on
 	if on {
 		// Kept as it fades away.
 		g.note.Text = note
 	}
-	g.note.SetHidden(!on, u)
 	if on != (g.beyond.Target() == 1) {
 		g.beyond.Animate(anim.OnOff(on), widget.Settle.Get(u.Theme()))
 	}
@@ -87,14 +95,46 @@ func (t *term) Children() []gunim.Node {
 }
 
 // Layout implements [gunim.Node]: the terminal, and the note in the
-// corner.
+// corner of the hatching, where it covers no text. With no hatching that
+// has room for it the note goes: the program then has the whole pane, or
+// a screen as large, and nothing is odd to explain.
 func (t *term) Layout(c gunim.Constraints, f gunim.Frame, kids gunim.Children) geom.Size {
 	size := t.Term.Layout(c, f, kids)
+	g := &t.sized
+	if g.on {
+		g.screen = t.screenRect()
+	}
+	if g.note.Text != g.noteOf {
+		g.noteOf, g.noteW = g.note.Text, 0
+	}
+	room := sizedNoteRoom.Get(f.Theme)
+	at, fits := noteCorner(geom.Rect{Max: size.Point()}, g.screen, geom.Sz(g.noteW, widget.BadgeHeight.Get(f.Theme)), room)
+	g.note.SetHidden(!g.on || !fits, nil)
 	note := kids.At(1)
 	s := note.Layout(gunim.Constraints{Max: size})
-	room := sizedNoteRoom.Get(f.Theme)
-	note.Place(geom.Pt(max(size.W-s.W-room, 0), max(size.H-s.H-room, 0)))
+	g.noteW = max(g.noteW, s.W)
+	if fits {
+		note.Place(at.Sub(s.Point()))
+	}
 	return size
+}
+
+// noteCorner is where a note of size need has its bottom right corner, in
+// the hatching of a pane all round screen, room in from the edges of the
+// part it is in. It reports whether there is a part with the room.
+func noteCorner(all, screen geom.Rect, need geom.Size, room float32) (geom.Point, bool) {
+	parts := beside(all, screen)
+	// The part nearest the pane's bottom right corner first, where the
+	// note stands when there is room.
+	slices.SortStableFunc(parts, func(a, b geom.Rect) int {
+		return int(b.Max.Y+b.Max.X) - int(a.Max.Y+a.Max.X)
+	})
+	for _, p := range parts {
+		if p.Size().W >= need.W+2*room && p.Size().H >= need.H+2*room {
+			return p.Max.Sub(geom.Pt(room, room)), true
+		}
+	}
+	return geom.Point{}, false
 }
 
 // screenRect is where the program's screen is drawn in the terminal.
@@ -111,7 +151,7 @@ func (t *term) paintBeyond(p *paint.Painter, f gunim.Frame, box geom.Size) {
 	if k < 0.001 {
 		return
 	}
-	scr := t.screenRect()
+	scr := t.sized.screen
 	all := geom.Rect{Max: box.Point()}
 	c := beyondInk.Get(f.Theme)
 	c.A = uint8(float32(c.A) * k)

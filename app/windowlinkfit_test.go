@@ -2,9 +2,11 @@ package app
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/marrasen/kakel/guest"
+	"github.com/marrasen/kakel/termview"
 	"github.com/marrasen/kakel/ui"
 )
 
@@ -46,8 +48,11 @@ func TestAGuestsPageSetsTheSizeOnlyWhileItMay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	v.s.Shown([]string{"p1"})
 	p.Fit(100, 30)
-	r.settle()
+	// Typed after it: once that is there, the size has been looked at.
+	_, _ = p.Write([]byte("after"))
+	r.until("what was typed after", func() bool { return strings.Contains(r.progs["p1"].sent(), "after") })
 	if size, held := r.sizeOf("p1"); held || size != (ui.Size{Cols: 90, Rows: 25}) {
 		t.Fatalf("sized for the window, the terminal is %v, held %v", size, held)
 	}
@@ -73,6 +78,12 @@ func TestAGuestsPageSetsTheSizeOnlyWhileItMay(t *testing.T) {
 	if got := r.only().Sizes; len(got) != 0 {
 		t.Errorf("the share says it sizes %v", got)
 	}
+
+	// A size of a cell is no smaller than the window gives one.
+	r.do(SetLinkSize{ID: l.ID, ForGuest: true})
+	v.state("the guest sets the size again", func(st guest.State) bool { return st.GuestSizes })
+	p.Fit(1, 1)
+	r.at("p1", termview.LeastCols, termview.LeastRows, true)
 }
 
 // A guest that says no size, leaves, or whose share is stopped, gives the
@@ -92,6 +103,7 @@ func TestTheWindowsSizesComeBack(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			v.s.Shown([]string{"p1"})
 			p.Fit(110, 35)
 			r.at("p1", 110, 35, true)
 			switch how {
@@ -129,9 +141,66 @@ func TestTwoGuestsHaveTheSmallerSize(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	a.s.Shown([]string{"p1"})
+	b.s.Shown([]string{"p1"})
 	pa.Fit(120, 30)
 	pb.Fit(80, 40)
 	r.at("p1", 80, 30, true)
 	r.do(StopLink{ID: second.ID})
 	r.at("p1", 120, 30, true)
+}
+
+// Whose size the terminals have is offered next as it was chosen last.
+func TestTheNextShareIsSizedAsTheLast(t *testing.T) {
+	r := newLinkRig(t)
+	if r.a.linkSetup().ForGuest {
+		t.Fatal("at first the guest sets the size")
+	}
+	r.do(ShareWindow{Window: r.one.id, Name: "Anna", CanType: true, ForGuest: true, Relay: r.url})
+	if !r.a.linkSetup().ForGuest {
+		t.Error("a share sized for the guest is not offered again")
+	}
+	if err := r.a.setLinkSetup(SetLinkSetup{Name: "Anna", Relay: r.url}); err != nil || r.a.linkSetup().ForGuest {
+		t.Errorf("set back, it is %+v: %v", r.a.linkSetup(), err)
+	}
+}
+
+// A terminal another kakel watches has that kakel's size, the guest is told
+// so, and the guest's size comes back as it stops watching.
+func TestAWatchedTerminalKeepsItsWatchersSize(t *testing.T) {
+	r := newLinkRig(t)
+	r.laid("p1", 90, 25)
+	r.do(ShareWindow{Window: r.one.id, Name: "Anna", CanType: true, ForGuest: true, Relay: r.url})
+	r.until("the link", func() bool { return len(r.a.windowLinks()) == 1 && r.only().Stands == LinkWaiting })
+	l := r.only()
+	v := r.visit(l.Link)
+	v.in(l.ID, true)
+	p, err := v.open("p1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	v.s.Shown([]string{"p1"})
+	p.Fit(110, 35)
+	r.at("p1", 110, 35, true)
+	hostSized := func(st guest.State) bool {
+		i := slices.IndexFunc(st.Panes, func(p guest.Pane) bool { return p.ID == "p1" })
+		return i >= 0 && st.Panes[i].HostSized
+	}
+	if hostSized(v.s.View().State) {
+		t.Error("a terminal at the guest's size is said to be at the host's")
+	}
+	w, err := r.a.watchPane(r.a.terminal("p1"), 60, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// As a watcher comes from the program's own goroutine.
+	r.a.publish()
+	r.at("p1", 60, 20, true)
+	v.state("the guest told it has the host's size", hostSized)
+	if got := r.only().Sizes; len(got) != 0 {
+		t.Errorf("the share says it sizes %v", got)
+	}
+	_ = w.Close()
+	r.at("p1", 110, 35, true)
+	v.state("the guest told it has its size again", func(st guest.State) bool { return !hostSized(st) })
 }
