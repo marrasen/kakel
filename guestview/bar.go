@@ -204,8 +204,14 @@ func (b *bar) Layout(c gunim.Constraints, f gunim.Frame, kids gunim.Children) ge
 	right(6, gap)
 	right(5, gap/2)
 	right(4, gap)
-	right(9, gap)
-	right(8, gap)
+	// The way back to following, and what says whether the guest may
+	// type, leave the title room for who shares it: a long name is cut.
+	for _, i := range []int{9, 8} {
+		s := kids.At(i).Layout(gunim.Constraints{Max: geom.Sz(max(x-left-barBy.Get(th), 1), size.H)})
+		x -= s.W
+		kids.At(i).Place(geom.Pt(x, (size.H-s.H)/2))
+		x -= gap * min(s.W/24, 1)
+	}
 	swing := barShake.Get(th) * b.swing.Value()
 	for _, i := range []int{3, 2} {
 		s := kids.At(i).Layout(gunim.Constraints{Max: geom.Sz(max(x-left-barBy.Get(th), 1), size.H)})

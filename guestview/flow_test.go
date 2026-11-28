@@ -1122,6 +1122,7 @@ func TestThePageHoldsNoMoreThanItMay(t *testing.T) {
 	}
 	// All at once: as many as there is room for, and the one the guest is
 	// in among them.
+	c.do(Follows{false})
 	c.do(In{"p11"})
 	c.do(Shown{ids})
 	c.until("five shown", func() bool { made, _ := c.made(); return len(made) == 5 && len(c.state().Held) == 7 })
@@ -1221,8 +1222,18 @@ func TestMoreOnTheScreenThanAreOpened(t *testing.T) {
 	if got := c.state().Held; len(got) != 1 || got[last] != HeldMany {
 		t.Errorf("held are %v", got)
 	}
-	c.do(In{last})
-	c.until("the one the guest is in, open", func() bool { got := s.opened(); return len(got) == mostOpen && slices.Contains(got, last) })
+	// Following, the guest is in the host's pane, whatever the page said
+	// last: a hidden page says nothing.
+	c.do(In{ids[1]})
+	v := in(ids...)
+	v.State.HostIn = last
+	s.say(v)
+	c.until("the host's, open", func() bool { got := s.opened(); return len(got) == mostOpen && slices.Contains(got, last) })
+	// A pane of its own goes first then.
+	other := ids[mostOpen-1]
+	c.do(Follows{false})
+	c.do(In{other})
+	c.until("the one the guest is in, open", func() bool { got := s.opened(); return len(got) == mostOpen && slices.Contains(got, other) })
 }
 
 // However a connection goes, the host is dialled no more often than a

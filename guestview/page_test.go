@@ -1170,6 +1170,34 @@ func TestALongTitleLeavesRoomForWhoShares(t *testing.T) {
 	}
 }
 
+// A long name of the host's leaves the title its room, with the way back
+// to following there too.
+func TestALongNameLeavesRoomForTheTitle(t *testing.T) {
+	for _, w := range []float32{320, 390, 700, 1200} {
+		st := inWindow("p1")
+		st.HostName = strings.Repeat("Anna ", 60)
+		s := newStage(t, geom.Sz(w, 600), st)
+		s.settle()
+		s.typing("x")
+		s.sent("p1", "x")
+		s.settle()
+		b := s.page.win.bar
+		way := b.follow
+		if w < 600 {
+			way = b.followIcon
+		}
+		title, _ := s.u.Bounds(b.title)
+		box, ok := s.u.Bounds(way)
+		if !ok || !way.Open() || box.Size().W < 20 || box.Max.X > w {
+			t.Errorf("%v wide, the way back stands at %v", w, box)
+		}
+		if room := box.Min.X - title.Min.X; room < 90 {
+			t.Errorf("%v wide, the title has %v of room", w, room)
+		}
+		s.shot(fmt.Sprint("long-name-", w))
+	}
+}
+
 // Full screen, and the keys it takes, end with the window.
 func TestFullScreenEndsWithTheWindow(t *testing.T) {
 	s := newStage(t, geom.Sz(800, 600), inWindow("p1"))

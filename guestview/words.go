@@ -50,7 +50,7 @@ func hostOr(host string) string {
 // followWord is the button that has the guest follow the host again.
 func followWord(host string) string {
 	if host == "" {
-		return "Follow the Host"
+		return "Follow the host"
 	}
 	return "Follow " + host
 }

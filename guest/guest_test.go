@@ -655,8 +655,8 @@ func TestAGuestThatFollowsIsWhereTheHostIs(t *testing.T) {
 	hostIn("c")
 	s.Focus("a")
 	is("the guest picked a", "a", false)
+	// Publish has settled where the guest is by the time it returns.
 	hostIn("b")
-	time.Sleep(20 * time.Millisecond)
 	if got := r.host.Status(); got.Focus != "a" || got.Follows {
 		t.Errorf("the host moved, and the guest is in %q, following: %v", got.Focus, got.Follows)
 	}

@@ -338,10 +338,10 @@ func (f *flow) where(s Session) {
 	}
 }
 
-// at is the pane the guest is in, as the page last said: the host's,
-// while it follows and the page has said nothing yet.
+// at is the pane the guest is in: the host's while it follows, whatever
+// the page last said.
 func (f *flow) at() string {
-	if f.follows && f.in == "" {
+	if f.follows {
 		return f.st.HostIn
 	}
 	return f.in
