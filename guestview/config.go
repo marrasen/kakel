@@ -19,6 +19,9 @@ type Session interface {
 	Join(ctx context.Context, name, about string) error
 	// Pane opens a pane the window shows, by its ID.
 	Pane(ctx context.Context, id string) (session.ScreenReader, error)
+	// Follow and Focus say where the guest is: following the host, or in
+	// a pane it picked.
+	Follow()
 	Focus(id string)
 	Leave()
 	Close() error

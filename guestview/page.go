@@ -188,11 +188,11 @@ func (p *page) awaitDialog(u *gunim.UI) {
 	u.After(0, look)
 }
 
-// sayTitle names the browser's tab after the window.
+// sayTitle names the browser's tab after the pane the guest is in.
 func (p *page) sayTitle(u *gunim.UI) {
 	title := build.Name
-	if p.st.Page == PageWindow && p.st.Title != "" {
-		title = p.st.Title + " — " + build.Name
+	if p.st.Page == PageWindow && p.win != nil && p.win.title != "" {
+		title = p.win.title + " — " + build.Name
 	}
 	if title != p.title {
 		p.title = title

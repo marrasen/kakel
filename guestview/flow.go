@@ -139,8 +139,11 @@ type flow struct {
 	// changed says the panes are others than was published.
 	changed bool
 	// shown are the panes on the screen, and in the one the guest is in.
-	shown []string
-	in    string
+	// follows says the guest follows the host, and is in the host's pane
+	// whatever in is: the page may be drawing nothing to say where it is.
+	shown   []string
+	in      string
+	follows bool
 	// opens is how many panes may be opened now, as of opensAt, and due
 	// the timer for what has to wait.
 	opens   float64
@@ -182,7 +185,7 @@ func newFlow(ctx context.Context, w *gunim.Window, cfg Config) *flow {
 	f := &flow{
 		cfg: cfg, ctx: ctx, cancel: cancel, c: w.Client(),
 		posts: make(chan func(), 64), wrote: make(chan struct{}, 1),
-		shells: screen.NewShells(), panes: map[string]*pane{},
+		shells: screen.NewShells(), panes: map[string]*pane{}, follows: true,
 		opens: opensBurst, opensAt: time.Now(),
 		budget: newBudget(paces.room), mayDial: float64(paces.dials), dialAt: time.Now(),
 	}
@@ -296,10 +299,17 @@ func (f *flow) intent(in gunim.Intent) {
 			return
 		}
 		f.in = in.Pane
-		if f.sess != nil && f.st.Page == PageWindow {
-			f.sess.Focus(f.in)
+		if !f.follows {
+			f.sayWhere()
 		}
 		// It goes before the others on the screen.
+		f.tend()
+	case Follows:
+		if in.On == f.follows {
+			return
+		}
+		f.follows = in.On
+		f.sayWhere()
 		f.tend()
 	case gunim.ClipboardFailed:
 		if err := f.c.Patch(topic, notCopied{in.Reason}); err != nil {
@@ -308,6 +318,33 @@ func (f *flow) intent(in gunim.Intent) {
 	case gunim.FullScreenLeft:
 		// The page reads how the window stands as it draws.
 	}
+}
+
+// sayWhere tells the host where the guest is, while it is in the window.
+func (f *flow) sayWhere() {
+	if f.sess != nil && f.st.Page == PageWindow {
+		f.where(f.sess)
+	}
+}
+
+// where tells s where the guest is: following the host, or in the pane it
+// picked.
+func (f *flow) where(s Session) {
+	switch {
+	case f.follows:
+		s.Follow()
+	case f.in != "":
+		s.Focus(f.in)
+	}
+}
+
+// at is the pane the guest is in: the host's while it follows, whatever
+// the page last said.
+func (f *flow) at() string {
+	if f.follows {
+		return f.st.HostIn
+	}
+	return f.in
 }
 
 // join dials, to join as name.
@@ -609,7 +646,7 @@ func (f *flow) act(a Act) {
 	}
 	f.over, f.joined, f.lostAt = false, true, time.Now()
 	f.st.Page, f.st.Lost, f.st.Why = PageWaiting, true, ""
-	if f.st.Title != "" || len(f.st.Panes) > 0 {
+	if f.st.HostName != "" || len(f.st.Panes) > 0 {
 		f.st.Page = PageWindow
 	}
 	f.publish()
@@ -647,8 +684,8 @@ func (f *flow) look(s Session) {
 		came := f.st.Page != PageWindow || f.st.Lost
 		f.window(v.State)
 		f.st.Page, f.st.Lost, f.st.Why = PageWindow, false, ""
-		if came && f.in != "" {
-			s.Focus(f.in)
+		if came {
+			f.where(s)
 		}
 	}
 	f.publish()
@@ -657,7 +694,7 @@ func (f *flow) look(s Session) {
 
 // window takes the window as the host says it is.
 func (f *flow) window(st guest.State) {
-	f.st.HostName, f.st.Title, f.st.CanType, f.st.HostIn = st.HostName, st.Title, st.CanType, st.HostIn
+	f.st.HostName, f.st.CanType, f.st.HostIn = st.HostName, st.CanType, st.HostIn
 	f.st.Panes = st.Panes
 	if raw := string(st.Theme); raw != "" && raw != f.themed {
 		f.themed = raw
@@ -869,8 +906,9 @@ func (p *pane) failed() {
 // is in before the others, and held those there is none for.
 func (f *flow) wanted() (wanted []*pane, held map[string]Held) {
 	order := slices.Clone(f.shown)
-	if i := slices.Index(order, f.in); i > 0 {
-		order = slices.Insert(slices.Delete(order, i, i+1), 0, f.in)
+	at := f.at()
+	if i := slices.Index(order, at); i > 0 {
+		order = slices.Insert(slices.Delete(order, i, i+1), 0, at)
 	}
 	held = map[string]Held{}
 	room := f.budget.most

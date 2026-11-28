@@ -122,6 +122,7 @@ func (v *paneView) showing(f face) gunim.Node {
 // entered hears that the pane has the keyboard.
 func (v *paneView) entered(u *gunim.UI) {
 	v.w.dock.SetActive(v.id, u)
+	v.w.retitle(u)
 	u.Send(v.w.p, In{v.id})
 	v.w.keys.update(u)
 }
@@ -511,7 +512,7 @@ func (v *paneView) pasted(s string, u *gunim.UI) bool {
 		v.refused(u)
 		return true
 	}
-	w.follow = false
+	w.unfollow(u)
 	if !pastecheck.Needed(s) {
 		v.types(typed{paste: s}, u)
 		return true

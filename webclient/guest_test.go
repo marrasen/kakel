@@ -199,7 +199,7 @@ func newHost(t *testing.T, ids ...string) *host {
 	case <-time.After(longest):
 		t.Fatal("the relay never had the share")
 	}
-	h.st = guest.State{HostName: "Anna", Title: "web", CanType: true, Theme: themeOf(t, 0), HostIn: ids[0]}
+	h.st = guest.State{HostName: "Anna", CanType: true, Theme: themeOf(t, 0), HostIn: ids[0]}
 	h.publish(ids...)
 	return h
 }
@@ -470,7 +470,7 @@ func TestAGuestInAWindow(t *testing.T) {
 	})
 	var title string
 	p.Eval(`document.title`, &title)
-	if title != "web — kakel" {
+	if title != "p1 — kakel" {
 		t.Errorf("the tab is titled %q", title)
 	}
 	h.sound(p, true)

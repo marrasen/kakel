@@ -345,8 +345,12 @@ func (s *Session) say(frame []byte) error {
 	return err
 }
 
-// Focus tells the host which pane the guest is in, "" for none. It does
-// not wait.
+// Follow tells the host that the guest follows it, and is in whichever
+// pane the host is in until Focus says otherwise. It does not wait.
+func (s *Session) Follow() { s.out.put(frame(frameFollow)) }
+
+// Focus tells the host which pane the guest picked, "" for none, and that
+// it follows the host no more. It does not wait.
 func (s *Session) Focus(id string) {
 	if len(id) <= mostID {
 		s.out.put(frame(frameFocus, []byte(id)))

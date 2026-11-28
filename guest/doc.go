@@ -14,7 +14,7 @@
 //	h, err := guest.NewHost(guest.HostConfig{Ask: ask, Open: open, OnChange: changed})
 //	link := base + "#" + h.Secret().String()
 //	go h.Serve(listener)
-//	h.Publish(guest.State{HostName: "anna", Title: "work", CanType: true, Panes: panes})
+//	h.Publish(guest.State{HostName: "anna", CanType: true, Panes: panes})
 //	...
 //	h.End(guest.ReasonStopped)
 //
@@ -29,7 +29,8 @@
 // Dial, over a connection to the host, gives a Session. It says PhaseJoin
 // for a link nobody has used, and Join joins. From then Changed and View
 // follow the window. Pane opens one of its terminals, as a session for a
-// terminal to be on, and Focus says which the guest is in. Leave ends the
+// terminal to be on. Follow says the guest is in whichever pane the host
+// is in, and Focus that it is in one it picked. Leave ends the
 // share for good; a lost connection, ErrLost, is dialled again with the
 // same key, and comes back where it was, waiting or in the window.
 //

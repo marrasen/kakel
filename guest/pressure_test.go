@@ -26,7 +26,7 @@ func TestAStateThatCannotBeSentWithdrawsAllTheSame(t *testing.T) {
 		"a layout that is not JSON": func(st *State) { st.Layout = []byte("{") },
 		"too much":                  func(st *State) { st.Theme = []byte(`"` + strings.Repeat("x", mostState) + `"`) },
 		"too much of everything": func(st *State) {
-			st.Title, st.HostName = strings.Repeat("\x00", mostState), strings.Repeat("<", mostState)
+			st.HostName = strings.Repeat("<", mostState)
 			for i := range 5000 {
 				st.Panes = append(st.Panes, Pane{ID: fmt.Sprint(strings.Repeat("<", 100), i), Kind: KindTerminal, Title: strings.Repeat("\x00", 1000), Icon: strings.Repeat("<", 1000)})
 			}

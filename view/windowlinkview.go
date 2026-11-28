@@ -421,8 +421,14 @@ type linkCard struct {
 	w *Window
 	l app.WindowLink
 
-	card         *widget.Card
-	head, says   *widget.Label
+	card       *widget.Card
+	head, says *widget.Label
+	// where says where the guest is, fading from one place to the next,
+	// whereText what it says and whereRow folds it away while it says
+	// nothing.
+	where        *widget.Pages
+	whereText    string
+	whereRow     *widget.Fold
 	link         *widget.Label
 	copyIt, stop *widget.Button
 	// asks opens the question about a guest who waits for its answer.
@@ -451,7 +457,9 @@ func newLinkCard(w *Window, l app.WindowLink, now time.Time) *linkCard {
 	if !l.Live() {
 		mark.Color = look.Faint
 	}
-	text := widget.Column(c.head, c.says)
+	c.where = widget.NewPages(faintLabel(""))
+	c.whereRow = widget.NewFold(c.where, false)
+	text := widget.Column(c.head, c.whereRow, c.says)
 	text.Cross, text.Gap = widget.CrossStretch, linkTextGap
 	parts := []gunim.Node{mark, text}
 	if l.Live() {
@@ -507,6 +515,18 @@ func linkMark(l app.WindowLink) *icon.Icon {
 func (c *linkCard) show(l app.WindowLink, now time.Time, u *gunim.UI) {
 	c.l = l
 	c.head.Text, c.says.Text = linkHeading(l), linkStands(l, now)
+	where := ""
+	if l.Stands == app.LinkIn && l.Trouble == "" {
+		where = c.w.guestWhere(l)
+	}
+	if where != c.whereText {
+		c.whereText = where
+		if where != "" {
+			// Kept as it folds away.
+			c.where.Show(faintLabel(where), geom.Point{}, u)
+		}
+		c.whereRow.SetOpen(where != "", u)
+	}
 	c.says.Color = look.Faint
 	if l.Trouble != "" {
 		c.says.Color = widget.DialogProblem
@@ -547,7 +567,7 @@ func (c *linkCard) focusables() []gunim.Node {
 // Access implements [gunim.Accessible]: what is on the card is the
 // share's, by its guest or as a link.
 func (c *linkCard) Access() access.Info {
-	return access.Info{Role: access.RoleGroup, Name: linkHeading(c.l), Description: c.says.Text}
+	return access.Info{Role: access.RoleGroup, Name: linkHeading(c.l), Description: strings.TrimSpace(c.whereText + " " + c.says.Text)}
 }
 
 // Children implements [gunim.Composite].

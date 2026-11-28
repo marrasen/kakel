@@ -36,7 +36,7 @@ var (
 //
 // The panes follow the host's, until the guest picks one themselves.
 // From then each side has its own tabs in front, and the panes come, go
-// and move as the host's do.
+// and move as the host's do, until the guest follows the host again.
 type windowPage struct {
 	p    *page
 	bar  *bar
@@ -69,6 +69,8 @@ type windowPage struct {
 	wants string
 	// room is the page's, as it was laid out last.
 	room geom.Size
+	// title is that of the pane the guest is in.
+	title string
 }
 
 func newWindowPage(p *page) *windowPage {
@@ -86,6 +88,7 @@ func newWindowPage(p *page) *windowPage {
 		if s, ok := c.(dock.Show); ok {
 			w.picked(s.ID, u)
 		}
+		w.retitle(u)
 		return nil
 	}
 	w.tabs = widget.NewThemed(w.dock, w.tabsLook())
@@ -202,6 +205,7 @@ func (w *windowPage) update(st State, u *gunim.UI) {
 	}
 	w.mourn(in, u)
 	w.bar.update(st, u)
+	w.retitle(u)
 	w.veil.update(st, u)
 	w.keys.update(u)
 	u.Invalidate()
@@ -282,14 +286,61 @@ func (w *windowPage) sayShown(u *gunim.UI) {
 // picked hears that the guest picked pane id: from now on it has tabs of
 // its own in front, and goes nowhere with the host.
 func (w *windowPage) picked(id string, u *gunim.UI) {
-	w.follow = false
+	w.unfollow(u)
 	w.sayShown(u)
 	w.take(id, u)
+}
+
+// unfollow has the guest follow the host no more, from the pane it is in.
+func (w *windowPage) unfollow(u *gunim.UI) {
+	if !w.follow {
+		return
+	}
+	w.follow = false
+	if id := w.dock.Active(); id != "" {
+		// Where it is first, for the host to hear that it stays there.
+		u.Send(w.p, In{id})
+	}
+	u.Send(w.p, Follows{false})
+	w.bar.following(false, u)
+}
+
+// followHost has the guest follow the host again: the host's tabs in
+// front, and the pane the host is in.
+func (w *windowPage) followHost(u *gunim.UI) {
+	if w.follow {
+		return
+	}
+	w.follow = true
+	u.Send(w.p, Follows{true})
+	w.bar.following(true, u)
+	w.arrange(u)
+	if w.hostIn != "" {
+		w.take(w.hostIn, u)
+	}
+	w.retitle(u)
+	u.Invalidate()
+}
+
+// retitle names the bar and the browser's tab after the pane the guest is
+// in.
+func (w *windowPage) retitle(u *gunim.UI) {
+	title := ""
+	if pn, ok := w.p.paneOf(w.dock.Active()); ok {
+		title = pn.Title
+	}
+	if title == w.title {
+		return
+	}
+	w.title = title
+	w.bar.retitle(title, u)
+	w.p.sayTitle(u)
 }
 
 // take gives pane id the keyboard.
 func (w *windowPage) take(id string, u *gunim.UI) {
 	w.dock.SetActive(id, u)
+	w.retitle(u)
 	if w.p.dialog != nil || u.HasFocus(w.pane(id)) {
 		return
 	}

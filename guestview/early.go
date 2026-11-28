@@ -78,7 +78,7 @@ func (v *paneView) types(what typed, u *gunim.UI) {
 		v.deaf = now.Add(deafFor)
 		v.w.p.not(notTyped, typeAgain, u)
 	case v.shut():
-		v.w.follow = false
+		v.w.unfollow(u)
 		if !v.early.add(what) {
 			v.lose(u)
 			return
@@ -92,7 +92,7 @@ func (v *paneView) types(what typed, u *gunim.UI) {
 			})
 		}
 	default:
-		v.w.follow = false
+		v.w.unfollow(u)
 		v.do(what, u)
 	}
 }

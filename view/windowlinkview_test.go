@@ -642,6 +642,37 @@ func TestTheLinksAreListed(t *testing.T) {
 	}
 }
 
+// A share's card says where its guest is, fading from one place to the
+// next.
+func TestAGuestsCardFadesWhereItIs(t *testing.T) {
+	win, st, publish := linkStage(t, isIn("l1", "Bob", "p1"))
+	win.chips.order[0].do(lastUI)
+	settle()
+	n, ok := win.linkBox.list.Row(widget.Key("l1:guest"))
+	if !ok {
+		t.Fatal("no card")
+	}
+	c := n.(*linkCard)
+	if !c.whereRow.Open() || c.whereText == "" {
+		t.Fatalf("in p1, the card says %q", c.whereText)
+	}
+	was, said := c.where.Page(), c.whereText
+	follows := isIn("l1", "Bob", "p2")
+	follows.Follows = true
+	st.Links = []app.WindowLink{follows}
+	publish(st)
+	going := 0
+	for range 30 {
+		if lastUI.Drawn(was) {
+			going++
+		}
+		frames(1)
+	}
+	if c.whereText == said || going < 3 {
+		t.Errorf("following, the card says %q, and what it said went in %d frames", c.whereText, going)
+	}
+}
+
 // The commands of sharing with a link: Stop Sharing Window stops this
 // window's, and is there to choose while there is one.
 func TestStopSharingWindow(t *testing.T) {

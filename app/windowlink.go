@@ -63,9 +63,11 @@ type WindowLink struct {
 	// Since is when the guest was let in.
 	Since time.Time
 	// In is the pane the guest is in, TypedIn the one it last typed in,
-	// and TypedAt when.
+	// and TypedAt when. Follows says the guest follows the host, so In is
+	// the host's own pane, where that is shared.
 	In, TypedIn string
 	TypedAt     time.Time
+	Follows     bool
 	// Relay is the relay's machine.
 	Relay string
 }
@@ -900,7 +902,7 @@ func (a *app) sharedState(l *windowLink) (guest.State, map[string]guest.PaneSour
 			panes[p.ID] = t
 		}
 		if id == focus {
-			st.Title, st.HostIn = shown.Title, id
+			st.HostIn = id
 		}
 		st.Panes = append(st.Panes, shown)
 	}
@@ -994,7 +996,7 @@ func (a *app) windowLinks() []WindowLink {
 		s := WindowLink{
 			ID: l.id, Window: l.win, CanType: l.canType, Stands: l.stands, Over: l.over, Relay: l.client.Relay.Host(),
 			Guest: st.Guest.Name, From: guestAddr(st.Guest.From), About: st.Guest.About,
-			Since: l.since, In: st.Focus, TypedIn: st.TypedIn, TypedAt: st.TypedAt, Until: st.Until,
+			Since: l.since, In: st.Focus, TypedIn: st.TypedIn, TypedAt: st.TypedAt, Until: st.Until, Follows: st.Follows,
 			Trouble: l.trouble,
 		}
 		switch l.stands {
